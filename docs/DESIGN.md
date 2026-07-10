@@ -431,16 +431,23 @@ end-to-end suite runs against a fixture workspace with a mocked Hex API.
 4. **Extract.** Once stable in lattice, move to its own repo and publish binaries;
    lattice pins a version in `.tool-versions` like every other tool.
    **Status: implemented** (trellis was built in its own repo from the start,
-   so extraction reduces to distribution). A tag-triggered release workflow
-   verifies the tag against `Cargo.toml`, creates a GitHub Release from
-   `CHANGELOG.md`, and uploads static binaries — musl Linux, macOS, and
-   Windows, x86_64 and aarch64 — with sha256 checksums (`lto`+`strip` release
-   profile). `install.sh` gives consuming repos the
-   `taiki-e/install-action`-style one-step CI install from §7: platform
-   detection, checksum verification, and automatic `$GITHUB_PATH` handling;
-   version-pinned via `TRELLIS_VERSION`. Workspaces pin trellis in
-   `.tool-versions` through mise/asdf's ubi backend
-   (`ubi:tylerbutler/trellis`).
+   so extraction reduces to distribution). The publishing pipeline mirrors
+   tylerbutler/repoverlay's: changie fragments (`.changes/unreleased/`) →
+   `changie-release.yml` opens a release PR bumping `Cargo.toml` +
+   `CHANGELOG.md` + `Cargo.lock` on every push to main → merging it triggers
+   `release-plz.yml`, which creates the `v{version}` tag (crates.io publish
+   disabled: the `trellis` name is taken by an unrelated 2016 crate — §11's
+   naming question, answered by the registry) → the tag triggers the
+   dist-generated `release.yml`, where cargo-dist builds five targets,
+   generates shell/PowerShell installers and a Homebrew formula, attaches
+   SLSA provenance attestations, and creates the GitHub Release →
+   `publish-homebrew-tap.yml` (a custom dist publish-job) pushes the formula
+   to tylerbutler/homebrew-tap with a GitHub App token. Consuming workspaces
+   install via the dist shell installer or pin in `.tool-versions` through
+   mise/asdf's ubi backend. Requires the shared `RELEASE_APP_ID` /
+   `RELEASE_APP_PRIVATE_KEY` secrets. repoverlay's SBOM/attestation workflow
+   (`release-sbom.yml`) is not adopted yet — it depends on that repo's local
+   composite actions.
 
 ## 11. Open questions
 

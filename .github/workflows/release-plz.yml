@@ -1,0 +1,47 @@
+name: Release-plz
+
+# When the changie-release PR merges (bumping Cargo.toml), release-plz
+# notices the untagged version and creates the `v{version}` tag, which
+# triggers the dist-generated release.yml. crates.io publishing is disabled
+# in release-plz.toml (the `trellis` crate name is taken); tagging is this
+# workflow's only job.
+
+permissions:
+  contents: write
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  release-plz-release:
+    name: Release-plz release
+    runs-on: ${{ vars.RUNS_ON_RELEASE_PLZ || vars.RUNS_ON || 'ubuntu-latest' }}
+    concurrency:
+      group: release-plz-release
+      cancel-in-progress: false
+
+    steps:
+      - name: Generate app token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # ratchet:actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # ratchet:actions/checkout@v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          token: ${{ steps.app-token.outputs.token }}
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Run release-plz release
+        uses: release-plz/action@e8792575c7f2366cf6ff3ccc33ead9ace5b691c7 # ratchet:release-plz/action@v0.5
+        with:
+          command: release
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}

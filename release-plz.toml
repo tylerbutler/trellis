@@ -1,0 +1,14 @@
+[workspace]
+# Changelog is managed by changie, not release-plz
+changelog_update = false
+
+# Disable GitHub release creation - cargo-dist handles this with binary assets
+git_release_enable = false
+# Enable git tag creation - this triggers cargo-dist release workflow
+git_tag_enable = true
+git_tag_name = "v{{ version }}"
+
+# The crates.io name `trellis` is taken by an unrelated 2016 crate (see
+# docs/DESIGN.md §11 on naming). Binaries ship via cargo-dist; release-plz's
+# job here is only to create the version tag when the release PR merges.
+publish = false

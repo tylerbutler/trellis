@@ -1,0 +1,68 @@
+name: Changie Release
+
+# On every push to main, batch unreleased changie fragments into a release PR
+# that bumps Cargo.toml and CHANGELOG.md. Merging that PR triggers
+# release-plz.yml, which creates the version tag; the tag triggers the
+# dist-generated release.yml, which builds and publishes binaries.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  release:
+    runs-on: ${{ vars.RUNS_ON_CHANGIE_RELEASE || vars.RUNS_ON || 'ubuntu-latest' }}
+    steps:
+      - name: Generate app token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # ratchet:actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # ratchet:actions/checkout@v7.0.0
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+
+      - uses: tylerbutler/actions/changie-release@c3de10f5c576265f4910698528d949179081f25b # ratchet:tylerbutler/actions/changie-release@main
+        id: release
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          version-files: 'Cargo.toml:package.version'
+
+      # Update Cargo.lock to match the version bumped by changie-release
+      - name: Update Cargo.lock
+        if: steps.release.outputs.skipped != 'true'
+        env:
+          PR_BRANCH: ${{ steps.release.outputs.pr-branch }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout "$PR_BRANCH"
+          cargo generate-lockfile
+          git add Cargo.lock
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: update Cargo.lock"
+            git push origin "$PR_BRANCH"
+          fi
+
+      - name: Summary
+        if: steps.release.outputs.skipped != 'true'
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+          PR_URL: ${{ steps.release.outputs.pr-url }}
+          PR_OP: ${{ steps.release.outputs.pr-operation }}
+        run: |
+          echo "### Release PR Created" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Version:** $VERSION" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **PR:** $PR_URL" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Operation:** $PR_OP" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Skipped
+        if: steps.release.outputs.skipped == 'true'
+        run: |
+          echo "### Release Skipped" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "No unreleased change fragments found." >> "$GITHUB_STEP_SUMMARY"

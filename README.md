@@ -29,23 +29,28 @@ release binaries for distribution.
 
 ## Installation
 
-Trellis ships as a single static binary — the same distribution model as
+Trellis ships as a single prebuilt binary — the same distribution model as
 `just`, `changie`, and `ratchet` — so it installs in CI in about a second
-with zero runtime dependencies.
+with zero runtime dependencies. Releases are built and published by
+[cargo-dist](https://opensource.axo.dev/cargo-dist/), with SLSA build
+provenance attestations.
 
-**Installer script** (Linux and macOS, x86_64 and aarch64):
+**Shell installer** (Linux and macOS):
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/tylerbutler/trellis/main/install.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/tylerbutler/trellis/releases/latest/download/trellis-installer.sh | sh
 ```
 
-Pin a version with `TRELLIS_VERSION=0.1.0`, choose the destination with
-`TRELLIS_INSTALL_DIR` (default `~/.local/bin`). Archives are
-checksum-verified. In GitHub Actions the install directory is added to
-`$GITHUB_PATH` automatically, so setup is one step:
+**PowerShell installer** (Windows):
 
-```yaml
-- run: curl -fsSL https://raw.githubusercontent.com/tylerbutler/trellis/main/install.sh | TRELLIS_VERSION=0.1.0 sh
+```powershell
+powershell -ExecutionPolicy Bypass -c "irm https://github.com/tylerbutler/trellis/releases/latest/download/trellis-installer.ps1 | iex"
+```
+
+**Homebrew:**
+
+```sh
+brew install tylerbutler/tap/trellis
 ```
 
 **mise / asdf** (via the [ubi](https://mise.jdx.dev/dev-tools/backends/ubi.html)
@@ -62,8 +67,10 @@ mise use "ubi:tylerbutler/trellis@0.1.0"
 cargo install --git https://github.com/tylerbutler/trellis
 ```
 
-Prebuilt archives for every target (including Windows) are on the
-[releases page](https://github.com/tylerbutler/trellis/releases).
+Prebuilt archives for every target are on the
+[releases page](https://github.com/tylerbutler/trellis/releases). Pin a
+specific version in CI by replacing `latest/download` with
+`download/v0.1.0` in the installer URL.
 
 ## Configuration
 
@@ -229,16 +236,28 @@ against the fixture workspace in `tests/fixtures/`. `cargo fmt` and
 
 ## Releasing trellis
 
-Update `CHANGELOG.md` and the version in `Cargo.toml`, then push a matching
-tag:
+Releases are fully automated, fragment-driven, and hands-off after merge —
+the same pipeline as [repoverlay](https://github.com/tylerbutler/repoverlay):
 
-```sh
-git tag -a v0.1.0 -m "v0.1.0" && git push origin v0.1.0
-```
+1. Every user-facing change lands with a changie fragment (`changie new`);
+   fragments accumulate in `.changes/unreleased/`.
+2. On each push to `main`, `changie-release.yml` batches the fragments into a
+   release PR that bumps `Cargo.toml`, regenerates `Cargo.lock`, and updates
+   `CHANGELOG.md`.
+3. Merging the release PR triggers `release-plz.yml`, which creates the
+   `v{version}` tag (crates.io publishing is disabled — the `trellis` crate
+   name is taken by an unrelated project).
+4. The tag triggers the dist-generated `release.yml`: cargo-dist builds
+   binaries for five targets (Linux gnu, macOS, Windows; x86_64 and aarch64),
+   generates the shell/PowerShell installers and the Homebrew formula,
+   attaches SLSA provenance attestations, and creates the GitHub Release.
+   `publish-homebrew-tap.yml` then pushes the formula to
+   `tylerbutler/homebrew-tap` using a GitHub App token.
 
-The release workflow verifies the tag against `Cargo.toml`, creates a GitHub
-Release with the matching CHANGELOG section, and uploads static binaries
-(musl Linux, macOS, Windows; x86_64 and aarch64) with sha256 checksums.
+The release workflows expect the `RELEASE_APP_ID` / `RELEASE_APP_PRIVATE_KEY`
+secrets (a GitHub App with `contents:write` here and on the tap). After
+changing `dist-workspace.toml`, regenerate the release workflow with
+`dist generate` and validate with `dist plan`.
 
 ## License
 

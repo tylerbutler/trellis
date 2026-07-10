@@ -4,11 +4,24 @@ version = "0.1.0"
 edition = "2024"
 description = "A workspace CLI for Gleam monorepos: task fan-out, introspection, and release orchestration derived from workspace.toml and gleam.toml"
 license = "MIT"
+homepage = "https://github.com/tylerbutler/trellis"
 repository = "https://github.com/tylerbutler/trellis"
+# The crates.io name `trellis` is taken by an unrelated 2016 crate (see
+# docs/DESIGN.md §11); binaries ship via cargo-dist instead.
+publish = false
+
+# publish = false hides the package from dist; opt back in explicitly.
+[package.metadata.dist]
+dist = true
 
 [profile.release]
 strip = true
 lto = true
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
 
 [dependencies]
 anyhow = "1.0.103"
