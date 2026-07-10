@@ -49,13 +49,10 @@ pub struct PublishConfig {
     #[serde(default = "default_tag_format")]
     pub tag_format: String,
     /// How a path dep is rewritten to a Hex requirement at publish time.
-    /// Consumed by `trellis publish` (rollout phase 3).
     #[serde(default)]
-    #[allow(dead_code)]
     pub path_dep_requirement: PathDepRequirement,
-    /// Retry/backoff policy for Hex-touching steps (rollout phase 3).
+    /// Retry/backoff policy for Hex-touching steps.
     #[serde(default)]
-    #[allow(dead_code)]
     pub retry: RetryConfig,
 }
 
@@ -85,7 +82,6 @@ pub enum PathDepRequirement {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-#[allow(dead_code)] // consumed by `trellis publish` (rollout phase 3)
 pub struct RetryConfig {
     #[serde(default = "default_attempts")]
     pub attempts: u32,

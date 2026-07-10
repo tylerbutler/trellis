@@ -7,3 +7,4 @@ command = "echo hello-from-task"
 
 [publish]
 tag-format = "{name}-v{version}"
+retry = { attempts = 2, initial-delay = "10ms", multiplier = 2 }

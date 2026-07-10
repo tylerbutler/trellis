@@ -158,7 +158,7 @@ fn targeted(
 
 fn gleam(args: &[&str], package_dir: &Path) -> CommandSpec {
     CommandSpec {
-        program: "gleam".to_string(),
+        program: crate::tools::gleam_bin(),
         args: args.iter().map(|s| s.to_string()).collect(),
         cwd: package_dir.to_path_buf(),
     }

@@ -22,10 +22,10 @@ release/publish layers that are not implemented yet.
 
 ## Status
 
-Phases 1 and 2 of the [rollout plan](docs/DESIGN.md#10-rollout-in-lattice) are
-implemented: the workspace model plus `list`, `graph`, `info`, `run`, `exec`,
-`doctor`, `ci`, `changelog`, and `version`. The tag/publish layer (phase 3) is
-designed but not built.
+All three phases of the [rollout plan](docs/DESIGN.md#10-rollout-in-lattice)
+are implemented: the workspace model plus `list`, `graph`, `info`, `run`,
+`exec`, `doctor`, `ci`, `changelog`, `version`, `tag`, `publish`, and
+`lockfile`.
 
 ## Configuration
 
@@ -117,6 +117,39 @@ up its new version, then surgically patches each member's `manifest.toml` so
 locked workspace-internal deps match — using a real TOML parser that preserves
 formatting, and zero Hex network calls. Fragments naming unknown or
 unreleasable projects are hard errors.
+
+### Release & publish
+
+```
+trellis tag plan [--json]
+trellis tag create [--push] [--github-release]
+trellis publish <pkg | --tag <tag> | --all-untagged> [--dry-run]
+trellis lockfile refresh [--package <pkg>]
+```
+
+`tag plan` lists releasable packages whose `gleam.toml` version has no
+`{name}-v{version}` tag yet; `tag create` creates the missing tags in
+topological order, optionally pushing them and creating GitHub Releases (via
+the `gh` CLI) with the matching CHANGELOG section as the body.
+
+`publish` runs, per package and in dependency order: an idempotency check
+against the Hex API (already-published versions are skipped, so re-running a
+partially failed release is safe), validation (`gleam format --check`,
+`build --warnings-as-errors`, `test`), then a path-dep rewrite computed from
+the graph — each workspace path dep becomes the Hex requirement derived from
+that dep's current version (`caret` or `exact`, per `path-dep-requirement`) —
+followed by `gleam publish --yes`, and finally restoration of the original
+`gleam.toml` (the repo never shows rewritten files, even on failure). Every
+Hex-touching step runs under the configured `[publish] retry` backoff policy.
+`--tag lat_core-v1.2.0` resolves a pushed tag to its package and refuses to
+publish if the tag version doesn't match `gleam.toml`; `--all-untagged`
+publishes everything not yet on Hex, enabling a single publish run per release
+instead of one per tag.
+
+`lockfile refresh` scopes `gleam deps download` to one package (with retry),
+encoding the "don't refresh the whole workspace or you'll get rate-limited"
+rule as behavior. `trellis ci tag-package <tag>` resolves `$GITHUB_REF_NAME`
+to a package name for shell substitution.
 
 ### Validation
 

@@ -3,8 +3,11 @@ mod commands;
 mod config;
 mod git;
 mod gleam;
+mod hex;
 mod lockfile;
+mod rewrite;
 mod runner;
+mod tools;
 mod workspace;
 
 use anyhow::Result;
@@ -119,6 +122,30 @@ enum Command {
         #[command(subcommand)]
         command: VersionCommand,
     },
+    /// Compare package versions against git tags; create what's missing
+    Tag {
+        #[command(subcommand)]
+        command: TagCommand,
+    },
+    /// Publish packages to Hex, in dependency order, with path deps rewritten
+    Publish {
+        /// A single package to publish
+        package: Option<String>,
+        /// Resolve a pushed tag (e.g. lat_core-v1.2.0) to its package
+        #[arg(long, conflicts_with = "package")]
+        tag: Option<String>,
+        /// Every releasable package whose version isn't on Hex yet
+        #[arg(long, conflicts_with_all = ["package", "tag"])]
+        all_untagged: bool,
+        /// Show what would be published (and rewritten) without doing it
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Lockfile maintenance
+    Lockfile {
+        #[command(subcommand)]
+        command: LockfileCommand,
+    },
     /// Validate workspace invariants; non-zero exit on any error
     Doctor {
         /// Regenerate out-of-date generated files (.changie.yaml projects)
@@ -174,6 +201,35 @@ enum VersionCommand {
 }
 
 #[derive(Subcommand)]
+enum TagCommand {
+    /// List releasable packages whose current version has no tag yet
+    Plan {
+        #[arg(long)]
+        json: bool,
+    },
+    /// Create missing tags in topological order
+    Create {
+        /// Push each created tag to origin
+        #[arg(long)]
+        push: bool,
+        /// Also create a GitHub Release per tag, with the matching CHANGELOG
+        /// section as the body (implies --push; requires the gh CLI)
+        #[arg(long)]
+        github_release: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum LockfileCommand {
+    /// Run `gleam deps download`, scoped to one package (with retry/backoff)
+    Refresh {
+        /// Refresh only this package instead of every member
+        #[arg(long)]
+        package: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
 enum CiCommand {
     /// Emit a GitHub Actions strategy matrix: {"include":[{name,path,version},…]}
     Matrix {
@@ -186,6 +242,12 @@ enum CiCommand {
     },
     /// Emit workspace facts as key=value lines for $GITHUB_OUTPUT
     Outputs,
+    /// Resolve a pushed tag (e.g. $GITHUB_REF_NAME) to its package name
+    TagPackage {
+        tag: String,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 fn main() -> ExitCode {
@@ -302,6 +364,49 @@ fn dispatch(cli: Cli) -> Result<bool> {
             }
             VersionCommand::Apply { json } => commands::version::apply(&workspace, json),
         },
+        Command::Tag { command } => match command {
+            TagCommand::Plan { json } => {
+                commands::tag::plan(&workspace, json)?;
+                Ok(true)
+            }
+            TagCommand::Create {
+                push,
+                github_release,
+            } => {
+                commands::tag::create(
+                    &workspace,
+                    &commands::tag::CreateOptions {
+                        push,
+                        github_release,
+                    },
+                )?;
+                Ok(true)
+            }
+        },
+        Command::Publish {
+            package,
+            tag,
+            all_untagged,
+            dry_run,
+        } => {
+            let selector = match (package, tag, all_untagged) {
+                (Some(name), None, false) => commands::publish::Selector::Package(name),
+                (None, Some(tag), false) => commands::publish::Selector::Tag(tag),
+                (None, None, true) => commands::publish::Selector::AllUntagged,
+                _ => anyhow::bail!(
+                    "specify what to publish: a package name, --tag <tag>, or --all-untagged"
+                ),
+            };
+            commands::publish::run(
+                &workspace,
+                &commands::publish::PublishOptions { selector, dry_run },
+            )
+        }
+        Command::Lockfile { command } => match command {
+            LockfileCommand::Refresh { package } => {
+                commands::lockfile::refresh(&workspace, package.as_deref())
+            }
+        },
         Command::Doctor { .. } => unreachable!("handled above"),
         Command::Ci { command } => {
             match command {
@@ -309,6 +414,9 @@ fn dispatch(cli: Cli) -> Result<bool> {
                     commands::ci::matrix(&workspace, since, releasable)?
                 }
                 CiCommand::Outputs => commands::ci::outputs(&workspace)?,
+                CiCommand::TagPackage { tag, json } => {
+                    commands::ci::tag_package(&workspace, &tag, json)?
+                }
             }
             Ok(true)
         }

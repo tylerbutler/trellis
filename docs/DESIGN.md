@@ -1,6 +1,6 @@
 # Trellis — a workspace CLI for Gleam monorepos
 
-**Status:** Phases 1–2 implemented (see §10)
+**Status:** Phases 1–3 implemented (see §10)
 **Working name:** `trellis` — a trellis is the frame a lattice grows on. Subject to bikeshedding.
 
 ## 1. Background
@@ -412,6 +412,22 @@ end-to-end suite runs against a fixture workspace with a mocked Hex API.
 3. **Phase 3 — release + publish.** `tag`, `publish`, `lockfile refresh`,
    `ci matrix/outputs`. Retires `read-gleam-workspace` and `gleam-publish` call
    sites. Optionally move to the tags-after-publish flow (§6).
+   **Status: implemented.** Notes: the Hex idempotency check uses `ureq`
+   (one GET per package, base URL overridable via `TRELLIS_HEX_API_URL` — the
+   e2e suite runs against a local mock). Publish validation runs against the
+   *original* manifest (path deps intact); the rewrite is computed up front so
+   an unpublishable package fails before validation wastes time, and a drop
+   guard restores `gleam.toml` even when publishing fails. Dev-only path deps
+   to unreleasable members are left alone (Hex doesn't ship dev deps); a
+   `[dependencies]` path dep to an unreleasable member refuses to publish.
+   `tag create --github-release` implies pushing the tag first and shells out
+   to `gh` (`TRELLIS_GH_BIN` overridable), with the release body extracted
+   from the member's CHANGELOG section for that version. `ci tag-package`
+   (used in §6's publish workflow sketch) resolves `$GITHUB_REF_NAME` to a
+   package name. The retry policy from `[publish] retry` wraps every
+   Hex-touching step (`with_retry`, exponential backoff). The gleam binary is
+   `TRELLIS_GLEAM_BIN`-overridable, which the e2e suite uses to drive publish
+   end-to-end with a fake gleam.
 4. **Extract.** Once stable in lattice, move to its own repo and publish binaries;
    lattice pins a version in `.tool-versions` like every other tool.
 

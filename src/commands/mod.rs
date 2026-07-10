@@ -5,7 +5,10 @@ pub mod exec;
 pub mod graph;
 pub mod info;
 pub mod list;
+pub mod lockfile;
+pub mod publish;
 pub mod run;
+pub mod tag;
 pub mod version;
 
 use crate::workspace::Workspace;
