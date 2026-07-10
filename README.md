@@ -22,10 +22,48 @@ release/publish layers that are not implemented yet.
 
 ## Status
 
-All three phases of the [rollout plan](docs/DESIGN.md#10-rollout-in-lattice)
-are implemented: the workspace model plus `list`, `graph`, `info`, `run`,
-`exec`, `doctor`, `ci`, `changelog`, `version`, `tag`, `publish`, and
-`lockfile`.
+The full [rollout plan](docs/DESIGN.md#10-rollout-in-lattice) is implemented:
+the workspace model plus `list`, `graph`, `info`, `run`, `exec`, `doctor`,
+`ci`, `changelog`, `version`, `tag`, `publish`, and `lockfile`, with prebuilt
+release binaries for distribution.
+
+## Installation
+
+Trellis ships as a single static binary — the same distribution model as
+`just`, `changie`, and `ratchet` — so it installs in CI in about a second
+with zero runtime dependencies.
+
+**Installer script** (Linux and macOS, x86_64 and aarch64):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/tylerbutler/trellis/main/install.sh | sh
+```
+
+Pin a version with `TRELLIS_VERSION=0.1.0`, choose the destination with
+`TRELLIS_INSTALL_DIR` (default `~/.local/bin`). Archives are
+checksum-verified. In GitHub Actions the install directory is added to
+`$GITHUB_PATH` automatically, so setup is one step:
+
+```yaml
+- run: curl -fsSL https://raw.githubusercontent.com/tylerbutler/trellis/main/install.sh | TRELLIS_VERSION=0.1.0 sh
+```
+
+**mise / asdf** (via the [ubi](https://mise.jdx.dev/dev-tools/backends/ubi.html)
+backend), which is how a consuming workspace pins trellis in `.tool-versions`
+alongside its other tools:
+
+```sh
+mise use "ubi:tylerbutler/trellis@0.1.0"
+```
+
+**From source:**
+
+```sh
+cargo install --git https://github.com/tylerbutler/trellis
+```
+
+Prebuilt archives for every target (including Windows) are on the
+[releases page](https://github.com/tylerbutler/trellis/releases).
 
 ## Configuration
 
@@ -188,6 +226,19 @@ affected packages, dependents included. `outputs` emits workspace facts as
 Standard Rust project: `cargo test` runs unit tests plus an end-to-end suite
 against the fixture workspace in `tests/fixtures/`. `cargo fmt` and
 `cargo clippy --all-targets` are enforced in CI.
+
+## Releasing trellis
+
+Update `CHANGELOG.md` and the version in `Cargo.toml`, then push a matching
+tag:
+
+```sh
+git tag -a v0.1.0 -m "v0.1.0" && git push origin v0.1.0
+```
+
+The release workflow verifies the tag against `Cargo.toml`, creates a GitHub
+Release with the matching CHANGELOG section, and uploads static binaries
+(musl Linux, macOS, Windows; x86_64 and aarch64) with sha256 checksums.
 
 ## License
 

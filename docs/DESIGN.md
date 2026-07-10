@@ -1,6 +1,6 @@
 # Trellis — a workspace CLI for Gleam monorepos
 
-**Status:** Phases 1–3 implemented (see §10)
+**Status:** Phases 1–4 implemented (see §10)
 **Working name:** `trellis` — a trellis is the frame a lattice grows on. Subject to bikeshedding.
 
 ## 1. Background
@@ -430,6 +430,17 @@ end-to-end suite runs against a fixture workspace with a mocked Hex API.
    end-to-end with a fake gleam.
 4. **Extract.** Once stable in lattice, move to its own repo and publish binaries;
    lattice pins a version in `.tool-versions` like every other tool.
+   **Status: implemented** (trellis was built in its own repo from the start,
+   so extraction reduces to distribution). A tag-triggered release workflow
+   verifies the tag against `Cargo.toml`, creates a GitHub Release from
+   `CHANGELOG.md`, and uploads static binaries — musl Linux, macOS, and
+   Windows, x86_64 and aarch64 — with sha256 checksums (`lto`+`strip` release
+   profile). `install.sh` gives consuming repos the
+   `taiki-e/install-action`-style one-step CI install from §7: platform
+   detection, checksum verification, and automatic `$GITHUB_PATH` handling;
+   version-pinned via `TRELLIS_VERSION`. Workspaces pin trellis in
+   `.tool-versions` through mise/asdf's ubi backend
+   (`ubi:tylerbutler/trellis`).
 
 ## 11. Open questions
 
