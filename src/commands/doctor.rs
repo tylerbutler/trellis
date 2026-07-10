@@ -35,6 +35,7 @@ pub fn run(root: &Path, fix: bool) -> Result<bool> {
         check_lockfiles(workspace, &mut report);
         check_changelogs(workspace, &mut report);
         check_changie_config(workspace, fix, &mut report)?;
+        check_tool_versions(workspace, &mut report);
     }
 
     let checked = [
@@ -45,6 +46,7 @@ pub fn run(root: &Path, fix: bool) -> Result<bool> {
         "manifest.toml locked versions match workspace-internal gleam.toml versions",
         "each releasable member's version is not behind its CHANGELOG",
         "generated .changie.yaml projects match the workspace (--fix regenerates)",
+        "gleam on PATH matches the .tool-versions pin (advisory)",
     ];
     for check in checked {
         println!("checked: {check}");
@@ -106,6 +108,46 @@ fn check_changie_config(workspace: &Workspace, fix: bool, report: &mut Report) -
         }
     }
     Ok(())
+}
+
+/// Advisory (design §11 q4): when `.tool-versions` pins gleam, warn if the
+/// gleam on PATH is a different version. Enforcing toolchains is mise/asdf's
+/// job — trellis only surfaces the mismatch, and only as a warning.
+fn check_tool_versions(workspace: &Workspace, report: &mut Report) {
+    let Ok(text) = std::fs::read_to_string(workspace.root.join(".tool-versions")) else {
+        return;
+    };
+    let Some(pinned) = text.lines().find_map(|line| {
+        let line = line.trim();
+        line.strip_prefix("gleam ").map(|v| v.trim().to_string())
+    }) else {
+        return;
+    };
+    let Ok(output) = std::process::Command::new(crate::tools::gleam_bin())
+        .arg("--version")
+        .output()
+    else {
+        report.warning(format!(
+            ".tool-versions pins gleam {pinned} but no gleam was found on PATH"
+        ));
+        return;
+    };
+    if !output.status.success() {
+        return;
+    }
+    // `gleam --version` prints e.g. "gleam 1.5.1".
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let Some(actual) = stdout
+        .split_whitespace()
+        .find(|token| token.chars().next().is_some_and(|c| c.is_ascii_digit()))
+    else {
+        return;
+    };
+    if actual != pinned {
+        report.warning(format!(
+            "gleam on PATH is {actual} but .tool-versions pins {pinned}"
+        ));
+    }
 }
 
 /// Check 6: every ignore-release glob matches at least one member (catches

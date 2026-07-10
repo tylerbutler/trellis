@@ -122,6 +122,23 @@ enum Command {
         #[command(subcommand)]
         command: VersionCommand,
     },
+    /// Scaffold a new workspace member
+    New {
+        /// Package name (lowercase letters, digits, and _)
+        name: String,
+        /// Template to scaffold from
+        #[arg(long, default_value = "lib")]
+        template: String,
+        /// Parent directory relative to the workspace root (derived from
+        /// existing members when omitted)
+        #[arg(long)]
+        path: Option<String>,
+    },
+    /// Release orchestration
+    Release {
+        #[command(subcommand)]
+        command: ReleaseCommand,
+    },
     /// Compare package versions against git tags; create what's missing
     Tag {
         #[command(subcommand)]
@@ -197,6 +214,19 @@ enum VersionCommand {
     Apply {
         #[arg(long)]
         json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum ReleaseCommand {
+    /// Create or update the release PR: version apply on a branch, push, gh pr
+    Pr {
+        /// Base branch the PR targets
+        #[arg(long, default_value = "main")]
+        base: String,
+        /// Branch the release commit is force-pushed to
+        #[arg(long, default_value = "release/pending")]
+        branch: String,
     },
 }
 
@@ -363,6 +393,26 @@ fn dispatch(cli: Cli) -> Result<bool> {
                 Ok(true)
             }
             VersionCommand::Apply { json } => commands::version::apply(&workspace, json),
+        },
+        Command::New {
+            name,
+            template,
+            path,
+        } => {
+            commands::new::run(
+                &workspace,
+                &commands::new::NewOptions {
+                    name,
+                    template,
+                    path,
+                },
+            )?;
+            Ok(true)
+        }
+        Command::Release { command } => match command {
+            ReleaseCommand::Pr { base, branch } => {
+                commands::release::pr(&workspace, &commands::release::PrOptions { base, branch })
+            }
         },
         Command::Tag { command } => match command {
             TagCommand::Plan { json } => {

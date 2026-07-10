@@ -166,11 +166,19 @@ unreleasable projects are hard errors.
 ### Release & publish
 
 ```
+trellis release pr [--base <branch>] [--branch <branch>]
 trellis tag plan [--json]
 trellis tag create [--push] [--github-release]
 trellis publish <pkg | --tag <tag> | --all-untagged> [--dry-run]
 trellis lockfile refresh [--package <pkg>]
 ```
+
+`release pr` turns pending changelog fragments into a release pull request:
+it runs `version apply` on a release branch, commits the bumps, force-pushes
+(so the branch is regenerated each run), and creates — or, when one is
+already open, updates — the PR via the `gh` CLI. The body carries the bump
+table and each package's new CHANGELOG section. Requires a clean working
+tree; a no-op when there are no fragments.
 
 `tag plan` lists releasable packages whose `gleam.toml` version has no
 `{name}-v{version}` tag yet; `tag create` creates the missing tags in
@@ -208,8 +216,25 @@ acyclic, `ignore-release` globs match real members, no releasable package
 depends on an unreleasable one, tag formats don't collide, `manifest.toml`
 locked versions match workspace-internal `gleam.toml` versions, no package's
 version is behind its CHANGELOG, and the generated `.changie.yaml` projects
-match the workspace (`--fix` regenerates them). Non-zero exit on any error —
+match the workspace (`--fix` regenerates them). When `.tool-versions` pins
+gleam, a mismatched gleam on PATH is reported as an advisory warning
+(enforcing toolchains stays mise/asdf's job). Non-zero exit on any error —
 run it on every PR.
+
+### Scaffolding
+
+```
+trellis new <name> [--template lib] [--path <dir>]
+```
+
+Creates the member directory (derived from where existing members live, e.g.
+`packages/<name>`), a `gleam.toml` pre-filled from a sibling's metadata
+(gleam constraint, licences, repository, gleam_stdlib/gleeunit
+requirements), a stub module and gleeunit test, a CHANGELOG, and a README —
+then regenerates the `.changie.yaml` projects. It refuses names that don't
+match any members glob, so a new package can never be silently invisible to
+the workspace. Adding a package is one command instead of edits to five
+files.
 
 ### CI glue
 

@@ -449,19 +449,34 @@ end-to-end suite runs against a fixture workspace with a mocked Hex API.
    (`release-sbom.yml`) is not adopted yet — it depends on that repo's local
    composite actions.
 
-## 11. Open questions
+Beyond the numbered phases, the rest of the §5 command surface is also
+implemented: `trellis new` (scaffolding, with metadata copied from a sibling
+member and a members-glob match check so a new package can't be invisible to
+the workspace) and `trellis release pr` (see question 2 in §11).
 
-1. **Name.** `trellis` may collide with Roots' WordPress tool; alternatives:
-   `gws`, `latwork`, `gleamspace`.
-2. **Scope of `version apply` vs. the `changie-release` action.** The action also
-   manages the release *PR* (create-or-update, title, body). Keep PR management in
-   the action and only replace the batch/patch internals, or absorb PR management
-   into `trellis release pr` (requires a GitHub token and API surface in the tool)?
-   Leaning: absorb, since `gh` CLI can do the PR mechanics and the tool already
-   knows exactly what changed.
-3. **Affected-only CI as default.** `--since` makes it possible; is the safety
-   trade-off (missed implicit coupling between packages, e.g. via examples) worth
-   it for this repo's build times, or should full fan-out stay the default with
-   `--since` reserved for local use?
-4. **Should trellis own `.tool-versions` awareness** (verify gleam/erlang versions
-   match before running tasks), or is that mise/asdf's job?
+## 11. Open questions — resolved
+
+1. **Name.** ~~`trellis` may collide with Roots' WordPress tool; alternatives:
+   `gws`, `latwork`, `gleamspace`.~~
+   **Resolved: keep `trellis` as the binary/repo name.** The crates.io crate
+   name is taken by an unrelated 2016 project, so crates.io publishing is
+   disabled (`publish = false`); distribution is via cargo-dist binaries, the
+   Homebrew tap, and mise/asdf's ubi backend, none of which collide.
+2. **Scope of `version apply` vs. the `changie-release` action.** ~~Keep PR
+   management in the action, or absorb into `trellis release pr`?~~
+   **Resolved: absorbed.** `trellis release pr` computes the plan, runs
+   `version apply` on a release branch, force-pushes it (create-or-update
+   semantics), and drives `gh pr create`/`gh pr edit` with a bump table and
+   per-package CHANGELOG sections in the body. A workspace can still choose
+   the changie-release action instead — the batch/patch internals are the
+   same `version apply` either way.
+3. **Affected-only CI as default.**
+   **Resolved: full fan-out stays the default.** `--since` is opt-in for
+   `list`/`run`/`exec`/`ci matrix` — the safety trade-off (implicit coupling
+   between packages that the path-dep graph can't see) shouldn't be silent.
+   A repo that wants affected-only CI writes `--since origin/main` into its
+   workflow deliberately.
+4. **Should trellis own `.tool-versions` awareness?**
+   **Resolved: advisory only.** `doctor` warns when `.tool-versions` pins a
+   gleam version different from the gleam on PATH, but never errors —
+   installing and enforcing toolchains remains mise/asdf's job.
