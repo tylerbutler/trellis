@@ -1,6 +1,6 @@
 # Trellis — a workspace CLI for Gleam monorepos
 
-**Status:** Phase 1 implemented (see §10)
+**Status:** Phases 1–2 implemented (see §10)
 **Working name:** `trellis` — a trellis is the frame a lattice grows on. Subject to bikeshedding.
 
 ## 1. Background
@@ -395,6 +395,20 @@ end-to-end suite runs against a fixture workspace with a mocked Hex API.
 2. **Phase 2 — changelog + version.** `changelog sync/check/new`, `version
    plan/apply`. Deletes `.changie.yaml` hand-maintenance, release.yml's inline
    bash, and the changie-check glue.
+   **Status: implemented.** Notes: `sync` splices only the top-level
+   `projects:` section of `.changie.yaml` textually (preserving hand-written
+   config and comments elsewhere in the file, per the toml_edit philosophy)
+   and creates a full starter config — with the `projectsVersionSeparator`
+   derived from `tag-format` — when the file is missing; `doctor` gained the
+   generated-file check and `--fix`. `version plan` shells out to
+   `changie next auto --project` per pending project rather than reimplement
+   changie's kind→bump rules. `version apply` verifies after batching that
+   every `gleam.toml` actually received its new version (catching a stale
+   replacements block), then patches lockfiles with `toml_edit` — zero Hex
+   calls, formatting preserved. Fragments naming unknown or unreleasable
+   projects fail `plan`/`apply`/`check` loudly. The changie binary is
+   overridable via `TRELLIS_CHANGIE_BIN` (used by the e2e suite to run a fake
+   changie).
 3. **Phase 3 — release + publish.** `tag`, `publish`, `lockfile refresh`,
    `ci matrix/outputs`. Retires `read-gleam-workspace` and `gleam-publish` call
    sites. Optionally move to the tags-after-publish flow (§6).

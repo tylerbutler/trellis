@@ -1,7 +1,9 @@
+mod changie;
 mod commands;
 mod config;
 mod git;
 mod gleam;
+mod lockfile;
 mod runner;
 mod workspace;
 
@@ -107,12 +109,67 @@ enum Command {
         #[arg(last = true, required = true)]
         command: Vec<String>,
     },
+    /// Changelog management (wraps changie; see [changelog] in workspace.toml)
+    Changelog {
+        #[command(subcommand)]
+        command: ChangelogCommand,
+    },
+    /// Plan and apply version bumps from unreleased changelog fragments
+    Version {
+        #[command(subcommand)]
+        command: VersionCommand,
+    },
     /// Validate workspace invariants; non-zero exit on any error
-    Doctor,
+    Doctor {
+        /// Regenerate out-of-date generated files (.changie.yaml projects)
+        #[arg(long)]
+        fix: bool,
+    },
     /// Structured output for CI
     Ci {
         #[command(subcommand)]
         command: CiCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum ChangelogCommand {
+    /// Add a changelog fragment (wraps `changie new`, which prompts)
+    New {
+        /// Route the fragment to this package
+        #[arg(long)]
+        package: Option<String>,
+    },
+    /// Verify changed packages have changelog fragments; non-zero exit if not
+    Check {
+        /// Base ref of the change range
+        #[arg(long)]
+        base: String,
+        /// Head ref of the change range
+        #[arg(long, default_value = "HEAD")]
+        head: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Regenerate the derived projects section of .changie.yaml
+    Sync {
+        /// Verify instead of write; non-zero exit on drift
+        #[arg(long)]
+        check: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum VersionCommand {
+    /// Dry-run: show what `version apply` would bump
+    Plan {
+        #[arg(long)]
+        json: bool,
+    },
+    /// Batch + merge via changie, then patch manifest.toml locked versions
+    Apply {
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -151,9 +208,9 @@ fn dispatch(cli: Cli) -> Result<bool> {
 
     // Doctor loads leniently so it can report every problem instead of
     // failing on the first one.
-    if let Command::Doctor = cli.command {
+    if let Command::Doctor { fix } = cli.command {
         let root = Workspace::find_root(&start)?;
-        return commands::doctor::run(&root);
+        return commands::doctor::run(&root, fix);
     }
 
     let workspace = Workspace::load(&start)?;
@@ -227,7 +284,25 @@ fn dispatch(cli: Cli) -> Result<bool> {
                 jobs,
             },
         ),
-        Command::Doctor => unreachable!("handled above"),
+        Command::Changelog { command } => match command {
+            ChangelogCommand::New { package } => {
+                commands::changelog::new_fragment(&workspace, package.as_deref())?;
+                Ok(true)
+            }
+            ChangelogCommand::Check { base, head, json } => commands::changelog::check(
+                &workspace,
+                &commands::changelog::CheckOptions { base, head, json },
+            ),
+            ChangelogCommand::Sync { check } => commands::changelog::sync(&workspace, check),
+        },
+        Command::Version { command } => match command {
+            VersionCommand::Plan { json } => {
+                commands::version::plan(&workspace, json)?;
+                Ok(true)
+            }
+            VersionCommand::Apply { json } => commands::version::apply(&workspace, json),
+        },
+        Command::Doctor { .. } => unreachable!("handled above"),
         Command::Ci { command } => {
             match command {
                 CiCommand::Matrix { since, releasable } => {

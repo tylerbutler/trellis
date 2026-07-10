@@ -22,10 +22,10 @@ release/publish layers that are not implemented yet.
 
 ## Status
 
-Phase 1 of the [rollout plan](docs/DESIGN.md#10-rollout-in-lattice) is
+Phases 1 and 2 of the [rollout plan](docs/DESIGN.md#10-rollout-in-lattice) are
 implemented: the workspace model plus `list`, `graph`, `info`, `run`, `exec`,
-`doctor`, and `ci`. The changelog/version layer (phase 2) and the
-tag/publish layer (phase 3) are designed but not built.
+`doctor`, `ci`, `changelog`, and `version`. The tag/publish layer (phase 3) is
+designed but not built.
 
 ## Configuration
 
@@ -90,19 +90,48 @@ Built-in tasks map 1:1 onto gleam verbs: `build`, `test`, `check`, `format`
 (`--check` variant), `docs`, `deps`, `clean`. A `[tasks]` entry with the same
 name overrides a built-in.
 
+### Changelog & versioning
+
+```
+trellis changelog new [--package <pkg>]
+trellis changelog check --base <ref> [--head <ref>] [--json]
+trellis changelog sync [--check]
+trellis version plan [--json]
+trellis version apply [--json]
+```
+
+Trellis wraps [changie](https://changie.dev) rather than reimplementing it.
+`changelog sync` derives the `projects:` section of `.changie.yaml` from the
+workspace model — one block (label, key, changelog path, version replacement)
+per releasable member — leaving the rest of the file, comments included,
+untouched; it creates a complete starter config if none exists. `changelog
+check` maps a `base...head` diff to packages and fails if a changed releasable
+package has no unreleased fragment, emitting JSON (including a markdown
+`preview`) for a PR sticky comment. `changelog new` routes `changie new` to a
+package.
+
+`version plan` shows what would be bumped (fragment counts and next versions
+via `changie next auto`). `version apply` runs `changie batch` per pending
+project and one `changie merge`, verifies every `gleam.toml` actually picked
+up its new version, then surgically patches each member's `manifest.toml` so
+locked workspace-internal deps match — using a real TOML parser that preserves
+formatting, and zero Hex network calls. Fragments naming unknown or
+unreleasable projects are hard errors.
+
 ### Validation
 
 ```
-trellis doctor
+trellis doctor [--fix]
 ```
 
 Checks every workspace invariant and reports all problems at once: member
 globs resolve and parse, path deps stay inside the workspace, the graph is
 acyclic, `ignore-release` globs match real members, no releasable package
 depends on an unreleasable one, tag formats don't collide, `manifest.toml`
-locked versions match workspace-internal `gleam.toml` versions, and no
-package's version is behind its CHANGELOG. Non-zero exit on any error — run it
-on every PR.
+locked versions match workspace-internal `gleam.toml` versions, no package's
+version is behind its CHANGELOG, and the generated `.changie.yaml` projects
+match the workspace (`--fix` regenerates them). Non-zero exit on any error —
+run it on every PR.
 
 ### CI glue
 

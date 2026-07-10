@@ -30,6 +30,34 @@ pub fn changed_members(workspace: &Workspace, since: &str) -> Result<HashSet<usi
         &["ls-files", "--others", "--exclude-standard"],
     )?));
 
+    Ok(members_owning(workspace, &repo_root, files))
+}
+
+/// Indices of members owning any file changed between two committed refs
+/// (`base...head`). Unlike [`changed_members`], the working tree is not
+/// consulted — this is the primitive for PR checks against explicit SHAs.
+pub fn changed_members_between(
+    workspace: &Workspace,
+    base: &str,
+    head: &str,
+) -> Result<HashSet<usize>> {
+    let repo_root = git_stdout(&workspace.root, &["rev-parse", "--show-toplevel"])
+        .context("changelog check requires the workspace to be inside a git repository")?;
+    let repo_root = PathBuf::from(repo_root.trim());
+    let range = format!("{base}...{head}");
+    let files: Vec<String> = lines(&git_stdout(
+        &workspace.root,
+        &["diff", "--name-only", &range],
+    )?)
+    .collect();
+    Ok(members_owning(workspace, &repo_root, files))
+}
+
+fn members_owning(
+    workspace: &Workspace,
+    repo_root: &Path,
+    files: impl IntoIterator<Item = String>,
+) -> HashSet<usize> {
     let mut changed = HashSet::new();
     for file in files {
         // `diff` paths are relative to the repo root; `ls-files` paths are
@@ -46,7 +74,7 @@ pub fn changed_members(workspace: &Workspace, since: &str) -> Result<HashSet<usi
             changed.insert(idx);
         }
     }
-    Ok(changed)
+    changed
 }
 
 /// The member owning a file: the one whose directory is the longest prefix of
