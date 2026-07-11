@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.2.0 - 2026-07-11
+
+
+### Added
+
+- Add per-task member path exclusions, including a shared release exclusion for changelog, version, tag, and publish commands.
+
 ## v0.1.0 - 2026-07-10
 
 ### Added
@@ -18,3 +25,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Release PR management: `release pr` runs `version apply` on a release branch and creates or updates the pull request via the gh CLI
 - Scaffolding: `new <name>` creates a member with metadata copied from a sibling and a stub module and test; no registration step, everything is derived
 - Doctor advisory: warns when the gleam on PATH differs from the `.tool-versions` pin
+
