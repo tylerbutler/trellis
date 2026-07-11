@@ -30,7 +30,7 @@ pub fn run(root: &Path) -> Result<bool> {
     };
 
     if let Some(workspace) = &workspace {
-        check_ignore_release(workspace, &mut report);
+        check_exclusions(workspace, &mut report);
         check_tag_collisions(workspace, &mut report);
         check_lockfiles(workspace, &mut report);
         check_changelogs(workspace, &mut report);
@@ -41,7 +41,7 @@ pub fn run(root: &Path) -> Result<bool> {
     let checked = [
         "member globs resolve and every member has a parseable gleam.toml",
         "path dependencies stay inside the workspace; graph is acyclic",
-        "ignore-release globs match members; no releasable member depends on an unreleasable one",
+        "task exclusion globs match members; no releasable member depends on an unreleasable one",
         "tag format produces a unique tag per releasable member",
         "manifest.toml locked versions match workspace-internal gleam.toml versions",
         "each releasable member's version is not behind its CHANGELOG",
@@ -130,26 +130,15 @@ fn check_tool_versions(workspace: &Workspace, report: &mut Report) {
     }
 }
 
-/// Check 6: every ignore-release glob matches at least one member (catches
-/// typos), and no releasable member path-depends on an ignore-release member —
-/// a published package cannot require a project that will never be on Hex.
-fn check_ignore_release(workspace: &Workspace, report: &mut Report) {
+/// Check 6: every exclusion glob matches at least one member (catches typos),
+/// and no releasable member path-depends on a release-excluded member.
+fn check_exclusions(workspace: &Workspace, report: &mut Report) {
     for pattern in &workspace.config.ignore_release {
-        let matches = globset::Glob::new(pattern)
-            .ok()
-            .map(|g| g.compile_matcher())
-            .map(|m| {
-                workspace
-                    .members
-                    .iter()
-                    .any(|member| m.is_match(&member.rel_path))
-            });
-        match matches {
-            Some(true) => {}
-            Some(false) => report.error(format!(
-                "ignore-release glob `{pattern}` matches no member (typo?)"
-            )),
-            None => report.error(format!("ignore-release glob `{pattern}` is invalid")),
+        check_exclusion_pattern(workspace, "ignore-release", pattern, report);
+    }
+    for (task, patterns) in &workspace.config.exclude {
+        for pattern in patterns {
+            check_exclusion_pattern(workspace, task, pattern, report);
         }
     }
 
@@ -162,11 +151,30 @@ fn check_ignore_release(workspace: &Workspace, report: &mut Report) {
             if !dep.releasable {
                 report.error(format!(
                     "releasable package `{}` path-depends on `{}`, which is excluded from release \
-                     by ignore-release and will never exist on Hex",
+                     and will never exist on Hex",
                     member.name, dep.name
                 ));
             }
         }
+    }
+}
+
+fn check_exclusion_pattern(workspace: &Workspace, task: &str, pattern: &str, report: &mut Report) {
+    let matches = globset::Glob::new(pattern)
+        .ok()
+        .map(|glob| glob.compile_matcher())
+        .map(|matcher| {
+            workspace
+                .members
+                .iter()
+                .any(|member| matcher.is_match(&member.rel_path))
+        });
+    match matches {
+        Some(true) => {}
+        Some(false) => report.error(format!(
+            "`{task}` exclusion glob `{pattern}` matches no member (typo?)"
+        )),
+        None => report.error(format!("`{task}` exclusion glob `{pattern}` is invalid")),
     }
 }
 

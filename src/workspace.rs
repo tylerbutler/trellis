@@ -126,9 +126,21 @@ impl Workspace {
         let member_dirs = expand_member_globs(root, &config.members, &mut diagnostics);
 
         // Parse each member manifest; unparseable members are reported and dropped.
-        let ignore_release = build_globset(&config.ignore_release)
+        for (task, patterns) in &config.exclude {
+            if let Err(err) = build_globset(patterns) {
+                diagnostics.error(format!("invalid `{task}` exclusion glob: {err:#}"));
+            }
+        }
+
+        let release_exclusions = config
+            .ignore_release
+            .iter()
+            .chain(config.exclude.get("release").into_iter().flatten())
+            .cloned()
+            .collect::<Vec<_>>();
+        let ignore_release = build_globset(&release_exclusions)
             .map_err(|err| {
-                diagnostics.error(format!("invalid ignore-release glob: {err:#}"));
+                diagnostics.error(format!("invalid release exclusion glob: {err:#}"));
             })
             .ok();
         let mut members = Vec::new();

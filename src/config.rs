@@ -17,6 +17,11 @@ pub struct ConfigFile {
     /// excluded from changelog, versioning, tagging, and publishing.
     #[serde(default)]
     pub ignore_release: Vec<String>,
+    /// Per-task glob arrays matched against member paths. The special
+    /// `release` key excludes members from changelog, versioning, tagging, and
+    /// publishing.
+    #[serde(default)]
+    pub exclude: BTreeMap<String, Vec<String>>,
     #[serde(default)]
     pub tasks: BTreeMap<String, TaskConfig>,
     #[serde(default)]
@@ -256,6 +261,7 @@ mod tests {
             [tools.trellis]
             members = ["packages/lattice_*", "examples"]
             ignore-release = ["examples"]
+            exclude = { docs = ["examples"], release = ["packages/private-*"] }
 
             [tools.trellis.tasks.lint]
             command = "gleam run -m glinter"
@@ -277,6 +283,8 @@ mod tests {
         let config = ConfigFile::from_gleam_toml(text).unwrap();
         assert_eq!(config.members.len(), 2);
         assert_eq!(config.ignore_release, vec!["examples"]);
+        assert_eq!(config.exclude["docs"], vec!["examples"]);
+        assert_eq!(config.exclude["release"], vec!["packages/private-*"]);
         assert!(config.tasks["lint"].needs_deps);
         assert_eq!(config.publish.retry.attempts, 5);
         assert_eq!(config.changelog.dir, "changes");
@@ -289,6 +297,7 @@ mod tests {
         let config =
             ConfigFile::from_gleam_toml("[tools.trellis]\nmembers = [\"packages/*\"]").unwrap();
         assert!(config.ignore_release.is_empty());
+        assert!(config.exclude.is_empty());
         assert_eq!(config.publish.tag_format, "{name}-v{version}");
         assert_eq!(
             config.publish.path_dep_requirement,

@@ -123,8 +123,31 @@ fn run_custom_task_fans_out_with_prefixes() {
         .success()
         .stdout(predicate::str::contains("lat_core"))
         // once for the echoed `$ ...` command line and once for its output
-        .stdout(predicate::str::contains("hello-from-task").count(8))
+        .stdout(predicate::str::contains("hello-from-task").count(6))
+        .stdout(predicate::str::contains("examples").not())
         .stdout(predicate::str::contains("ok"));
+}
+
+#[test]
+fn task_exclusions_apply_to_explicit_package_selection() {
+    trellis(&fixture("basic"))
+        .args(["run", "hello", "examples"])
+        .assert()
+        .success()
+        .stdout("no packages selected\n");
+}
+
+#[test]
+fn built_in_task_can_be_excluded_without_overriding_its_command() {
+    trellis(&fixture("basic"))
+        .env("TRELLIS_GLEAM_BIN", "echo")
+        .args(["run", "docs", "--serial"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("lat_core"))
+        .stdout(predicate::str::contains("lat_mid"))
+        .stdout(predicate::str::contains("lat_cli"))
+        .stdout(predicate::str::contains("examples").not());
 }
 
 #[test]
@@ -232,7 +255,7 @@ fn doctor_reports_all_problems_at_once() {
     let root = dir.path();
     write(
         &root.join("gleam.toml"),
-        "[tools.trellis]\nmembers = [\"packages/*\"]\nignore-release = [\"nomatch\"]\n",
+        "[tools.trellis]\nmembers = [\"packages/*\"]\nignore-release = [\"nomatch\"]\nexclude = { docs = [\"also-missing\"] }\n",
     );
     // a: stale lockfile for b, and a path dep escaping the workspace
     write(
@@ -260,7 +283,10 @@ fn doctor_reports_all_problems_at_once() {
         .failure()
         .stdout(predicate::str::contains("points outside the workspace"))
         .stdout(predicate::str::contains(
-            "ignore-release glob `nomatch` matches no member",
+            "`ignore-release` exclusion glob `nomatch` matches no member",
+        ))
+        .stdout(predicate::str::contains(
+            "`docs` exclusion glob `also-missing` matches no member",
         ))
         .stdout(predicate::str::contains("locks `b` at 0.9.0"))
         .stdout(predicate::str::contains("behind its CHANGELOG"));

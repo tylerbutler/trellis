@@ -83,9 +83,9 @@ gleam package that also anchors the workspace. Only `members` is required:
 # gleam.toml at the repo root
 [tools.trellis]
 members = ["packages/*", "examples"]
-# Matching members participate in task fan-out but are excluded from
-# changelog, versioning, tagging, and publishing.
-ignore-release = ["examples"]
+# Exclusions are globbed against member paths and scoped by task. `release`
+# covers changelog, versioning, tagging, and publishing.
+exclude = { docs = ["examples"], release = ["examples"] }
 
 # Custom tasks for `trellis run <name>`. Built-in verbs (build, test, check,
 # format, docs, deps, clean) need no declaration.
@@ -138,7 +138,19 @@ package at a time in dependency order.
 
 Built-in tasks map 1:1 onto gleam verbs: `build`, `test`, `check`, `format`
 (`--check` variant), `docs`, `deps`, `clean`. A `[tools.trellis.tasks]` entry with the same
-name overrides a built-in.
+name overrides a built-in. Any built-in or custom task can exclude member paths
+through its key in `exclude`; exclusions still apply when packages are named
+explicitly. For larger maps, use a table:
+
+```toml
+[tools.trellis.exclude]
+docs = ["examples", "packages/internal-*"]
+release = ["examples"]
+```
+
+The special `release` key defines the package set used by changelog, version,
+tag, and publish commands. The older `ignore-release` array remains supported
+and is combined with `exclude.release`.
 
 ### Changelog & versioning
 
@@ -237,7 +249,7 @@ trellis doctor
 
 Checks every workspace invariant and reports all problems at once: member
 globs resolve and parse, path deps stay inside the workspace, the graph is
-acyclic, `ignore-release` globs match real members, no releasable package
+acyclic, task exclusion globs match real members, no releasable package
 depends on an unreleasable one, tag formats don't collide, `manifest.toml`
 locked versions match workspace-internal `gleam.toml` versions, no package's
 version is behind its CHANGELOG, and every unreleased changelog fragment
