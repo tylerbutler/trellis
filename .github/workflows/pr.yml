@@ -1,0 +1,55 @@
+name: PR Validation
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  changelog:
+    name: Changelog
+    runs-on: ${{ vars.RUNS_ON_CHANGELOG || vars.RUNS_ON || 'ubuntu-latest' }}
+    if: github.event.pull_request.draft != true
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # ratchet:actions/checkout@v7.0.0
+        with:
+          fetch-depth: 0
+      - uses: tylerbutler/actions/changie-check@ee7def5950abcf0a519add705a95719ab345c05e # ratchet:tylerbutler/actions/changie-check@main
+        id: changelog
+        with:
+          base-sha: ${{ github.event.pull_request.base.sha }}
+          head-sha: ${{ github.event.pull_request.head.sha }}
+      - name: Comment with changelog preview
+        if: steps.changelog.outputs.has-entries == 'true'
+        uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # ratchet:marocchino/sticky-pull-request-comment@v3.0.5
+        with:
+          header: changelog
+          message: |
+            ## Changelog Preview
+
+            This PR adds the following changelog entries:
+
+            ${{ steps.changelog.outputs.preview }}
+      - name: Comment about missing changelog
+        if: steps.changelog.outputs.has-entries == 'false' && steps.changelog.outputs.needs-entry == 'true'
+        uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # ratchet:marocchino/sticky-pull-request-comment@v3.0.5
+        with:
+          header: changelog
+          message: |
+            ## Missing Changelog Entry
+
+            This PR includes commits with types that typically require a changelog entry (`${{ steps.changelog.outputs.commit-types-found }}`), but no changie fragment was found.
+
+            To add one, run:
+
+            ```
+            changie new
+            ```
+      - name: Remove changelog comment
+        if: steps.changelog.outputs.has-entries == 'false' && steps.changelog.outputs.needs-entry == 'false'
+        uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # ratchet:marocchino/sticky-pull-request-comment@v3.0.5
+        with:
+          header: changelog
+          delete: true
