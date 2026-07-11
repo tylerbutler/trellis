@@ -11,7 +11,7 @@ use crate::config::{Bump, ChangelogConfig, KindConfig};
 use crate::workspace::Workspace;
 use anyhow::{Context, Result, bail};
 use serde::Deserialize;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 // ---- fragments -------------------------------------------------------------
 
@@ -252,41 +252,13 @@ pub fn render_section(
 
 // ---- batch + merge -----------------------------------------------------------
 
-/// Write the rendered section as `<dir>/<project>/v<version>.md`, delete the
-/// consumed fragments, and reassemble the package's CHANGELOG.md.
-pub fn batch(
+/// Render a package's complete CHANGELOG.md with an optional pending section.
+pub fn render_merged_changelog(
     workspace: &Workspace,
     project: &str,
-    version: &semver::Version,
-    section: &str,
-    fragments: &[&Fragment],
-) -> Result<()> {
-    let dir = versions_dir(workspace, project);
-    std::fs::create_dir_all(&dir).with_context(|| format!("failed to create {}", dir.display()))?;
-    let path = dir.join(format!("v{version}.md"));
-    std::fs::write(&path, section)
-        .with_context(|| format!("failed to write {}", path.display()))?;
-    for fragment in fragments {
-        std::fs::remove_file(&fragment.path)
-            .with_context(|| format!("failed to remove {}", fragment.path.display()))?;
-    }
-    merge(workspace, project)
-}
-
-/// Render the CHANGELOG header for a package (also used by `trellis new`
-/// for the initial stub, so scaffolded changelogs match regenerated ones).
-pub fn render_header(config: &ChangelogConfig, name: &str) -> Result<String> {
-    render(
-        &config.header_format,
-        "header-format",
-        minijinja::context! { name },
-    )
-}
-
-/// Reassemble a package's CHANGELOG.md: rendered header, then every version
-/// section newest-first.
-pub fn merge(workspace: &Workspace, project: &str) -> Result<()> {
-    let idx = workspace
+    pending: Option<(&semver::Version, &str)>,
+) -> Result<String> {
+    workspace
         .member_index(project)
         .with_context(|| format!("unknown package `{project}`"))?;
     let config = &workspace.config.changelog;
@@ -313,6 +285,10 @@ pub fn merge(workspace: &Workspace, project: &str) -> Result<()> {
             sections.push((version, text));
         }
     }
+    if let Some((version, section)) = pending {
+        sections.retain(|(existing, _)| existing != version);
+        sections.push((version.clone(), section.to_string()));
+    }
     sections.sort_by(|a, b| b.0.cmp(&a.0));
 
     let header = render_header(config, project)?;
@@ -324,8 +300,45 @@ pub fn merge(workspace: &Workspace, project: &str) -> Result<()> {
         out.push('\n');
     }
 
+    Ok(out)
+}
+
+/// Render the CHANGELOG header for a package (also used by `trellis new`
+/// for the initial stub, so scaffolded changelogs match regenerated ones).
+pub fn render_header(config: &ChangelogConfig, name: &str) -> Result<String> {
+    render(
+        &config.header_format,
+        "header-format",
+        minijinja::context! { name },
+    )
+}
+
+/// Write a pre-rendered version section and complete package changelog.
+pub fn write_batch(
+    workspace: &Workspace,
+    project: &str,
+    version: &semver::Version,
+    section: &str,
+    changelog: &str,
+) -> Result<()> {
+    let idx = workspace
+        .member_index(project)
+        .with_context(|| format!("unknown package `{project}`"))?;
+    let dir = versions_dir(workspace, project);
+    std::fs::create_dir_all(&dir).with_context(|| format!("failed to create {}", dir.display()))?;
+    let section_path = dir.join(format!("v{version}.md"));
+    std::fs::write(&section_path, section)
+        .with_context(|| format!("failed to write {}", section_path.display()))?;
     let path = workspace.members[idx].path.join("CHANGELOG.md");
-    std::fs::write(&path, out).with_context(|| format!("failed to write {}", path.display()))
+    std::fs::write(&path, changelog).with_context(|| format!("failed to write {}", path.display()))
+}
+
+pub fn consume_fragments(fragments: &[&Fragment]) -> Result<()> {
+    for fragment in fragments {
+        std::fs::remove_file(&fragment.path)
+            .with_context(|| format!("failed to remove {}", fragment.path.display()))?;
+    }
+    Ok(())
 }
 
 // ---- dates -------------------------------------------------------------------
@@ -361,22 +374,15 @@ fn civil_from_days(days: i64) -> (i64, u32, u32) {
     (if month <= 2 { year + 1 } else { year }, month, day)
 }
 
-/// The gleam.toml version bump, replacing changie's regex "replacements"
-/// with a surgical toml_edit patch.
-pub fn bump_manifest_version(manifest_path: &Path, next: &semver::Version) -> Result<()> {
-    let text = std::fs::read_to_string(manifest_path)
-        .with_context(|| format!("failed to read {}", manifest_path.display()))?;
-    let mut doc: toml_edit::DocumentMut = text
-        .parse()
-        .with_context(|| format!("failed to parse {}", manifest_path.display()))?;
+pub fn render_manifest_version(text: &str, next: &semver::Version) -> Result<String> {
+    let mut doc: toml_edit::DocumentMut = text.parse().context("failed to parse gleam.toml")?;
     let Some(value) = doc.get_mut("version").and_then(|item| item.as_value_mut()) else {
-        bail!("{} has no version field", manifest_path.display());
+        bail!("gleam.toml has no version field");
     };
     let mut replacement = toml_edit::Value::from(next.to_string());
     *replacement.decor_mut() = value.decor().clone();
     *value = replacement;
-    std::fs::write(manifest_path, doc.to_string())
-        .with_context(|| format!("failed to write {}", manifest_path.display()))
+    Ok(doc.to_string())
 }
 
 #[cfg(test)]

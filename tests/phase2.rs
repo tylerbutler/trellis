@@ -347,6 +347,68 @@ fn version_apply_batches_renders_bumps_and_patches_lockfiles() {
 }
 
 #[test]
+fn version_apply_preflights_all_manifests_before_consuming_fragments() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+    add_fragment(root, "lat_core", "Added", "core change");
+    add_fragment(root, "lat_mid", "Fixed", "mid change");
+
+    let core_manifest_path = root.join("packages/lat_core/gleam.toml");
+    let core_manifest = fs::read_to_string(&core_manifest_path).unwrap();
+    let mid_manifest_path = root.join("packages/lat_mid/gleam.toml");
+    let mid_manifest = fs::read_to_string(&mid_manifest_path).unwrap();
+    let mid_without_version = mid_manifest
+        .lines()
+        .filter(|line| !line.starts_with("version = "))
+        .collect::<Vec<_>>()
+        .join("\n");
+    write(&mid_manifest_path, &format!("{mid_without_version}\n"));
+
+    trellis(root)
+        .args(["version", "apply"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("has no version field"));
+
+    assert!(root.join(".changes/unreleased/lat_core-1.toml").is_file());
+    assert!(root.join(".changes/unreleased/lat_mid-1.toml").is_file());
+    assert_eq!(
+        fs::read_to_string(core_manifest_path).unwrap(),
+        core_manifest
+    );
+}
+
+#[test]
+fn version_apply_preflights_all_changelog_merges_before_mutation() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+    add_fragment(root, "lat_core", "Added", "core change");
+    add_fragment(root, "lat_mid", "Fixed", "mid change");
+    write(
+        &root.join(".changes/lat_mid/not-semver.md"),
+        "invalid stored section\n",
+    );
+
+    let core_manifest_path = root.join("packages/lat_core/gleam.toml");
+    let core_manifest = fs::read_to_string(&core_manifest_path).unwrap();
+
+    trellis(root)
+        .args(["version", "apply"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("not named v<semver>.md"));
+
+    assert!(root.join(".changes/unreleased/lat_core-1.toml").is_file());
+    assert!(root.join(".changes/unreleased/lat_mid-1.toml").is_file());
+    assert_eq!(
+        fs::read_to_string(core_manifest_path).unwrap(),
+        core_manifest
+    );
+}
+
+#[test]
 fn version_apply_accumulates_sections_newest_first() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();

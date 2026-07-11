@@ -115,6 +115,17 @@ fn install_fake_gh(root: &Path) -> PathBuf {
                 "#!/bin/sh\n",
                 "set -eu\n",
                 "printf 'gh %s\\n---\\n' \"$*\" >> \"{root}/.fake/gh-log\"\n",
+                "case \"$1 $2\" in\n",
+                "  'release view')\n",
+                "    if [ -f \"{root}/.fake/release-$3\" ]; then\n",
+                "      printf '{{\"tagName\":\"%s\"}}\\n' \"$3\"\n",
+                "    else\n",
+                "      echo 'release not found' >&2\n",
+                "      exit 1\n",
+                "    fi\n",
+                "    ;;\n",
+                "  'release create') touch \"{root}/.fake/release-$3\" ;;\n",
+                "esac\n",
             ),
             root = root.display()
         ),
@@ -247,6 +258,107 @@ fn tag_create_github_release_uses_changelog_section() {
     assert!(log.contains("release create lat_core-v1.2.0 --title lat_core-v1.2.0 --notes"));
     // The notes body is the CHANGELOG section for 1.2.0.
     assert!(log.contains("- initial"), "gh log:\n{log}");
+}
+
+#[test]
+fn tag_create_reconciles_local_tags_with_remote_and_releases() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+    init_repo(root);
+    let remote = tempfile::tempdir().unwrap();
+    git(remote.path(), &["init", "-q", "--bare"]);
+    git(
+        root,
+        &["remote", "add", "origin", remote.path().to_str().unwrap()],
+    );
+    let gh = install_fake_gh(root);
+
+    for (tag, message) in [
+        ("lat_core-v1.2.0", "lat_core 1.2.0"),
+        ("lat_mid-v0.5.0", "lat_mid 0.5.0"),
+        ("lat_cli-v0.3.1", "lat_cli 0.3.1"),
+    ] {
+        git(root, &["tag", "-a", tag, "-m", message]);
+    }
+
+    trellis(root)
+        .env("TRELLIS_GH_BIN", &gh)
+        .args(["tag", "create", "--github-release"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("pushed lat_core-v1.2.0"))
+        .stdout(predicate::str::contains(
+            "created GitHub release lat_core-v1.2.0",
+        ));
+
+    let tags = std::process::Command::new("git")
+        .args([
+            "--git-dir",
+            remote.path().to_str().unwrap(),
+            "tag",
+            "--list",
+        ])
+        .output()
+        .unwrap();
+    let tags = String::from_utf8_lossy(&tags.stdout);
+    assert!(tags.contains("lat_core-v1.2.0"));
+    assert!(tags.contains("lat_mid-v0.5.0"));
+    assert!(tags.contains("lat_cli-v0.3.1"));
+
+    let first_log = fs::read_to_string(root.join(".fake/gh-log")).unwrap();
+    assert_eq!(first_log.matches("gh release create").count(), 3);
+
+    trellis(root)
+        .env("TRELLIS_GH_BIN", &gh)
+        .args(["tag", "create", "--github-release"])
+        .assert()
+        .success();
+    let second_log = fs::read_to_string(root.join(".fake/gh-log")).unwrap();
+    assert_eq!(second_log.matches("gh release create").count(), 3);
+}
+
+#[test]
+fn tag_create_rejects_divergent_local_and_remote_tags() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+    init_repo(root);
+    let remote = tempfile::tempdir().unwrap();
+    git(remote.path(), &["init", "-q", "--bare"]);
+    git(
+        root,
+        &["remote", "add", "origin", remote.path().to_str().unwrap()],
+    );
+
+    for (tag, message) in [
+        ("lat_core-v1.2.0", "lat_core at initial commit"),
+        ("lat_mid-v0.5.0", "lat_mid at initial commit"),
+        ("lat_cli-v0.3.1", "lat_cli at initial commit"),
+    ] {
+        git(root, &["tag", "-a", tag, "-m", message]);
+        git(root, &["push", "origin", tag]);
+    }
+    write(&root.join("later.txt"), "different commit\n");
+    git(root, &["add", "."]);
+    git(root, &["commit", "-q", "-m", "later"]);
+    git(
+        root,
+        &[
+            "tag",
+            "-f",
+            "-a",
+            "lat_core-v1.2.0",
+            "-m",
+            "lat_core at later commit",
+        ],
+    );
+
+    trellis(root)
+        .args(["tag", "create", "--push"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("different objects"));
 }
 
 // ---- ci tag-package -------------------------------------------------------

@@ -165,6 +165,25 @@ fn new_rejects_bad_names_and_unmatched_paths() {
         .failure()
         .stderr(predicate::str::contains("does not match any members glob"));
     trellis(root)
+        .args(["new", "fine", "--path", "../outside"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "relative path inside the workspace",
+        ));
+    trellis(root)
+        .args(["new", "fine", "--path", "/tmp/outside"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "relative path inside the workspace",
+        ));
+    trellis(root)
+        .args(["new", "fine", "--path", "packages/nested"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("does not match any members glob"));
+    trellis(root)
         .args(["new", "fine", "--template", "service"])
         .assert()
         .failure()
@@ -228,6 +247,10 @@ fn release_pr_creates_then_updates_the_pull_request() {
     add_fragment(root, "lat_core", "Added", "pending change");
     git(root, &["add", "."]);
     git(root, &["commit", "-q", "-m", "fragment"]);
+    git(root, &["checkout", "-q", "-b", "feature"]);
+    write(&root.join("feature-only.txt"), "not part of the release\n");
+    git(root, &["add", "."]);
+    git(root, &["commit", "-q", "-m", "feature-only"]);
 
     trellis(root)
         .env("TRELLIS_GH_BIN", &gh)
@@ -250,24 +273,44 @@ fn release_pr_creates_then_updates_the_pull_request() {
     );
 
     // The release branch is on the remote with the release commit…
-    let branches = std::process::Command::new("git")
-        .args(["branch", "-a", "--contains", "release/pending"])
-        .current_dir(root)
+    let remote_branch = std::process::Command::new("git")
+        .args([
+            "--git-dir",
+            remote.path().to_str().unwrap(),
+            "rev-parse",
+            "refs/heads/release/pending",
+        ])
         .output()
         .unwrap();
-    assert!(String::from_utf8_lossy(&branches.stdout).contains("remotes/origin/release/pending"));
-    // …while the working tree is back on main, clean, and unbumped.
+    assert!(remote_branch.status.success());
+    let feature_file = std::process::Command::new("git")
+        .args([
+            "--git-dir",
+            remote.path().to_str().unwrap(),
+            "ls-tree",
+            "--name-only",
+            "refs/heads/release/pending",
+            "feature-only.txt",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        feature_file.stdout.is_empty(),
+        "release branch must not include commits from the caller branch"
+    );
+    // …while the working tree is back on feature, clean, and unbumped.
     let head = std::process::Command::new("git")
         .args(["rev-parse", "--abbrev-ref", "HEAD"])
         .current_dir(root)
         .output()
         .unwrap();
-    assert_eq!(String::from_utf8_lossy(&head.stdout).trim(), "main");
+    assert_eq!(String::from_utf8_lossy(&head.stdout).trim(), "feature");
     let manifest = fs::read_to_string(root.join("packages/lat_core/gleam.toml")).unwrap();
     assert!(manifest.contains("version = \"1.2.0\""));
 
     // Second run with a new fragment updates the existing PR instead. The
     // bump is computed against main's version (1.2.0), so Fixed -> 1.2.1.
+    git(root, &["checkout", "-q", "main"]);
     add_fragment(root, "lat_core", "Fixed", "more");
     write(&root.join(".fake/pr-list"), "[{\"number\": 42}]");
     git(root, &["add", "."]);
@@ -309,6 +352,78 @@ fn release_pr_requires_a_clean_tree_and_pending_fragments() {
         .assert()
         .failure()
         .stderr(predicate::str::contains("working tree is not clean"));
+}
+
+#[test]
+fn release_pr_noop_preserves_an_existing_release_branch() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+    git(root, &["init", "-q", "-b", "main"]);
+    git(root, &["add", "."]);
+    git(root, &["commit", "-q", "-m", "init"]);
+    git(root, &["checkout", "-q", "-b", "release/pending"]);
+    write(&root.join("existing-release.txt"), "keep this commit\n");
+    git(root, &["add", "."]);
+    git(root, &["commit", "-q", "-m", "existing release work"]);
+    git(root, &["checkout", "-q", "main"]);
+
+    trellis(root)
+        .args(["release", "pr", "--base", "main"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("nothing to release"));
+
+    let preserved = std::process::Command::new("git")
+        .args(["show", "release/pending:existing-release.txt"])
+        .current_dir(root)
+        .output()
+        .unwrap();
+    assert!(
+        preserved.status.success(),
+        "a no-op must not reset the existing release branch"
+    );
+}
+
+#[test]
+fn release_pr_failure_preserves_an_existing_release_branch() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+    git(root, &["init", "-q", "-b", "main"]);
+    git(root, &["add", "."]);
+    git(root, &["commit", "-q", "-m", "init"]);
+    add_fragment(root, "lat_core", "Added", "pending change");
+    git(root, &["add", "."]);
+    git(root, &["commit", "-q", "-m", "fragment"]);
+    git(root, &["checkout", "-q", "-b", "release/pending"]);
+    write(&root.join("existing-release.txt"), "keep this commit\n");
+    git(root, &["add", "."]);
+    git(root, &["commit", "-q", "-m", "existing release work"]);
+    let original_release = std::process::Command::new("git")
+        .args(["rev-parse", "release/pending"])
+        .current_dir(root)
+        .output()
+        .unwrap()
+        .stdout;
+    git(root, &["checkout", "-q", "main"]);
+
+    trellis(root)
+        .args(["release", "pr", "--base", "main"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("failed to push branch"));
+
+    let preserved_release = std::process::Command::new("git")
+        .args(["rev-parse", "release/pending"])
+        .current_dir(root)
+        .output()
+        .unwrap()
+        .stdout;
+    assert_eq!(
+        preserved_release, original_release,
+        "a failed release must not move the existing local release branch"
+    );
 }
 
 // ---- doctor .tool-versions advisory ----------------------------------------

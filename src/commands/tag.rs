@@ -62,50 +62,150 @@ pub struct CreateOptions {
 }
 
 pub fn create(workspace: &Workspace, options: &CreateOptions) -> Result<()> {
-    let missing = missing_tags(workspace)?;
-    if missing.is_empty() {
+    let push = options.push || options.github_release;
+    let targets = if push {
+        workspace
+            .members
+            .iter()
+            .enumerate()
+            .filter(|(_, member)| member.releasable)
+            .map(|(idx, member)| {
+                (
+                    idx,
+                    workspace.config.format_tag(&member.name, member.version()),
+                )
+            })
+            .collect()
+    } else {
+        missing_tags(workspace)?
+    };
+    if targets.is_empty() {
         println!("every releasable package version is already tagged");
         return Ok(());
     }
-    // A GitHub Release needs the tag to exist on the remote first.
-    let push = options.push || options.github_release;
 
-    for (idx, tag) in &missing {
+    for (idx, tag) in &targets {
         let member = &workspace.members[*idx];
-        git_stdout(
-            &workspace.root,
-            &[
-                "tag",
-                "-a",
-                tag,
-                "-m",
-                &format!("{} {}", member.name, member.version()),
-            ],
-        )?;
-        println!("tagged {tag}");
-        if push {
+        let local_oid = local_tag_oid(&workspace.root, tag)?;
+        let remote_oid = if push {
+            remote_tag_oid(&workspace.root, tag)?
+        } else {
+            None
+        };
+        if let (Some(local), Some(remote)) = (&local_oid, &remote_oid)
+            && local != remote
+        {
+            bail!(
+                "tag `{tag}` points to different objects locally ({local}) and on origin ({remote})"
+            );
+        }
+        if local_oid.is_none() {
+            if remote_oid.is_some() {
+                git_stdout(&workspace.root, &["fetch", "origin", "tag", tag])?;
+                println!("fetched {tag}");
+            } else {
+                git_stdout(
+                    &workspace.root,
+                    &[
+                        "tag",
+                        "-a",
+                        tag,
+                        "-m",
+                        &format!("{} {}", member.name, member.version()),
+                    ],
+                )?;
+                println!("tagged {tag}");
+            }
+        }
+        if push && remote_oid.is_none() {
             git_stdout(&workspace.root, &["push", "origin", tag])
                 .with_context(|| format!("failed to push tag {tag}"))?;
             println!("pushed {tag}");
         }
         if options.github_release {
-            let notes = release_notes(workspace, *idx);
-            let gh = tools::gh_bin();
-            let output = Command::new(&gh)
-                .args(["release", "create", tag, "--title", tag, "--notes", &notes])
-                .current_dir(&workspace.root)
-                .output()
-                .with_context(|| format!("failed to run `{gh}` — is the GitHub CLI installed?"))?;
-            if !output.status.success() {
-                bail!(
-                    "`{gh} release create {tag}` failed: {}",
-                    String::from_utf8_lossy(&output.stderr).trim()
-                );
+            if github_release_exists(&workspace.root, tag)? {
+                println!("GitHub release {tag} already exists; skipping");
+            } else {
+                let notes = release_notes(workspace, *idx);
+                let gh = tools::gh_bin();
+                let output = Command::new(&gh)
+                    .args(["release", "create", tag, "--title", tag, "--notes", &notes])
+                    .current_dir(&workspace.root)
+                    .output()
+                    .with_context(|| {
+                        format!("failed to run `{gh}` — is the GitHub CLI installed?")
+                    })?;
+                if !output.status.success() {
+                    bail!(
+                        "`{gh} release create {tag}` failed: {}",
+                        String::from_utf8_lossy(&output.stderr).trim()
+                    );
+                }
+                println!("created GitHub release {tag}");
             }
-            println!("created GitHub release {tag}");
         }
     }
     Ok(())
+}
+
+fn local_tag_oid(root: &Path, tag: &str) -> Result<Option<String>> {
+    let reference = format!("refs/tags/{tag}");
+    let output = Command::new("git")
+        .args(["rev-parse", "--verify", "--quiet", &reference])
+        .current_dir(root)
+        .output()
+        .context("failed to run git")?;
+    match output.status.code() {
+        Some(0) => output
+            .stdout
+            .split(|byte| byte.is_ascii_whitespace())
+            .find(|part| !part.is_empty())
+            .map(|oid| String::from_utf8_lossy(oid).into_owned())
+            .map(Some)
+            .context("git rev-parse returned no object ID"),
+        Some(1) => Ok(None),
+        _ => bail!("git rev-parse failed while checking tag `{tag}`"),
+    }
+}
+
+fn remote_tag_oid(root: &Path, tag: &str) -> Result<Option<String>> {
+    let reference = format!("refs/tags/{tag}");
+    let output = Command::new("git")
+        .args(["ls-remote", "--exit-code", "--tags", "origin", &reference])
+        .current_dir(root)
+        .output()
+        .context("failed to run git")?;
+    match output.status.code() {
+        Some(0) => output
+            .stdout
+            .split(|byte| byte.is_ascii_whitespace())
+            .find(|part| !part.is_empty())
+            .map(|oid| String::from_utf8_lossy(oid).into_owned())
+            .map(Some)
+            .context("git ls-remote returned no object ID"),
+        Some(2) => Ok(None),
+        _ => bail!(
+            "git ls-remote failed while checking tag `{tag}`: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ),
+    }
+}
+
+fn github_release_exists(root: &Path, tag: &str) -> Result<bool> {
+    let gh = tools::gh_bin();
+    let output = Command::new(&gh)
+        .args(["release", "view", tag, "--json", "tagName"])
+        .current_dir(root)
+        .output()
+        .with_context(|| format!("failed to run `{gh}` — is the GitHub CLI installed?"))?;
+    if output.status.success() {
+        return Ok(true);
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if stderr.contains("release not found") {
+        return Ok(false);
+    }
+    bail!("`{gh} release view {tag}` failed: {}", stderr.trim())
 }
 
 /// The member's CHANGELOG section for its current version, or a minimal

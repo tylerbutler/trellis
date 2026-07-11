@@ -25,20 +25,26 @@ pub fn pr(workspace: &Workspace, options: &PrOptions) -> Result<bool> {
         bail!("working tree is not clean; commit or stash before `trellis release pr`");
     }
 
-    // The plan must be computed before apply consumes the fragments.
-    let plan = version::compute_plan(workspace)?;
-    if plan.is_empty() {
-        println!("no unreleased changes; nothing to release");
-        return Ok(true);
-    }
-
     let original_branch = git_stdout(root, &["rev-parse", "--abbrev-ref", "HEAD"])?
         .trim()
         .to_string();
-    git_stdout(root, &["checkout", "-B", &options.branch])?;
+    let base_ref = format!("{}^{{commit}}", options.base);
+    let base_commit = git_stdout(root, &["rev-parse", "--verify", &base_ref])
+        .with_context(|| format!("cannot resolve base branch `{}`", options.base))?;
+    let base_commit = base_commit.trim();
+    git_stdout(root, &["checkout", "--detach", base_commit])?;
 
     // Restore the starting branch however we leave this function.
-    let result = build_release_commit_and_pr(workspace, options, &plan);
+    let result = (|| {
+        let workspace = Workspace::load(root)
+            .with_context(|| format!("failed to load base branch `{}`", options.base))?;
+        let plan = version::compute_plan(&workspace)?;
+        if plan.is_empty() {
+            println!("no unreleased changes; nothing to release");
+            return Ok(true);
+        }
+        build_release_commit_and_pr(&workspace, options, &plan)
+    })();
     let _ = Command::new("git")
         .args(["checkout", &original_branch])
         .current_dir(root)
@@ -83,9 +89,11 @@ fn build_release_commit_and_pr(
     let commit_args: Vec<&str> = commit_args.iter().map(String::as_str).collect();
     git_stdout(root, &commit_args)?;
 
-    // The release branch is regenerated from scratch each run, so a plain
-    // force push implements create-or-update.
-    git_stdout(root, &["push", "-f", "-u", "origin", &options.branch])
+    // Prepare on detached HEAD so failures never move an existing local
+    // release branch; only the remote branch is replaced after the commit is
+    // complete.
+    let destination = format!("HEAD:refs/heads/{}", options.branch);
+    git_stdout(root, &["push", "-f", "origin", &destination])
         .with_context(|| format!("failed to push branch {}", options.branch))?;
 
     let body = pr_body(workspace, plan);

@@ -35,7 +35,28 @@ pub fn run(workspace: &Workspace, options: &NewOptions) -> Result<()> {
     }
 
     let parent = match &options.path {
-        Some(path) => path.trim_matches('/').to_string(),
+        Some(path) => {
+            let path = Path::new(path);
+            if path.is_absolute()
+                || path.components().any(|component| {
+                    matches!(
+                        component,
+                        std::path::Component::ParentDir
+                            | std::path::Component::RootDir
+                            | std::path::Component::Prefix(_)
+                    )
+                })
+            {
+                bail!("--path must be a relative path inside the workspace");
+            }
+            path.components()
+                .filter_map(|component| match component {
+                    std::path::Component::Normal(part) => Some(part.to_string_lossy()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join("/")
+        }
         None => default_parent(workspace).context(
             "cannot derive a package directory from the current members; pass --path <dir>",
         )?,
@@ -50,7 +71,15 @@ pub fn run(workspace: &Workspace, options: &NewOptions) -> Result<()> {
     // every other command — exactly the drift trellis exists to prevent.
     let matched = workspace.config.members.iter().any(|pattern| {
         glob::Pattern::new(pattern)
-            .map(|p| p.matches(&rel_path))
+            .map(|p| {
+                p.matches_with(
+                    &rel_path,
+                    glob::MatchOptions {
+                        require_literal_separator: true,
+                        ..Default::default()
+                    },
+                )
+            })
             .unwrap_or(false)
     });
     if !matched {
@@ -61,7 +90,8 @@ pub fn run(workspace: &Workspace, options: &NewOptions) -> Result<()> {
         );
     }
 
-    let dir = workspace.root.join(&rel_path);
+    let dir = crate::workspace::normalize_path(&workspace.root.join(&rel_path));
+    validate_destination(&workspace.root, &dir)?;
     if dir.exists() {
         bail!("{} already exists", dir.display());
     }
@@ -181,6 +211,31 @@ fn render_manifest(name: &str, sibling: Option<&crate::workspace::Member>) -> Re
     Ok(doc.to_string())
 }
 
+fn validate_destination(root: &Path, destination: &Path) -> Result<()> {
+    let relative = destination
+        .strip_prefix(root)
+        .map_err(|_| anyhow::anyhow!("--path must be a relative path inside the workspace"))?;
+    let mut current = root.to_path_buf();
+    for component in relative.components() {
+        current.push(component);
+        match std::fs::symlink_metadata(&current) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                bail!(
+                    "--path resolves through symbolic link {}",
+                    current.display()
+                );
+            }
+            Ok(_) => {}
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => break,
+            Err(err) => {
+                return Err(err)
+                    .with_context(|| format!("failed to inspect {}", current.display()));
+            }
+        }
+    }
+    Ok(())
+}
+
 fn write(path: &Path, content: &str) -> Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
@@ -192,6 +247,17 @@ fn write(path: &Path, content: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn destination_rejects_symlink_parent() {
+        let root = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        std::os::unix::fs::symlink(outside.path(), root.path().join("packages")).unwrap();
+
+        let err = validate_destination(root.path(), &root.path().join("packages/new")).unwrap_err();
+        assert!(err.to_string().contains("symbolic link"));
+    }
 
     #[test]
     fn manifest_without_sibling_still_valid() {

@@ -1,8 +1,8 @@
 //! `trellis version` — plan and apply version bumps on the native changelog
 //! engine: compute each package's next version from its fragments' kinds,
-//! render and batch the version section, reassemble CHANGELOG.md, bump
-//! gleam.toml surgically, then patch `manifest.toml` locked versions of
-//! workspace-internal deps — all with zero Hex network calls.
+//! render the version section, bump gleam.toml surgically, patch workspace
+//! dependency versions in `manifest.toml`, then batch and reassemble
+//! CHANGELOG.md — all with zero Hex network calls.
 
 use crate::changelog;
 use crate::lockfile;
@@ -10,6 +10,7 @@ use crate::workspace::Workspace;
 use anyhow::{Context, Result, bail};
 use serde_json::json;
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 
 #[derive(Debug)]
 pub struct PlanEntry {
@@ -83,9 +84,8 @@ fn plan_json(plan: &[PlanEntry]) -> serde_json::Value {
     )
 }
 
-/// The release step: per pending package (topo order), render + batch the
-/// version section, rebuild CHANGELOG.md, bump gleam.toml; then patch every
-/// member's lockfile.
+/// The release step: preflight every pending package and lockfile, write all
+/// version bumps, then batch fragments and rebuild each CHANGELOG.md.
 pub fn apply(workspace: &Workspace, json: bool) -> Result<bool> {
     let plan = compute_plan(workspace)?;
     if plan.is_empty() {
@@ -99,6 +99,7 @@ pub fn apply(workspace: &Workspace, json: bool) -> Result<bool> {
 
     let fragments = changelog::load_fragments(workspace)?;
     let date = changelog::today();
+    let mut prepared_versions = Vec::new();
     for entry in &plan {
         let idx = workspace
             .member_index(&entry.name)
@@ -116,13 +117,61 @@ pub fn apply(workspace: &Workspace, json: bool) -> Result<bool> {
             &date,
             &member_fragments,
         )?;
-        changelog::batch(workspace, &entry.name, &next, &section, &member_fragments)
-            .with_context(|| format!("failed to batch `{}`", entry.name))?;
-        changelog::bump_manifest_version(&member.path.join("gleam.toml"), &next)
+        let changelog =
+            changelog::render_merged_changelog(workspace, &entry.name, Some((&next, &section)))
+                .with_context(|| format!("failed to merge `{}`", entry.name))?;
+        let manifest_path = member.path.join("gleam.toml");
+        let manifest = std::fs::read_to_string(&manifest_path)
+            .with_context(|| format!("failed to read {}", manifest_path.display()))?;
+        let manifest = changelog::render_manifest_version(&manifest, &next)
             .with_context(|| format!("failed to bump `{}`", entry.name))?;
+        prepared_versions.push(PreparedVersion {
+            name: entry.name.clone(),
+            next,
+            section,
+            changelog,
+            manifest_path,
+            manifest,
+        });
     }
 
-    // Reload and verify every bump landed before touching lockfiles.
+    let mut versions: BTreeMap<String, String> = workspace
+        .members
+        .iter()
+        .map(|member| (member.name.clone(), member.version().to_string()))
+        .collect();
+    for entry in &plan {
+        versions.insert(entry.name.clone(), entry.next.clone());
+    }
+
+    let mut prepared_lockfiles = Vec::new();
+    for member in &workspace.members {
+        let path = member.path.join("manifest.toml");
+        if !path.is_file() {
+            continue;
+        }
+        let text = std::fs::read_to_string(&path)
+            .with_context(|| format!("failed to read {}", path.display()))?;
+        let (new_text, patched) = lockfile::patch_locked_versions(&text, &versions)
+            .with_context(|| format!("failed to patch {}", path.display()))?;
+        if !patched.is_empty() {
+            prepared_lockfiles.push(PreparedLockfile {
+                display: format!("{}/manifest.toml", member.rel_path),
+                path,
+                text: new_text,
+            });
+        }
+    }
+
+    for prepared in &prepared_versions {
+        std::fs::write(&prepared.manifest_path, &prepared.manifest)
+            .with_context(|| format!("failed to write {}", prepared.manifest_path.display()))?;
+    }
+    for prepared in &prepared_lockfiles {
+        std::fs::write(&prepared.path, &prepared.text)
+            .with_context(|| format!("failed to write {}", prepared.path.display()))?;
+    }
+
     let workspace = Workspace::load(&workspace.root)
         .context("workspace failed to reload after version bump")?;
     for entry in &plan {
@@ -139,29 +188,27 @@ pub fn apply(workspace: &Workspace, json: bool) -> Result<bool> {
         }
     }
 
-    // Patch every member's manifest.toml so locked workspace-internal deps
-    // match the new versions — the release.yml sed logic, as tested code.
-    let versions: BTreeMap<String, String> = workspace
-        .members
-        .iter()
-        .map(|member| (member.name.clone(), member.version().to_string()))
-        .collect();
-    let mut patched_files = Vec::new();
-    for member in &workspace.members {
-        let path = member.path.join("manifest.toml");
-        if !path.is_file() {
-            continue;
-        }
-        let text = std::fs::read_to_string(&path)
-            .with_context(|| format!("failed to read {}", path.display()))?;
-        let (new_text, patched) = lockfile::patch_locked_versions(&text, &versions)
-            .with_context(|| format!("failed to patch {}", path.display()))?;
-        if !patched.is_empty() {
-            std::fs::write(&path, new_text)
-                .with_context(|| format!("failed to write {}", path.display()))?;
-            patched_files.push(format!("{}/manifest.toml", member.rel_path));
-        }
+    for prepared in &prepared_versions {
+        changelog::write_batch(
+            &workspace,
+            &prepared.name,
+            &prepared.next,
+            &prepared.section,
+            &prepared.changelog,
+        )
+        .with_context(|| format!("failed to write changelog for `{}`", prepared.name))?;
     }
+    for prepared in &prepared_versions {
+        let member_fragments: Vec<&changelog::Fragment> =
+            fragments.for_project(&prepared.name).collect();
+        changelog::consume_fragments(&member_fragments)
+            .with_context(|| format!("failed to consume fragments for `{}`", prepared.name))?;
+    }
+
+    let patched_files: Vec<&str> = prepared_lockfiles
+        .iter()
+        .map(|prepared| prepared.display.as_str())
+        .collect();
 
     if json {
         println!(
@@ -180,4 +227,19 @@ pub fn apply(workspace: &Workspace, json: bool) -> Result<bool> {
         }
     }
     Ok(true)
+}
+
+struct PreparedVersion {
+    name: String,
+    next: semver::Version,
+    section: String,
+    changelog: String,
+    manifest_path: PathBuf,
+    manifest: String,
+}
+
+struct PreparedLockfile {
+    display: String,
+    path: PathBuf,
+    text: String,
 }
