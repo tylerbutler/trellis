@@ -1,0 +1,160 @@
+---
+import { Code } from "astro-expressive-code/components";
+import Docs from "../../layouts/Docs.astro";
+
+const rootConfig = `# gleam.toml at the repo root
+[tools.trellis]
+members = ["packages/*", "examples"]
+# Matching members participate in task fan-out but are excluded from
+# changelog, versioning, tagging, and publishing.
+ignore-release = ["examples"]
+
+# Custom tasks for \`trellis run <name>\`. Built-in verbs (build, test, check,
+# format, docs, deps, clean) need no declaration.
+[tools.trellis.tasks.lint]
+command = "gleam run -m glinter"
+needs-deps = true            # run \`gleam deps download\` first if not cached
+
+[tools.trellis.publish]
+tag-format = "{name}-v{version}"`;
+
+const changelogConfig = `[tools.trellis.changelog]
+version-format = "## v{{ version }} - {{ date }}"     # default
+kind-format = "### {{ kind }}"                        # default
+change-format = "- {{ body }}"                        # default
+kinds = [
+  { label = "Breaking", bump = "major" },
+  { label = "Added", bump = "minor" },
+  { label = "Fixed", bump = "patch" },
+]`;
+---
+
+<Docs
+  title="Configuration — Trellis docs"
+  description="A [tools.trellis] table in gleam.toml marks the workspace root. Only members is required; everything else is derived."
+>
+  <h1>Configuration</h1>
+  <p>
+    A <code>[tools.trellis]</code> table in a <code>gleam.toml</code> marks the
+    workspace root — there is no separate config file. The root manifest may be
+    config-only, or a regular Gleam package that also anchors the workspace.
+    Only <code>members</code> is required; everything else trellis needs is
+    derived from the member manifests.
+  </p>
+
+  <Code lang="toml" title="gleam.toml" code={rootConfig} />
+
+  <p>
+    Each member is a directory with its own <code>gleam.toml</code>. Path
+    dependencies between members define the graph; cycles and path deps that
+    escape the workspace are rejected with a clear error.
+  </p>
+
+  <div class="callout">
+    <p>
+      A <code>[tools.trellis]</code> table in a <em>member</em> manifest is a
+      <code>doctor</code> error — it would hijack root discovery, which walks
+      up from the current directory to the first manifest carrying the table,
+      the way <code>git</code> and <code>cargo</code> find their roots.
+    </p>
+  </div>
+
+  <h2>Keys</h2>
+  <table>
+    <thead>
+      <tr>
+        <th scope="col">Key</th>
+        <th scope="col">Required</th>
+        <th scope="col">What it does</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>members</code></td>
+        <td>yes</td>
+        <td>
+          Globs expanded into package directories. New packages join every
+          command the moment their directory matches.
+        </td>
+      </tr>
+      <tr>
+        <td><code>ignore-release</code></td>
+        <td>no</td>
+        <td>
+          Members that run tasks but are excluded from changelog, versioning,
+          tagging, and publishing. <code>doctor</code> rejects a releasable
+          member that depends on an unreleasable one.
+        </td>
+      </tr>
+      <tr>
+        <td><code>tasks.&lt;name&gt;</code></td>
+        <td>no</td>
+        <td>
+          Custom tasks for <code>trellis run</code>. A task with a built-in's
+          name (<code>build</code>, <code>test</code>, …) overrides it.
+          <code>needs-deps = true</code> downloads dependencies first.
+        </td>
+      </tr>
+      <tr>
+        <td><code>publish.tag-format</code></td>
+        <td>no</td>
+        <td>
+          Template for per-member git tags. Default:
+          <code>&#123;name&#125;-v&#123;version&#125;</code>.
+        </td>
+      </tr>
+      <tr>
+        <td><code>publish.retry</code></td>
+        <td>no</td>
+        <td>
+          Backoff for Hex rate limits:
+          <code>&#123; attempts, initial-delay, multiplier &#125;</code>.
+        </td>
+      </tr>
+      <tr>
+        <td><code>changelog.kinds</code></td>
+        <td>no</td>
+        <td>
+          Change kinds and the version bump each implies. The largest bump
+          among a package's unreleased fragments wins.
+        </td>
+      </tr>
+      <tr>
+        <td><code>changelog.*-format</code></td>
+        <td>no</td>
+        <td>
+          Minijinja templates for rendered changelog sections:
+          <code>version-format</code>, <code>kind-format</code>,
+          <code>change-format</code>.
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>Changelog configuration</h2>
+  <p>
+    The changelog engine is native — no second tool to install, no config file
+    to keep in sync. Changes live as TOML fragments in
+    <code>.changes/unreleased/</code>; rendering is controlled by small
+    minijinja templates, each with a context of <code>name</code>,
+    <code>version</code>, <code>date</code>, <code>tag</code>,
+    <code>kind</code>, and <code>body</code> as applicable:
+  </p>
+
+  <Code lang="toml" code={changelogConfig} />
+
+  <p>
+    Each package's <code>CHANGELOG.md</code> is a generated file: the source of
+    truth is the version sections stored under
+    <code>.changes/&lt;package&gt;/</code>, and <code>version apply</code>
+    reassembles the changelog from them, newest first.
+  </p>
+
+  <h2>Verifying it</h2>
+  <p>
+    Run <code>trellis doctor</code> after any config change. It validates that
+    member globs resolve, the graph is acyclic, ignore-release globs match
+    members, the tag format produces unique tags, and locked versions match —
+    exiting non-zero on any error.
+  </p>
+</Docs>

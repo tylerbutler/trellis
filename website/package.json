@@ -1,0 +1,17 @@
+{
+  "name": "trellis-website",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview"
+  },
+  "dependencies": {
+    "@fontsource-variable/archivo": "^5.2.5",
+    "@fontsource-variable/martian-mono": "^5.2.5",
+    "astro": "^5.7.0",
+    "astro-expressive-code": "^0.44.0"
+  }
+}
