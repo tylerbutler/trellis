@@ -8,7 +8,7 @@ use anyhow::{Context, Result, bail};
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::{Component, Path, PathBuf};
 
-pub const CONFIG_FILE: &str = "workspace.toml";
+pub const GLEAM_TOML: &str = "gleam.toml";
 
 #[derive(Debug)]
 pub struct Member {
@@ -58,20 +58,43 @@ impl Diagnostics {
 }
 
 impl Workspace {
-    /// Walk up from `start` looking for `workspace.toml`.
+    /// Walk up from `start` looking for a `gleam.toml` with a
+    /// `[tools.trellis]` table — the workspace root marker. Member manifests
+    /// (gleam.toml without the table) are skipped, so commands work from
+    /// inside a package, like `git` or `cargo`.
     pub fn find_root(start: &Path) -> Result<PathBuf> {
         let start = start
             .canonicalize()
             .with_context(|| format!("cannot resolve {}", start.display()))?;
+        let mut unparseable: Vec<PathBuf> = Vec::new();
         for dir in start.ancestors() {
-            if dir.join(CONFIG_FILE).is_file() {
-                return Ok(dir.to_path_buf());
+            let manifest = dir.join(GLEAM_TOML);
+            let Ok(text) = std::fs::read_to_string(&manifest) else {
+                continue;
+            };
+            match toml::from_str::<toml::Value>(&text) {
+                Ok(document) if crate::config::has_trellis_table(&document) => {
+                    return Ok(dir.to_path_buf());
+                }
+                Ok(_) => {} // a package manifest; keep walking
+                Err(_) => unparseable.push(manifest),
             }
         }
-        bail!(
-            "no {CONFIG_FILE} found in {} or any parent directory",
+        let mut message = format!(
+            "no {GLEAM_TOML} with a [tools.trellis] table found in {} or any parent directory",
             start.display()
-        )
+        );
+        if !unparseable.is_empty() {
+            message.push_str(&format!(
+                " (note: {} could not be parsed and may be the missing workspace root)",
+                unparseable
+                    .iter()
+                    .map(|p| p.display().to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        }
+        bail!(message)
     }
 
     /// Strict load: any diagnostic error is fatal.
@@ -92,7 +115,7 @@ impl Workspace {
     /// coherent model exists (unreadable config or a dependency cycle).
     pub fn load_with_diagnostics(root: &Path) -> Result<(Option<Self>, Diagnostics)> {
         let mut diagnostics = Diagnostics::default();
-        let config = match ConfigFile::load(&root.join(CONFIG_FILE)) {
+        let config = match ConfigFile::load(&root.join(GLEAM_TOML)) {
             Ok(config) => config,
             Err(err) => {
                 diagnostics.error(format!("{err:#}"));
@@ -100,10 +123,10 @@ impl Workspace {
             }
         };
 
-        let member_dirs = expand_member_globs(root, &config.workspace.members, &mut diagnostics);
+        let member_dirs = expand_member_globs(root, &config.members, &mut diagnostics);
 
         // Parse each member manifest; unparseable members are reported and dropped.
-        let ignore_release = build_globset(&config.workspace.ignore_release)
+        let ignore_release = build_globset(&config.ignore_release)
             .map_err(|err| {
                 diagnostics.error(format!("invalid ignore-release glob: {err:#}"));
             })
@@ -118,6 +141,14 @@ impl Workspace {
             }
             match GleamManifest::load(&manifest_path) {
                 Ok(manifest) => {
+                    // A member manifest with its own [tools.trellis] would
+                    // hijack root discovery for commands run inside it.
+                    if manifest.has_trellis_config && dir != root {
+                        diagnostics.error(format!(
+                            "member `{rel_path}` has a [tools.trellis] table; only the workspace \
+                             root's gleam.toml may have one"
+                        ));
+                    }
                     let releasable = ignore_release
                         .as_ref()
                         .map(|set| !set.is_match(&rel_path))

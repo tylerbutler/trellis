@@ -48,16 +48,16 @@ pub fn run(workspace: &Workspace, options: &NewOptions) -> Result<()> {
 
     // A directory no members glob matches would be silently invisible to
     // every other command — exactly the drift trellis exists to prevent.
-    let matched = workspace.config.workspace.members.iter().any(|pattern| {
+    let matched = workspace.config.members.iter().any(|pattern| {
         glob::Pattern::new(pattern)
             .map(|p| p.matches(&rel_path))
             .unwrap_or(false)
     });
     if !matched {
         bail!(
-            "`{rel_path}` does not match any members glob in workspace.toml ({}); \
+            "`{rel_path}` does not match any members glob in [tools.trellis] ({}); \
              pass a different --path or add a glob first",
-            workspace.config.workspace.members.join(", ")
+            workspace.config.members.join(", ")
         );
     }
 

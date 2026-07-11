@@ -134,7 +134,7 @@ fn check_tool_versions(workspace: &Workspace, report: &mut Report) {
 /// typos), and no releasable member path-depends on an ignore-release member —
 /// a published package cannot require a project that will never be on Hex.
 fn check_ignore_release(workspace: &Workspace, report: &mut Report) {
-    for pattern in &workspace.config.workspace.ignore_release {
+    for pattern in &workspace.config.ignore_release {
         let matches = globset::Glob::new(pattern)
             .ok()
             .map(|g| g.compile_matcher())

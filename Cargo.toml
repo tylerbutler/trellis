@@ -2,7 +2,7 @@
 name = "trellis"
 version = "0.1.0"
 edition = "2024"
-description = "A workspace CLI for Gleam monorepos: task fan-out, introspection, and release orchestration derived from workspace.toml and gleam.toml"
+description = "A workspace CLI for Gleam monorepos: task fan-out, introspection, and release orchestration derived entirely from gleam.toml"
 license = "MIT"
 homepage = "https://github.com/tylerbutler/trellis"
 repository = "https://github.com/tylerbutler/trellis"

@@ -24,9 +24,10 @@ duplicated config. This repo is the reference example of what that costs.
 | `DEV.md`, `justfile` header comment | Dependency order documented as prose | Already stale relative to the real graph |
 | `examples/` | Special-cased by hand in `format`, `lint`, and its own recipes | Every new "non-package project" needs bespoke recipe edits |
 
-Everything in that table is *derivable* from two sources that already exist:
-`workspace.toml` (member globs) and each member's `gleam.toml` (name, version,
-path dependencies). The design principle of this tool is therefore:
+Everything in that table is *derivable* from one file format that already
+exists: `gleam.toml` — a `[tools.trellis]` table in the workspace root's
+manifest (member globs), plus each member's manifest (name, version, path
+dependencies). The design principle of this tool is therefore:
 
 > **Configure nothing that can be derived. Verify anything that must be duplicated.**
 
@@ -39,9 +40,9 @@ path dependencies). The design principle of this tool is therefore:
 2. **The dependency graph is computed, never declared.** Topological order, publish
    order, `--since` change impact, and path-dep rewrite maps all come from parsing
    `gleam.toml` files.
-3. **Generic.** Nothing lattice-specific: any repo with a `workspace.toml` and
-   `packages/*/gleam.toml` gets the same behavior. Lattice is the first consumer,
-   not the target.
+3. **Generic.** Nothing lattice-specific: any repo with a `[tools.trellis]`
+   table in its root `gleam.toml` and `packages/*/gleam.toml` members gets the
+   same behavior. Lattice is the first consumer, not the target.
 4. **CI-native.** Structured (JSON) output for GitHub Actions matrices and outputs,
    so the four workflows shrink to thin triggers.
 5. **Fail loudly on drift.** A `doctor` command validates every invariant that today
@@ -63,7 +64,7 @@ path dependencies). The design principle of this tool is therefore:
 ## 3. Design overview
 
 ```
-             workspace.toml            packages/*/gleam.toml
+      gleam.toml [tools.trellis]       packages/*/gleam.toml
                   │                            │
                   └────────┬───────────────────┘
                            ▼
@@ -80,8 +81,11 @@ path dependencies). The design principle of this tool is therefore:
 A single Rust binary (`trellis`, see §9 for the language decision). Every command
 starts by loading the **workspace model**:
 
-1. Find `workspace.toml` by walking up from the current directory (so commands work
-   from inside a package, like `git` or `cargo`).
+1. Find the workspace root by walking up from the current directory to the
+   first `gleam.toml` with a `[tools.trellis]` table (so commands work from
+   inside a package, like `git` or `cargo` — member manifests along the way
+   are skipped, and a `[tools.trellis]` table in a member manifest is a
+   doctor error because it would hijack this walk).
 2. Expand `members` globs into package directories; parse each `gleam.toml` for
    `name`, `version`, and dependencies.
 3. Build the dependency graph from path dependencies between members. Reject cycles
@@ -90,11 +94,15 @@ starts by loading the **workspace model**:
 
 ## 4. Configuration
 
-`workspace.toml` stays the single source of truth and stays small. Proposed schema
+The `[tools.trellis]` table of the root `gleam.toml` is the single source of
+configured truth, and stays small. There is no separate config file: the
+workspace marker lives in the manifest format the ecosystem already uses
+(the root manifest may be config-only or also a regular package). Schema
 (everything except `members` optional, with the defaults shown):
 
 ```toml
-[workspace]
+# gleam.toml at the workspace root
+[tools.trellis]
 members = ["packages/lattice_*", "examples"]
 # Glob array matched against member paths. Matching members participate in all
 # task fan-out (format/lint/build/test) like any other member, but are excluded
@@ -104,11 +112,11 @@ ignore-release = ["examples"]
 
 # Custom tasks, available to `trellis run <name>`. Built-in verbs (build, test,
 # check, format, docs, deps, clean) need no declaration.
-[tasks.lint]
+[tools.trellis.tasks.lint]
 command = "gleam run -m glinter"
 needs-deps = true            # run `gleam deps download` first if not cached
 
-[publish]
+[tools.trellis.publish]
 tag-format = "{name}-v{version}"      # lattice_core-v1.1.0
 # How a path dep is rewritten to a Hex requirement at publish time, from the
 # dependency's current version X.Y.Z:
@@ -117,7 +125,7 @@ tag-format = "{name}-v{version}"      # lattice_core-v1.1.0
 path-dep-requirement = "caret"
 retry = { attempts = 5, initial-delay = "30s", multiplier = 2 }
 
-[changelog]
+[tools.trellis.changelog]
 # Native engine (§7): fragments in <dir>/unreleased/, version sections in
 # <dir>/<package>/, per-package CHANGELOG.md assembled from them. All
 # format values are minijinja templates. Everything below is the default.
@@ -492,7 +500,11 @@ end-to-end suite runs against a fixture workspace with a mocked Hex API.
 Beyond the numbered phases, the rest of the §5 command surface is also
 implemented: `trellis new` (scaffolding, with metadata copied from a sibling
 member and a members-glob match check so a new package can't be invisible to
-the workspace) and `trellis release pr` (see question 2 in §11).
+the workspace) and `trellis release pr` (see question 2 in §11). Two
+pre-release revisions of this document's original proposals are recorded in
+place: changie subsumed by the native changelog engine (§7), and the
+separate `workspace.toml` replaced by the `[tools.trellis]` table in the
+root `gleam.toml` (§4).
 
 ## 11. Open questions — resolved
 

@@ -11,6 +11,10 @@ pub struct GleamManifest {
     pub name: String,
     pub version: String,
     pub dependencies: Vec<Dependency>,
+    /// True when this manifest carries its own `[tools.trellis]` table —
+    /// legitimate only at the workspace root, since root discovery walks up
+    /// to the first manifest that has one.
+    pub has_trellis_config: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -38,6 +42,8 @@ struct RawManifest {
     dependencies: BTreeMap<String, RawDep>,
     #[serde(default, rename = "dev-dependencies")]
     dev_dependencies: BTreeMap<String, RawDep>,
+    #[serde(default)]
+    tools: Option<toml::Value>,
 }
 
 fn default_version() -> String {
@@ -86,10 +92,16 @@ impl GleamManifest {
                 });
             }
         }
+        let has_trellis_config = raw
+            .tools
+            .as_ref()
+            .and_then(|tools| tools.get("trellis"))
+            .is_some();
         Ok(Self {
             name: raw.name,
             version: raw.version,
             dependencies,
+            has_trellis_config,
         })
     }
 

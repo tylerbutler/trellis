@@ -19,9 +19,10 @@ use std::process::ExitCode;
 use workspace::Workspace;
 
 /// A workspace CLI for Gleam monorepos: task fan-out, introspection, and
-/// release orchestration derived from workspace.toml and member gleam.toml
-/// files. Configure nothing that can be derived; verify anything that must
-/// be duplicated.
+/// release orchestration derived entirely from gleam.toml files — the
+/// workspace root's [tools.trellis] table and each member's manifest.
+/// Configure nothing that can be derived; verify anything that must be
+/// duplicated.
 #[derive(Parser)]
 #[command(name = "trellis", version, about, max_term_width = 100)]
 struct Cli {
@@ -63,7 +64,7 @@ enum Command {
     },
     /// Run a task across members, graph-parallel by default
     Run {
-        /// Built-in (build, test, check, format, docs, deps, clean) or a [tasks] entry
+        /// Built-in (build, test, check, format, docs, deps, clean) or a [tools.trellis.tasks] entry
         task: String,
         /// Packages to run in; all members when omitted
         packages: Vec<String>,
@@ -112,7 +113,7 @@ enum Command {
         #[arg(last = true, required = true)]
         command: Vec<String>,
     },
-    /// Changelog fragment management (see [changelog] in workspace.toml)
+    /// Changelog fragment management (see [tools.trellis.changelog])
     Changelog {
         #[command(subcommand)]
         command: ChangelogCommand,
@@ -180,7 +181,7 @@ enum ChangelogCommand {
         /// has exactly one releasable package)
         #[arg(long)]
         package: Option<String>,
-        /// Change kind (see [changelog] kinds; defaults include Added,
+        /// Change kind (see [tools.trellis.changelog] kinds; defaults include Added,
         /// Fixed, Breaking, …)
         #[arg(long)]
         kind: String,

@@ -1,6 +1,6 @@
 //! The native changelog engine (changie subsumed — design §7, revised).
 //!
-//! Layout, under `[changelog] dir` (default `.changes/`):
+//! Layout, under `[tools.trellis.changelog] dir` (default `.changes/`):
 //!   unreleased/*.toml        one fragment per change: project, kind, body
 //!   <package>/v<X.Y.Z>.md    batched version sections, rendered once
 //! Each package's CHANGELOG.md is assembled from its header plus its version

@@ -231,8 +231,8 @@ fn doctor_reports_all_problems_at_once() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     write(
-        &root.join("workspace.toml"),
-        "[workspace]\nmembers = [\"packages/*\"]\nignore-release = [\"nomatch\"]\n",
+        &root.join("gleam.toml"),
+        "[tools.trellis]\nmembers = [\"packages/*\"]\nignore-release = [\"nomatch\"]\n",
     );
     // a: stale lockfile for b, and a path dep escaping the workspace
     write(
@@ -271,8 +271,8 @@ fn doctor_detects_dependency_cycles() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     write(
-        &root.join("workspace.toml"),
-        "[workspace]\nmembers = [\"packages/*\"]\n",
+        &root.join("gleam.toml"),
+        "[tools.trellis]\nmembers = [\"packages/*\"]\n",
     );
     write(
         &root.join("packages/a/gleam.toml"),
@@ -295,8 +295,8 @@ fn doctor_flags_releasable_dep_on_unreleasable_member() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     write(
-        &root.join("workspace.toml"),
-        "[workspace]\nmembers = [\"packages/*\", \"shared\"]\nignore-release = [\"shared\"]\n",
+        &root.join("gleam.toml"),
+        "[tools.trellis]\nmembers = [\"packages/*\", \"shared\"]\nignore-release = [\"shared\"]\n",
     );
     write(
         &root.join("packages/app/gleam.toml"),
@@ -315,12 +315,36 @@ fn doctor_flags_releasable_dep_on_unreleasable_member() {
 }
 
 #[test]
+fn doctor_flags_trellis_config_in_a_member_manifest() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    write(
+        &root.join("gleam.toml"),
+        "[tools.trellis]\nmembers = [\"packages/*\"]\n",
+    );
+    // A member with its own [tools.trellis] would hijack root discovery for
+    // commands run inside it.
+    write(
+        &root.join("packages/a/gleam.toml"),
+        "name = \"a\"\nversion = \"1.0.0\"\n\n[tools.trellis]\nmembers = [\"nested/*\"]\n",
+    );
+
+    trellis(root)
+        .arg("doctor")
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains(
+            "member `packages/a` has a [tools.trellis] table",
+        ));
+}
+
+#[test]
 fn strict_load_fails_on_broken_workspace_but_names_doctor() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     write(
-        &root.join("workspace.toml"),
-        "[workspace]\nmembers = [\"pkgs/*\"]\n",
+        &root.join("gleam.toml"),
+        "[tools.trellis]\nmembers = [\"pkgs/*\"]\n",
     );
     trellis(root)
         .arg("list")

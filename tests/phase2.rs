@@ -368,13 +368,13 @@ fn custom_minijinja_templates_shape_the_output() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
     copy_fixture_to(root);
-    let config = fs::read_to_string(root.join("workspace.toml")).unwrap();
+    let config = fs::read_to_string(root.join("gleam.toml")).unwrap();
     write(
-        &root.join("workspace.toml"),
+        &root.join("gleam.toml"),
         &format!(
             concat!(
                 "{config}\n",
-                "[changelog]\n",
+                "[tools.trellis.changelog]\n",
                 "header-format = \"# Changes to {{{{ name }}}}\"\n",
                 "version-format = \"## {{{{ tag }}}} ({{{{ date }}}})\"\n",
                 "kind-format = \"**{{{{ kind | upper }}}}**\"\n",

@@ -12,13 +12,14 @@ The design principle:
 
 > **Configure nothing that can be derived. Verify anything that must be duplicated.**
 
-Everything trellis knows comes from two sources that already exist:
-`workspace.toml` (member globs) and each member's `gleam.toml` (name, version,
-path dependencies). The dependency graph — topological order, publish order,
-change impact, path-dep rewrite maps — is computed, never declared.
+Everything trellis knows comes from one file format the ecosystem already
+uses: `gleam.toml`. The workspace root's manifest carries a `[tools.trellis]`
+table (member globs and options); each member's manifest supplies its name,
+version, and path dependencies. The dependency graph — topological order,
+publish order, change impact, path-dep rewrite maps — is computed, never
+declared.
 
-See [docs/DESIGN.md](docs/DESIGN.md) for the full design, including the
-release/publish layers that are not implemented yet.
+See [docs/DESIGN.md](docs/DESIGN.md) for the full design.
 
 ## Status
 
@@ -74,11 +75,13 @@ specific version in CI by replacing `latest/download` with
 
 ## Configuration
 
-`workspace.toml` at the repo root marks the workspace. Only `members` is
-required:
+A `[tools.trellis]` table in a `gleam.toml` marks the workspace root — no
+separate config file. The root manifest may be config-only, or a regular
+gleam package that also anchors the workspace. Only `members` is required:
 
 ```toml
-[workspace]
+# gleam.toml at the repo root
+[tools.trellis]
 members = ["packages/*", "examples"]
 # Matching members participate in task fan-out but are excluded from
 # changelog, versioning, tagging, and publishing.
@@ -86,22 +89,24 @@ ignore-release = ["examples"]
 
 # Custom tasks for `trellis run <name>`. Built-in verbs (build, test, check,
 # format, docs, deps, clean) need no declaration.
-[tasks.lint]
+[tools.trellis.tasks.lint]
 command = "gleam run -m glinter"
 needs-deps = true            # run `gleam deps download` first if not cached
 
-[publish]
+[tools.trellis.publish]
 tag-format = "{name}-v{version}"
 ```
 
 Each member is a directory with a `gleam.toml`. Path dependencies between
 members define the graph; cycles and path deps escaping the workspace are
-rejected.
+rejected, and a `[tools.trellis]` table in a *member* manifest is a doctor
+error (it would hijack root discovery).
 
 ## Commands
 
 Every command works from anywhere inside the workspace (the root is found by
-walking up, like `git` or `cargo`).
+walking up to the first `gleam.toml` with a `[tools.trellis]` table, like
+`git` or `cargo` — member manifests along the way are skipped).
 
 ### Introspection
 
@@ -132,7 +137,7 @@ streamed with a `pkg ▏` prefix and a summary table names any failures.
 package at a time in dependency order.
 
 Built-in tasks map 1:1 onto gleam verbs: `build`, `test`, `check`, `format`
-(`--check` variant), `docs`, `deps`, `clean`. A `[tasks]` entry with the same
+(`--check` variant), `docs`, `deps`, `clean`. A `[tools.trellis.tasks]` entry with the same
 name overrides a built-in.
 
 ### Changelog & versioning
@@ -154,7 +159,7 @@ changed releasable package has no unreleased fragment, emitting JSON
 
 `version plan` computes each pending package's next version from its
 fragments' kinds (the largest bump wins; kinds and their bumps are
-configurable under `[changelog]`). `version apply` renders each package's
+configurable under `[tools.trellis.changelog]`). `version apply` renders each package's
 version section (minijinja templates, see below), stores it under
 `.changes/<package>/`, reassembles the package's CHANGELOG.md newest-first,
 bumps `gleam.toml` with a surgical TOML edit — no regex — and finally patches
@@ -163,12 +168,12 @@ Hex network calls throughout. Invalid fragments (unknown package or kind,
 empty body, unparseable TOML) are hard errors for `plan`/`apply`: silently
 dropping a change is exactly the drift trellis exists to prevent.
 
-Rendering is controlled by minijinja templates in `[changelog]`, each with a
+Rendering is controlled by minijinja templates in `[tools.trellis.changelog]`, each with a
 small context (`name`, `version`, `date`, `tag`, `kind`, `body` as
 applicable):
 
 ```toml
-[changelog]
+[tools.trellis.changelog]
 version-format = "## v{{ version }} - {{ date }}"     # default
 kind-format = "### {{ kind }}"                         # default
 change-format = "- {{ body }}"                         # default
@@ -213,7 +218,7 @@ the graph — each workspace path dep becomes the Hex requirement derived from
 that dep's current version (`caret` or `exact`, per `path-dep-requirement`) —
 followed by `gleam publish --yes`, and finally restoration of the original
 `gleam.toml` (the repo never shows rewritten files, even on failure). Every
-Hex-touching step runs under the configured `[publish] retry` backoff policy.
+Hex-touching step runs under the configured `[tools.trellis.publish] retry` backoff policy.
 `--tag lat_core-v1.2.0` resolves a pushed tag to its package and refuses to
 publish if the tag version doesn't match `gleam.toml`; `--all-untagged`
 publishes everything not yet on Hex, enabling a single publish run per release

@@ -1,7 +1,9 @@
-//! Schema for `workspace.toml`, the single source of configured (not derived)
-//! workspace facts. Everything except `[workspace] members` is optional.
+//! Schema for the `[tools.trellis]` table of the workspace root's
+//! `gleam.toml` — the single source of configured (not derived) workspace
+//! facts, living in the manifest format the ecosystem already uses.
+//! Everything except `members` is optional.
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -9,7 +11,12 @@ use std::path::Path;
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct ConfigFile {
-    pub workspace: WorkspaceSection,
+    /// Glob array matched against directories relative to the workspace root.
+    pub members: Vec<String>,
+    /// Members matching these globs participate in task fan-out but are
+    /// excluded from changelog, versioning, tagging, and publishing.
+    #[serde(default)]
+    pub ignore_release: Vec<String>,
     #[serde(default)]
     pub tasks: BTreeMap<String, TaskConfig>,
     #[serde(default)]
@@ -18,15 +25,13 @@ pub struct ConfigFile {
     pub changelog: ChangelogConfig,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub struct WorkspaceSection {
-    /// Glob array matched against directories relative to the workspace root.
-    pub members: Vec<String>,
-    /// Members matching these globs participate in task fan-out but are
-    /// excluded from changelog, versioning, tagging, and publishing.
-    #[serde(default)]
-    pub ignore_release: Vec<String>,
+/// True when a parsed `gleam.toml` carries a `[tools.trellis]` table — the
+/// marker that makes a directory the workspace root.
+pub fn has_trellis_table(document: &toml::Value) -> bool {
+    document
+        .get("tools")
+        .and_then(|tools| tools.get("trellis"))
+        .is_some_and(toml::Value::is_table)
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -209,12 +214,23 @@ fn default_change_format() -> String {
 }
 
 impl ConfigFile {
+    /// Load from the workspace root's `gleam.toml`, reading the
+    /// `[tools.trellis]` table.
     pub fn load(path: &Path) -> Result<Self> {
         let text = std::fs::read_to_string(path)
             .with_context(|| format!("failed to read {}", path.display()))?;
-        let config: ConfigFile =
-            toml::from_str(&text).with_context(|| format!("failed to parse {}", path.display()))?;
-        Ok(config)
+        Self::from_gleam_toml(&text).with_context(|| format!("in {}", path.display()))
+    }
+
+    pub fn from_gleam_toml(text: &str) -> Result<Self> {
+        let document: toml::Value = toml::from_str(text).context("failed to parse gleam.toml")?;
+        let Some(trellis) = document.get("tools").and_then(|tools| tools.get("trellis")) else {
+            bail!("gleam.toml has no [tools.trellis] table");
+        };
+        trellis
+            .clone()
+            .try_into()
+            .context("invalid [tools.trellis] configuration")
     }
 
     pub fn format_tag(&self, name: &str, version: &str) -> String {
@@ -230,22 +246,27 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parses_full_config() {
+    fn parses_full_config_from_tools_trellis() {
         let text = r###"
-            [workspace]
+            # The root gleam.toml may also be a regular package manifest;
+            # trellis only reads [tools.trellis].
+            name = "lattice_root"
+            version = "0.0.0"
+
+            [tools.trellis]
             members = ["packages/lattice_*", "examples"]
             ignore-release = ["examples"]
 
-            [tasks.lint]
+            [tools.trellis.tasks.lint]
             command = "gleam run -m glinter"
             needs-deps = true
 
-            [publish]
+            [tools.trellis.publish]
             tag-format = "{name}-v{version}"
             path-dep-requirement = "caret"
             retry = { attempts = 5, initial-delay = "30s", multiplier = 2 }
 
-            [changelog]
+            [tools.trellis.changelog]
             dir = "changes"
             version-format = "## {{ name }} {{ version }} ({{ date }})"
             kinds = [
@@ -253,9 +274,9 @@ mod tests {
                 { label = "Docs", bump = "patch" },
             ]
         "###;
-        let config: ConfigFile = toml::from_str(text).unwrap();
-        assert_eq!(config.workspace.members.len(), 2);
-        assert_eq!(config.workspace.ignore_release, vec!["examples"]);
+        let config = ConfigFile::from_gleam_toml(text).unwrap();
+        assert_eq!(config.members.len(), 2);
+        assert_eq!(config.ignore_release, vec!["examples"]);
         assert!(config.tasks["lint"].needs_deps);
         assert_eq!(config.publish.retry.attempts, 5);
         assert_eq!(config.changelog.dir, "changes");
@@ -265,8 +286,9 @@ mod tests {
 
     #[test]
     fn minimal_config_gets_defaults() {
-        let config: ConfigFile = toml::from_str("[workspace]\nmembers = [\"packages/*\"]").unwrap();
-        assert!(config.workspace.ignore_release.is_empty());
+        let config =
+            ConfigFile::from_gleam_toml("[tools.trellis]\nmembers = [\"packages/*\"]").unwrap();
+        assert!(config.ignore_release.is_empty());
         assert_eq!(config.publish.tag_format, "{name}-v{version}");
         assert_eq!(
             config.publish.path_dep_requirement,
@@ -279,6 +301,22 @@ mod tests {
             config.changelog.version_format,
             "## v{{ version }} - {{ date }}"
         );
+    }
+
+    #[test]
+    fn missing_tools_trellis_is_a_clear_error() {
+        let err = ConfigFile::from_gleam_toml("name = \"pkg\"\nversion = \"1.0.0\"").unwrap_err();
+        assert!(err.to_string().contains("[tools.trellis]"));
+    }
+
+    #[test]
+    fn detects_the_trellis_table() {
+        let with: toml::Value = toml::from_str("[tools.trellis]\nmembers = []").unwrap();
+        assert!(has_trellis_table(&with));
+        let without: toml::Value = toml::from_str("name = \"pkg\"").unwrap();
+        assert!(!has_trellis_table(&without));
+        let not_table: toml::Value = toml::from_str("[tools]\ntrellis = true").unwrap();
+        assert!(!has_trellis_table(&not_table));
     }
 
     #[test]

@@ -1,10 +1,13 @@
-[workspace]
+# Workspace root: marked by the [tools.trellis] table. This file may also be
+# a regular package manifest; here it is config-only.
+
+[tools.trellis]
 members = ["packages/*", "examples"]
 ignore-release = ["examples"]
 
-[tasks.hello]
+[tools.trellis.tasks.hello]
 command = "echo hello-from-task"
 
-[publish]
+[tools.trellis.publish]
 tag-format = "{name}-v{version}"
 retry = { attempts = 2, initial-delay = "10ms", multiplier = 2 }

@@ -1,5 +1,5 @@
 //! `trellis run <task>` — graph-parallel task fan-out. Built-in tasks map 1:1
-//! onto gleam verbs; custom tasks come from `[tasks]` in workspace.toml.
+//! onto gleam verbs; custom tasks come from `[tools.trellis.tasks]`.
 
 use crate::runner::{self, CommandSpec, Job, RunOptions};
 use crate::workspace::{SelectionFilter, Workspace};
@@ -84,7 +84,7 @@ fn commands_for(
     options: &TaskOptions,
     package_dir: &Path,
 ) -> Result<Vec<CommandSpec>> {
-    // A [tasks] entry may shadow a built-in verb to customize it.
+    // A [tools.trellis.tasks] entry may shadow a built-in verb to customize it.
     if let Some(custom) = workspace.config.tasks.get(&options.task) {
         let mut commands = Vec::new();
         if custom.needs_deps && !package_dir.join("build").join("packages").is_dir() {
@@ -113,7 +113,7 @@ fn commands_for(
         "deps" => vec![gleam(&["deps", "download"], package_dir)],
         "clean" => vec![gleam(&["clean"], package_dir)],
         other => bail!(
-            "unknown task `{other}`; built-ins: {}. Custom tasks are declared under [tasks] in workspace.toml{}",
+            "unknown task `{other}`; built-ins: {}. Custom tasks are declared under [tools.trellis.tasks] in the root gleam.toml{}",
             BUILTIN_TASKS.join(", "),
             if workspace.config.tasks.is_empty() {
                 String::new()
