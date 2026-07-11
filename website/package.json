@@ -11,7 +11,7 @@
   "dependencies": {
     "@fontsource-variable/archivo": "^5.2.5",
     "@fontsource-variable/martian-mono": "^5.2.5",
-    "astro": "^5.7.0",
+    "astro": "^6.4.6",
     "astro-expressive-code": "^0.44.0"
   }
 }
