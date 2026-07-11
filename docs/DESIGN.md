@@ -483,19 +483,20 @@ end-to-end suite runs against a fixture workspace with a mocked Hex API.
    tylerbutler/repoverlay's: changie fragments (`.changes/unreleased/`) →
    `changie-release.yml` opens a release PR bumping `Cargo.toml` +
    `CHANGELOG.md` + `Cargo.lock` on every push to main → merging it triggers
-   `release-plz.yml`, which creates the `v{version}` tag (crates.io publish
-   disabled: the `trellis` name is taken by an unrelated 2016 crate — §11's
-   naming question, answered by the registry) → the tag triggers the
-   dist-generated `release.yml`, where cargo-dist builds five targets,
-   generates shell/PowerShell installers and a Homebrew formula, attaches
-   SLSA provenance attestations, and creates the GitHub Release →
-   `publish-homebrew-tap.yml` (a custom dist publish-job) pushes the formula
-   to tylerbutler/homebrew-tap with a GitHub App token. Consuming workspaces
-   install via the dist shell installer or pin in `.tool-versions` through
-   mise/asdf's ubi backend. Requires the shared `RELEASE_APP_ID` /
-   `RELEASE_APP_PRIVATE_KEY` secrets. repoverlay's SBOM/attestation workflow
-   (`release-sbom.yml`) is not adopted yet — it depends on that repo's local
-   composite actions.
+   `release-plz.yml`, which creates the `v{version}` tag and publishes the
+   crate to crates.io as `trellis-gleam` (the `trellis` name itself is taken
+   by an unrelated 2016 crate — §11's naming question, answered by the
+   registry) → the tag triggers the dist-generated `release.yml`, where
+   cargo-dist builds five targets, generates shell/PowerShell installers and
+   a Homebrew formula, attaches SLSA provenance attestations, and creates the
+   GitHub Release → `publish-homebrew-tap.yml` (a custom dist publish-job)
+   pushes the formula to tylerbutler/homebrew-tap with a GitHub App token.
+   Consuming workspaces install via `cargo install trellis-gleam`, the dist
+   shell installer, or a pin in `.tool-versions` through mise/asdf's ubi
+   backend. Requires the shared `RELEASE_APP_ID` / `RELEASE_APP_PRIVATE_KEY`
+   secrets plus a `CARGO_REGISTRY_TOKEN` for crates.io publishing.
+   repoverlay's SBOM/attestation workflow (`release-sbom.yml`) is not adopted
+   yet — it depends on that repo's local composite actions.
 
 Beyond the numbered phases, the rest of the §5 command surface is also
 implemented: `trellis new` (scaffolding, with metadata copied from a sibling
@@ -511,9 +512,11 @@ root `gleam.toml` (§4).
 1. **Name.** ~~`trellis` may collide with Roots' WordPress tool; alternatives:
    `gws`, `latwork`, `gleamspace`.~~
    **Resolved: keep `trellis` as the binary/repo name.** The crates.io crate
-   name is taken by an unrelated 2016 project, so crates.io publishing is
-   disabled (`publish = false`); distribution is via cargo-dist binaries, the
-   Homebrew tap, and mise/asdf's ubi backend, none of which collide.
+   name is taken by an unrelated 2016 project, so the package publishes to
+   crates.io as `trellis-gleam` (`publish = true` in `release-plz.toml`) while
+   a `[[bin]]` entry in `Cargo.toml` keeps the installed binary named
+   `trellis`. Distribution also continues via cargo-dist binaries, the
+   Homebrew tap, and mise/asdf's ubi backend.
 2. **Scope of `version apply` vs. the `changie-release` action.** ~~Keep PR
    management in the action, or absorb into `trellis release pr`?~~
    **Resolved: absorbed.** `trellis release pr` computes the plan, runs

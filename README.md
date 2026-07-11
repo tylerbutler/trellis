@@ -295,8 +295,9 @@ the same pipeline as [repoverlay](https://github.com/tylerbutler/repoverlay):
    release PR that bumps `Cargo.toml`, regenerates `Cargo.lock`, and updates
    `CHANGELOG.md`.
 3. Merging the release PR triggers `release-plz.yml`, which creates the
-   `v{version}` tag (crates.io publishing is disabled — the `trellis` crate
-   name is taken by an unrelated project).
+   `v{version}` tag and publishes the crate to crates.io as `trellis-gleam`
+   (the `trellis` name itself is taken by an unrelated project — the `[[bin]]`
+   in `Cargo.toml` keeps the installed binary named `trellis`).
 4. The tag triggers the dist-generated `release.yml`: cargo-dist builds
    binaries for five targets (Linux gnu, macOS, Windows; x86_64 and aarch64),
    generates the shell/PowerShell installers and the Homebrew formula,
@@ -305,9 +306,11 @@ the same pipeline as [repoverlay](https://github.com/tylerbutler/repoverlay):
    `tylerbutler/homebrew-tap` using a GitHub App token.
 
 The release workflows expect the `RELEASE_APP_ID` / `RELEASE_APP_PRIVATE_KEY`
-secrets (a GitHub App with `contents:write` here and on the tap). After
-changing `dist-workspace.toml`, regenerate the release workflow with
-`dist generate` and validate with `dist plan`.
+secrets (a GitHub App with `contents:write` here and on the tap), plus a
+`CARGO_REGISTRY_TOKEN` secret (a crates.io API token with publish access to
+`trellis-gleam`) for `release-plz.yml` to publish the crate. After changing
+`dist-workspace.toml`, regenerate the release workflow with `dist generate`
+and validate with `dist plan`.
 
 ## License
 
