@@ -1,3 +1,0 @@
-kind: Added
-body: Add per-task member path exclusions, including a shared release exclusion for changelog, version, tag, and publish commands.
-time: 2026-07-11T16:25:53.205567-07:00
