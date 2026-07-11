@@ -1,0 +1,30 @@
+name: Publish Homebrew Formula
+
+# Custom `publish-jobs` reusable workflow invoked by dist. Replaces dist's
+# built-in "homebrew" publish job so we can authenticate to the tap with a
+# GitHub App installation token instead of a long-lived PAT.
+#
+# Configured in dist-workspace.toml as:
+#     publish-jobs = ["./publish-homebrew-tap"]
+
+on:
+  workflow_call:
+    inputs:
+      plan:
+        required: true
+        type: string
+    # Secrets come from dist's `secrets: inherit` when it invokes this job.
+
+jobs:
+  publish-homebrew-formula:
+    runs-on: ubuntu-22.04
+    if: ${{ !fromJson(inputs.plan).announcement_is_prerelease || fromJson(inputs.plan).publish_prereleases }}
+    steps:
+      - uses: tylerbutler/actions/publish-homebrew-formula@ee7def5950abcf0a519add705a95719ab345c05e # ratchet:tylerbutler/actions/publish-homebrew-formula@main
+        with:
+          # Reuses the shared release App (see release-plz.yml, changie-release.yml).
+          # The App must be installed on tylerbutler/homebrew-tap with contents:write.
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          tap-repo: tylerbutler/homebrew-tap
+          plan: ${{ inputs.plan }}

@@ -1,0 +1,45 @@
+[package]
+name = "trellis-gleam"
+version = "0.1.0"
+edition = "2024"
+description = "A workspace CLI for Gleam monorepos: task fan-out, introspection, and release orchestration derived entirely from gleam.toml"
+license = "MIT"
+homepage = "https://github.com/tylerbutler/trellis"
+repository = "https://github.com/tylerbutler/trellis"
+
+# The crates.io name `trellis` is taken by an unrelated 2016 crate (see
+# docs/DESIGN.md §11), so the crate publishes as `trellis-gleam`. The `[[bin]]`
+# below keeps the installed binary named `trellis`.
+[[bin]]
+name = "trellis"
+path = "src/main.rs"
+
+[package.metadata.dist]
+dist = true
+
+[profile.release]
+strip = true
+lto = true
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
+
+[dependencies]
+anyhow = "1.0.103"
+clap = { version = "4.6.1", features = ["derive"] }
+glob = "0.3.3"
+globset = "0.4.18"
+minijinja = "2.21.0"
+semver = "1.0.28"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.150"
+toml = "1.1.2"
+toml_edit = "0.25.12"
+ureq = { version = "3.3.0", features = ["json"] }
+
+[dev-dependencies]
+assert_cmd = "2.2.2"
+predicates = "3.1.4"
+tempfile = "3.27.0"

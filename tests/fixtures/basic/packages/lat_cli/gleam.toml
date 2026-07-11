@@ -1,0 +1,8 @@
+name = "lat_cli"
+version = "0.3.1"
+
+[dependencies]
+lat_mid = { path = "../lat_mid" }
+
+[dev-dependencies]
+lat_core = { path = "../lat_core" }
