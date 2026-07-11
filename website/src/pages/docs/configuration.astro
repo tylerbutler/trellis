@@ -27,6 +27,15 @@ kinds = [
   { label = "Added", bump = "minor" },
   { label = "Fixed", bump = "patch" },
 ]`;
+
+const exclusionConfig = `[tools.trellis]
+members = ["packages/*", "examples", "benchmarks/*"]
+ignore-release = ["examples", "benchmarks/*"]`;
+
+const releasableOutput = `$ trellis list --releasable
+lat_core
+lat_mid
+lat_cli`;
 ---
 
 <Docs
@@ -130,6 +139,69 @@ kinds = [
       </tr>
     </tbody>
   </table>
+
+  <h2 id="release-exclusions">Release exclusions</h2>
+  <p>
+    Some workspace members need the normal development loop without becoming
+    published packages. Add their paths to <code>ignore-release</code>:
+  </p>
+
+  <Code lang="toml" title="gleam.toml" code={exclusionConfig} />
+
+  <p>
+    The patterns are globs matched against member paths relative to the
+    workspace root, not package names. An excluded member stays in the
+    dependency graph and still participates in <code>run</code>,
+    <code>exec</code>, <code>list</code>, <code>graph</code>, and changed-package
+    selection.
+  </p>
+
+  <table>
+    <thead>
+      <tr>
+        <th scope="col">Surface</th>
+        <th scope="col">Excluded member behavior</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Tasks and graph</td>
+        <td>Included normally, with dependencies and dependents intact.</td>
+      </tr>
+      <tr>
+        <td>Changelog and versioning</td>
+        <td>
+          Omitted from checks and plans. Explicit changelog creation is
+          rejected.
+        </td>
+      </tr>
+      <tr>
+        <td>Tags, publishing, and release CI</td>
+        <td>
+          Omitted from generated release sets. Explicit publishing is rejected.
+        </td>
+      </tr>
+      <tr>
+        <td>Introspection</td>
+        <td>
+          <code>info</code> and JSON output expose
+          <code>releasable: false</code>; <code>list --releasable</code> returns
+          only the release set.
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  <Code lang="console" code={releasableOutput} />
+
+  <div class="callout">
+    <p>
+      <code>trellis doctor</code> catches an exclusion glob that matches no
+      member and rejects a releasable package that path-depends on an excluded
+      one. A published package cannot depend on a workspace package that will
+      never exist on Hex.
+    </p>
+  </div>
 
   <h2>Changelog configuration</h2>
   <p>

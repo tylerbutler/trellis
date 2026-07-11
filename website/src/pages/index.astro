@@ -9,6 +9,7 @@ const configSample = `# This table marks the workspace root.
 # Only \`members\` is required.
 [tools.trellis]
 members = ["packages/*", "examples"]
+# Keep examples in task fan-out, but out of releases.
 ignore-release = ["examples"]
 
 [tools.trellis.tasks.lint]
@@ -152,6 +153,64 @@ tag-format = "{name}-v{version}"`;
             </li>
           </ul>
         </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ RELEASE EXCLUSIONS ============ -->
+  <section class="exclusions">
+    <div class="shell exclusions-grid">
+      <div class="section-head">
+        <h2>Run it here. Don’t release it.</h2>
+        <p>
+          Examples, benchmarks, and internal tools belong in the workspace:
+          they should build, test, and appear in the graph. They do not belong
+          in a changelog or on Hex.
+        </p>
+        <p>
+          <code>ignore-release</code> draws that boundary with member-path
+          globs. Trellis applies it across changelogs, versioning, tags,
+          publishing, and release CI — then <code>doctor</code> checks that the
+          boundary is safe.
+        </p>
+        <a href="/docs/configuration/#release-exclusions">Configure release exclusions →</a>
+      </div>
+
+      <div class="exclusion-proof">
+        <div class="release-ledger-scroll">
+          <table class="release-ledger">
+            <thead>
+              <tr>
+                <th scope="col">Member</th>
+                <th scope="col">Everyday commands</th>
+                <th scope="col">Release commands</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>packages/*</code></td>
+                <td><span class="state state-included">included</span></td>
+                <td><span class="state state-included">included</span></td>
+              </tr>
+              <tr>
+                <td><code>examples</code></td>
+                <td><span class="state state-included">included</span></td>
+                <td><span class="state state-excluded">excluded</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <figure class="term">
+          <figcaption class="term-bar"><span class="prompt">$</span>trellis list --releasable</figcaption>
+          <pre class="term-out"><code><span class="name">lat_core</span>
+<span class="name">lat_mid</span>
+<span class="name">lat_cli</span></code></pre>
+          <figcaption class="term-note">
+            <code>examples</code> still appears in <code>trellis list</code>,
+            <code>graph</code>, and task fan-out. Only the release set changes.
+          </figcaption>
+        </figure>
       </div>
     </div>
   </section>
@@ -497,6 +556,101 @@ tag-format = "{name}-v{version}"`;
     color: var(--ink-soft);
   }
 
+  /* ---- release exclusions ---- */
+  .exclusions-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+    gap: clamp(2rem, 5vw, 5rem);
+    align-items: start;
+  }
+
+  .exclusions .section-head p + p {
+    margin-top: var(--sp-sm);
+  }
+
+  .exclusions .section-head a {
+    display: inline-block;
+    margin-top: var(--sp-lg);
+    font-weight: 620;
+  }
+
+  .exclusion-proof {
+    display: grid;
+    gap: var(--sp-lg);
+    min-width: 0;
+  }
+
+  .release-ledger-scroll {
+    overflow-x: auto;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+  }
+
+  .release-ledger {
+    width: 100%;
+    min-width: 34rem;
+    border-collapse: collapse;
+    font-size: var(--text-small);
+  }
+
+  .release-ledger th {
+    text-align: left;
+    font-family: var(--font-mono);
+    font-size: var(--text-fine);
+    font-weight: 560;
+    color: var(--muted);
+    padding: var(--sp-sm) var(--sp-md);
+    border-bottom: 1px solid var(--line);
+    background: var(--surface-2);
+  }
+
+  .release-ledger td {
+    padding: var(--sp-md);
+    border-bottom: 1px solid var(--line-soft);
+  }
+
+  .release-ledger tbody tr:last-child td {
+    border-bottom: none;
+  }
+
+  .release-ledger td:first-child {
+    color: var(--brass);
+  }
+
+  .state {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+  }
+
+  .state::before {
+    content: "";
+    width: 0.5rem;
+    height: 0.5rem;
+    flex: 0 0 auto;
+    border-radius: 50%;
+    background: currentColor;
+  }
+
+  .state-included {
+    color: var(--ink-soft);
+  }
+
+  .state-excluded {
+    color: var(--muted);
+  }
+
+  .exclusion-proof .term-note {
+    padding: var(--sp-xs) var(--sp-md) var(--sp-sm);
+    border-top: 1px solid var(--line-soft);
+    font-size: var(--text-fine);
+    color: var(--muted);
+  }
+
+  .exclusion-proof .term-note code {
+    color: var(--ink-soft);
+  }
+
   /* ---- lifecycle ---- */
   .phases {
     list-style: none;
@@ -591,7 +745,8 @@ tag-format = "{name}-v{version}"`;
   /* ---- responsive ---- */
   @media (max-width: 56rem) {
     .hero-grid,
-    .derived-grid {
+    .derived-grid,
+    .exclusions-grid {
       grid-template-columns: minmax(0, 1fr);
     }
 
