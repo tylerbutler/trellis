@@ -1,8 +1,8 @@
 //! `trellis new <name>` — scaffold a workspace member. The gleam.toml is
 //! pre-filled from workspace metadata (gleam constraint, licences,
-//! repository copied from a sibling), a stub module and test are created,
-//! and `.changie.yaml` projects are regenerated. Adding a package becomes
-//! one command instead of edits to five files.
+//! repository copied from a sibling) and a stub module and test are created.
+//! Nothing needs registering anywhere: membership, the graph, and the
+//! changelog engine all derive from the files written here.
 
 use crate::workspace::Workspace;
 use anyhow::{Context, Result, bail};
@@ -80,23 +80,19 @@ pub fn run(workspace: &Workspace, options: &NewOptions) -> Result<()> {
             "import gleeunit\nimport {name}\n\npub fn main() -> Nil {{\n  gleeunit.main()\n}}\n\npub fn hello_test() {{\n  assert {name}.hello() == \"Hello from {name}!\"\n}}\n"
         ),
     )?;
-    write(&dir.join("CHANGELOG.md"), &format!("# {name} changelog\n"))?;
+    let header = crate::changelog::render_header(&workspace.config.changelog, name)?;
+    write(
+        &dir.join("CHANGELOG.md"),
+        &format!("{}\n", header.trim_end()),
+    )?;
     write(&dir.join("README.md"), &format!("# {name}\n"))?;
 
     println!("created {rel_path}/ (gleam.toml, src, test, CHANGELOG.md, README.md)");
     if let Some(sibling) = sibling {
         println!("metadata copied from {}", sibling.rel_path);
     }
-
-    // Regenerate .changie.yaml projects so the package can be versioned and
-    // released. Reload: the workspace model predates the new member.
-    if workspace.root.join(crate::changie::CONFIG_FILE).is_file() {
-        let reloaded = Workspace::load(&workspace.root)
-            .context("workspace failed to reload after scaffolding")?;
-        crate::commands::changelog::sync(&reloaded, false)?;
-    } else {
-        println!("note: no .changie.yaml; run `trellis changelog sync` when adopting changie");
-    }
+    // Nothing to register anywhere else: membership, the graph, and the
+    // changelog engine are all derived from what was just written.
     Ok(())
 }
 

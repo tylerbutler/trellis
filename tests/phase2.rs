@@ -1,11 +1,10 @@
-//! End-to-end tests for the changelog/version layer, run against temp copies
-//! of the fixture workspace with a fake `changie` binary (via
-//! TRELLIS_CHANGIE_BIN) so no real changie install is needed.
+//! End-to-end tests for the native changelog/version engine: fragments,
+//! check, plan, apply, and template rendering. No external changie binary —
+//! trellis is the engine.
 
 use assert_cmd::Command;
 use predicates::prelude::*;
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 fn fixture(name: &str) -> PathBuf {
@@ -17,6 +16,8 @@ fn fixture(name: &str) -> PathBuf {
 fn trellis(dir: &Path) -> Command {
     let mut cmd = Command::cargo_bin("trellis").unwrap();
     cmd.current_dir(dir);
+    // Deterministic dates in rendered changelogs: 2026-07-11.
+    cmd.env("SOURCE_DATE_EPOCH", "1783728000");
     cmd
 }
 
@@ -46,150 +47,118 @@ fn copy_fixture_to(root: &Path) {
     }
 }
 
-/// A fake changie that supports the subset trellis drives:
-/// - `next auto --project K`  → prints the contents of `.fake/next-K`
-/// - `batch auto --project K` → rewrites the package's gleam.toml version to
-///   that value and deletes K's unreleased fragments (what replacements +
-///   batching do)
-/// - `merge`                  → logs
-fn install_fake_changie(root: &Path) -> PathBuf {
-    let script = root.join("fake-changie.sh");
-    write(
-        &script,
-        concat!(
-            "#!/bin/sh\n",
-            "set -eu\n",
-            "cmd=\"$1\"; shift\n",
-            "case \"$cmd\" in\n",
-            "  next)\n",
-            "    key=\"$3\"\n",
-            "    cat \".fake/next-$key\"\n",
-            "    ;;\n",
-            "  batch)\n",
-            "    key=\"$3\"\n",
-            "    next=$(cat \".fake/next-$key\")\n",
-            "    dir=$(cat \".fake/dir-$key\")\n",
-            "    sed -i \"s/^version = .*/version = \\\"$next\\\"/\" \"$dir/gleam.toml\"\n",
-            "    rm -f .changes/unreleased/\"$key\"-*.yaml\n",
-            "    echo \"batch $key\" >> .fake/log\n",
-            "    ;;\n",
-            "  merge)\n",
-            "    echo merge >> .fake/log\n",
-            "    ;;\n",
-            "  *)\n",
-            "    echo \"unexpected: $cmd\" >&2\n",
-            "    exit 1\n",
-            "    ;;\n",
-            "esac\n",
-        ),
-    );
-    fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
-    fs::create_dir_all(root.join(".fake")).unwrap();
-    script
+fn add_fragment(root: &Path, project: &str, kind: &str, body: &str) {
+    let dir = root.join(".changes/unreleased");
+    fs::create_dir_all(&dir).unwrap();
+    for n in 1u32.. {
+        let path = dir.join(format!("{project}-{n}.toml"));
+        if !path.exists() {
+            write(
+                &path,
+                &format!("project = \"{project}\"\nkind = \"{kind}\"\nbody = \"{body}\"\n"),
+            );
+            return;
+        }
+    }
 }
 
-fn add_fragment(root: &Path, project: &str, index: u32) {
-    write(
-        &root.join(format!(".changes/unreleased/{project}-{index}.yaml")),
-        &format!("project: {project}\nkind: Added\nbody: something new\n"),
-    );
-}
-
-fn plan_release(root: &Path, project: &str, dir: &str, next: &str) {
-    write(&root.join(format!(".fake/next-{project}")), next);
-    write(&root.join(format!(".fake/dir-{project}")), dir);
-}
-
-// ---- changelog sync ---------------------------------------------------
+// ---- changelog new ---------------------------------------------------------
 
 #[test]
-fn sync_creates_starter_config_with_generated_projects() {
+fn new_fragment_writes_toml_and_validates_inputs() {
     let tmp = tempfile::tempdir().unwrap();
-    copy_fixture_to(tmp.path());
+    let root = tmp.path();
+    copy_fixture_to(root);
 
-    trellis(tmp.path())
-        .args(["changelog", "sync"])
+    trellis(root)
+        .args([
+            "changelog",
+            "new",
+            "--package",
+            "lat_core",
+            "--kind",
+            "Added",
+            "--body",
+            "grow more vines",
+        ])
         .assert()
         .success()
-        .stdout(predicate::str::contains("created .changie.yaml"));
-
-    let config = fs::read_to_string(tmp.path().join(".changie.yaml")).unwrap();
-    // One project block per releasable member; examples (ignore-release) gets none.
-    assert!(config.contains("key: lat_core"));
-    assert!(config.contains("key: lat_mid"));
-    assert!(config.contains("key: lat_cli"));
-    assert!(!config.contains("key: examples"));
-    assert!(config.contains("changelog: packages/lat_core/CHANGELOG.md"));
-    assert!(config.contains("path: packages/lat_core/gleam.toml"));
-    assert!(config.contains("{{.VersionNoPrefix}}"));
-    // Separator derived from tag-format {name}-v{version}.
-    assert!(config.contains("projectsVersionSeparator: \"-v\""));
-
-    // Now in sync.
-    trellis(tmp.path())
-        .args(["changelog", "sync", "--check"])
-        .assert()
-        .success();
-}
-
-#[test]
-fn sync_updates_only_the_projects_section() {
-    let tmp = tempfile::tempdir().unwrap();
-    copy_fixture_to(tmp.path());
-    write(
-        &tmp.path().join(".changie.yaml"),
-        "# hand-written header comment\nchangesDir: .changes\nunreleasedDir: unreleased\nprojects:\n  - label: stale\n    key: stale\nkinds:\n  - label: Added\n",
-    );
-
-    trellis(tmp.path())
-        .args(["changelog", "sync", "--check"])
-        .assert()
-        .failure()
-        .stdout(predicate::str::contains("out of date"));
-
-    trellis(tmp.path())
-        .args(["changelog", "sync"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("updated .changie.yaml"));
-
-    let config = fs::read_to_string(tmp.path().join(".changie.yaml")).unwrap();
-    assert!(config.contains("# hand-written header comment"));
-    assert!(config.contains("kinds:"));
-    assert!(config.contains("key: lat_core"));
-    assert!(!config.contains("key: stale"));
-}
-
-#[test]
-fn doctor_flags_changie_drift_and_fix_repairs_it() {
-    let tmp = tempfile::tempdir().unwrap();
-    copy_fixture_to(tmp.path());
-    write(
-        &tmp.path().join(".changie.yaml"),
-        "changesDir: .changes\nprojects:\n  - label: stale\n    key: stale\n",
-    );
-
-    trellis(tmp.path())
-        .arg("doctor")
-        .assert()
-        .failure()
         .stdout(predicate::str::contains(
-            ".changie.yaml projects are out of date",
+            ".changes/unreleased/lat_core-1.toml",
         ));
+    let fragment = fs::read_to_string(root.join(".changes/unreleased/lat_core-1.toml")).unwrap();
+    assert_eq!(
+        fragment,
+        "project = \"lat_core\"\nkind = \"Added\"\nbody = \"grow more vines\"\n"
+    );
 
-    trellis(tmp.path())
-        .args(["doctor", "--fix"])
+    // A second fragment gets the next free name.
+    trellis(root)
+        .args([
+            "changelog",
+            "new",
+            "--package",
+            "lat_core",
+            "--kind",
+            "Fixed",
+            "--body",
+            "x",
+        ])
         .assert()
         .success()
-        .stdout(predicate::str::contains("fixed: regenerated .changie.yaml"));
+        .stdout(predicate::str::contains("lat_core-2.toml"));
 
-    trellis(tmp.path())
-        .args(["changelog", "sync", "--check"])
+    trellis(root)
+        .args([
+            "changelog",
+            "new",
+            "--package",
+            "nope",
+            "--kind",
+            "Added",
+            "--body",
+            "x",
+        ])
         .assert()
-        .success();
+        .failure()
+        .stderr(predicate::str::contains("unknown package"));
+    trellis(root)
+        .args([
+            "changelog",
+            "new",
+            "--package",
+            "examples",
+            "--kind",
+            "Added",
+            "--body",
+            "x",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("excluded from release"));
+    trellis(root)
+        .args([
+            "changelog",
+            "new",
+            "--package",
+            "lat_core",
+            "--kind",
+            "Invented",
+            "--body",
+            "x",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("unknown kind `Invented`"))
+        .stderr(predicate::str::contains("Added"));
+    trellis(root)
+        .args(["changelog", "new", "--kind", "Added", "--body", "x"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("--package is required"));
 }
 
-// ---- changelog check ----------------------------------------------------
+// ---- changelog check ---------------------------------------------------------
 
 #[test]
 fn changelog_check_maps_diff_to_missing_fragments() {
@@ -219,7 +188,7 @@ fn changelog_check_maps_diff_to_missing_fragments() {
     write(&root.join("packages/lat_core/src/new.gleam"), "// x\n");
     write(&root.join("packages/lat_mid/src/new.gleam"), "// x\n");
     write(&root.join("examples/src/new.gleam"), "// x\n");
-    add_fragment(root, "lat_core", 1);
+    add_fragment(root, "lat_core", "Added", "something");
     git(&["add", "."]);
     git(&["commit", "-q", "-m", "change"]);
 
@@ -241,7 +210,7 @@ fn changelog_check_maps_diff_to_missing_fragments() {
     assert!(payload["preview"].as_str().unwrap().contains("lat_mid"));
 
     // Adding the missing fragment turns the check green.
-    add_fragment(root, "lat_mid", 1);
+    add_fragment(root, "lat_mid", "Fixed", "more");
     trellis(root)
         .args(["changelog", "check", "--base", "main"])
         .assert()
@@ -250,51 +219,47 @@ fn changelog_check_maps_diff_to_missing_fragments() {
 }
 
 #[test]
-fn changelog_check_rejects_fragments_for_unknown_projects() {
+fn invalid_fragments_fail_check_and_doctor() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
     copy_fixture_to(root);
-    let git = |args: &[&str]| {
-        std::process::Command::new("git")
-            .args(args)
-            .current_dir(root)
-            .env("GIT_AUTHOR_NAME", "t")
-            .env("GIT_AUTHOR_EMAIL", "t@t")
-            .env("GIT_COMMITTER_NAME", "t")
-            .env("GIT_COMMITTER_EMAIL", "t@t")
-            .stdout(std::process::Stdio::null())
-            .status()
-            .unwrap();
-    };
-    git(&["init", "-q", "-b", "main"]);
-    git(&["add", "."]);
-    git(&["commit", "-q", "-m", "init"]);
-    add_fragment(root, "lat_typo", 1);
-    git(&["add", "."]);
-    git(&["commit", "-q", "-m", "fragment"]);
+    add_fragment(root, "lat_typo", "Added", "x"); // unknown project
+    add_fragment(root, "lat_core", "Invented", "x"); // unknown kind
+    write(
+        &root.join(".changes/unreleased/broken-1.toml"),
+        "not toml at all {{{\n",
+    );
 
     trellis(root)
-        .args(["changelog", "check", "--base", "main"])
+        .arg("doctor")
         .assert()
         .failure()
-        .stdout(predicate::str::contains("lat_typo"))
-        .stdout(predicate::str::contains("not a workspace member"));
+        .stdout(predicate::str::contains(
+            "`lat_typo` is not a workspace member",
+        ))
+        .stdout(predicate::str::contains("kind `Invented` is not one of"))
+        .stdout(predicate::str::contains("broken-1.toml"));
+
+    // plan/apply refuse loudly instead of dropping fragments.
+    trellis(root)
+        .args(["version", "plan"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("invalid changelog fragment(s)"));
 }
 
 // ---- version plan / apply ------------------------------------------------
 
 #[test]
-fn version_plan_reports_pending_bumps() {
+fn version_plan_bumps_by_the_largest_kind() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
     copy_fixture_to(root);
-    let changie = install_fake_changie(root);
-    add_fragment(root, "lat_core", 1);
-    add_fragment(root, "lat_core", 2);
-    plan_release(root, "lat_core", "packages/lat_core", "1.3.0");
+    add_fragment(root, "lat_core", "Fixed", "patch-level change");
+    add_fragment(root, "lat_core", "Added", "minor-level change");
+    add_fragment(root, "lat_mid", "Breaking", "major-level change");
 
     let output = trellis(root)
-        .env("TRELLIS_CHANGIE_BIN", &changie)
         .args(["version", "plan", "--json"])
         .output()
         .unwrap();
@@ -302,12 +267,10 @@ fn version_plan_reports_pending_bumps() {
     let plan: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(
         plan,
-        serde_json::json!([{
-            "name": "lat_core",
-            "current": "1.2.0",
-            "next": "1.3.0",
-            "fragments": 2,
-        }])
+        serde_json::json!([
+            {"name": "lat_core", "current": "1.2.0", "next": "1.3.0", "fragments": 2},
+            {"name": "lat_mid", "current": "0.5.0", "next": "1.0.0", "fragments": 1},
+        ])
     );
 }
 
@@ -315,9 +278,7 @@ fn version_plan_reports_pending_bumps() {
 fn version_plan_is_empty_without_fragments() {
     let tmp = tempfile::tempdir().unwrap();
     copy_fixture_to(tmp.path());
-    let changie = install_fake_changie(tmp.path());
     trellis(tmp.path())
-        .env("TRELLIS_CHANGIE_BIN", &changie)
         .args(["version", "plan"])
         .assert()
         .success()
@@ -325,16 +286,14 @@ fn version_plan_is_empty_without_fragments() {
 }
 
 #[test]
-fn version_apply_bumps_and_patches_lockfiles() {
+fn version_apply_batches_renders_bumps_and_patches_lockfiles() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
     copy_fixture_to(root);
-    let changie = install_fake_changie(root);
-    add_fragment(root, "lat_core", 1);
-    plan_release(root, "lat_core", "packages/lat_core", "1.3.0");
+    add_fragment(root, "lat_core", "Added", "grow more vines");
+    add_fragment(root, "lat_core", "Fixed", "repair the trellis");
 
     let output = trellis(root)
-        .env("TRELLIS_CHANGIE_BIN", &changie)
         .args(["version", "apply", "--json"])
         .output()
         .unwrap();
@@ -351,25 +310,36 @@ fn version_apply_bumps_and_patches_lockfiles() {
         serde_json::json!(["packages/lat_mid/manifest.toml"])
     );
 
-    // gleam.toml was bumped by the (fake) changie replacement…
-    let core = fs::read_to_string(root.join("packages/lat_core/gleam.toml")).unwrap();
-    assert!(core.contains("version = \"1.3.0\""));
-    // …and the dependent's lockfile was patched surgically: version updated,
-    // comments and the Hex dep untouched.
+    // gleam.toml was bumped surgically: version changed, the rest untouched.
+    let manifest = fs::read_to_string(root.join("packages/lat_core/gleam.toml")).unwrap();
+    assert!(manifest.contains("version = \"1.3.0\""));
+    assert!(manifest.contains("licences = [\"MIT\"]"));
+    // The version section was batched…
+    let section = fs::read_to_string(root.join(".changes/lat_core/v1.3.0.md")).unwrap();
+    assert_eq!(
+        section,
+        "## v1.3.0 - 2026-07-11\n\n### Added\n\n- grow more vines\n\n### Fixed\n\n- repair the trellis\n"
+    );
+    // …the CHANGELOG was reassembled from header + sections…
+    let changelog = fs::read_to_string(root.join("packages/lat_core/CHANGELOG.md")).unwrap();
+    assert!(changelog.starts_with("# lat_core changelog\n"));
+    assert!(changelog.contains("## v1.3.0 - 2026-07-11"));
+    assert!(changelog.contains("- grow more vines"));
+    // …fragments were consumed, and the dependent's lockfile patched.
+    assert_eq!(
+        fs::read_dir(root.join(".changes/unreleased"))
+            .unwrap()
+            .count(),
+        0
+    );
     let lock = fs::read_to_string(root.join("packages/lat_mid/manifest.toml")).unwrap();
-    assert!(lock.contains("# This file was generated by Gleam"));
     assert!(lock.contains("{ name = \"lat_core\", version = \"1.3.0\""));
-    assert!(lock.contains("{ name = \"gleam_stdlib\", version = \"0.40.0\""));
-    // batch ran for the project and merge ran once.
-    let log = fs::read_to_string(root.join(".fake/log")).unwrap();
-    assert_eq!(log, "batch lat_core\nmerge\n");
+    assert!(lock.contains("# This file was generated by Gleam"));
 
-    // The bump is now consistent: doctor's lockfile check passes.
+    // Everything is consistent afterwards…
     trellis(root).arg("doctor").assert().success();
-
-    // Re-running apply is a no-op (fragments were consumed by batch).
+    // …and re-running apply is a no-op.
     trellis(root)
-        .env("TRELLIS_CHANGIE_BIN", &changie)
         .args(["version", "apply"])
         .assert()
         .success()
@@ -377,36 +347,50 @@ fn version_apply_bumps_and_patches_lockfiles() {
 }
 
 #[test]
-fn version_apply_fails_loudly_when_replacement_does_not_land() {
+fn version_apply_accumulates_sections_newest_first() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
     copy_fixture_to(root);
-    let changie = install_fake_changie(root);
-    add_fragment(root, "lat_core", 1);
-    // Point the fake's replacement at the wrong directory, simulating a
-    // stale/missing replacements block in .changie.yaml.
-    plan_release(root, "lat_core", "packages/lat_mid", "1.3.0");
 
-    trellis(root)
-        .env("TRELLIS_CHANGIE_BIN", &changie)
-        .args(["version", "apply"])
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains("did not update `lat_core`"));
+    add_fragment(root, "lat_core", "Fixed", "first release");
+    trellis(root).args(["version", "apply"]).assert().success();
+    add_fragment(root, "lat_core", "Added", "second release");
+    trellis(root).args(["version", "apply"]).assert().success();
+
+    let changelog = fs::read_to_string(root.join("packages/lat_core/CHANGELOG.md")).unwrap();
+    let newer = changelog.find("## v1.3.0").expect("second release section");
+    let older = changelog.find("## v1.2.1").expect("first release section");
+    assert!(newer < older, "newest section first:\n{changelog}");
 }
 
 #[test]
-fn version_plan_rejects_fragment_for_unreleasable_project() {
+fn custom_minijinja_templates_shape_the_output() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
     copy_fixture_to(root);
-    let changie = install_fake_changie(root);
-    add_fragment(root, "examples", 1);
+    let config = fs::read_to_string(root.join("workspace.toml")).unwrap();
+    write(
+        &root.join("workspace.toml"),
+        &format!(
+            concat!(
+                "{config}\n",
+                "[changelog]\n",
+                "header-format = \"# Changes to {{{{ name }}}}\"\n",
+                "version-format = \"## {{{{ tag }}}} ({{{{ date }}}})\"\n",
+                "kind-format = \"**{{{{ kind | upper }}}}**\"\n",
+                "change-format = \"* {{{{ body }}}}\"\n",
+                "kinds = [{{ label = \"Tweaked\", bump = \"patch\" }}]\n",
+            ),
+            config = config
+        ),
+    );
+    add_fragment(root, "lat_core", "Tweaked", "polished the finish");
 
-    trellis(root)
-        .env("TRELLIS_CHANGIE_BIN", &changie)
-        .args(["version", "plan"])
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains("excluded from release"));
+    trellis(root).args(["version", "apply"]).assert().success();
+
+    let changelog = fs::read_to_string(root.join("packages/lat_core/CHANGELOG.md")).unwrap();
+    assert!(changelog.starts_with("# Changes to lat_core\n"));
+    assert!(changelog.contains("## lat_core-v1.2.1 (2026-07-11)"));
+    assert!(changelog.contains("**TWEAKED**"));
+    assert!(changelog.contains("* polished the finish"));
 }

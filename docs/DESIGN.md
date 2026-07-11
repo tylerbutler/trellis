@@ -55,6 +55,8 @@ path dependencies). The design principle of this tool is therefore:
   become obsolete and its release layer should still work.)
 - **Not a changelog engine (initially).** changie's project mode works well; we
   wrap and generate for it rather than reimplement it. See §7.
+  *(Revised pre-release: trellis now IS the changelog engine — §7 explains
+  why the wrap was retired before it shipped.)*
 - **Not a general task runner.** `just` remains fine for repo chores unrelated to
   the workspace (the justfile shrinks; it doesn't have to die).
 
@@ -116,11 +118,29 @@ path-dep-requirement = "caret"
 retry = { attempts = 5, initial-delay = "30s", multiplier = 2 }
 
 [changelog]
-tool = "changie"             # trellis generates .changie.yaml projects (§7)
+# Native engine (§7): fragments in <dir>/unreleased/, version sections in
+# <dir>/<package>/, per-package CHANGELOG.md assembled from them. All
+# format values are minijinja templates. Everything below is the default.
+dir = ".changes"
+header-format = "# {{ name }} changelog"
+version-format = "## v{{ version }} - {{ date }}"
+kind-format = "### {{ kind }}"
+change-format = "- {{ body }}"
+kinds = [
+  { label = "Breaking", bump = "major" },
+  { label = "Removed", bump = "major" },
+  { label = "Added", bump = "minor" },
+  { label = "Changed", bump = "minor" },
+  { label = "Deprecated", bump = "minor" },
+  { label = "Fixed", bump = "patch" },
+  { label = "Performance", bump = "patch" },
+  { label = "Security", bump = "patch" },
+]
 ```
 
-Notably absent, because derived: package lists, dependency order, changie project
-blocks, version-file maps, path-dep rewrite maps, tag→package mappings.
+Notably absent, because derived: package lists, dependency order, per-package
+changelog wiring, version-file maps, path-dep rewrite maps, tag→package
+mappings.
 
 ## 5. Command surface
 
@@ -165,23 +185,27 @@ What this replaces: every bash loop in the justfile (~180 of its 240 lines).
 ### Changelog & versioning
 
 ```
-trellis changelog new [--package <pkg>]          # wraps `changie new --project`
+trellis changelog new [--package <pkg>] --kind <kind> --body <text>
 trellis changelog check --base <sha> --head <sha> [--json]
-trellis changelog sync                            # regenerate .changie.yaml projects
 trellis version plan [--json]                     # dry-run: what would be bumped
 trellis version apply                             # batch + merge + lockfile patch
 ```
 
-- `changelog sync` generates the `projects:` section of `.changie.yaml` from the
-  workspace model — label, key, changelog path, and version-replacement block per
-  releasable member (`ignore-release` matches get no project block). The 88
-  hand-written lines in lattice's `.changie.yaml` become output.
-  `doctor` fails if the file is out of date (same model as generated lockfiles).
-- `changelog check` reimplements the changie-check glue: map the base..head diff to
+- The engine is native (§7). Fragments are TOML files in
+  `.changes/unreleased/` (`project`, `kind`, `body`); `changelog new` writes
+  one non-interactively. There is no per-package changelog wiring to
+  generate or keep in sync — the lattice failure mode of "forgotten config
+  block means a package cannot be released" has no equivalent, because there
+  is no config block.
+- `changelog check` replaces the changie-check glue: map the base..head diff to
   packages, decide which need fragments, emit JSON (`has-entries`, `needs-entry`,
-  `preview`, per-package detail) for the PR workflow's sticky comment.
-- `version apply` is the release step: run `changie batch` + `changie merge` for
-  every project with unreleased fragments, then **patch `manifest.toml` locked
+  `preview`, per-package detail) for the PR workflow's sticky comment. Invalid
+  fragments (unknown package or kind, empty body) fail the check.
+- `version apply` is the release step: per pending package, compute the next
+  version from the fragments' kinds (largest bump wins), render the version
+  section (minijinja), store it under `.changes/<package>/`, reassemble the
+  package's CHANGELOG.md newest-first, bump `gleam.toml` with a surgical
+  toml_edit patch (no regex replacements), then **patch `manifest.toml` locked
   versions of workspace-internal deps directly** — the exact logic of release.yml's
   `post-batch-command`, but implemented as tested code with a TOML parser instead
   of `sed`, and still zero Hex network calls (that constraint is load-bearing:
@@ -238,15 +262,16 @@ for free.
 ### Validation
 
 ```
-trellis doctor [--fix]
+trellis doctor
 ```
 
 Checks, each of which is an unenforced invariant in lattice today:
 
 1. Member globs resolve to ≥1 directory; every member has a parseable `gleam.toml`.
 2. Every path dep between members stays inside the workspace; graph is acyclic.
-3. Generated files are current: `.changie.yaml` projects match members (`--fix`
-   regenerates).
+3. Unreleased changelog fragments parse and reference a releasable package and
+   a configured kind. (Originally ".changie.yaml projects are current, --fix
+   regenerates" — the native engine deleted the generated file entirely.)
 4. Each releasable member's `gleam.toml` version ≥ its latest CHANGELOG version,
    and each has a changelog file where expected.
 5. `manifest.toml` locked versions of workspace-internal deps match those deps'
@@ -293,7 +318,7 @@ With trellis, each workflow keeps its trigger and becomes a few commands:
 ```yaml
 # release.yml (on push to main)
 - run: trellis version apply            # batch, merge, patch lockfiles — no bash
-- run: trellis release pr               # or keep the changie-release action for PR mgmt
+- run: trellis release pr               # create-or-update the release PR via gh
 
 # auto-tag.yml (on release-PR merge)
 - run: trellis tag create --github-release
@@ -313,12 +338,30 @@ requirement of the tool; both shapes are supported.
 
 ## 7. Interop decisions
 
-**Wrap changie, don't replace it (initially).** changie's fragment format, kinds,
-and batching are good, and lattice has history in `.changes/`. Trellis generates
-the mechanical part of `.changie.yaml` (project blocks) and shells out to `changie`
-for `new`/`batch`/`merge`. If the two-tool dependency chafes later, a native
-fragment engine can slot in behind the same `trellis changelog`/`version` commands;
-the fragment file format would be kept changie-compatible.
+**Changie is subsumed, not wrapped.** The original decision was "wrap changie,
+don't replace it (initially)", with a native fragment engine as the escape
+hatch if the two-tool dependency chafed. It chafed before it ever shipped:
+the wrap needed a generated `.changie.yaml` projects section plus a doctor
+drift-check whose only purpose was telling changie things trellis already
+knew; `changie next`'s output had to be parsed defensively; version bumps ran
+through user-supplied regex "replacements" where trellis has a real TOML
+editor; and every consuming workspace had to install a second binary in CI.
+Since trellis was pre-release, the native engine slotted in behind the same
+`trellis changelog`/`version` commands with no compatibility burden:
+
+- Fragments are TOML (`project`, `kind`, `body`) in `.changes/unreleased/` —
+  consistent with everything else trellis reads, and validated by `doctor`
+  on every PR (an invalid fragment can't hide until release time).
+- Version bumps derive from the kinds' configured `bump` (largest wins);
+  `gleam.toml` is bumped with toml_edit, not regex.
+- Rendered version sections live under `.changes/<package>/`; each package's
+  CHANGELOG.md is a generated file reassembled from them, newest first.
+- All formats are minijinja templates with a small context, so rendering
+  stays user-configurable without a second tool or a Go-template engine.
+
+(This applies to the workspaces trellis manages. Trellis's own repo releases
+via the changie-release/release-plz/cargo-dist pipeline, which is a separate
+concern and unaffected.)
 
 **The justfile survives as an interface, not an implementation.** Recipes become
 one-line delegations (`test *ARGS: (trellis run test {{ARGS}})`), preserving muscle
@@ -392,23 +435,20 @@ end-to-end suite runs against a fixture workspace with a mocked Hex API.
    tie-break instead of `petgraph` (deterministic output, one less dependency),
    and the read-only phase uses `toml` for parsing — `toml_edit` enters with the
    first command that patches files (phase 2's lockfile patch).
-2. **Phase 2 — changelog + version.** `changelog sync/check/new`, `version
+2. **Phase 2 — changelog + version.** `changelog check/new`, `version
    plan/apply`. Deletes `.changie.yaml` hand-maintenance, release.yml's inline
    bash, and the changie-check glue.
-   **Status: implemented.** Notes: `sync` splices only the top-level
-   `projects:` section of `.changie.yaml` textually (preserving hand-written
-   config and comments elsewhere in the file, per the toml_edit philosophy)
-   and creates a full starter config — with the `projectsVersionSeparator`
-   derived from `tag-format` — when the file is missing; `doctor` gained the
-   generated-file check and `--fix`. `version plan` shells out to
-   `changie next auto --project` per pending project rather than reimplement
-   changie's kind→bump rules. `version apply` verifies after batching that
-   every `gleam.toml` actually received its new version (catching a stale
-   replacements block), then patches lockfiles with `toml_edit` — zero Hex
-   calls, formatting preserved. Fragments naming unknown or unreleasable
-   projects fail `plan`/`apply`/`check` loudly. The changie binary is
-   overridable via `TRELLIS_CHANGIE_BIN` (used by the e2e suite to run a fake
-   changie).
+   **Status: implemented, then revised.** The first implementation wrapped
+   changie (generated `.changie.yaml` projects, shelled out to
+   `next`/`batch`/`merge`, `TRELLIS_CHANGIE_BIN` override for tests). Before
+   release, the wrap was replaced by the native engine described in §7:
+   `changelog sync` and its doctor drift-check ceased to exist (nothing left
+   to generate), fragments became TOML, bumps derive from configured kinds,
+   rendering is minijinja, and `gleam.toml` is bumped with `toml_edit`.
+   `version apply` still verifies after batching that every `gleam.toml`
+   received its new version, then patches lockfiles with `toml_edit` — zero
+   Hex calls, formatting preserved. Invalid fragments fail
+   `plan`/`apply`/`check` (and `doctor`) loudly.
 3. **Phase 3 — release + publish.** `tag`, `publish`, `lockfile refresh`,
    `ci matrix/outputs`. Retires `read-gleam-workspace` and `gleam-publish` call
    sites. Optionally move to the tags-after-publish flow (§6).
@@ -467,9 +507,10 @@ the workspace) and `trellis release pr` (see question 2 in §11).
    **Resolved: absorbed.** `trellis release pr` computes the plan, runs
    `version apply` on a release branch, force-pushes it (create-or-update
    semantics), and drives `gh pr create`/`gh pr edit` with a bump table and
-   per-package CHANGELOG sections in the body. A workspace can still choose
-   the changie-release action instead — the batch/patch internals are the
-   same `version apply` either way.
+   per-package CHANGELOG sections in the body. (With the native changelog
+   engine of §7, `trellis release pr` is the only release-PR path for gleam
+   workspaces — the changie-release action drives changie, which trellis no
+   longer uses.)
 3. **Affected-only CI as default.**
    **Resolved: full fan-out stays the default.** `--since` is opt-in for
    `list`/`run`/`exec`/`ci matrix` — the safety trade-off (implicit coupling

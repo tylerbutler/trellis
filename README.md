@@ -138,30 +138,50 @@ name overrides a built-in.
 ### Changelog & versioning
 
 ```
-trellis changelog new [--package <pkg>]
+trellis changelog new [--package <pkg>] --kind <kind> --body <text>
 trellis changelog check --base <ref> [--head <ref>] [--json]
-trellis changelog sync [--check]
 trellis version plan [--json]
 trellis version apply [--json]
 ```
 
-Trellis wraps [changie](https://changie.dev) rather than reimplementing it.
-`changelog sync` derives the `projects:` section of `.changie.yaml` from the
-workspace model — one block (label, key, changelog path, version replacement)
-per releasable member — leaving the rest of the file, comments included,
-untouched; it creates a complete starter config if none exists. `changelog
-check` maps a `base...head` diff to packages and fails if a changed releasable
-package has no unreleased fragment, emitting JSON (including a markdown
-`preview`) for a PR sticky comment. `changelog new` routes `changie new` to a
-package.
+The changelog engine is native — no second tool to install, no config file
+to keep in sync. Changes are recorded as TOML fragments in
+`.changes/unreleased/` (`project`, `kind`, `body`); `changelog new` writes
+one, non-interactively, which suits CI and agents as well as shells.
+`changelog check` maps a `base...head` diff to packages and fails if a
+changed releasable package has no unreleased fragment, emitting JSON
+(including a markdown `preview`) for a PR sticky comment.
 
-`version plan` shows what would be bumped (fragment counts and next versions
-via `changie next auto`). `version apply` runs `changie batch` per pending
-project and one `changie merge`, verifies every `gleam.toml` actually picked
-up its new version, then surgically patches each member's `manifest.toml` so
-locked workspace-internal deps match — using a real TOML parser that preserves
-formatting, and zero Hex network calls. Fragments naming unknown or
-unreleasable projects are hard errors.
+`version plan` computes each pending package's next version from its
+fragments' kinds (the largest bump wins; kinds and their bumps are
+configurable under `[changelog]`). `version apply` renders each package's
+version section (minijinja templates, see below), stores it under
+`.changes/<package>/`, reassembles the package's CHANGELOG.md newest-first,
+bumps `gleam.toml` with a surgical TOML edit — no regex — and finally patches
+each member's `manifest.toml` so locked workspace-internal deps match. Zero
+Hex network calls throughout. Invalid fragments (unknown package or kind,
+empty body, unparseable TOML) are hard errors for `plan`/`apply`: silently
+dropping a change is exactly the drift trellis exists to prevent.
+
+Rendering is controlled by minijinja templates in `[changelog]`, each with a
+small context (`name`, `version`, `date`, `tag`, `kind`, `body` as
+applicable):
+
+```toml
+[changelog]
+version-format = "## v{{ version }} - {{ date }}"     # default
+kind-format = "### {{ kind }}"                         # default
+change-format = "- {{ body }}"                         # default
+kinds = [
+  { label = "Breaking", bump = "major" },
+  { label = "Added", bump = "minor" },
+  { label = "Fixed", bump = "patch" },
+]
+```
+
+Note that each package's CHANGELOG.md is a generated file: the source of
+truth is the version sections under `.changes/<package>/`, and `apply`
+reassembles the changelog from them.
 
 ### Release & publish
 
@@ -207,7 +227,7 @@ to a package name for shell substitution.
 ### Validation
 
 ```
-trellis doctor [--fix]
+trellis doctor
 ```
 
 Checks every workspace invariant and reports all problems at once: member
@@ -215,8 +235,8 @@ globs resolve and parse, path deps stay inside the workspace, the graph is
 acyclic, `ignore-release` globs match real members, no releasable package
 depends on an unreleasable one, tag formats don't collide, `manifest.toml`
 locked versions match workspace-internal `gleam.toml` versions, no package's
-version is behind its CHANGELOG, and the generated `.changie.yaml` projects
-match the workspace (`--fix` regenerates them). When `.tool-versions` pins
+version is behind its CHANGELOG, and every unreleased changelog fragment
+parses and references a valid package and kind. When `.tool-versions` pins
 gleam, a mismatched gleam on PATH is reported as an advisory warning
 (enforcing toolchains stays mise/asdf's job). Non-zero exit on any error —
 run it on every PR.
@@ -230,11 +250,11 @@ trellis new <name> [--template lib] [--path <dir>]
 Creates the member directory (derived from where existing members live, e.g.
 `packages/<name>`), a `gleam.toml` pre-filled from a sibling's metadata
 (gleam constraint, licences, repository, gleam_stdlib/gleeunit
-requirements), a stub module and gleeunit test, a CHANGELOG, and a README —
-then regenerates the `.changie.yaml` projects. It refuses names that don't
-match any members glob, so a new package can never be silently invisible to
-the workspace. Adding a package is one command instead of edits to five
-files.
+requirements), a stub module and gleeunit test, a CHANGELOG, and a README.
+There is no registration step anywhere: membership, the dependency graph,
+and the changelog engine all derive from the files just written. It refuses
+names that don't match any members glob, so a new package can never be
+silently invisible to the workspace.
 
 ### CI glue
 

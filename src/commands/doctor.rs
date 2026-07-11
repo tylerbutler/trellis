@@ -3,7 +3,7 @@
 
 use crate::gleam;
 use crate::workspace::Workspace;
-use anyhow::{Context, Result};
+use anyhow::Result;
 use std::path::Path;
 
 #[derive(Default)]
@@ -22,7 +22,7 @@ impl Report {
 }
 
 /// Returns true when the workspace is healthy (warnings allowed).
-pub fn run(root: &Path, fix: bool) -> Result<bool> {
+pub fn run(root: &Path) -> Result<bool> {
     let (workspace, diagnostics) = Workspace::load_with_diagnostics(root)?;
     let mut report = Report {
         errors: diagnostics.errors,
@@ -34,7 +34,7 @@ pub fn run(root: &Path, fix: bool) -> Result<bool> {
         check_tag_collisions(workspace, &mut report);
         check_lockfiles(workspace, &mut report);
         check_changelogs(workspace, &mut report);
-        check_changie_config(workspace, fix, &mut report)?;
+        check_fragments(workspace, &mut report);
         check_tool_versions(workspace, &mut report);
     }
 
@@ -45,7 +45,7 @@ pub fn run(root: &Path, fix: bool) -> Result<bool> {
         "tag format produces a unique tag per releasable member",
         "manifest.toml locked versions match workspace-internal gleam.toml versions",
         "each releasable member's version is not behind its CHANGELOG",
-        "generated .changie.yaml projects match the workspace (--fix regenerates)",
+        "unreleased changelog fragments parse and reference valid packages and kinds",
         "gleam on PATH matches the .tool-versions pin (advisory)",
     ];
     for check in checked {
@@ -76,38 +76,18 @@ pub fn run(root: &Path, fix: bool) -> Result<bool> {
     }
 }
 
-/// Check 3: the generated `projects:` section of `.changie.yaml` must match
-/// the workspace — a forgotten `changelog sync` means a package cannot be
-/// versioned or released. A missing file is only a warning (the workspace may
-/// not have adopted changie); drift in an existing file is an error.
-fn check_changie_config(workspace: &Workspace, fix: bool, report: &mut Report) -> Result<()> {
-    use crate::commands::changelog::{SyncStatus, sync_status};
-
-    let (status, expected) = sync_status(workspace);
-    match status {
-        SyncStatus::Clean => {}
-        SyncStatus::Missing => report.warning(format!(
-            "no {} — run `trellis changelog sync` to adopt changie",
-            crate::changie::CONFIG_FILE
-        )),
-        SyncStatus::Drifted => {
-            if fix {
-                let path = workspace.root.join(crate::changie::CONFIG_FILE);
-                std::fs::write(&path, expected)
-                    .with_context(|| format!("failed to write {}", path.display()))?;
-                println!(
-                    "fixed: regenerated {} projects",
-                    crate::changie::CONFIG_FILE
-                );
-            } else {
-                report.error(format!(
-                    "{} projects are out of date with the workspace; run `trellis changelog sync` (or `trellis doctor --fix`)",
-                    crate::changie::CONFIG_FILE
-                ));
+/// Check 3 (revised for the native engine): every unreleased fragment must
+/// parse, name a releasable member, and use a configured kind — an invalid
+/// fragment would otherwise surface only at release time.
+fn check_fragments(workspace: &Workspace, report: &mut Report) {
+    match crate::changelog::load_fragments(workspace) {
+        Ok(fragments) => {
+            for problem in fragments.problems {
+                report.error(problem);
             }
         }
+        Err(err) => report.error(format!("{err:#}")),
     }
-    Ok(())
 }
 
 /// Advisory (design §11 q4): when `.tool-versions` pins gleam, warn if the

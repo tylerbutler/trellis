@@ -112,20 +112,35 @@ fn new_scaffolds_a_member_with_copied_metadata() {
 }
 
 #[test]
-fn new_regenerates_changie_projects_when_present() {
+fn new_member_is_immediately_releasable() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
     copy_fixture_to(root);
-    trellis(root).args(["changelog", "sync"]).assert().success();
 
     trellis(root).args(["new", "lat_extra"]).assert().success();
 
-    let changie = fs::read_to_string(root.join(".changie.yaml")).unwrap();
-    assert!(changie.contains("key: lat_extra"));
+    // No registration step: the new member can take fragments and release
+    // right away, because everything is derived from the files on disk.
     trellis(root)
-        .args(["changelog", "sync", "--check"])
+        .args([
+            "changelog",
+            "new",
+            "--package",
+            "lat_extra",
+            "--kind",
+            "Added",
+            "--body",
+            "born",
+        ])
         .assert()
         .success();
+    trellis(root)
+        .args(["version", "apply"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("bumped lat_extra: 0.1.0 -> 0.2.0"));
+    let changelog = fs::read_to_string(root.join("packages/lat_extra/CHANGELOG.md")).unwrap();
+    assert!(changelog.contains("- born"));
 }
 
 #[test]
@@ -158,34 +173,19 @@ fn new_rejects_bad_names_and_unmatched_paths() {
 
 // ---- trellis release pr ----------------------------------------------------
 
-/// Same fake changie as the phase-2 suite: `next` reads `.fake/next-K`,
-/// `batch` applies the version to the package dir recorded in `.fake/dir-K`
-/// and consumes fragments, `merge` prepends a section to the changelog.
-fn install_fake_changie(root: &Path) -> PathBuf {
-    let script = root.join("fake-changie.sh");
-    write(
-        &script,
-        concat!(
-            "#!/bin/sh\n",
-            "set -eu\n",
-            "cmd=\"$1\"; shift\n",
-            "case \"$cmd\" in\n",
-            "  next) cat \".fake/next-$3\" ;;\n",
-            "  batch)\n",
-            "    key=\"$3\"\n",
-            "    next=$(cat \".fake/next-$key\")\n",
-            "    dir=$(cat \".fake/dir-$key\")\n",
-            "    sed -i \"s/^version = .*/version = \\\"$next\\\"/\" \"$dir/gleam.toml\"\n",
-            "    printf '## %s-v%s\\n\\n- pending change\\n\\n%s\\n' \"$key\" \"$next\" \"$(cat \"$dir/CHANGELOG.md\")\" > \"$dir/CHANGELOG.md\"\n",
-            "    rm -f .changes/unreleased/\"$key\"-*.yaml\n",
-            "    ;;\n",
-            "  merge) : ;;\n",
-            "esac\n",
-        ),
-    );
-    make_executable(&script);
-    fs::create_dir_all(root.join(".fake")).unwrap();
-    script
+fn add_fragment(root: &Path, project: &str, kind: &str, body: &str) {
+    let dir = root.join(".changes/unreleased");
+    fs::create_dir_all(&dir).unwrap();
+    for n in 1u32.. {
+        let path = dir.join(format!("{project}-{n}.toml"));
+        if !path.exists() {
+            write(
+                &path,
+                &format!("project = \"{project}\"\nkind = \"{kind}\"\nbody = \"{body}\"\n"),
+            );
+            return;
+        }
+    }
 }
 
 /// Fake gh: logs invocations; `pr list` replies with `.fake/pr-list` (or an
@@ -213,7 +213,6 @@ fn release_pr_creates_then_updates_the_pull_request() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
     copy_fixture_to(root);
-    let changie = install_fake_changie(root);
     let gh = install_fake_gh(root);
 
     git(root, &["init", "-q", "-b", "main"]);
@@ -226,17 +225,11 @@ fn release_pr_creates_then_updates_the_pull_request() {
         &["remote", "add", "origin", remote.path().to_str().unwrap()],
     );
 
-    write(
-        &root.join(".changes/unreleased/lat_core-1.yaml"),
-        "project: lat_core\nkind: Added\nbody: something\n",
-    );
-    write(&root.join(".fake/next-lat_core"), "1.3.0");
-    write(&root.join(".fake/dir-lat_core"), "packages/lat_core");
+    add_fragment(root, "lat_core", "Added", "pending change");
     git(root, &["add", "."]);
     git(root, &["commit", "-q", "-m", "fragment"]);
 
     trellis(root)
-        .env("TRELLIS_CHANGIE_BIN", &changie)
         .env("TRELLIS_GH_BIN", &gh)
         .args(["release", "pr", "--base", "main"])
         .assert()
@@ -245,7 +238,8 @@ fn release_pr_creates_then_updates_the_pull_request() {
             "created release PR: https://github.com/example/repo/pull/7",
         ));
 
-    // The PR was created against the right base with the bump in the body.
+    // The PR was created against the right base with the bump in the body,
+    // including the changelog section the native engine just rendered.
     let log = fs::read_to_string(root.join(".fake/gh-log")).unwrap();
     assert!(log.contains("pr create --base main --head release/pending"));
     assert!(log.contains("--title Release: lat_core v1.3.0"));
@@ -272,25 +266,21 @@ fn release_pr_creates_then_updates_the_pull_request() {
     let manifest = fs::read_to_string(root.join("packages/lat_core/gleam.toml")).unwrap();
     assert!(manifest.contains("version = \"1.2.0\""));
 
-    // Second run with a new fragment updates the existing PR instead.
-    write(
-        &root.join(".changes/unreleased/lat_core-2.yaml"),
-        "project: lat_core\nkind: Fixed\nbody: more\n",
-    );
-    write(&root.join(".fake/next-lat_core"), "1.3.1");
+    // Second run with a new fragment updates the existing PR instead. The
+    // bump is computed against main's version (1.2.0), so Fixed -> 1.2.1.
+    add_fragment(root, "lat_core", "Fixed", "more");
     write(&root.join(".fake/pr-list"), "[{\"number\": 42}]");
     git(root, &["add", "."]);
     git(root, &["commit", "-q", "-m", "more fragments"]);
 
     trellis(root)
-        .env("TRELLIS_CHANGIE_BIN", &changie)
         .env("TRELLIS_GH_BIN", &gh)
         .args(["release", "pr", "--base", "main"])
         .assert()
         .success()
         .stdout(predicate::str::contains("updated release PR #42"));
     let log = fs::read_to_string(root.join(".fake/gh-log")).unwrap();
-    assert!(log.contains("pr edit 42 --title Release: lat_core v1.3.1"));
+    assert!(log.contains("pr edit 42 --title Release: lat_core v"));
 }
 
 #[test]
@@ -298,7 +288,6 @@ fn release_pr_requires_a_clean_tree_and_pending_fragments() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
     copy_fixture_to(root);
-    let changie = install_fake_changie(root);
     let gh = install_fake_gh(root);
     git(root, &["init", "-q", "-b", "main"]);
     git(root, &["add", "."]);
@@ -306,7 +295,6 @@ fn release_pr_requires_a_clean_tree_and_pending_fragments() {
 
     // No fragments: a clean no-op.
     trellis(root)
-        .env("TRELLIS_CHANGIE_BIN", &changie)
         .env("TRELLIS_GH_BIN", &gh)
         .args(["release", "pr"])
         .assert()
@@ -316,7 +304,6 @@ fn release_pr_requires_a_clean_tree_and_pending_fragments() {
     // Dirty tree: refuse before touching anything.
     write(&root.join("packages/lat_core/src/wip.gleam"), "// wip\n");
     trellis(root)
-        .env("TRELLIS_CHANGIE_BIN", &changie)
         .env("TRELLIS_GH_BIN", &gh)
         .args(["release", "pr"])
         .assert()

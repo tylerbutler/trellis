@@ -1,5 +1,4 @@
-//! `trellis release pr` — create or update the release pull request,
-//! absorbing the PR management half of the changie-release action (design
+//! `trellis release pr` — create or update the release pull request (design
 //! §11 question 2, resolved toward "absorb"): compute the version plan, run
 //! `version apply` on a release branch, push it, and drive `gh` to open or
 //! refresh the PR. The tool already knows exactly what changed; gh does the
@@ -141,7 +140,7 @@ fn build_release_commit_and_pr(
 }
 
 /// Markdown body: the bump table, plus each package's new CHANGELOG section
-/// when one exists (it will after `changie merge`).
+/// (present after `version apply` reassembled the changelogs).
 fn pr_body(workspace: &Workspace, plan: &[version::PlanEntry]) -> String {
     let mut body = String::from(
         "Releases prepared by `trellis release pr`.\n\n| package | from | to | fragments |\n| --- | --- | --- | --- |\n",

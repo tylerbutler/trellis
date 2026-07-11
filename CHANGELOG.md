@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Introspection: `list` (with `--since`/`--with-dependents`/`--releasable`), `graph` (text/dot/mermaid/json), `info`
 - Task running: `run` and `exec` with graph-parallel scheduling, prefixed streamed output, summary table, `--target all`, `--serial`, `--keep-going`; custom tasks via `[tasks]`
 - Validation: `doctor` checks every workspace invariant and reports all problems at once; `--fix` regenerates generated files
-- Changelog & versioning (wrapping changie): `changelog sync/check/new`, `version plan/apply` with surgical `manifest.toml` lockfile patching and zero Hex calls
+- Changelog & versioning (native engine): TOML fragments, kind-driven version bumps, minijinja-templated rendering, generated per-package changelogs; `changelog new/check`, `version plan/apply` with surgical `gleam.toml` bumps and `manifest.toml` lockfile patching, zero Hex calls
 - Release & publish: `tag plan/create` (with `--github-release`), `publish` with Hex idempotency checks, retry/backoff, graph-derived path-dep rewriting and guaranteed manifest restore; `lockfile refresh`; `ci matrix/outputs/tag-package` for GitHub Actions
 - Release PR management: `release pr` runs `version apply` on a release branch and creates or updates the pull request via the gh CLI
 - Scaffolding: `new <name>` creates a member with metadata copied from a sibling, stub module and test, and regenerated `.changie.yaml` projects

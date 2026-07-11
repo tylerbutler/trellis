@@ -14,10 +14,7 @@ pub struct ConfigFile {
     pub tasks: BTreeMap<String, TaskConfig>,
     #[serde(default)]
     pub publish: PublishConfig,
-    // Consumed by the changelog/version layer (rollout phase 2); parsed and
-    // validated now so configs can be written ahead of it.
     #[serde(default)]
-    #[allow(dead_code)]
     pub changelog: ChangelogConfig,
 }
 
@@ -111,24 +108,104 @@ fn default_multiplier() -> u32 {
     2
 }
 
+/// The native changelog engine's configuration. Fragments are TOML files in
+/// `<dir>/unreleased/`; batched version sections live in `<dir>/<package>/`;
+/// each package's CHANGELOG.md is assembled from those. All formats are
+/// minijinja templates.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-#[allow(dead_code)] // consumed by the changelog layer (rollout phase 2)
 pub struct ChangelogConfig {
-    #[serde(default = "default_changelog_tool")]
-    pub tool: String,
+    /// Directory (relative to the workspace root) holding fragments and
+    /// batched version sections.
+    #[serde(default = "default_changelog_dir")]
+    pub dir: String,
+    /// Change kinds and the semver bump each implies. The order here is the
+    /// order kinds appear in rendered changelog sections.
+    #[serde(default = "default_kinds")]
+    pub kinds: Vec<KindConfig>,
+    /// Template for the first line of a package's CHANGELOG.md.
+    /// Context: `name`.
+    #[serde(default = "default_header_format")]
+    pub header_format: String,
+    /// Template for a version heading. Context: `name`, `version`, `date`,
+    /// `tag`.
+    #[serde(default = "default_version_format")]
+    pub version_format: String,
+    /// Template for a kind heading within a version. Context: `kind`, `name`,
+    /// `version`.
+    #[serde(default = "default_kind_format")]
+    pub kind_format: String,
+    /// Template for one change entry. Context: `body`, `kind`, `name`,
+    /// `version`.
+    #[serde(default = "default_change_format")]
+    pub change_format: String,
 }
 
 impl Default for ChangelogConfig {
     fn default() -> Self {
         Self {
-            tool: default_changelog_tool(),
+            dir: default_changelog_dir(),
+            kinds: default_kinds(),
+            header_format: default_header_format(),
+            version_format: default_version_format(),
+            kind_format: default_kind_format(),
+            change_format: default_change_format(),
         }
     }
 }
 
-fn default_changelog_tool() -> String {
-    "changie".to_string()
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct KindConfig {
+    pub label: String,
+    pub bump: Bump,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Bump {
+    Patch,
+    Minor,
+    Major,
+}
+
+fn default_changelog_dir() -> String {
+    ".changes".to_string()
+}
+
+fn default_kinds() -> Vec<KindConfig> {
+    [
+        ("Breaking", Bump::Major),
+        ("Removed", Bump::Major),
+        ("Added", Bump::Minor),
+        ("Changed", Bump::Minor),
+        ("Deprecated", Bump::Minor),
+        ("Fixed", Bump::Patch),
+        ("Performance", Bump::Patch),
+        ("Security", Bump::Patch),
+    ]
+    .into_iter()
+    .map(|(label, bump)| KindConfig {
+        label: label.to_string(),
+        bump,
+    })
+    .collect()
+}
+
+fn default_header_format() -> String {
+    "# {{ name }} changelog".to_string()
+}
+
+fn default_version_format() -> String {
+    "## v{{ version }} - {{ date }}".to_string()
+}
+
+fn default_kind_format() -> String {
+    "### {{ kind }}".to_string()
+}
+
+fn default_change_format() -> String {
+    "- {{ body }}".to_string()
 }
 
 impl ConfigFile {
@@ -154,7 +231,7 @@ mod tests {
 
     #[test]
     fn parses_full_config() {
-        let text = r#"
+        let text = r###"
             [workspace]
             members = ["packages/lattice_*", "examples"]
             ignore-release = ["examples"]
@@ -169,14 +246,21 @@ mod tests {
             retry = { attempts = 5, initial-delay = "30s", multiplier = 2 }
 
             [changelog]
-            tool = "changie"
-        "#;
+            dir = "changes"
+            version-format = "## {{ name }} {{ version }} ({{ date }})"
+            kinds = [
+                { label = "Boom", bump = "major" },
+                { label = "Docs", bump = "patch" },
+            ]
+        "###;
         let config: ConfigFile = toml::from_str(text).unwrap();
         assert_eq!(config.workspace.members.len(), 2);
         assert_eq!(config.workspace.ignore_release, vec!["examples"]);
         assert!(config.tasks["lint"].needs_deps);
         assert_eq!(config.publish.retry.attempts, 5);
-        assert_eq!(config.changelog.tool, "changie");
+        assert_eq!(config.changelog.dir, "changes");
+        assert_eq!(config.changelog.kinds.len(), 2);
+        assert_eq!(config.changelog.kinds[0].bump, Bump::Major);
     }
 
     #[test]
@@ -189,5 +273,17 @@ mod tests {
             PathDepRequirement::Caret
         );
         assert_eq!(config.format_tag("core", "1.2.3"), "core-v1.2.3");
+        assert_eq!(config.changelog.dir, ".changes");
+        assert!(config.changelog.kinds.iter().any(|k| k.label == "Added"));
+        assert_eq!(
+            config.changelog.version_format,
+            "## v{{ version }} - {{ date }}"
+        );
+    }
+
+    #[test]
+    fn bump_ordering_supports_max() {
+        assert!(Bump::Major > Bump::Minor);
+        assert!(Bump::Minor > Bump::Patch);
     }
 }

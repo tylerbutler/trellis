@@ -1,9 +1,10 @@
-//! `trellis version` — plan and apply version bumps. `apply` drives changie
-//! (`batch` + `merge`), verifies the replacements actually landed, then
-//! patches `manifest.toml` locked versions of workspace-internal deps with
-//! zero Hex network calls.
+//! `trellis version` — plan and apply version bumps on the native changelog
+//! engine: compute each package's next version from its fragments' kinds,
+//! render and batch the version section, reassemble CHANGELOG.md, bump
+//! gleam.toml surgically, then patch `manifest.toml` locked versions of
+//! workspace-internal deps — all with zero Hex network calls.
 
-use crate::changie;
+use crate::changelog;
 use crate::lockfile;
 use crate::workspace::Workspace;
 use anyhow::{Context, Result, bail};
@@ -19,44 +20,32 @@ pub struct PlanEntry {
 }
 
 /// One entry per releasable member with unreleased fragments, in topological
-/// order; `next` comes from `changie next auto`. Fragments pointing at
-/// unknown or unreleasable projects are hard errors — silently dropping a
-/// fragment is exactly the drift this tool exists to prevent.
+/// order. Any invalid fragment is a hard error — silently dropping one is
+/// exactly the drift this tool exists to prevent.
 pub fn compute_plan(workspace: &Workspace) -> Result<Vec<PlanEntry>> {
-    let env = changie::locate(&workspace.root);
-    let fragments = changie::unreleased_fragments(&env)?;
-
-    if !fragments.missing_project.is_empty() {
+    let fragments = changelog::load_fragments(workspace)?;
+    if !fragments.problems.is_empty() {
         bail!(
-            "unreleased fragment(s) without a project key: {}",
-            fragments.missing_project.join(", ")
+            "invalid changelog fragment(s):\n  - {}",
+            fragments.problems.join("\n  - ")
         );
     }
-    for project in fragments.by_project.keys() {
-        match workspace.member_index(project) {
-            Some(idx) if workspace.members[idx].releasable => {}
-            Some(_) => {
-                bail!("fragment project `{project}` is excluded from release by ignore-release")
-            }
-            None => bail!("fragment project `{project}` is not a workspace member"),
-        }
-    }
 
+    let kinds = &workspace.config.changelog.kinds;
     let mut plan = Vec::new();
     for member in workspace.members.iter().filter(|m| m.releasable) {
-        let Some(&count) = fragments.by_project.get(&member.name) else {
+        let member_fragments: Vec<&changelog::Fragment> =
+            fragments.for_project(&member.name).collect();
+        if member_fragments.is_empty() {
             continue;
-        };
-        let stdout = changie::run(
-            &workspace.root,
-            &["next", "auto", "--project", &member.name],
-        )?;
-        let next = changie::parse_next_version(&stdout)?;
+        }
+        let next = changelog::next_version(member.version(), &member_fragments, kinds)
+            .with_context(|| format!("cannot compute next version for `{}`", member.name))?;
         plan.push(PlanEntry {
             name: member.name.clone(),
             current: member.version().to_string(),
             next: next.to_string(),
-            fragments: count,
+            fragments: member_fragments.len(),
         });
     }
     Ok(plan)
@@ -94,8 +83,9 @@ fn plan_json(plan: &[PlanEntry]) -> serde_json::Value {
     )
 }
 
-/// The release step: `changie batch` per project, one `changie merge`, verify
-/// every gleam.toml picked up its new version, then patch lockfiles.
+/// The release step: per pending package (topo order), render + batch the
+/// version section, rebuild CHANGELOG.md, bump gleam.toml; then patch every
+/// member's lockfile.
 pub fn apply(workspace: &Workspace, json: bool) -> Result<bool> {
     let plan = compute_plan(workspace)?;
     if plan.is_empty() {
@@ -107,17 +97,32 @@ pub fn apply(workspace: &Workspace, json: bool) -> Result<bool> {
         return Ok(true);
     }
 
+    let fragments = changelog::load_fragments(workspace)?;
+    let date = changelog::today();
     for entry in &plan {
-        changie::run(
-            &workspace.root,
-            &["batch", "auto", "--project", &entry.name],
-        )
-        .with_context(|| format!("changie batch failed for `{}`", entry.name))?;
+        let idx = workspace
+            .member_index(&entry.name)
+            .expect("plan entries come from members");
+        let member = &workspace.members[idx];
+        let member_fragments: Vec<&changelog::Fragment> =
+            fragments.for_project(&entry.name).collect();
+        let next = semver::Version::parse(&entry.next).expect("plan versions are valid");
+        let tag = workspace.config.format_tag(&entry.name, &entry.next);
+        let section = changelog::render_section(
+            &workspace.config.changelog,
+            &entry.name,
+            &entry.next,
+            &tag,
+            &date,
+            &member_fragments,
+        )?;
+        changelog::batch(workspace, &entry.name, &next, &section, &member_fragments)
+            .with_context(|| format!("failed to batch `{}`", entry.name))?;
+        changelog::bump_manifest_version(&member.path.join("gleam.toml"), &next)
+            .with_context(|| format!("failed to bump `{}`", entry.name))?;
     }
-    changie::run(&workspace.root, &["merge"]).context("changie merge failed")?;
 
-    // Reload: the batches rewrote gleam.toml versions on disk. Verify each
-    // landed — a missing replacements block would otherwise fail silently.
+    // Reload and verify every bump landed before touching lockfiles.
     let workspace = Workspace::load(&workspace.root)
         .context("workspace failed to reload after version bump")?;
     for entry in &plan {
@@ -127,8 +132,7 @@ pub fn apply(workspace: &Workspace, json: bool) -> Result<bool> {
         let actual = workspace.members[idx].version();
         if actual != entry.next {
             bail!(
-                "changie batch did not update `{}`: gleam.toml says {actual}, expected {} — \
-                 check the replacements block in .changie.yaml (`trellis changelog sync`)",
+                "version bump did not land for `{}`: gleam.toml says {actual}, expected {}",
                 entry.name,
                 entry.next
             );
