@@ -89,6 +89,25 @@ fn owning_member(workspace: &Workspace, file: &Path) -> Option<usize> {
         .map(|(idx, _)| idx)
 }
 
+/// `-c user.name=... -c user.email=...` args to prepend to a git command that
+/// creates a commit or annotated tag, but only when no identity is
+/// configured (CI runners) — never overriding the user's own config.
+pub fn identity_fallback_args(cwd: &Path) -> Vec<String> {
+    let has_identity = git_stdout(cwd, &["config", "user.email"])
+        .map(|email| !email.trim().is_empty())
+        .unwrap_or(false);
+    if has_identity {
+        Vec::new()
+    } else {
+        vec![
+            "-c".into(),
+            "user.name=trellis".into(),
+            "-c".into(),
+            "user.email=trellis@localhost".into(),
+        ]
+    }
+}
+
 fn git_stdout(cwd: &Path, args: &[&str]) -> Result<String> {
     let output = Command::new("git")
         .args(args)

@@ -70,21 +70,7 @@ fn build_release_commit_and_pr(
     let title = format!("Release: {summary}");
 
     git_stdout(root, &["add", "-A"])?;
-    let mut commit_args: Vec<String> = Vec::new();
-    // A commit needs an identity; supply a fallback only when none is set
-    // (CI runners), never overriding the user's own config.
-    if git_stdout(root, &["config", "user.email"])
-        .unwrap_or_default()
-        .trim()
-        .is_empty()
-    {
-        commit_args.extend([
-            "-c".into(),
-            "user.name=trellis".into(),
-            "-c".into(),
-            "user.email=trellis@localhost".into(),
-        ]);
-    }
+    let mut commit_args = crate::git::identity_fallback_args(root);
     commit_args.extend(["commit".into(), "-m".into(), format!("release: {summary}")]);
     let commit_args: Vec<&str> = commit_args.iter().map(String::as_str).collect();
     git_stdout(root, &commit_args)?;

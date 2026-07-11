@@ -104,16 +104,16 @@ pub fn create(workspace: &Workspace, options: &CreateOptions) -> Result<()> {
                 git_stdout(&workspace.root, &["fetch", "origin", "tag", tag])?;
                 println!("fetched {tag}");
             } else {
-                git_stdout(
-                    &workspace.root,
-                    &[
-                        "tag",
-                        "-a",
-                        tag,
-                        "-m",
-                        &format!("{} {}", member.name, member.version()),
-                    ],
-                )?;
+                let mut args = crate::git::identity_fallback_args(&workspace.root);
+                args.extend([
+                    "tag".into(),
+                    "-a".into(),
+                    tag.clone(),
+                    "-m".into(),
+                    format!("{} {}", member.name, member.version()),
+                ]);
+                let args: Vec<&str> = args.iter().map(String::as_str).collect();
+                git_stdout(&workspace.root, &args)?;
                 println!("tagged {tag}");
             }
         }
