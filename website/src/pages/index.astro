@@ -1,0 +1,626 @@
+---
+import { Code } from "astro-expressive-code/components";
+import Base from "../layouts/Base.astro";
+
+const installCmd =
+  "curl --proto '=https' --tlsv1.2 -LsSf https://github.com/tylerbutler/trellis/releases/latest/download/trellis-installer.sh | sh";
+
+const configSample = `# This table marks the workspace root.
+# Only \`members\` is required.
+[tools.trellis]
+members = ["packages/*", "examples"]
+ignore-release = ["examples"]
+
+[tools.trellis.tasks.lint]
+command = "gleam run -m glinter"
+
+[tools.trellis.publish]
+tag-format = "{name}-v{version}"`;
+---
+
+<Base
+  title="Trellis — the missing Gleam workspace"
+  description="One binary gives Gleam monorepos task fan-out, dependency-graph introspection, changelogs, versioning, and publish orchestration — all derived from gleam.toml."
+>
+  <!-- ============ HERO ============ -->
+  <section class="hero">
+    <div class="shell hero-grid">
+      <div class="hero-copy">
+        <h1>
+          Gleam has no workspace concept.
+          <em>Trellis is it.</em>
+        </h1>
+        <p class="lead">
+          One binary gives a Gleam monorepo task fan-out, dependency-graph
+          introspection, changelogs, versioning, and publish orchestration —
+          all derived from the <code>gleam.toml</code> files you already have.
+        </p>
+        <div class="hero-actions">
+          <a class="btn btn-primary" href="/docs/configuration/">Read the docs</a>
+          <a class="btn btn-ghost" href="#install">Install</a>
+        </div>
+        <div class="cmdline hero-install">
+          <code><span class="prompt">$</span>{installCmd}</code>
+          <button class="copy-btn" type="button" data-copy={installCmd}>Copy</button>
+        </div>
+      </div>
+      <figure class="term hero-term">
+        <figcaption class="term-bar"><span class="prompt">$</span>trellis graph</figcaption>
+        <pre class="term-out"><code><span class="name">lat_core</span> <span class="dim">(1.2.0)</span>
+<span class="name">lat_mid</span> <span class="dim">(0.5.0)</span>
+<span class="dim">  └─</span> lat_core
+<span class="name">lat_cli</span> <span class="dim">(0.3.1)</span>
+<span class="dim">  ├─</span> lat_core
+<span class="dim">  └─</span> lat_mid
+<span class="name">examples</span> <span class="dim">(0.0.0)</span>
+<span class="dim">  └─</span> lat_cli</code></pre>
+        <figcaption class="term-note">
+          Real output. The graph is computed from path dependencies — never declared.
+        </figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ============ THE GLUE ============ -->
+  <section class="glue">
+    <div class="shell">
+      <div class="section-head">
+        <h2>You're maintaining glue by hand.</h2>
+        <p>
+          Without workspaces, every multi-package Gleam repo rebuilds the same
+          machinery out of bash loops, YAML blocks, and duplicated config.
+          This ledger is from a real workspace, before trellis:
+        </p>
+      </div>
+      <div class="ledger-scroll">
+        <table class="ledger">
+          <thead>
+            <tr>
+              <th scope="col">Where it lives</th>
+              <th scope="col">What's maintained by hand</th>
+              <th scope="col">How it fails</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>justfile</code></td>
+              <td>The package list, in topological order, as a space-separated string</td>
+              <td>A new package is silently excluded from every recipe</td>
+            </tr>
+            <tr>
+              <td><code>justfile</code></td>
+              <td>~15 near-identical <code>for pkg in …</code> bash loops</td>
+              <td>Copy-paste drift between recipes; strictly serial execution</td>
+            </tr>
+            <tr>
+              <td><code>.changie.yaml</code></td>
+              <td>One config block per package: label, key, changelog path, version regex</td>
+              <td>A forgotten block means a package can't be versioned or released</td>
+            </tr>
+            <tr>
+              <td><code>publish.yml</code></td>
+              <td>A hand-written mirror of the path-dependency graph</td>
+              <td>Nothing verifies it when a package gains a dependency</td>
+            </tr>
+            <tr>
+              <td><code>release.yml</code></td>
+              <td>25 lines of inline <code>sed</code>/<code>grep</code> patching locked versions</td>
+              <td>Untestable regex logic living inside CI YAML</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="ledger-coda">
+        Every row in that table is <strong>derivable</strong> from one file
+        format the ecosystem already uses.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============ DERIVED, NOT DECLARED ============ -->
+  <section class="derived">
+    <div class="shell">
+      <blockquote class="doctrine">
+        <p>
+          Configure nothing that can be derived.<br />
+          Verify anything that must be duplicated.
+        </p>
+      </blockquote>
+      <div class="derived-grid">
+        <div class="config">
+          <Code lang="toml" title="gleam.toml" code={configSample} />
+        </div>
+        <div class="derived-list">
+          <h3>From that, trellis computes:</h3>
+          <ul>
+            <li>
+              <strong>The member set and its topological order</strong> — new
+              packages join every command the moment their directory matches a glob.
+            </li>
+            <li>
+              <strong>Change impact</strong> — <code>--since origin/main</code>
+              maps a diff to owning packages, plus the reverse-dependency
+              closure. Only test what a PR touched.
+            </li>
+            <li>
+              <strong>Publish order and path-dep rewrites</strong> — dependencies
+              publish first, path references become Hex versions automatically.
+            </li>
+            <li>
+              <strong>A tag per releasable member</strong> — and a
+              <code>doctor</code> that fails loudly when anything drifts.
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ LIFECYCLE ============ -->
+  <section class="lifecycle">
+    <div class="shell">
+      <div class="section-head">
+        <h2>One binary, the whole lifecycle.</h2>
+        <p>
+          The same tool runs locally and in CI. Commands work from anywhere in
+          the workspace — the root is found by walking up, like
+          <code>git</code> or <code>cargo</code>.
+        </p>
+      </div>
+      <ol class="phases">
+        <li class="phase">
+          <h3><span class="phase-index" aria-hidden="true">1</span>Every day</h3>
+          <dl class="cmds">
+            <div><dt><code>run</code></dt><dd>Run a task across members, graph-parallel by default</dd></div>
+            <div><dt><code>list</code></dt><dd>Members in topological order — dependencies first</dd></div>
+            <div><dt><code>graph</code></dt><dd>The dependency graph, as text, DOT, Mermaid, or JSON</dd></div>
+            <div><dt><code>exec</code></dt><dd>Any command, in each member directory</dd></div>
+            <div><dt><code>doctor</code></dt><dd>Validate workspace invariants; non-zero exit on any error</dd></div>
+          </dl>
+        </li>
+        <li class="phase">
+          <h3><span class="phase-index" aria-hidden="true">2</span>Cut a release</h3>
+          <dl class="cmds">
+            <div><dt><code>changelog</code></dt><dd>Native fragment engine — no second tool to install</dd></div>
+            <div><dt><code>version</code></dt><dd>Plan and apply bumps from unreleased fragments</dd></div>
+            <div><dt><code>tag</code></dt><dd>Compare versions against git tags; create what's missing</dd></div>
+            <div><dt><code>publish</code></dt><dd>To Hex, in dependency order, path deps rewritten</dd></div>
+            <div><dt><code>lockfile</code></dt><dd>Patch locked versions without touching the network</dd></div>
+          </dl>
+        </li>
+        <li class="phase">
+          <h3><span class="phase-index" aria-hidden="true">3</span>In CI</h3>
+          <dl class="cmds">
+            <div><dt><code>ci</code></dt><dd>Structured JSON for GitHub Actions matrices and outputs</dd></div>
+            <div><dt><code>changelog check</code></dt><dd>Fail a PR that changes a package without logging it</dd></div>
+            <div><dt><code>release pr</code></dt><dd>Open the release pull request, versions applied</dd></div>
+          </dl>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- ============ DOCTOR ============ -->
+  <section class="drift">
+    <div class="shell drift-stack">
+      <div class="section-head">
+        <h2>It fails loudly on drift.</h2>
+        <p>
+          Some things can't be derived — locked versions, changelogs, tags,
+          toolchain pins. For those, <code>trellis doctor</code> verifies every
+          invariant that used to be enforced by hope, and exits non-zero the
+          moment one breaks.
+        </p>
+      </div>
+      <figure class="term">
+        <figcaption class="term-bar"><span class="prompt">$</span>trellis doctor</figcaption>
+        <pre class="term-out"><code><span class="dim">checked:</span> member globs resolve and every member has a parseable gleam.toml
+<span class="dim">checked:</span> path dependencies stay inside the workspace; graph is acyclic
+<span class="dim">checked:</span> ignore-release globs match members; no releasable member depends on an unreleasable one
+<span class="dim">checked:</span> tag format produces a unique tag per releasable member
+<span class="dim">checked:</span> manifest.toml locked versions match workspace-internal gleam.toml versions
+<span class="dim">checked:</span> each releasable member's version is not behind its CHANGELOG
+<span class="dim">checked:</span> unreleased changelog fragments parse and reference valid packages and kinds
+<span class="dim">checked:</span> gleam on PATH matches the .tool-versions pin (advisory)
+
+<span class="ok">ok: 4 member(s), 0 warning(s)</span></code></pre>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ============ INSTALL ============ -->
+  <section class="install" id="install">
+    <div class="shell">
+      <div class="section-head">
+        <h2>Install it in a second.</h2>
+        <p>
+          One prebuilt binary — the same distribution model as
+          <code>just</code> and <code>ratchet</code>. Zero runtime
+          dependencies, SLSA build provenance, installs in CI in about a second.
+        </p>
+      </div>
+      <dl class="channels">
+        <div class="channel">
+          <dt>Shell <span class="dim-note">(Linux, macOS)</span></dt>
+          <dd>
+            <div class="cmdline">
+              <code><span class="prompt">$</span>{installCmd}</code>
+              <button class="copy-btn" type="button" data-copy={installCmd}>Copy</button>
+            </div>
+          </dd>
+        </div>
+        <div class="channel">
+          <dt>Homebrew</dt>
+          <dd>
+            <div class="cmdline">
+              <code><span class="prompt">$</span>brew install tylerbutler/tap/trellis</code>
+              <button class="copy-btn" type="button" data-copy="brew install tylerbutler/tap/trellis">Copy</button>
+            </div>
+          </dd>
+        </div>
+        <div class="channel">
+          <dt>mise / asdf <span class="dim-note">(pin it in .tool-versions)</span></dt>
+          <dd>
+            <div class="cmdline">
+              <code><span class="prompt">$</span>mise use "ubi:tylerbutler/trellis@0.1.0"</code>
+              <button class="copy-btn" type="button" data-copy={'mise use "ubi:tylerbutler/trellis@0.1.0"'}>Copy</button>
+            </div>
+          </dd>
+        </div>
+        <div class="channel">
+          <dt>From source</dt>
+          <dd>
+            <div class="cmdline">
+              <code><span class="prompt">$</span>cargo install --git https://github.com/tylerbutler/trellis</code>
+              <button class="copy-btn" type="button" data-copy="cargo install --git https://github.com/tylerbutler/trellis">Copy</button>
+            </div>
+          </dd>
+        </div>
+      </dl>
+      <p class="install-coda">
+        Windows installer and pinned-version URLs are on the
+        <a href="https://github.com/tylerbutler/trellis/releases">releases page</a>.
+        Then start with the <a href="/docs/configuration/">configuration guide</a> —
+        it's one TOML table.
+      </p>
+    </div>
+  </section>
+</Base>
+
+<style>
+  /* ---- hero ---- */
+  .hero {
+    padding-block: clamp(4rem, 4rem + 4vw, 7.5rem) var(--sp-xl);
+  }
+
+  .hero-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+    gap: clamp(2rem, 5vw, 5rem);
+    align-items: center;
+  }
+
+  h1 {
+    font-size: var(--text-display);
+    font-stretch: 118%;
+    font-weight: 680;
+    letter-spacing: -0.022em;
+  }
+
+  h1 em {
+    display: block;
+    font-style: normal;
+    color: var(--brass);
+  }
+
+  .lead {
+    font-size: var(--text-lead);
+    color: var(--ink-soft);
+    max-width: 52ch;
+    margin-top: var(--sp-lg);
+  }
+
+  .lead code {
+    font-size: 0.85em;
+    color: var(--ink);
+  }
+
+  .hero-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-sm);
+    margin-top: var(--sp-xl);
+  }
+
+  .hero-install {
+    margin-top: var(--sp-md);
+    max-width: 44rem;
+  }
+
+  .hero-install code {
+    white-space: pre-wrap;
+    word-break: break-all;
+    line-height: 1.7;
+  }
+
+  .hero-term .term-note {
+    padding: var(--sp-xs) var(--sp-md) var(--sp-sm);
+    border-top: 1px solid var(--line-soft);
+    font-size: var(--text-fine);
+    color: var(--muted);
+  }
+
+  /* ---- section rhythm ---- */
+  section + section {
+    margin-top: var(--sp-section);
+  }
+
+  .section-head {
+    max-width: var(--measure);
+  }
+
+  .section-head h2 {
+    font-size: var(--text-h2);
+    font-stretch: 114%;
+  }
+
+  .section-head p {
+    margin-top: var(--sp-md);
+    color: var(--ink-soft);
+  }
+
+  /* ---- glue ledger ---- */
+  .ledger-scroll {
+    margin-top: var(--sp-xl);
+    overflow-x: auto;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+  }
+
+  .ledger {
+    width: 100%;
+    min-width: 44rem;
+    border-collapse: collapse;
+    font-size: var(--text-small);
+  }
+
+  .ledger th {
+    text-align: left;
+    font-family: var(--font-mono);
+    font-size: var(--text-fine);
+    font-weight: 560;
+    color: var(--muted);
+    padding: var(--sp-sm) var(--sp-lg);
+    border-bottom: 1px solid var(--line);
+    background: var(--surface-2);
+    white-space: nowrap;
+  }
+
+  .ledger td {
+    padding: var(--sp-md) var(--sp-lg);
+    vertical-align: top;
+    border-bottom: 1px solid var(--line-soft);
+  }
+
+  .ledger tbody tr:last-child td {
+    border-bottom: none;
+  }
+
+  .ledger td:first-child {
+    white-space: nowrap;
+    color: var(--brass);
+  }
+
+  .ledger td:last-child {
+    color: var(--muted);
+  }
+
+  .ledger code {
+    font-size: 0.9em;
+  }
+
+  .ledger-coda {
+    margin-top: var(--sp-lg);
+    font-size: var(--text-lead);
+    max-width: var(--measure);
+  }
+
+  /* ---- derived (committed cobalt band) ---- */
+  .derived {
+    background: var(--cobalt-band);
+    border-block: 1px solid var(--line);
+    padding-block: var(--sp-section);
+  }
+
+  .doctrine {
+    max-width: 60rem;
+    margin-inline: auto;
+    text-align: center;
+  }
+
+  .doctrine p {
+    font-size: clamp(1.5rem, 1rem + 2.4vw, 2.6rem);
+    font-stretch: 116%;
+    font-weight: 660;
+    line-height: 1.25;
+    letter-spacing: -0.018em;
+    text-wrap: balance;
+  }
+
+  .derived-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: clamp(2rem, 4vw, 4rem);
+    margin-top: var(--sp-2xl);
+    align-items: start;
+  }
+
+  .config {
+    min-width: 0;
+  }
+
+  .derived-list h3 {
+    font-size: var(--text-h3);
+    margin-bottom: var(--sp-lg);
+  }
+
+  .derived-list ul {
+    list-style: none;
+    padding: 0;
+    display: grid;
+    gap: var(--sp-lg);
+  }
+
+  .derived-list li {
+    position: relative;
+    padding-left: var(--sp-lg);
+  }
+
+  .derived-list li::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0.55em;
+    width: 0.45rem;
+    height: 0.45rem;
+    background: var(--brass);
+    transform: rotate(45deg);
+  }
+
+  .derived-list strong {
+    display: block;
+    margin-bottom: var(--sp-2xs);
+  }
+
+  .derived-list li,
+  .derived .section-head p {
+    color: var(--ink-soft);
+  }
+
+  /* ---- lifecycle ---- */
+  .phases {
+    list-style: none;
+    padding: 0;
+    margin-top: var(--sp-2xl);
+    display: grid;
+    gap: var(--sp-2xl);
+  }
+
+  .phase h3 {
+    display: flex;
+    align-items: baseline;
+    gap: var(--sp-md);
+    font-size: var(--text-h3);
+    padding-bottom: var(--sp-sm);
+    border-bottom: 1px solid var(--line);
+  }
+
+  .phase-index {
+    font-family: var(--font-mono);
+    font-size: var(--text-small);
+    font-weight: 640;
+    color: var(--brass);
+  }
+
+  .cmds {
+    margin: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: var(--sp-md) var(--sp-xl);
+    margin-top: var(--sp-lg);
+  }
+
+  .cmds > div {
+    display: grid;
+    grid-template-columns: 9.5rem minmax(0, 1fr);
+    gap: var(--sp-md);
+    align-items: baseline;
+  }
+
+  .cmds dt code {
+    color: var(--brass);
+    font-size: var(--text-code);
+    font-weight: 560;
+  }
+
+  .cmds dd {
+    margin: 0;
+    color: var(--muted);
+    font-size: var(--text-small);
+  }
+
+  /* ---- drift / doctor ---- */
+  .drift-stack {
+    display: grid;
+    gap: var(--sp-xl);
+  }
+
+  .drift .term-out {
+    font-size: var(--text-fine);
+  }
+
+  /* ---- install ---- */
+  .channels {
+    margin: var(--sp-xl) 0 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(28rem, 100%), 1fr));
+    gap: var(--sp-lg) var(--sp-xl);
+  }
+
+  .channel dt {
+    font-weight: 620;
+    margin-bottom: var(--sp-xs);
+  }
+
+  .channel .dim-note {
+    color: var(--muted);
+    font-weight: 400;
+    font-size: var(--text-small);
+  }
+
+  .channel dd {
+    margin: 0;
+  }
+
+  .install-coda {
+    margin-top: var(--sp-xl);
+    color: var(--ink-soft);
+    max-width: var(--measure);
+  }
+
+  /* ---- responsive ---- */
+  @media (max-width: 56rem) {
+    .hero-grid,
+    .derived-grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .hero {
+      padding-block: var(--sp-2xl) var(--sp-section);
+    }
+
+    .cmds > div {
+      grid-template-columns: 8rem minmax(0, 1fr);
+    }
+  }
+</style>
+
+<script>
+  for (const btn of document.querySelectorAll<HTMLButtonElement>(".copy-btn")) {
+    btn.addEventListener("click", async () => {
+      const text = btn.dataset.copy;
+      if (!text) return;
+      try {
+        await navigator.clipboard.writeText(text);
+        btn.dataset.copied = "true";
+        btn.textContent = "Copied";
+        setTimeout(() => {
+          delete btn.dataset.copied;
+          btn.textContent = "Copy";
+        }, 1600);
+      } catch {
+        btn.textContent = "Select & copy";
+      }
+    });
+  }
+</script>

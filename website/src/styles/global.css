@@ -1,0 +1,394 @@
+/* ============================================================
+   Trellis — "The Calibrated Instrument"
+   Deep steel surface · brass accent · no glow.
+   ============================================================ */
+
+:root {
+  /* -- color: steel cobalt system (see DESIGN.md) -- */
+  --bg: oklch(0.16 0.02 230);
+  --surface: oklch(0.205 0.026 230);
+  --surface-2: oklch(0.25 0.03 230);
+  --cobalt: oklch(0.45 0.086 230);
+  --cobalt-deep: oklch(0.33 0.06 230);
+  --cobalt-band: oklch(0.28 0.045 230);
+  --ink: oklch(0.94 0.012 230);
+  --ink-soft: oklch(0.88 0.02 230);
+  --muted: oklch(0.76 0.022 230);
+  --brass: oklch(0.8 0.128 80);
+  --brass-bright: oklch(0.86 0.11 85);
+  --ink-dark: oklch(0.18 0.03 240);
+  --line: oklch(0.34 0.03 230);
+  --line-soft: oklch(0.27 0.028 230);
+
+  /* -- type -- */
+  --font-sans: "Archivo Variable", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "Martian Mono Variable", ui-monospace, "SF Mono", Menlo, monospace;
+
+  --text-display: clamp(2.3rem, 1.1rem + 4.6vw, 4.4rem);
+  --text-h2: clamp(1.6rem, 1.05rem + 2.1vw, 2.5rem);
+  --text-h3: 1.3rem;
+  --text-lead: clamp(1.1rem, 1rem + 0.4vw, 1.25rem);
+  --text-body: 1.0625rem;
+  --text-small: 0.9375rem;
+  --text-code: 0.875rem;
+  --text-fine: 0.8125rem;
+
+  /* -- space (4pt-derived) -- */
+  --sp-2xs: 0.25rem;
+  --sp-xs: 0.5rem;
+  --sp-sm: 0.75rem;
+  --sp-md: 1rem;
+  --sp-lg: 1.5rem;
+  --sp-xl: 2.5rem;
+  --sp-2xl: 4rem;
+  --sp-section: clamp(5rem, 6rem + 4vw, 9rem);
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+
+  --measure: 68ch;
+  --content-width: 72rem;
+
+  /* semantic z scale */
+  --z-sticky: 10;
+  --z-skip: 20;
+
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* -- reset & base ------------------------------------------- */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+}
+
+html {
+  color-scheme: dark;
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: var(--text-body);
+  line-height: 1.65;
+  letter-spacing: 0.011em;
+  font-kerning: normal;
+  font-optical-sizing: auto;
+  -webkit-font-smoothing: antialiased;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+main {
+  flex: 1;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  line-height: 1.12;
+  text-wrap: balance;
+  letter-spacing: -0.015em;
+  font-weight: 620;
+}
+
+p {
+  text-wrap: pretty;
+}
+
+a {
+  color: var(--brass);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklch, var(--brass) 45%, transparent);
+  text-underline-offset: 0.2em;
+  transition: text-decoration-color 160ms var(--ease-out), color 160ms var(--ease-out);
+}
+
+a:hover {
+  color: var(--brass-bright);
+  text-decoration-color: currentColor;
+}
+
+:focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
+code,
+pre,
+kbd {
+  font-family: var(--font-mono);
+  font-variant-ligatures: none;
+}
+
+::selection {
+  background: var(--cobalt);
+  color: var(--ink);
+}
+
+.skip-link {
+  position: absolute;
+  left: var(--sp-md);
+  top: var(--sp-md);
+  z-index: var(--z-skip);
+  background: var(--brass);
+  color: var(--ink-dark);
+  font-weight: 600;
+  padding: var(--sp-xs) var(--sp-md);
+  border-radius: var(--radius-sm);
+  transform: translateY(-300%);
+}
+
+.skip-link:focus {
+  transform: none;
+}
+
+/* -- shared shell ------------------------------------------- */
+
+.shell {
+  width: min(100% - 2 * clamp(1.25rem, 4vw, 3rem), var(--content-width));
+  margin-inline: auto;
+}
+
+/* -- header -------------------------------------------------- */
+
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky);
+  background: color-mix(in oklch, var(--bg) 94%, transparent);
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.site-header .shell {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-lg);
+  padding-block: var(--sp-sm);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: var(--ink);
+  text-decoration: none;
+  font-weight: 640;
+  font-stretch: 118%;
+  font-size: 1.2rem;
+  letter-spacing: 0.01em;
+}
+
+.brand svg {
+  display: block;
+}
+
+.site-nav {
+  display: flex;
+  align-items: center;
+  gap: clamp(1rem, 3vw, 2rem);
+}
+
+.site-nav a {
+  color: var(--ink-soft);
+  text-decoration: none;
+  font-size: var(--text-small);
+  font-weight: 520;
+  padding: 0.5rem 0.25rem;
+}
+
+.site-nav a:hover {
+  color: var(--brass-bright);
+}
+
+/* -- footer -------------------------------------------------- */
+
+.site-footer {
+  border-top: 1px solid var(--line-soft);
+  margin-top: var(--sp-section);
+  padding-block: var(--sp-xl);
+  color: var(--muted);
+  font-size: var(--text-small);
+}
+
+.site-footer .shell {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-md) var(--sp-xl);
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.site-footer nav {
+  display: flex;
+  gap: var(--sp-lg);
+}
+
+.site-footer a {
+  color: var(--muted);
+}
+
+.site-footer a:hover {
+  color: var(--brass-bright);
+}
+
+/* -- terminal figure ----------------------------------------- */
+
+.term {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.term-bar {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5ch;
+  padding: var(--sp-xs) var(--sp-md);
+  border-bottom: 1px solid var(--line-soft);
+  font-family: var(--font-mono);
+  font-size: var(--text-fine);
+  color: var(--ink-soft);
+  background: var(--surface-2);
+}
+
+.term-bar .prompt {
+  color: var(--brass);
+  font-weight: 600;
+}
+
+.term-out {
+  padding: var(--sp-md) var(--sp-md) var(--sp-lg);
+  overflow-x: auto;
+  font-size: var(--text-code);
+  line-height: 1.7;
+  color: var(--ink);
+}
+
+.term-out .dim {
+  color: var(--muted);
+}
+
+.term-out .ok {
+  color: var(--brass);
+  font-weight: 600;
+}
+
+.term-out .name {
+  font-weight: 560;
+}
+
+/* -- buttons -------------------------------------------------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5ch;
+  min-height: 2.9rem;
+  padding: 0.6rem 1.4rem;
+  border-radius: var(--radius-sm);
+  font-weight: 620;
+  font-size: 1rem;
+  text-decoration: none;
+  border: 1px solid transparent;
+  transition: background 160ms var(--ease-out), color 160ms var(--ease-out),
+    border-color 160ms var(--ease-out);
+}
+
+.btn-primary {
+  background: var(--brass);
+  color: var(--ink-dark);
+}
+
+.btn-primary:hover {
+  background: var(--brass-bright);
+  color: var(--ink-dark);
+}
+
+.btn-ghost {
+  border-color: var(--line);
+  color: var(--ink);
+}
+
+.btn-ghost:hover {
+  border-color: var(--brass);
+  color: var(--brass-bright);
+}
+
+/* -- copyable command row ------------------------------------- */
+
+.cmdline {
+  display: flex;
+  align-items: stretch;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.cmdline code {
+  flex: 1;
+  padding: 0.7rem var(--sp-md);
+  font-size: var(--text-code);
+  white-space: nowrap;
+  overflow-x: auto;
+  align-content: center;
+}
+
+.cmdline code .prompt {
+  color: var(--brass);
+  margin-right: 0.75ch;
+}
+
+.copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5ch;
+  border: none;
+  border-left: 1px solid var(--line-soft);
+  background: var(--surface-2);
+  color: var(--ink-soft);
+  font-family: var(--font-sans);
+  font-size: var(--text-fine);
+  font-weight: 560;
+  padding: 0 var(--sp-md);
+  min-width: 44px;
+  cursor: pointer;
+  transition: color 160ms var(--ease-out), background 160ms var(--ease-out);
+}
+
+.copy-btn:hover {
+  color: var(--brass-bright);
+  background: var(--cobalt-deep);
+}
+
+.copy-btn[data-copied] {
+  color: var(--brass);
+}
+
+/* -- reduced motion ------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

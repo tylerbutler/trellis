@@ -1,0 +1,206 @@
+---
+import Base from "./Base.astro";
+
+interface Props {
+  title: string;
+  description: string;
+}
+
+const { title, description } = Astro.props;
+const github = "https://github.com/tylerbutler/trellis";
+---
+
+<Base title={title} description={description}>
+  <div class="shell docs-grid">
+    <nav class="docs-nav" aria-label="Documentation">
+      <p class="docs-nav-title">Documentation</p>
+      <ul>
+        <li><a href="/docs/configuration/" aria-current="page">Configuration</a></li>
+        <li><span class="soon">Installation <small>soon</small></span></li>
+        <li><span class="soon">Task running <small>soon</small></span></li>
+        <li><span class="soon">Changelog &amp; versioning <small>soon</small></span></li>
+        <li><span class="soon">Publishing <small>soon</small></span></li>
+        <li><span class="soon">CI recipes <small>soon</small></span></li>
+        <li class="docs-nav-ext"><a href={`${github}#readme`}>Full README ↗</a></li>
+      </ul>
+    </nav>
+    <article class="docs-body">
+      <slot />
+    </article>
+  </div>
+</Base>
+
+<style>
+  .docs-grid {
+    display: grid;
+    grid-template-columns: 15rem minmax(0, 1fr);
+    gap: clamp(2rem, 5vw, 5rem);
+    padding-block: var(--sp-2xl);
+    align-items: start;
+  }
+
+  .docs-nav {
+    position: sticky;
+    top: 5rem;
+    font-size: var(--text-small);
+  }
+
+  .docs-nav-title {
+    font-family: var(--font-mono);
+    font-size: var(--text-fine);
+    font-weight: 560;
+    color: var(--muted);
+    margin-bottom: var(--sp-md);
+  }
+
+  .docs-nav ul {
+    list-style: none;
+    padding: 0;
+    display: grid;
+    gap: var(--sp-2xs);
+  }
+
+  .docs-nav a,
+  .docs-nav .soon {
+    display: block;
+    padding: 0.45rem var(--sp-sm);
+    border-radius: var(--radius-sm);
+    text-decoration: none;
+  }
+
+  .docs-nav a {
+    color: var(--ink-soft);
+  }
+
+  .docs-nav a[aria-current="page"] {
+    background: var(--surface-2);
+    color: var(--brass);
+    font-weight: 560;
+  }
+
+  .docs-nav a:hover {
+    color: var(--brass-bright);
+    background: var(--surface);
+  }
+
+  .docs-nav .soon {
+    color: var(--muted);
+  }
+
+  .docs-nav .soon small {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    color: var(--muted);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 0.05rem 0.5rem;
+    margin-left: 0.5ch;
+    vertical-align: middle;
+  }
+
+  .docs-nav-ext {
+    margin-top: var(--sp-md);
+    border-top: 1px solid var(--line-soft);
+    padding-top: var(--sp-md);
+  }
+
+  /* ---- prose ---- */
+  .docs-body {
+    max-width: var(--measure);
+    padding-bottom: var(--sp-2xl);
+  }
+
+  .docs-body :global(h1) {
+    font-size: clamp(2rem, 1.4rem + 2vw, 2.8rem);
+    font-stretch: 114%;
+    margin-bottom: var(--sp-lg);
+  }
+
+  .docs-body :global(h2) {
+    font-size: 1.45rem;
+    margin-top: var(--sp-2xl);
+    margin-bottom: var(--sp-md);
+    padding-top: var(--sp-lg);
+    border-top: 1px solid var(--line-soft);
+  }
+
+  .docs-body :global(h3) {
+    font-size: 1.1rem;
+    margin-top: var(--sp-xl);
+    margin-bottom: var(--sp-sm);
+  }
+
+  .docs-body :global(p) {
+    margin-block: var(--sp-md);
+    color: var(--ink-soft);
+  }
+
+  .docs-body :global(li) {
+    color: var(--ink-soft);
+    margin-block: var(--sp-xs);
+  }
+
+  .docs-body :global(p code),
+  .docs-body :global(li code),
+  .docs-body :global(td code) {
+    font-size: 0.85em;
+    color: var(--ink);
+    background: var(--surface);
+    border: 1px solid var(--line-soft);
+    border-radius: var(--radius-sm);
+    padding: 0.1em 0.35em;
+  }
+
+  .docs-body :global(.expressive-code) {
+    margin-block: var(--sp-lg);
+  }
+
+  .docs-body :global(table) {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--text-small);
+    margin-block: var(--sp-lg);
+  }
+
+  .docs-body :global(th) {
+    text-align: left;
+    font-family: var(--font-mono);
+    font-size: var(--text-fine);
+    font-weight: 560;
+    color: var(--muted);
+    padding: var(--sp-xs) var(--sp-sm);
+    border-bottom: 1px solid var(--line);
+  }
+
+  .docs-body :global(td) {
+    padding: var(--sp-sm);
+    border-bottom: 1px solid var(--line-soft);
+    vertical-align: top;
+    color: var(--ink-soft);
+  }
+
+  .docs-body :global(.callout) {
+    border: 1px solid var(--line);
+    background: var(--surface);
+    border-radius: var(--radius-md);
+    padding: var(--sp-md) var(--sp-lg);
+    margin-block: var(--sp-lg);
+  }
+
+  .docs-body :global(.callout p) {
+    margin: 0;
+  }
+
+  @media (max-width: 56rem) {
+    .docs-grid {
+      grid-template-columns: minmax(0, 1fr);
+      padding-block: var(--sp-xl);
+    }
+
+    .docs-nav {
+      position: static;
+      border-bottom: 1px solid var(--line-soft);
+      padding-bottom: var(--sp-lg);
+    }
+  }
+</style>

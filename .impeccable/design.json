@@ -1,0 +1,158 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-11T00:00:00Z",
+  "title": "Design System: Trellis",
+  "extensions": {
+    "colorMeta": {
+      "bg": {
+        "role": "neutral",
+        "displayName": "Harbor Steel",
+        "canonical": "oklch(0.16 0.02 230)",
+        "tonalRamp": ["oklch(0.15 0.02 230)", "oklch(0.25 0.02 230)", "oklch(0.35 0.02 230)", "oklch(0.45 0.02 230)", "oklch(0.55 0.02 230)", "oklch(0.68 0.02 230)", "oklch(0.82 0.02 230)", "oklch(0.95 0.02 230)"]
+      },
+      "surface": {
+        "role": "surface",
+        "displayName": "Steel Surface",
+        "canonical": "oklch(0.205 0.026 230)",
+        "tonalRamp": ["oklch(0.15 0.026 230)", "oklch(0.25 0.026 230)", "oklch(0.35 0.026 230)", "oklch(0.45 0.026 230)", "oklch(0.55 0.026 230)", "oklch(0.68 0.026 230)", "oklch(0.82 0.026 230)", "oklch(0.95 0.026 230)"]
+      },
+      "surface-2": {
+        "role": "surface",
+        "displayName": "Steel Raised",
+        "canonical": "oklch(0.25 0.03 230)",
+        "tonalRamp": ["oklch(0.15 0.03 230)", "oklch(0.25 0.03 230)", "oklch(0.35 0.03 230)", "oklch(0.45 0.03 230)", "oklch(0.55 0.03 230)", "oklch(0.68 0.03 230)", "oklch(0.82 0.03 230)", "oklch(0.95 0.03 230)"]
+      },
+      "cobalt": {
+        "role": "primary",
+        "displayName": "Instrument Cobalt",
+        "canonical": "oklch(0.45 0.086 230)",
+        "tonalRamp": ["oklch(0.15 0.06 230)", "oklch(0.25 0.07 230)", "oklch(0.33 0.06 230)", "oklch(0.45 0.086 230)", "oklch(0.55 0.086 230)", "oklch(0.68 0.07 230)", "oklch(0.82 0.05 230)", "oklch(0.95 0.02 230)"]
+      },
+      "cobalt-band": {
+        "role": "primary",
+        "displayName": "Cobalt Band",
+        "canonical": "oklch(0.28 0.045 230)",
+        "tonalRamp": ["oklch(0.15 0.045 230)", "oklch(0.22 0.045 230)", "oklch(0.28 0.045 230)", "oklch(0.38 0.045 230)", "oklch(0.5 0.045 230)", "oklch(0.65 0.045 230)", "oklch(0.8 0.04 230)", "oklch(0.94 0.02 230)"]
+      },
+      "brass": {
+        "role": "secondary",
+        "displayName": "Signal Brass",
+        "canonical": "oklch(0.8 0.128 80)",
+        "tonalRamp": ["oklch(0.2 0.06 80)", "oklch(0.32 0.08 80)", "oklch(0.45 0.1 80)", "oklch(0.58 0.12 80)", "oklch(0.7 0.128 80)", "oklch(0.8 0.128 80)", "oklch(0.86 0.11 85)", "oklch(0.94 0.06 85)"]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Chart Ink",
+        "canonical": "oklch(0.94 0.012 230)",
+        "tonalRamp": ["oklch(0.16 0.012 230)", "oklch(0.3 0.012 230)", "oklch(0.45 0.012 230)", "oklch(0.6 0.012 230)", "oklch(0.72 0.012 230)", "oklch(0.82 0.012 230)", "oklch(0.88 0.012 230)", "oklch(0.94 0.012 230)"]
+      },
+      "muted": {
+        "role": "neutral",
+        "displayName": "Fog Gray",
+        "canonical": "oklch(0.76 0.022 230)",
+        "tonalRamp": ["oklch(0.2 0.022 230)", "oklch(0.32 0.022 230)", "oklch(0.44 0.022 230)", "oklch(0.56 0.022 230)", "oklch(0.66 0.022 230)", "oklch(0.76 0.022 230)", "oklch(0.86 0.022 230)", "oklch(0.94 0.015 230)"]
+      },
+      "ink-dark": {
+        "role": "neutral",
+        "displayName": "Ink Dark",
+        "canonical": "oklch(0.18 0.03 240)",
+        "tonalRamp": ["oklch(0.12 0.03 240)", "oklch(0.18 0.03 240)", "oklch(0.28 0.03 240)", "oklch(0.4 0.03 240)", "oklch(0.52 0.03 240)", "oklch(0.66 0.025 240)", "oklch(0.8 0.02 240)", "oklch(0.93 0.012 240)"]
+      }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "Hero headline only; Archivo stretched to 'wdth' 118. The brass em inside it is the page's one color-emphasis moment." },
+      "headline": { "displayName": "Headline", "purpose": "Section headings, 'wdth' 114." },
+      "title": { "displayName": "Title", "purpose": "Phase and panel headings." },
+      "body": { "displayName": "Body", "purpose": "Prose at 68ch max measure." },
+      "label": { "displayName": "Label", "purpose": "Mono: table headers, terminal title bars, fine print." },
+      "code": { "displayName": "Code", "purpose": "Mono: code samples and real terminal output; ligatures disabled." }
+    },
+    "shadows": [],
+    "motion": [
+      { "name": "ease-out", "value": "cubic-bezier(0.22, 1, 0.36, 1)", "purpose": "The only easing curve. State transitions (color, background, border) at 160ms." },
+      { "name": "duration-state", "value": "160ms", "purpose": "Hover/focus recoloring. Nothing lifts, scales, or casts (The Flat Field Rule)." }
+    ],
+    "breakpoints": [
+      { "name": "stack", "value": "56rem" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The brass action: one per view, Ink Dark text, recolors on hover.",
+      "html": "<a class=\"ds-btn-primary\" href=\"#\">Read the docs</a>",
+      "css": ".ds-btn-primary { display: inline-flex; align-items: center; justify-content: center; min-height: 2.9rem; padding: 0.6rem 1.4rem; border-radius: 4px; background: var(--brass, oklch(0.8 0.128 80)); color: var(--ink-dark, oklch(0.18 0.03 240)); font-family: 'Archivo Variable', sans-serif; font-weight: 620; font-size: 1rem; text-decoration: none; transition: background 160ms cubic-bezier(0.22, 1, 0.36, 1); } .ds-btn-primary:hover { background: var(--brass-bright, oklch(0.86 0.11 85)); } .ds-btn-primary:focus-visible { outline: 2px solid var(--brass, oklch(0.8 0.128 80)); outline-offset: 3px; }"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Hairline-bordered secondary action; border and text shift toward brass on hover.",
+      "html": "<a class=\"ds-btn-ghost\" href=\"#\">Install</a>",
+      "css": ".ds-btn-ghost { display: inline-flex; align-items: center; justify-content: center; min-height: 2.9rem; padding: 0.6rem 1.4rem; border-radius: 4px; border: 1px solid var(--line, oklch(0.34 0.03 230)); background: transparent; color: var(--ink, oklch(0.94 0.012 230)); font-family: 'Archivo Variable', sans-serif; font-weight: 620; font-size: 1rem; text-decoration: none; transition: color 160ms cubic-bezier(0.22, 1, 0.36, 1), border-color 160ms cubic-bezier(0.22, 1, 0.36, 1); } .ds-btn-ghost:hover { border-color: var(--brass, oklch(0.8 0.128 80)); color: var(--brass-bright, oklch(0.86 0.11 85)); } .ds-btn-ghost:focus-visible { outline: 2px solid var(--brass, oklch(0.8 0.128 80)); outline-offset: 3px; }"
+    },
+    {
+      "name": "Copy Command Row",
+      "kind": "custom",
+      "description": "Signature: $-prompted install command with attached Copy button; button reads 'Copied' in brass after use.",
+      "html": "<div class=\"ds-cmdline\"><code><span class=\"ds-prompt\">$</span>brew install tylerbutler/tap/trellis</code><button class=\"ds-copy-btn\" type=\"button\">Copy</button></div>",
+      "css": ".ds-cmdline { display: flex; align-items: stretch; background: var(--surface, oklch(0.205 0.026 230)); border: 1px solid var(--line, oklch(0.34 0.03 230)); border-radius: 4px; overflow: hidden; max-width: 34rem; } .ds-cmdline code { flex: 1; padding: 0.7rem 1rem; font-family: 'Martian Mono Variable', ui-monospace, monospace; font-size: 0.875rem; color: var(--ink, oklch(0.94 0.012 230)); white-space: nowrap; overflow-x: auto; align-content: center; } .ds-prompt { color: var(--brass, oklch(0.8 0.128 80)); margin-right: 0.75ch; } .ds-copy-btn { display: inline-flex; align-items: center; border: none; border-left: 1px solid var(--line-soft, oklch(0.27 0.028 230)); background: var(--surface-2, oklch(0.25 0.03 230)); color: var(--ink-soft, oklch(0.88 0.02 230)); font-family: 'Archivo Variable', sans-serif; font-size: 0.8125rem; font-weight: 560; padding: 0 1rem; min-width: 44px; cursor: pointer; transition: color 160ms cubic-bezier(0.22, 1, 0.36, 1), background 160ms cubic-bezier(0.22, 1, 0.36, 1); } .ds-copy-btn:hover { color: var(--brass-bright, oklch(0.86 0.11 85)); background: var(--cobalt-deep, oklch(0.33 0.06 230)); }"
+    },
+    {
+      "name": "Terminal Figure",
+      "kind": "custom",
+      "description": "Signature: real CLI output with mono title bar; semantic minimal coloring (names 560, structure gray, success brass).",
+      "html": "<figure class=\"ds-term\"><figcaption class=\"ds-term-bar\"><span class=\"ds-prompt\">$</span>trellis graph</figcaption><pre class=\"ds-term-out\"><code><span class=\"ds-name\">lat_core</span> <span class=\"ds-dim\">(1.2.0)</span>\n<span class=\"ds-name\">lat_mid</span> <span class=\"ds-dim\">(0.5.0)</span>\n<span class=\"ds-dim\">  └─</span> lat_core\n<span class=\"ds-ok\">ok: 2 member(s), 0 warning(s)</span></code></pre></figure>",
+      "css": ".ds-term { margin: 0; background: var(--surface, oklch(0.205 0.026 230)); border: 1px solid var(--line, oklch(0.34 0.03 230)); border-radius: 8px; overflow: hidden; max-width: 30rem; } .ds-term-bar { display: flex; align-items: baseline; gap: 0.5ch; padding: 0.5rem 1rem; border-bottom: 1px solid var(--line-soft, oklch(0.27 0.028 230)); font-family: 'Martian Mono Variable', ui-monospace, monospace; font-size: 0.8125rem; color: var(--ink-soft, oklch(0.88 0.02 230)); background: var(--surface-2, oklch(0.25 0.03 230)); } .ds-term .ds-prompt { color: var(--brass, oklch(0.8 0.128 80)); font-weight: 600; } .ds-term-out { margin: 0; padding: 1rem 1rem 1.5rem; overflow-x: auto; font-family: 'Martian Mono Variable', ui-monospace, monospace; font-size: 0.875rem; line-height: 1.7; color: var(--ink, oklch(0.94 0.012 230)); } .ds-name { font-weight: 560; } .ds-dim { color: var(--muted, oklch(0.76 0.022 230)); } .ds-ok { color: var(--brass, oklch(0.8 0.128 80)); font-weight: 600; }"
+    },
+    {
+      "name": "Nav Link",
+      "kind": "nav",
+      "description": "Header navigation: Ink Soft at 520, brass on hover, no underline.",
+      "html": "<nav class=\"ds-nav\"><a href=\"#\">Docs</a><a href=\"#\">GitHub</a></nav>",
+      "css": ".ds-nav { display: flex; gap: 2rem; } .ds-nav a { color: var(--ink-soft, oklch(0.88 0.02 230)); text-decoration: none; font-family: 'Archivo Variable', sans-serif; font-size: 0.9375rem; font-weight: 520; padding: 0.5rem 0.25rem; transition: color 160ms cubic-bezier(0.22, 1, 0.36, 1); } .ds-nav a:hover { color: var(--brass-bright, oklch(0.86 0.11 85)); }"
+    },
+    {
+      "name": "Docs Sidebar Item",
+      "kind": "nav",
+      "description": "Active page gets Surface-2 fill + brass text; unbuilt pages are non-link gray with a 'soon' pill.",
+      "html": "<ul class=\"ds-docs-nav\"><li><a href=\"#\" aria-current=\"page\">Configuration</a></li><li><span class=\"ds-soon\">Publishing <small>soon</small></span></li></ul>",
+      "css": ".ds-docs-nav { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.25rem; width: 15rem; font-family: 'Archivo Variable', sans-serif; font-size: 0.9375rem; } .ds-docs-nav a, .ds-docs-nav .ds-soon { display: block; padding: 0.45rem 0.75rem; border-radius: 4px; text-decoration: none; } .ds-docs-nav a { color: var(--ink-soft, oklch(0.88 0.02 230)); } .ds-docs-nav a[aria-current=\"page\"] { background: var(--surface-2, oklch(0.25 0.03 230)); color: var(--brass, oklch(0.8 0.128 80)); font-weight: 560; } .ds-docs-nav a:hover { color: var(--brass-bright, oklch(0.86 0.11 85)); background: var(--surface, oklch(0.205 0.026 230)); } .ds-soon { color: var(--muted, oklch(0.76 0.022 230)); } .ds-soon small { font-family: 'Martian Mono Variable', ui-monospace, monospace; font-size: 0.7rem; border: 1px solid var(--line, oklch(0.34 0.03 230)); border-radius: 999px; padding: 0.05rem 0.5rem; margin-left: 0.5ch; vertical-align: middle; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Calibrated Instrument",
+    "overview": "Trellis is a tool you trust the way you trust a well-made instrument: it derives its answers instead of asking you to declare them, and it verifies everything it cannot derive. The site carries the same character — brass dials on oxidized steel. The page surface is a deep harbor-steel blue, structural panels step up through tonal cobalt layers, and a single warm brass voice marks what matters. Typography pairs Archivo (stretched wide for display) with Martian Mono, which has a register reason: the product IS a CLI, and its real, unretouched output is the site's primary imagery.",
+    "keyCharacteristics": [
+      "Committed color: steel cobalt carries the surface; brass is the single accent voice",
+      "Real terminal output as imagery — never fabricated, never prettified",
+      "Documentation styled with landing-page care; docs ARE the conversion surface",
+      "Flat, machined, exact: depth from tonal steps and 1px edges, never shadows or glow"
+    ],
+    "rules": [
+      { "name": "The Committed Surface Rule", "body": "Steel cobalt is not an accent — the surface IS the brand. Hedging back to a white page with a blue button produces exactly the sterile default docs theme this brand rejects.", "section": "colors" },
+      { "name": "The No-Glow Rule", "body": "No gradient glows, no neon edges, no luminous blur behind UI. Emphasis comes from brass, weight, and exact alignment — never from light effects.", "section": "colors" },
+      { "name": "The Ink-on-Cobalt Rule", "body": "Fog Gray fails contrast on cobalt fills (3.4:1). On any cobalt surface, text is Chart Ink or Ink Soft — never muted gray.", "section": "colors" },
+      { "name": "The Proof-in-Mono Rule", "body": "Terminal output shown on the site is real trellis output, set in the mono, unretouched. Never fabricate or prettify command output.", "section": "typography" },
+      { "name": "The Two-Voices Rule", "body": "Archivo carries meaning, Martian Mono carries evidence. Mono never sets prose; Archivo never sets output.", "section": "typography" },
+      { "name": "The Flat Field Rule", "body": "Surfaces are flat at rest and flat on hover. State changes recolor (brass, background tint) — they never lift, scale, or cast.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do keep steel cobalt carrying real surface area — bands, panels, terminal figures (The Committed Surface Rule).",
+      "Do use real trellis output for every terminal figure, captured from an actual workspace (The Proof-in-Mono Rule).",
+      "Do draw all structure with 1px hairlines and tonal steps; state changes recolor, never lift (The Flat Field Rule).",
+      "Do hold WCAG AA everywhere: Chart Ink 16.3:1, Fog Gray 9.1:1, Ink Dark on brass 9.9:1 — verified numerically, re-verify when tokens move.",
+      "Do give docs pages landing-page-level craft; the docs are the pitch."
+    ],
+    "donts": [
+      "Don't build a generic SaaS landing page: no gradient heroes, no floating product screenshots, no pricing-page energy.",
+      "Don't ship a sterile default docs theme — an out-of-the-box Starlight/Docusaurus look with no identity.",
+      "Don't drift into Linear/Vercel dark-glow: glowing gradients, luminous blur, floating UI (The No-Glow Rule).",
+      "Don't put Fog Gray text on cobalt fills — it fails contrast at 3.4:1 (The Ink-on-Cobalt Rule).",
+      "Don't claim 'simple' or 'powerful' in the abstract; show the lattice before/after ledger and real config instead.",
+      "Don't add eyebrow labels, reflex-numbered section markers, identical card grids, side-stripe borders, or box-shadows. The one numbered sequence (the command lifecycle) is numbered because it IS a sequence."
+    ]
+  }
+}
