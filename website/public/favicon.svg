@@ -1,5 +1,15 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <rect width="32" height="32" rx="7" fill="#050f14"/>
-  <path d="M6 12.5 12.5 6M6 19.5 19.5 6M6 26 26 6M12.5 26 26 12.5M19.5 26 26 19.5" stroke="#0b5d7c" stroke-width="2" stroke-linecap="round"/>
-  <path d="M12.5 6 26 19.5M6 12.5 19.5 26" stroke="#e9b454" stroke-width="2" stroke-linecap="round"/>
+  <style>
+    .tile { fill: #050f14; }
+    .lattice { stroke: #1d7099; }
+    .brass { stroke: #e9b454; }
+    @media (prefers-color-scheme: dark) {
+      .tile { fill: #172833; }
+      .lattice { stroke: #57a8ce; }
+      .brass { stroke: #f0c26a; }
+    }
+  </style>
+  <rect class="tile" width="32" height="32" rx="7"/>
+  <path class="lattice" d="M6 12.5 12.5 6M6 19.5 19.5 6M6 26 26 6M12.5 26 26 12.5M19.5 26 26 19.5" stroke-width="2" stroke-linecap="round"/>
+  <path class="brass" d="M12.5 6 26 19.5M6 12.5 19.5 26" stroke-width="2" stroke-linecap="round"/>
 </svg>
