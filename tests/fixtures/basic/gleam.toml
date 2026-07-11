@@ -3,7 +3,7 @@
 
 [tools.trellis]
 members = ["packages/*", "examples"]
-ignore-release = ["examples"]
+exclude = { docs = ["examples"], hello = ["examples"], release = ["examples"] }
 
 [tools.trellis.tasks.hello]
 command = "echo hello-from-task"

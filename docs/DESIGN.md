@@ -104,11 +104,9 @@ workspace marker lives in the manifest format the ecosystem already uses
 # gleam.toml at the workspace root
 [tools.trellis]
 members = ["packages/lattice_*", "examples"]
-# Glob array matched against member paths. Matching members participate in all
-# task fan-out (format/lint/build/test) like any other member, but are excluded
-# from changelog, versioning, tagging, and publishing. Replaces the hand
-# special-casing of examples/ in the justfile.
-ignore-release = ["examples"]
+# Glob arrays matched against member paths and scoped by task. The special
+# release key covers changelog, versioning, tagging, and publishing.
+exclude = { docs = ["examples"], release = ["examples"] }
 
 # Custom tasks, available to `trellis run <name>`. Built-in verbs (build, test,
 # check, format, docs, deps, clean) need no declaration.
@@ -179,6 +177,10 @@ trellis exec [pkgs...] -- <command...>
 
 - Built-in tasks map 1:1 onto gleam verbs: `build`, `test`, `check`, `format`
   (`--check` variant), `docs`, `deps`, `clean`. Custom tasks come from `[tasks]`.
+  Any built-in or custom task may have a same-named entry under
+  `[tools.trellis.exclude]`; excluded member-path globs are removed after normal
+  CLI package selection. `exclude.release` defines the releasable set, with the
+  older `ignore-release` array retained as a compatible alias.
 - Scheduling is **graph-parallel by default**: a package runs as soon as its
   workspace deps have finished, up to `--jobs N`. Output is streamed with a
   `pkg ▏` prefix, followed by a summary table. The justfile's serial loops become
@@ -284,8 +286,8 @@ Checks, each of which is an unenforced invariant in lattice today:
    and each has a changelog file where expected.
 5. `manifest.toml` locked versions of workspace-internal deps match those deps'
    actual `gleam.toml` versions (catches a missed lockfile patch).
-6. Every `ignore-release` glob matches at least one member (catches typos), and
-   no releasable member path-depends on an ignore-release member — a published
+6. Every task exclusion glob matches at least one member (catches typos), and
+   no releasable member path-depends on a release-excluded member — a published
    package cannot require a project that will never exist on Hex.
 7. Tag-format collisions (two members whose names would produce ambiguous tags).
 

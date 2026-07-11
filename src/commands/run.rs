@@ -29,12 +29,20 @@ pub struct TaskOptions {
 const BUILTIN_TASKS: &[&str] = &["build", "test", "check", "format", "docs", "deps", "clean"];
 
 pub fn run(workspace: &Workspace, options: &TaskOptions) -> Result<bool> {
-    let selected = workspace.select(&SelectionFilter {
+    let mut selected = workspace.select(&SelectionFilter {
         names: options.packages.clone(),
         since: options.since.clone(),
         with_dependents: options.with_dependents,
         releasable_only: false,
     })?;
+    if let Some(patterns) = workspace.config.exclude.get(&options.task) {
+        let mut builder = globset::GlobSetBuilder::new();
+        for pattern in patterns {
+            builder.add(globset::Glob::new(pattern)?);
+        }
+        let excluded = builder.build()?;
+        selected.retain(|&idx| !excluded.is_match(&workspace.members[idx].rel_path));
+    }
 
     let mut jobs = Vec::new();
     for idx in selected {
