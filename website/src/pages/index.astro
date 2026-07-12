@@ -1,9 +1,12 @@
 ---
-import { Code } from "astro-expressive-code/components";
+import { Code } from "@astrojs/starlight/components";
 import Base from "../layouts/Base.astro";
+import { TRELLIS_VERSION } from "../lib/version";
 
 const installCmd =
   "curl --proto '=https' --tlsv1.2 -LsSf https://github.com/tylerbutler/trellis/releases/latest/download/trellis-installer.sh | sh";
+
+const miseCmd = `mise use "ubi:tylerbutler/trellis@${TRELLIS_VERSION}"`;
 
 const configSample = `# This table marks the workspace root.
 # Only \`members\` is required.
@@ -38,12 +41,12 @@ tag-format = "{name}-v{version}"`;
           all derived from the <code>gleam.toml</code> files you already have.
         </p>
         <div class="hero-actions">
-          <a class="btn btn-primary" href="/docs/configuration/">Read the docs</a>
+          <a class="btn btn-primary" href="/docs/">Read the docs</a>
           <a class="btn btn-ghost" href="#install">Install</a>
         </div>
         <div class="cmdline hero-install">
           <code><span class="prompt">$</span>{installCmd}</code>
-          <button class="copy-btn" type="button" data-copy={installCmd}>Copy</button>
+          <button class="copy-btn" type="button" aria-live="polite" data-copy={installCmd}>Copy</button>
         </div>
       </div>
       <figure class="term hero-term">
@@ -113,7 +116,7 @@ tag-format = "{name}-v{version}"`;
         </table>
       </div>
       <p class="ledger-coda">
-        Trellis derives the information behind each row from
+        Trellis derives the information behind each row from{" "}
         <code>gleam.toml</code>, a file format the ecosystem already uses.
       </p>
     </div>
@@ -130,7 +133,7 @@ tag-format = "{name}-v{version}"`;
       </blockquote>
       <div class="derived-grid">
         <div class="config">
-          <Code lang="toml" title="gleam.toml" code={configSample} />
+          <Code lang="toml" title="gleam.toml" code={configSample} wrap />
         </div>
         <div class="derived-list">
           <h3>From that, trellis computes:</h3>
@@ -140,7 +143,7 @@ tag-format = "{name}-v{version}"`;
               packages join every command the moment their directory matches a glob.
             </li>
             <li>
-              <strong>Change impact</strong> — <code>--since origin/main</code>
+              <strong>Change impact</strong> — <code>--since origin/main</code>{" "}
               maps a diff to owning packages, plus the reverse-dependency
               closure. Only test what a PR touched.
             </li>
@@ -149,7 +152,7 @@ tag-format = "{name}-v{version}"`;
               publish first, path references become Hex versions automatically.
             </li>
             <li>
-              <strong>A tag per releasable member</strong> — and a
+              <strong>A tag per releasable member</strong> — and a{" "}
               <code>doctor</code> that fails loudly when anything drifts.
             </li>
           </ul>
@@ -173,7 +176,7 @@ tag-format = "{name}-v{version}"`;
           own member-path globs. The special <code>release</code> key covers
           changelogs, versioning, tags, publishing, and release CI.
         </p>
-        <a href="/docs/configuration/#release-exclusions">Configure package exclusions →</a>
+        <a href="/docs/configuration/#package-exclusions">Configure package exclusions →</a>
       </div>
 
       <div class="exclusion-proof">
@@ -226,7 +229,7 @@ tag-format = "{name}-v{version}"`;
         <h2>One binary across the lifecycle.</h2>
         <p>
           The same tool runs locally and in CI. Commands work from anywhere in
-          the workspace — the root is found by walking up, like
+          the workspace — the root is found by walking up, like{" "}
           <code>git</code> or <code>cargo</code>.
         </p>
       </div>
@@ -307,7 +310,7 @@ tag-format = "{name}-v{version}"`;
           <dd>
             <div class="cmdline">
               <code><span class="prompt">$</span>{installCmd}</code>
-              <button class="copy-btn" type="button" data-copy={installCmd}>Copy</button>
+              <button class="copy-btn" type="button" aria-live="polite" data-copy={installCmd}>Copy</button>
             </div>
           </dd>
         </div>
@@ -316,7 +319,7 @@ tag-format = "{name}-v{version}"`;
           <dd>
             <div class="cmdline">
               <code><span class="prompt">$</span>brew install tylerbutler/tap/trellis</code>
-              <button class="copy-btn" type="button" data-copy="brew install tylerbutler/tap/trellis">Copy</button>
+              <button class="copy-btn" type="button" aria-live="polite" data-copy="brew install tylerbutler/tap/trellis">Copy</button>
             </div>
           </dd>
         </div>
@@ -324,8 +327,8 @@ tag-format = "{name}-v{version}"`;
           <dt>mise / asdf <span class="dim-note">(pin it in .tool-versions)</span></dt>
           <dd>
             <div class="cmdline">
-              <code><span class="prompt">$</span>mise use "ubi:tylerbutler/trellis@0.1.0"</code>
-              <button class="copy-btn" type="button" data-copy={'mise use "ubi:tylerbutler/trellis@0.1.0"'}>Copy</button>
+              <code><span class="prompt">$</span>{miseCmd}</code>
+              <button class="copy-btn" type="button" aria-live="polite" data-copy={miseCmd}>Copy</button>
             </div>
           </dd>
         </div>
@@ -334,7 +337,7 @@ tag-format = "{name}-v{version}"`;
           <dd>
             <div class="cmdline">
               <code><span class="prompt">$</span>cargo install --git https://github.com/tylerbutler/trellis</code>
-              <button class="copy-btn" type="button" data-copy="cargo install --git https://github.com/tylerbutler/trellis">Copy</button>
+              <button class="copy-btn" type="button" aria-live="polite" data-copy="cargo install --git https://github.com/tylerbutler/trellis">Copy</button>
             </div>
           </dd>
         </div>
@@ -401,7 +404,7 @@ tag-format = "{name}-v{version}"`;
 
   .hero-install code {
     white-space: pre-wrap;
-    word-break: break-all;
+    overflow-wrap: anywhere;
     line-height: 1.7;
   }
 

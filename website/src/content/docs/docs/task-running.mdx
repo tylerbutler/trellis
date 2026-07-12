@@ -1,0 +1,123 @@
+---
+title: Task running
+description: trellis run fans a task out across workspace members, graph-parallel by default, with streamed output and a failure summary.
+---
+
+import Callout from "../../../components/Callout.astro";
+
+`trellis run` fans a task out across workspace members; `trellis exec` does
+the same for an arbitrary command. Both work from anywhere inside the
+workspace and replace the hand-written `for pkg in …` bash loops that
+multi-package Gleam repos otherwise accumulate.
+
+```txt wrap
+trellis run <task> [pkgs...] [--since <ref>] [--with-dependents]
+                   [--target erlang|javascript|all] [--strict] [--check]
+                   [--serial] [--keep-going] [--jobs N]
+trellis exec [pkgs...] [--since <ref>] [--serial] [--keep-going] -- <command...>
+```
+
+## Built-in tasks
+
+Built-in tasks map 1:1 onto gleam verbs — no declaration needed:
+
+| Task | Runs |
+| --- | --- |
+| `build` | `gleam build`. `--strict` adds `--warnings-as-errors`. |
+| `test` | `gleam test` |
+| `check` | `gleam check` — type check without building. |
+| `format` | `gleam format`. `--check` verifies instead of writing. |
+| `docs` | `gleam docs build` |
+| `deps` | `gleam deps download` |
+| `clean` | `gleam clean` |
+
+`--target erlang|javascript` selects the compile target; `--target all` runs
+the task once per target, replacing the `test-js`/`build-js` recipe
+duplication.
+
+## Custom tasks
+
+Custom tasks live under `[tools.trellis.tasks]` in the root manifest and run
+through `trellis run <name>` exactly like built-ins — same scheduling, same
+package selection:
+
+```toml title="gleam.toml" wrap
+# Custom tasks for `trellis run <name>`. Built-in verbs need no declaration;
+# a task with a built-in's name overrides it.
+[tools.trellis.tasks.lint]
+command = "gleam run -m glinter"
+needs-deps = true            # run `gleam deps download` first if not cached
+```
+
+Any built-in or custom task can omit members through a same-named key under
+`exclude` — see
+[package exclusions](/docs/configuration/#package-exclusions).
+
+## Scheduling
+
+Scheduling is **graph-parallel by default**: a package runs as soon as its
+workspace dependencies have finished, up to `--jobs N` at once (default: CPU
+count). Output is streamed live with a package prefix, and a summary table
+names any failures:
+
+```console
+$ trellis run test
+lat_core ▏ $ gleam test
+lat_core ▏ Compiling lat_core
+lat_core ▏ ...
+lat_mid  ▏ $ gleam test
+lat_cli  ▏ $ gleam test
+
+package   status    time
+lat_core  ok        3.2s
+lat_mid   ok        2.8s
+lat_cli   FAILED    1.4s  `gleam test` failed
+```
+
+The exit code is non-zero when any package fails. `--serial` runs one package
+at a time in dependency order; `--keep-going` continues scheduling after a
+failure instead of stopping at the first one.
+
+## Selecting packages
+
+Name packages explicitly (`trellis run test lat_core`) or select them from git
+history. `--since <ref>` filters to packages owning changed files — committed,
+uncommitted, and untracked — and `--with-dependents` adds the
+reverse-dependency closure:
+
+```sh
+# Only test what a PR touched: packages owning changed files,
+# plus everything that depends on them.
+trellis run test --since origin/main --with-dependents
+```
+
+## Arbitrary commands
+
+`trellis exec` runs any command in each member directory, with the same
+selection and scheduling flags:
+
+```sh
+trellis exec -- gleam deps update
+trellis exec lat_core lat_mid -- rm -rf build
+```
+
+<Callout>
+
+Trellis is not a general task runner: compound flows stay in `just` as
+one-liners. Recipes become delegations that keep `just --list`
+discoverability while deleting the loops:
+
+</Callout>
+
+```txt title="justfile"
+# justfile — recipes become one-line delegations
+test *ARGS:
+    trellis run test {{ARGS}}
+
+ci:
+    trellis run format --check
+    trellis run check
+    trellis run lint
+    trellis run test
+    trellis run build --strict
+```

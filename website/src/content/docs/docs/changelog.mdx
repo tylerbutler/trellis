@@ -1,0 +1,109 @@
+---
+title: Changelog & versioning
+description: Trellis has a native changelog engine — TOML fragments in .changes/unreleased/, version bumps derived from their kinds, changelogs assembled from rendered sections.
+---
+
+import Callout from "../../../components/Callout.astro";
+
+The changelog engine is native — no second tool to install in CI, no config
+file to keep in sync with the workspace. Changes are recorded as small TOML
+fragments; version bumps and changelog sections are derived from them.
+
+```txt wrap
+trellis changelog new [--package <pkg>] --kind <kind> --body <text>
+trellis changelog check --base <ref> [--head <ref>] [--json]
+trellis version plan [--json]
+trellis version apply [--json]
+```
+
+## Fragments
+
+A fragment is one file in `.changes/unreleased/` with three keys — the package
+it belongs to, a configured change kind, and the entry text:
+
+```toml title=".changes/unreleased/lat_core-1.toml"
+project = "lat_core"
+kind = "Added"
+body = "Add graph-parallel task scheduling"
+```
+
+`changelog new` writes one non-interactively — `--kind` and `--body` are
+explicit flags, which suits CI and agents as well as shells (`--package` can
+be omitted when the workspace has exactly one releasable package):
+
+```console
+$ trellis changelog new --package lat_core --kind Fixed \
+    --body "Reject path deps that escape the workspace"
+created .changes/unreleased/lat_core-1.toml
+```
+
+<Callout>
+
+Invalid fragments — unknown package or kind, empty body, unparseable TOML —
+are hard errors for `check`, `plan`, and `apply`, and `doctor` flags them on
+every PR. Silently dropping a change is exactly the drift trellis exists to
+prevent.
+
+</Callout>
+
+## Enforcing entries on PRs
+
+`changelog check` maps a `base...head` diff to packages and fails (non-zero
+exit) if a changed releasable package has no unreleased fragment. `--json`
+emits a payload — including a markdown `preview` — ready for a PR sticky
+comment:
+
+```json
+{
+  "has-entries": true,
+  "needs-entry": true,
+  "invalid-fragments": [],
+  "packages": [
+    { "name": "lat_core", "changed": true, "has-entry": true, "fragments": 2 },
+    { "name": "lat_cli", "changed": true, "has-entry": false, "fragments": 0 }
+  ],
+  "preview": "| package | status |\n| --- | --- |\n…"
+}
+```
+
+## Planning a release
+
+`version plan` is the dry run: each pending package's next version, computed
+from its fragments' kinds. The largest bump among a package's fragments wins;
+kinds and the bump each implies are configurable under
+[`[tools.trellis.changelog]`](/docs/configuration/#changelog-configuration).
+
+```console
+$ trellis version plan
+lat_core: 1.1.0 -> 1.2.0 (2 fragment(s))
+lat_cli: 0.4.2 -> 0.4.3 (1 fragment(s))
+```
+
+## Applying it
+
+`version apply` performs the release bookkeeping in one step. Per pending
+package, it:
+
+1. Renders the new version section from the fragments (minijinja templates,
+   configurable) and stores it under `.changes/<package>/`.
+2. Reassembles the package's `CHANGELOG.md` from its stored sections, newest
+   first.
+3. Bumps the version in `gleam.toml` with a surgical TOML edit — no regex,
+   formatting preserved.
+4. Patches every member's `manifest.toml` so locked workspace-internal
+   dependencies match the new versions.
+
+The whole operation makes **zero Hex network calls** — that constraint is
+load-bearing, because running `gleam update` per package trips Hex rate
+limits on shared CI runners.
+
+<Callout>
+
+Each package's `CHANGELOG.md` is a generated file: the source of truth is the
+version sections under `.changes/<package>/`, and `apply` reassembles the
+changelog from them.
+
+</Callout>
+
+From here, [publishing](/docs/publishing/) covers turning pending fragments
+into a release PR (`trellis release pr`), tags, and Hex publishes.

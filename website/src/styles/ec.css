@@ -1,0 +1,33 @@
+/* ============================================================
+   Expressive Code chrome, unified with the site's terminal
+   figure convention: a left-aligned mono title bar with a brass
+   $ prompt — never macOS traffic lights (see DESIGN.md §5).
+   Loaded by both the landing page and the docs theme.
+   ============================================================ */
+
+/* Remove the three-dot decoration entirely (its color/opacity are
+   also zeroed in the Expressive Code styleOverrides). */
+.expressive-code figure.frame.is-terminal figcaption.header::before {
+  display: none;
+}
+
+.expressive-code figure.frame.is-terminal figcaption.header {
+  justify-content: flex-start;
+  font-family: var(--font-mono);
+  font-size: var(--text-fine);
+  font-weight: 560;
+}
+
+/* Titled terminal frames read as a prompt line: `$ title` */
+.expressive-code figure.frame.is-terminal figcaption.header .title {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.75ch;
+  padding: 0;
+}
+
+.expressive-code figure.frame.is-terminal figcaption.header .title:not(:empty)::before {
+  content: "$";
+  color: var(--brass);
+  font-weight: 600;
+}

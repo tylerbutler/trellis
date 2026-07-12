@@ -1,0 +1,337 @@
+/* ============================================================
+   Trellis docs — Starlight themed as "The Calibrated Instrument".
+   Maps Starlight's variables onto the Harbor Steel tokens and
+   restyles the chrome so the docs read as trellis, never as a
+   default docs theme (PRODUCT.md anti-reference).
+   ============================================================ */
+
+@import "./tokens.css";
+@import "./ec.css";
+
+/* -- Starlight variable mapping (dark-only; theme is pinned) -- */
+
+:root {
+  /* base palette */
+  --sl-color-white: var(--ink);
+  --sl-color-gray-1: var(--ink-soft);
+  --sl-color-gray-2: var(--ink-soft);
+  --sl-color-gray-3: var(--muted);
+  --sl-color-gray-4: oklch(0.5 0.03 230);
+  --sl-color-gray-5: var(--line);
+  --sl-color-gray-6: var(--surface);
+  --sl-color-black: var(--bg);
+  --sl-color-accent-low: var(--cobalt-deep);
+  --sl-color-accent: var(--cobalt);
+  --sl-color-accent-high: var(--brass);
+
+  /* semantic */
+  --sl-color-text: var(--ink-soft);
+  --sl-color-text-accent: var(--brass);
+  --sl-color-bg: var(--bg);
+  --sl-color-bg-nav: color-mix(in oklch, var(--bg) 94%, transparent);
+  --sl-color-bg-sidebar: var(--bg);
+  --sl-color-bg-inline-code: var(--surface);
+  --sl-color-hairline: var(--line);
+  --sl-color-hairline-light: var(--line-soft);
+  --sl-color-hairline-shade: var(--line-soft);
+
+  /* type */
+  --sl-font: "Archivo Variable", "Helvetica Neue", Arial, sans-serif;
+  --sl-font-mono: "Martian Mono Variable", ui-monospace, "SF Mono", Menlo, monospace;
+  --sl-text-base: var(--text-body);
+  --sl-text-h1: var(--text-docs-h1);
+  --sl-text-h2: var(--text-docs-h2);
+  --sl-text-h3: var(--text-docs-h3);
+  --sl-text-code: var(--text-code);
+  --sl-text-code-sm: 0.85em;
+  --sl-line-height: 1.65;
+
+  /* layout */
+  --sl-content-width: 38rem;
+}
+
+/* -- base ----------------------------------------------------- */
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  letter-spacing: 0.011em;
+  font-kerning: normal;
+  font-optical-sizing: auto;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--cobalt);
+  color: var(--ink);
+}
+
+:focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 3px;
+  border-radius: var(--radius-sm);
+}
+
+code,
+pre,
+kbd {
+  font-variant-ligatures: none;
+}
+
+/* -- header --------------------------------------------------- */
+
+header.header {
+  background-color: var(--sl-color-bg-nav);
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.site-title {
+  color: var(--ink);
+  font-weight: 640;
+  font-stretch: 118%;
+  font-size: var(--text-wordmark);
+  letter-spacing: 0.01em;
+  gap: 0.6rem;
+}
+
+/* -- sidebar -------------------------------------------------- */
+
+.sidebar-pane {
+  border-inline-end: 1px solid var(--line-soft);
+}
+
+.sidebar-content a {
+  color: var(--ink-soft);
+  border-radius: var(--radius-sm);
+  transition: color 160ms var(--ease-out), background 160ms var(--ease-out);
+}
+
+.sidebar-content a:hover {
+  color: var(--brass-bright);
+  background: var(--surface);
+}
+
+.sidebar-content a[aria-current="page"],
+.sidebar-content a[aria-current="page"]:hover,
+.sidebar-content a[aria-current="page"]:focus {
+  background: var(--surface-2);
+  color: var(--brass);
+  font-weight: 560;
+}
+
+/* -- right rail: "On this page" -------------------------------- */
+
+starlight-toc h2 {
+  font-family: var(--font-mono);
+  font-size: var(--text-fine);
+  font-weight: 560;
+  color: var(--muted);
+}
+
+starlight-toc a {
+  transition: color 160ms var(--ease-out);
+}
+
+/* -- search --------------------------------------------------- */
+
+site-search button[data-open-modal] {
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--muted);
+}
+
+site-search button[data-open-modal]:hover {
+  border-color: var(--line);
+  color: var(--ink-soft);
+}
+
+site-search kbd {
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+}
+
+/* -- content typography --------------------------------------- */
+
+.sl-markdown-content h1,
+.sl-markdown-content h2,
+.sl-markdown-content h3,
+.sl-markdown-content h4 {
+  line-height: 1.12;
+  text-wrap: balance;
+  letter-spacing: -0.015em;
+  font-weight: 620;
+  color: var(--ink);
+}
+
+h1[data-page-title] {
+  font-stretch: 114%;
+  font-weight: 620;
+  letter-spacing: -0.015em;
+  color: var(--ink);
+}
+
+.sl-markdown-content h2:not(:first-child) {
+  margin-top: var(--sp-2xl);
+  padding-top: var(--sp-lg);
+  border-top: 1px solid var(--line-soft);
+}
+
+.sl-markdown-content p,
+.sl-markdown-content li {
+  text-wrap: pretty;
+}
+
+.sl-markdown-content a {
+  color: var(--brass);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklch, var(--brass) 45%, transparent);
+  text-underline-offset: 0.2em;
+  transition: text-decoration-color 160ms var(--ease-out), color 160ms var(--ease-out);
+}
+
+.sl-markdown-content a:hover {
+  color: var(--brass-bright);
+  text-decoration-color: currentColor;
+}
+
+.sl-markdown-content code:not(:is(pre code, a code)) {
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  padding: 0.1em 0.35em;
+}
+
+/* -- tables: the ledger convention ----------------------------- */
+
+.sl-markdown-content table {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: var(--text-small);
+}
+
+.sl-markdown-content table :is(th, td) {
+  border: none;
+}
+
+.sl-markdown-content thead th {
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: var(--text-fine);
+  font-weight: 560;
+  color: var(--muted);
+  padding: var(--sp-xs) var(--sp-sm);
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-2);
+}
+
+.sl-markdown-content td {
+  padding: var(--sp-sm);
+  border-bottom: 1px solid var(--line-soft);
+  vertical-align: top;
+  color: var(--ink-soft);
+  background: transparent;
+}
+
+.sl-markdown-content tr:nth-child(2n) td {
+  background: transparent;
+}
+
+.sl-markdown-content tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.sl-markdown-content tbody td:first-child code {
+  color: var(--brass);
+}
+
+/* -- callouts (the site's neutral aside) ------------------------ */
+
+.sl-markdown-content .callout {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  border-radius: var(--radius-md);
+  padding: var(--sp-md) var(--sp-lg);
+  margin-block: var(--sp-lg);
+}
+
+.sl-markdown-content .callout p {
+  margin: 0;
+}
+
+/* -- link buttons (404 / splash actions) ------------------------ */
+
+.sl-link-button {
+  border-radius: var(--radius-sm);
+  font-weight: 620;
+  transition: background 160ms var(--ease-out), color 160ms var(--ease-out),
+    border-color 160ms var(--ease-out);
+}
+
+.sl-link-button.primary {
+  background: var(--brass);
+  border-color: var(--brass);
+  color: var(--ink-dark);
+}
+
+.sl-link-button.primary:hover {
+  background: var(--brass-bright);
+  border-color: var(--brass-bright);
+  color: var(--ink-dark);
+}
+
+.sl-link-button.minimal {
+  color: var(--ink);
+}
+
+.sl-link-button.minimal:hover {
+  color: var(--brass-bright);
+}
+
+[data-has-hero] .hero h1 {
+  font-stretch: 118%;
+  letter-spacing: -0.022em;
+}
+
+/* -- pagination + footer --------------------------------------- */
+
+.pagination-links a {
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-md);
+  box-shadow: none;
+  transition: border-color 160ms var(--ease-out);
+}
+
+.pagination-links a:hover {
+  border-color: var(--brass);
+}
+
+/* -- flat field: no shadows anywhere ---------------------------- */
+
+.sl-container,
+.content-panel,
+.sl-markdown-content :is(img, figure, table) {
+  box-shadow: none;
+}
+
+/* -- reduced motion --------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

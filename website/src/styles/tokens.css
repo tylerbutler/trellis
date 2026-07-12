@@ -1,0 +1,61 @@
+/* ============================================================
+   Trellis — "The Calibrated Instrument" design tokens.
+   Shared by the landing page (global.css) and docs (starlight.css).
+   ============================================================ */
+
+:root {
+  /* -- color: steel cobalt system (see DESIGN.md) -- */
+  --bg: oklch(0.16 0.02 230);
+  --surface: oklch(0.205 0.026 230);
+  --surface-2: oklch(0.25 0.03 230);
+  --cobalt: oklch(0.45 0.086 230);
+  --cobalt-deep: oklch(0.33 0.06 230);
+  --cobalt-band: oklch(0.28 0.045 230);
+  --ink: oklch(0.94 0.012 230);
+  --ink-soft: oklch(0.88 0.02 230);
+  --muted: oklch(0.76 0.022 230);
+  --brass: oklch(0.8 0.128 80);
+  --brass-bright: oklch(0.86 0.11 85);
+  --ink-dark: oklch(0.18 0.03 240);
+  --line: oklch(0.34 0.03 230);
+  --line-soft: oklch(0.27 0.028 230);
+
+  /* -- type -- */
+  --font-sans: "Archivo Variable", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "Martian Mono Variable", ui-monospace, "SF Mono", Menlo, monospace;
+
+  --text-display: clamp(2.3rem, 1.1rem + 4.6vw, 4.4rem);
+  --text-h2: clamp(1.6rem, 1.05rem + 2.1vw, 2.5rem);
+  --text-h3: 1.3rem;
+  --text-lead: clamp(1.1rem, 1rem + 0.4vw, 1.25rem);
+  --text-body: 1.0625rem;
+  --text-small: 0.9375rem;
+  --text-code: 0.875rem;
+  --text-fine: 0.8125rem;
+  --text-docs-h1: clamp(2rem, 1.4rem + 2vw, 2.8rem);
+  --text-docs-h2: 1.45rem;
+  --text-docs-h3: 1.1rem;
+  --text-wordmark: 1.2rem;
+
+  /* -- space (4pt-derived) -- */
+  --sp-2xs: 0.25rem;
+  --sp-xs: 0.5rem;
+  --sp-sm: 0.75rem;
+  --sp-md: 1rem;
+  --sp-lg: 1.5rem;
+  --sp-xl: 2.5rem;
+  --sp-2xl: 4rem;
+  --sp-section: clamp(5rem, 6rem + 4vw, 9rem);
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+
+  --measure: 68ch;
+  --content-width: 72rem;
+
+  /* semantic z scale */
+  --z-sticky: 10;
+  --z-skip: 20;
+
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+}

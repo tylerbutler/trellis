@@ -1,0 +1,148 @@
+---
+title: Configuration
+description: Trellis uses a [tools.trellis] table in gleam.toml to identify the workspace root. Only members is required.
+---
+
+import Callout from "../../../components/Callout.astro";
+
+Trellis uses a `[tools.trellis]` table in a `gleam.toml` to identify the
+workspace root, so it does not need a separate config file. The root manifest
+may be config-only, or a regular Gleam package that also anchors the
+workspace. Only `members` is required; trellis derives the rest of its
+workspace model from the member manifests.
+
+```toml title="gleam.toml" wrap
+# gleam.toml at the repo root
+[tools.trellis]
+members = ["packages/*", "examples"]
+# Exclusions are globbed against member paths and scoped by task.
+# `release` covers changelog, versioning, tagging, and publishing.
+exclude = { docs = ["examples"], release = ["examples"] }
+
+# Custom tasks for `trellis run <name>`. Built-in verbs (build, test, check,
+# format, docs, deps, clean) need no declaration.
+[tools.trellis.tasks.lint]
+command = "gleam run -m glinter"
+needs-deps = true            # run `gleam deps download` first if not cached
+
+[tools.trellis.publish]
+tag-format = "{name}-v{version}"
+```
+
+Each member is a directory with its own `gleam.toml`. Path dependencies
+between members define the graph; cycles and path deps that escape the
+workspace are rejected with a clear error.
+
+<Callout>
+
+A `[tools.trellis]` table in a *member* manifest is a `doctor` error because
+it would change root discovery. Trellis walks up from the current directory to
+the first manifest carrying the table, similar to how `git` and `cargo` find
+their roots.
+
+</Callout>
+
+## Keys
+
+| Key | Required | What it does |
+| --- | --- | --- |
+| `members` | yes | Globs expanded into package directories. New packages join every command the moment their directory matches. |
+| `exclude.<task>` | no | Member-path globs omitted from that built-in or custom task. The exclusion still applies when a package is named explicitly. |
+| `exclude.release` | no | The shared package set omitted from changelog, versioning, tagging, publishing, and release CI. |
+| `ignore-release` | legacy | Compatibility alias for release exclusions. It remains supported and is combined with `exclude.release`. |
+| `tasks.<name>` | no | Custom tasks for `trellis run`. A task with a built-in's name (`build`, `test`, …) overrides it. `needs-deps = true` downloads dependencies first. |
+| `publish.tag-format` | no | Template for per-member git tags. Default: `{name}-v{version}`. |
+| `publish.retry` | no | Backoff for Hex rate limits: `{ attempts, initial-delay, multiplier }`. |
+| `changelog.kinds` | no | Change kinds and the version bump each implies. The largest bump among a package's unreleased fragments wins. |
+| `changelog.*-format` | no | Minijinja templates for rendered changelog sections: `version-format`, `kind-format`, `change-format`. |
+
+## Package exclusions
+
+Trellis 0.2.0 added task-scoped package exclusions. Add a key for any built-in
+or custom `trellis run` task whose package set differs from the full
+workspace:
+
+```toml title="gleam.toml" wrap
+[tools.trellis]
+members = ["packages/*", "examples", "benchmarks/*"]
+exclude = { docs = ["examples", "benchmarks/*"], release = ["examples", "benchmarks/*"] }
+```
+
+Inline TOML is concise for a small map. The equivalent table form is easier to
+scan as more tasks gain exclusions:
+
+```toml title="gleam.toml"
+[tools.trellis.exclude]
+docs = ["examples", "benchmarks/*"]
+release = ["examples", "benchmarks/*"]
+```
+
+Patterns are globs matched against member paths relative to the workspace
+root, not package names. A task exclusion applies after normal package
+selection, so it still wins when a package is named explicitly or selected
+through `--since`.
+
+| Key | What it excludes |
+| --- | --- |
+| `docs` | Matching members from `trellis run docs`. Built-in tasks can be filtered without overriding their commands. |
+| Any custom task name | Matching members from that `trellis run <name>` invocation. |
+| `release` | Matching members from changelog, version, tag, publish, and release CI operations. Explicit changelog creation and publishing are rejected. |
+
+Release-excluded members remain in the dependency graph and still participate
+in `list`, `graph`, `exec`, and every task that does not exclude them. `info`
+and JSON output expose `releasable: false`; `list --releasable` returns only
+the release set:
+
+```console
+$ trellis list --releasable
+lat_core
+lat_mid
+lat_cli
+```
+
+<Callout>
+
+The older `ignore-release` array remains supported and is combined with
+`exclude.release`. Prefer `exclude.release` in new configuration so every
+package-set exception lives under the same task-scoped model.
+
+</Callout>
+
+<Callout>
+
+`trellis doctor` catches every exclusion glob that matches no member. For
+release exclusions, it also rejects a releasable package that path-depends on
+an excluded one: a published package cannot depend on a workspace package that
+will never exist on Hex.
+
+</Callout>
+
+## Changelog configuration
+
+The changelog engine is native — no second tool to install, no config file to
+keep in sync. Changes live as TOML fragments in `.changes/unreleased/`;
+rendering is controlled by small minijinja templates, each with a context of
+`name`, `version`, `date`, `tag`, `kind`, and `body` as applicable:
+
+```toml wrap
+[tools.trellis.changelog]
+version-format = "## v{{ version }} - {{ date }}"     # default
+kind-format = "### {{ kind }}"                        # default
+change-format = "- {{ body }}"                        # default
+kinds = [
+  { label = "Breaking", bump = "major" },
+  { label = "Added", bump = "minor" },
+  { label = "Fixed", bump = "patch" },
+]
+```
+
+Each package's `CHANGELOG.md` is a generated file: the source of truth is the
+version sections stored under `.changes/<package>/`, and `version apply`
+reassembles the changelog from them, newest first.
+
+## Verifying it
+
+Run `trellis doctor` after any config change. It validates that member globs
+resolve, the graph is acyclic, task exclusion globs match members, release
+boundaries are safe, the tag format produces unique tags, and locked versions
+match — exiting non-zero on any error.
