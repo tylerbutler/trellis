@@ -37,11 +37,11 @@ brew install tylerbutler/tap/trellis
 
 ## mise / asdf
 
-Via the [ubi](https://mise.jdx.dev/dev-tools/backends/ubi.html) backend. This
-is how a consuming workspace pins trellis in `.tool-versions` alongside its
-other tools, so every contributor and CI runner gets the same version:
+Via the [github](https://mise.jdx.dev/dev-tools/backends/github.html) backend.
+This is how a consuming workspace pins trellis in `.tool-versions` alongside
+its other tools, so every contributor and CI runner gets the same version:
 
-<Code lang="sh" code={`mise use "ubi:tylerbutler/trellis@${TRELLIS_VERSION}"`} />
+<Code lang="sh" code={`mise use "github:tylerbutler/trellis@${TRELLIS_VERSION}"`} />
 
 ## From source
 

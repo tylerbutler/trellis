@@ -6,7 +6,7 @@ import { TRELLIS_VERSION } from "../lib/version";
 const installCmd =
   "curl --proto '=https' --tlsv1.2 -LsSf https://github.com/tylerbutler/trellis/releases/latest/download/trellis-installer.sh | sh";
 
-const miseCmd = `mise use "ubi:tylerbutler/trellis@${TRELLIS_VERSION}"`;
+const miseCmd = `mise use "github:tylerbutler/trellis@${TRELLIS_VERSION}"`;
 
 const configSample = `# This table marks the workspace root.
 # Only \`members\` is required.
