@@ -9,8 +9,9 @@ const configSample = `# This table marks the workspace root.
 # Only \`members\` is required.
 [tools.trellis]
 members = ["packages/*", "examples"]
-# Keep examples in task fan-out, but out of releases.
-ignore-release = ["examples"]
+# Exclusions are scoped by task. \`release\` covers changelog,
+# versioning, tagging, publishing, and release CI.
+exclude = { docs = ["examples"], release = ["examples"] }
 
 [tools.trellis.tasks.lint]
 command = "gleam run -m glinter"
@@ -157,33 +158,33 @@ tag-format = "{name}-v{version}"`;
     </div>
   </section>
 
-  <!-- ============ RELEASE EXCLUSIONS ============ -->
+  <!-- ============ PACKAGE EXCLUSIONS ============ -->
   <section class="exclusions">
     <div class="shell exclusions-grid">
       <div class="section-head">
-        <h2>Run it here. Don’t release it.</h2>
+        <h2>One workspace. Different task sets.</h2>
         <p>
           Examples, benchmarks, and internal tools belong in the workspace:
-          they should build, test, and appear in the graph. They do not belong
-          in a changelog or on Hex.
+          they should build, test, and appear in the graph, but they may not
+          need generated docs or a release on Hex.
         </p>
         <p>
-          <code>ignore-release</code> draws that boundary with member-path
-          globs. Trellis applies it across changelogs, versioning, tags,
-          publishing, and release CI — then <code>doctor</code> checks that the
-          boundary is safe.
+          In 0.2.0, <code>exclude</code> gives each built-in or custom task its
+          own member-path globs. The special <code>release</code> key covers
+          changelogs, versioning, tags, publishing, and release CI.
         </p>
-        <a href="/docs/configuration/#release-exclusions">Configure release exclusions →</a>
+        <a href="/docs/configuration/#release-exclusions">Configure package exclusions →</a>
       </div>
 
       <div class="exclusion-proof">
-        <div class="release-ledger-scroll">
-          <table class="release-ledger">
+        <div class="exclusion-ledger-scroll">
+          <table class="exclusion-ledger">
             <thead>
               <tr>
                 <th scope="col">Member</th>
-                <th scope="col">Everyday commands</th>
-                <th scope="col">Release commands</th>
+                <th scope="col">build / test</th>
+                <th scope="col">docs</th>
+                <th scope="col">release</th>
               </tr>
             </thead>
             <tbody>
@@ -191,10 +192,12 @@ tag-format = "{name}-v{version}"`;
                 <td><code>packages/*</code></td>
                 <td><span class="state state-included">included</span></td>
                 <td><span class="state state-included">included</span></td>
+                <td><span class="state state-included">included</span></td>
               </tr>
               <tr>
                 <td><code>examples</code></td>
                 <td><span class="state state-included">included</span></td>
+                <td><span class="state state-excluded">excluded</span></td>
                 <td><span class="state state-excluded">excluded</span></td>
               </tr>
             </tbody>
@@ -208,7 +211,8 @@ tag-format = "{name}-v{version}"`;
 <span class="name">lat_cli</span></code></pre>
           <figcaption class="term-note">
             <code>examples</code> still appears in <code>trellis list</code>,
-            <code>graph</code>, and task fan-out. Only the release set changes.
+            <code>graph</code>, <code>exec</code>, and tasks that do not exclude
+            it. Only the configured task sets change.
           </figcaption>
         </figure>
       </div>
@@ -275,7 +279,7 @@ tag-format = "{name}-v{version}"`;
         <figcaption class="term-bar"><span class="prompt">$</span>trellis doctor</figcaption>
         <pre class="term-out"><code><span class="dim">checked:</span> member globs resolve and every member has a parseable gleam.toml
 <span class="dim">checked:</span> path dependencies stay inside the workspace; graph is acyclic
-<span class="dim">checked:</span> ignore-release globs match members; no releasable member depends on an unreleasable one
+<span class="dim">checked:</span> task exclusion globs match members; no releasable member depends on an unreleasable one
 <span class="dim">checked:</span> tag format produces a unique tag per releasable member
 <span class="dim">checked:</span> manifest.toml locked versions match workspace-internal gleam.toml versions
 <span class="dim">checked:</span> each releasable member's version is not behind its CHANGELOG
@@ -580,20 +584,20 @@ tag-format = "{name}-v{version}"`;
     min-width: 0;
   }
 
-  .release-ledger-scroll {
+  .exclusion-ledger-scroll {
     overflow-x: auto;
     border: 1px solid var(--line);
     border-radius: var(--radius-md);
   }
 
-  .release-ledger {
+  .exclusion-ledger {
     width: 100%;
-    min-width: 34rem;
+    min-width: 42rem;
     border-collapse: collapse;
     font-size: var(--text-small);
   }
 
-  .release-ledger th {
+  .exclusion-ledger th {
     text-align: left;
     font-family: var(--font-mono);
     font-size: var(--text-fine);
@@ -604,16 +608,16 @@ tag-format = "{name}-v{version}"`;
     background: var(--surface-2);
   }
 
-  .release-ledger td {
+  .exclusion-ledger td {
     padding: var(--sp-md);
     border-bottom: 1px solid var(--line-soft);
   }
 
-  .release-ledger tbody tr:last-child td {
+  .exclusion-ledger tbody tr:last-child td {
     border-bottom: none;
   }
 
-  .release-ledger td:first-child {
+  .exclusion-ledger td:first-child {
     color: var(--brass);
   }
 

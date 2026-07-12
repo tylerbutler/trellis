@@ -5,9 +5,9 @@ import Docs from "../../layouts/Docs.astro";
 const rootConfig = `# gleam.toml at the repo root
 [tools.trellis]
 members = ["packages/*", "examples"]
-# Matching members participate in task fan-out but are excluded from
-# changelog, versioning, tagging, and publishing.
-ignore-release = ["examples"]
+# Exclusions are globbed against member paths and scoped by task.
+# \`release\` covers changelog, versioning, tagging, and publishing.
+exclude = { docs = ["examples"], release = ["examples"] }
 
 # Custom tasks for \`trellis run <name>\`. Built-in verbs (build, test, check,
 # format, docs, deps, clean) need no declaration.
@@ -30,7 +30,11 @@ kinds = [
 
 const exclusionConfig = `[tools.trellis]
 members = ["packages/*", "examples", "benchmarks/*"]
-ignore-release = ["examples", "benchmarks/*"]`;
+exclude = { docs = ["examples", "benchmarks/*"], release = ["examples", "benchmarks/*"] }`;
+
+const exclusionTableConfig = `[tools.trellis.exclude]
+docs = ["examples", "benchmarks/*"]
+release = ["examples", "benchmarks/*"]`;
 
 const releasableOutput = `$ trellis list --releasable
 lat_core
@@ -87,12 +91,27 @@ lat_cli`;
         </td>
       </tr>
       <tr>
-        <td><code>ignore-release</code></td>
+        <td><code>exclude.&lt;task&gt;</code></td>
         <td>no</td>
         <td>
-          Members that run tasks but are excluded from changelog, versioning,
-          tagging, and publishing. <code>doctor</code> rejects a releasable
-          member that depends on an unreleasable one.
+          Member-path globs omitted from that built-in or custom task. The
+          exclusion still applies when a package is named explicitly.
+        </td>
+      </tr>
+      <tr>
+        <td><code>exclude.release</code></td>
+        <td>no</td>
+        <td>
+          The shared package set omitted from changelog, versioning, tagging,
+          publishing, and release CI.
+        </td>
+      </tr>
+      <tr>
+        <td><code>ignore-release</code></td>
+        <td>legacy</td>
+        <td>
+          Compatibility alias for release exclusions. It remains supported and
+          is combined with <code>exclude.release</code>.
         </td>
       </tr>
       <tr>
@@ -140,66 +159,87 @@ lat_cli`;
     </tbody>
   </table>
 
-  <h2 id="release-exclusions">Release exclusions</h2>
+  <h2 id="release-exclusions">Package exclusions</h2>
   <p>
-    Some workspace members need the normal development loop without becoming
-    published packages. Add their paths to <code>ignore-release</code>:
+    Trellis 0.2.0 added task-scoped package exclusions. Add a key for any
+    built-in or custom <code>trellis run</code> task whose package set differs
+    from the full workspace:
   </p>
 
   <Code lang="toml" title="gleam.toml" code={exclusionConfig} />
 
   <p>
-    The patterns are globs matched against member paths relative to the
-    workspace root, not package names. An excluded member stays in the
-    dependency graph and still participates in <code>run</code>,
-    <code>exec</code>, <code>list</code>, <code>graph</code>, and changed-package
-    selection.
+    Inline TOML is concise for a small map. The equivalent table form is easier
+    to scan as more tasks gain exclusions:
+  </p>
+
+  <Code lang="toml" title="gleam.toml" code={exclusionTableConfig} />
+
+  <p>
+    Patterns are globs matched against member paths relative to the workspace
+    root, not package names. A task exclusion applies after normal package
+    selection, so it still wins when a package is named explicitly or selected
+    through <code>--since</code>.
   </p>
 
   <table>
     <thead>
       <tr>
-        <th scope="col">Surface</th>
-        <th scope="col">Excluded member behavior</th>
+        <th scope="col">Key</th>
+        <th scope="col">What it excludes</th>
       </tr>
     </thead>
     <tbody>
       <tr>
-        <td>Tasks and graph</td>
-        <td>Included normally, with dependencies and dependents intact.</td>
+        <td><code>docs</code></td>
+        <td>
+          Matching members from <code>trellis run docs</code>. Built-in tasks
+          can be filtered without overriding their commands.
+        </td>
       </tr>
       <tr>
-        <td>Changelog and versioning</td>
+        <td>Any custom task name</td>
         <td>
-          Omitted from checks and plans. Explicit changelog creation is
+          Matching members from that <code>trellis run &lt;name&gt;</code>
+          invocation.
+        </td>
+      </tr>
+      <tr>
+        <td><code>release</code></td>
+        <td>
+          Matching members from changelog, version, tag, publish, and release
+          CI operations. Explicit changelog creation and publishing are
           rejected.
-        </td>
-      </tr>
-      <tr>
-        <td>Tags, publishing, and release CI</td>
-        <td>
-          Omitted from generated release sets. Explicit publishing is rejected.
-        </td>
-      </tr>
-      <tr>
-        <td>Introspection</td>
-        <td>
-          <code>info</code> and JSON output expose
-          <code>releasable: false</code>; <code>list --releasable</code> returns
-          only the release set.
         </td>
       </tr>
     </tbody>
   </table>
 
+  <p>
+    Release-excluded members remain in the dependency graph and still
+    participate in <code>list</code>, <code>graph</code>, <code>exec</code>, and
+    every task that does not exclude them. <code>info</code> and JSON output
+    expose <code>releasable: false</code>; <code>list --releasable</code> returns
+    only the release set:
+  </p>
+
   <Code lang="console" code={releasableOutput} />
 
   <div class="callout">
     <p>
-      <code>trellis doctor</code> catches an exclusion glob that matches no
-      member and rejects a releasable package that path-depends on an excluded
-      one. A published package cannot depend on a workspace package that will
-      never exist on Hex.
+      The older <code>ignore-release</code> array remains supported and is
+      combined with <code>exclude.release</code>. Prefer
+      <code>exclude.release</code> in new configuration so every package-set
+      exception lives under the same task-scoped model.
+    </p>
+  </div>
+
+  <div class="callout">
+    <p>
+      <code>trellis doctor</code> catches every exclusion glob that matches no
+      member. For release exclusions, it also rejects a releasable package that
+      path-depends on an excluded one: a published package cannot depend on a
+      workspace package that will never exist on Hex.
     </p>
   </div>
 
@@ -225,8 +265,8 @@ lat_cli`;
   <h2>Verifying it</h2>
   <p>
     Run <code>trellis doctor</code> after any config change. It validates that
-    member globs resolve, the graph is acyclic, ignore-release globs match
-    members, the tag format produces unique tags, and locked versions match —
-    exiting non-zero on any error.
+    member globs resolve, the graph is acyclic, task exclusion globs match
+    members, release boundaries are safe, the tag format produces unique tags,
+    and locked versions match — exiting non-zero on any error.
   </p>
 </Docs>
