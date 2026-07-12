@@ -25,7 +25,7 @@ fn list_prints_members_in_topological_order() {
         .arg("list")
         .assert()
         .success()
-        .stdout("lat_core\nlat_mid\nlat_cli\nexamples\n");
+        .stdout("lat_core\nlat_mid\nlat_cli\npackage_a\n");
 }
 
 #[test]
@@ -62,8 +62,8 @@ fn list_json_includes_graph_facts() {
     assert_eq!(mid["releasable"], true);
     assert_eq!(mid["dependencies"], serde_json::json!(["lat_core"]));
     assert_eq!(mid["dependents"], serde_json::json!(["lat_cli"]));
-    let examples = items.iter().find(|i| i["name"] == "examples").unwrap();
-    assert_eq!(examples["releasable"], false);
+    let package_a = items.iter().find(|i| i["name"] == "package_a").unwrap();
+    assert_eq!(package_a["releasable"], false);
 }
 
 // ---- graph -----------------------------------------------------------
@@ -87,7 +87,7 @@ fn graph_json_lists_nodes_and_edges() {
     let graph: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(graph["nodes"].as_array().unwrap().len(), 4);
     // lat_mid->lat_core, lat_cli->lat_mid, lat_cli->lat_core (dev),
-    // examples->lat_cli
+    // package_a->lat_cli
     assert_eq!(graph["edges"].as_array().unwrap().len(), 4);
 }
 
@@ -124,14 +124,14 @@ fn run_custom_task_fans_out_with_prefixes() {
         .stdout(predicate::str::contains("lat_core"))
         // once for the echoed `$ ...` command line and once for its output
         .stdout(predicate::str::contains("hello-from-task").count(6))
-        .stdout(predicate::str::contains("examples").not())
+        .stdout(predicate::str::contains("package_a").not())
         .stdout(predicate::str::contains("ok"));
 }
 
 #[test]
 fn task_exclusions_apply_to_explicit_package_selection() {
     trellis(&fixture("basic"))
-        .args(["run", "hello", "examples"])
+        .args(["run", "hello", "package_a"])
         .assert()
         .success()
         .stdout("no packages selected\n");
@@ -147,7 +147,7 @@ fn built_in_task_can_be_excluded_without_overriding_its_command() {
         .stdout(predicate::str::contains("lat_core"))
         .stdout(predicate::str::contains("lat_mid"))
         .stdout(predicate::str::contains("lat_cli"))
-        .stdout(predicate::str::contains("examples").not());
+        .stdout(predicate::str::contains("package_a").not());
 }
 
 #[test]
@@ -404,7 +404,7 @@ fn ci_outputs_emits_key_value_lines() {
         .assert()
         .success()
         .stdout(predicate::str::contains(
-            "projects=[\"lat_core\",\"lat_mid\",\"lat_cli\",\"examples\"]",
+            "projects=[\"lat_core\",\"lat_mid\",\"lat_cli\",\"package_a\"]",
         ))
         .stdout(predicate::str::contains(
             "releasable=[\"lat_core\",\"lat_mid\",\"lat_cli\"]",
@@ -453,7 +453,7 @@ fn since_selects_changed_packages_and_dependents() {
         .args(["list", "--since", "main", "--with-dependents"])
         .assert()
         .success()
-        .stdout("lat_mid\nlat_cli\nexamples\n");
+        .stdout("lat_mid\nlat_cli\npackage_a\n");
 
     // Uncommitted changes count too.
     write(&root.join("packages/lat_core/src/wip.gleam"), "// wip\n");

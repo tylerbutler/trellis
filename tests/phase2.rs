@@ -127,7 +127,7 @@ fn new_fragment_writes_toml_and_validates_inputs() {
             "changelog",
             "new",
             "--package",
-            "examples",
+            "package_a",
             "--kind",
             "Added",
             "--body",
@@ -184,10 +184,10 @@ fn changelog_check_maps_diff_to_missing_fragments() {
     git(&["add", "."]);
     git(&["commit", "-q", "-m", "init"]);
     git(&["checkout", "-q", "-b", "feature"]);
-    // Change two releasable packages and examples; add a fragment for one.
+    // Change two releasable packages and the example package; add a fragment for one.
     write(&root.join("packages/lat_core/src/new.gleam"), "// x\n");
     write(&root.join("packages/lat_mid/src/new.gleam"), "// x\n");
-    write(&root.join("examples/src/new.gleam"), "// x\n");
+    write(&root.join("examples/package-a/src/new.gleam"), "// x\n");
     add_fragment(root, "lat_core", "Added", "something");
     git(&["add", "."]);
     git(&["commit", "-q", "-m", "change"]);
@@ -201,7 +201,7 @@ fn changelog_check_maps_diff_to_missing_fragments() {
     assert_eq!(payload["has-entries"], true);
     assert_eq!(payload["needs-entry"], true);
     let packages = payload["packages"].as_array().unwrap();
-    // examples changed too but is not releasable, so only two rows.
+    // The example package changed too but is not releasable, so only two rows.
     assert_eq!(packages.len(), 2);
     let core = packages.iter().find(|p| p["name"] == "lat_core").unwrap();
     assert_eq!(core["has-entry"], true);

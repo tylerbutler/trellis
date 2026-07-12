@@ -82,10 +82,10 @@ gleam package that also anchors the workspace. Only `members` is required:
 ```toml
 # gleam.toml at the repo root
 [tools.trellis]
-members = ["packages/*", "examples"]
+members = ["packages/*", "examples/*"]
 # Exclusions are globbed against member paths and scoped by task. `release`
 # covers changelog, versioning, tagging, and publishing.
-exclude = { docs = ["examples"], release = ["examples"] }
+exclude = { docs = ["examples/*"], release = ["examples/*"] }
 
 # Custom tasks for `trellis run <name>`. Built-in verbs (build, test, check,
 # format, docs, deps, clean) need no declaration.
@@ -144,8 +144,8 @@ explicitly. For larger maps, use a table:
 
 ```toml
 [tools.trellis.exclude]
-docs = ["examples", "packages/internal-*"]
-release = ["examples"]
+docs = ["examples/*", "packages/internal-*"]
+release = ["examples/*"]
 ```
 
 The special `release` key defines the package set used by changelog, version,

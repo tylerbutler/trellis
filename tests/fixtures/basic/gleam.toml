@@ -2,8 +2,8 @@
 # a regular package manifest; here it is config-only.
 
 [tools.trellis]
-members = ["packages/*", "examples"]
-exclude = { docs = ["examples"], hello = ["examples"], release = ["examples"] }
+members = ["packages/*", "examples/*"]
+exclude = { docs = ["examples/*"], hello = ["examples/*"], release = ["examples/*"] }
 
 [tools.trellis.tasks.hello]
 command = "echo hello-from-task"

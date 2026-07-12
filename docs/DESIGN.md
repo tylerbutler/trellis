@@ -103,10 +103,10 @@ workspace marker lives in the manifest format the ecosystem already uses
 ```toml
 # gleam.toml at the workspace root
 [tools.trellis]
-members = ["packages/lattice_*", "examples"]
+members = ["packages/lattice_*", "examples/*"]
 # Glob arrays matched against member paths and scoped by task. The special
 # release key covers changelog, versioning, tagging, and publishing.
-exclude = { docs = ["examples"], release = ["examples"] }
+exclude = { docs = ["examples/*"], release = ["examples/*"] }
 
 # Custom tasks, available to `trellis run <name>`. Built-in verbs (build, test,
 # check, format, docs, deps, clean) need no declaration.
