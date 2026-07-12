@@ -36,6 +36,27 @@ typography:
     fontSize: "1.3rem"
     fontWeight: 620
     lineHeight: 1.2
+  docs-h1:
+    fontFamily: "Archivo Variable, Helvetica Neue, Arial, sans-serif"
+    fontSize: "clamp(2rem, 1.4rem + 2vw, 2.8rem)"
+    fontWeight: 620
+    lineHeight: 1.12
+    fontVariation: "'wdth' 114"
+  docs-h2:
+    fontFamily: "Archivo Variable, Helvetica Neue, Arial, sans-serif"
+    fontSize: "1.45rem"
+    fontWeight: 620
+    lineHeight: 1.12
+  docs-h3:
+    fontFamily: "Archivo Variable, Helvetica Neue, Arial, sans-serif"
+    fontSize: "1.1rem"
+    fontWeight: 620
+    lineHeight: 1.2
+  wordmark:
+    fontFamily: "Archivo Variable, Helvetica Neue, Arial, sans-serif"
+    fontSize: "1.2rem"
+    fontWeight: 640
+    fontVariation: "'wdth' 118"
   body:
     fontFamily: "Archivo Variable, Helvetica Neue, Arial, sans-serif"
     fontSize: "1.0625rem"
@@ -170,10 +191,13 @@ The brand's hero imagery: a `<figure>` with a mono title bar (`$ trellis graph` 
 Full-width tables inside a hairline-bordered, 8px-radius scroll container. Mono Fog Gray column headers on Surface-2; brass first column for file/key names; Fog Gray for failure/description columns. Row dividers are Line Soft hairlines; no zebra striping.
 
 ### Code Frames
-Expressive Code with the `vesper` theme, overridden to the system: Surface background, Surface-2 tab bar, brass active-tab indicator, shadow disabled (`shadowColor: transparent`), Martian Mono. TOML section headers land near-brass, strings in the cobalt family — the frames belong to the same instrument.
+Expressive Code with the `vesper` theme, overridden to the system: Surface background, Surface-2 tab bar, brass active-tab indicator, shadow disabled (`shadowColor: transparent`), Martian Mono, word wrap on by default (`defaultProps: { wrap: true }`). TOML section headers land near-brass, strings in the cobalt family — the frames belong to the same instrument. Terminal frames follow the site's `$`-prompt convention: no macOS traffic-light dots (dots are display:none'd and zeroed in styleOverrides), titles left-aligned in mono with a brass `$` prefix; untitled terminal frames show a plain hairline bar.
 
 ### Navigation
-Sticky header on a 94% Harbor Steel fill with a hairline bottom border; wordmark is the lattice glyph (brass + cobalt strokes) beside lowercase "trellis" in stretched Archivo. Links are Ink Soft at 520, brass on hover. Docs sidebar: active item gets Surface-2 fill + brass text; unbuilt pages are non-link Fog Gray with a "soon" pill — never dead links.
+Sticky header on a 94% Harbor Steel fill with a hairline bottom border; wordmark is the lattice glyph (brass + cobalt strokes) beside lowercase "trellis" in stretched Archivo. Links are Ink Soft at 520, brass on hover. Docs are Starlight (`@astrojs/starlight`), fully re-themed to this system via `src/styles/starlight.css` (dark-only: ThemeProvider/ThemeSelect overridden): sidebar active item gets Surface-2 fill + brass text; Pagefind search, mono "On this page" rail, heading anchor links, and a themed 404 come from the framework. The landing page keeps its own Base layout; both consume the same `tokens.css`.
+
+### Derived Version Strings
+No page carries a hand-maintained version number. `src/lib/version.ts` derives `TRELLIS_VERSION` from the root `Cargo.toml` at build time (a `?raw` import), and every install command interpolates it — the site obeys the tool's own derive-don't-declare doctrine. Statements about when a feature shipped ("Trellis 0.2.0 added…") are historical facts and stay literal.
 
 ## 6. Do's and Don'ts
 

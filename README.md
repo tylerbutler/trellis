@@ -54,12 +54,13 @@ powershell -ExecutionPolicy Bypass -c "irm https://github.com/tylerbutler/trelli
 brew install tylerbutler/tap/trellis
 ```
 
-**mise / asdf** (via the [ubi](https://mise.jdx.dev/dev-tools/backends/ubi.html)
-backend), which is how a consuming workspace pins trellis in `.tool-versions`
-alongside its other tools:
+**mise / asdf** (via the
+[github](https://mise.jdx.dev/dev-tools/backends/github.html) backend), which
+is how a consuming workspace pins trellis in `.tool-versions` alongside its
+other tools:
 
 ```sh
-mise use "ubi:tylerbutler/trellis@0.1.0"
+mise use "github:tylerbutler/trellis@0.2.0"
 ```
 
 **From source:**

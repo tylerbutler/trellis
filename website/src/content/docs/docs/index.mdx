@@ -1,0 +1,35 @@
+---
+title: Overview
+description: What trellis is, how it derives its workspace model from gleam.toml, and where to start.
+---
+
+Trellis is one binary that provides task fan-out, dependency-graph
+introspection, changelogs, versioning, and publish orchestration for
+multi-package Gleam repositories — all derived from the `gleam.toml` files
+you already have.
+
+Trellis derives what it can, and verifies what must remain explicit. The
+member set, its topological order, change impact, and publish order all come
+from manifests that already exist; the things that can't be derived — locked
+versions, changelogs, tags, toolchain pins — are checked by
+`trellis doctor`, which exits non-zero when an invariant breaks.
+
+## Getting started
+
+1. [Install trellis](/docs/installation/) — a single prebuilt binary; shell
+   installer, Homebrew, mise/asdf, or cargo.
+2. [Configure the workspace](/docs/configuration/) — one `[tools.trellis]`
+   table in `gleam.toml`; only `members` is required.
+3. Run `trellis doctor` to verify the setup, then
+   [run tasks](/docs/task-running/) across the workspace.
+
+## What's in these docs
+
+| Page | Covers |
+| --- | --- |
+| [Installation](/docs/installation/) | Install channels, pinning a version in CI, verifying the setup. |
+| [Configuration](/docs/configuration/) | The `[tools.trellis]` table: members, task-scoped exclusions, custom tasks, changelog and publish settings. |
+| [Task running](/docs/task-running/) | `run` and `exec`: built-in and custom tasks, graph-parallel scheduling, selecting packages with `--since`. |
+| [Changelog & versioning](/docs/changelog/) | TOML change fragments, PR enforcement, planning and applying version bumps. |
+| [Publishing](/docs/publishing/) | Release PRs, per-package tags, publishing to Hex in dependency order with path deps rewritten. |
+| [CI recipes](/docs/ci/) | GitHub Actions shapes: affected-only matrices, PR gates, and the release pipeline. |

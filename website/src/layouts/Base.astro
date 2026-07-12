@@ -26,6 +26,9 @@ const github = "https://github.com/tylerbutler/trellis";
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:type" content="website" />
+    <meta property="og:url" content={Astro.url.href} />
+    <meta property="og:image" content={new URL("/og.png", Astro.site)} />
+    <meta name="twitter:card" content="summary_large_image" />
   </head>
   <body>
     <a class="skip-link" href="#main">Skip to content</a>
@@ -36,7 +39,7 @@ const github = "https://github.com/tylerbutler/trellis";
           trellis
         </a>
         <nav class="site-nav" aria-label="Site">
-          <a href="/docs/configuration/">Docs</a>
+          <a href="/docs/">Docs</a>
           <a href={github}>GitHub</a>
         </nav>
       </div>
@@ -48,7 +51,7 @@ const github = "https://github.com/tylerbutler/trellis";
       <div class="shell">
         <p>trellis is MIT-licensed. Built by <a href="https://tylerbutler.com">Tyler Butler</a>.</p>
         <nav aria-label="Footer">
-          <a href="/docs/configuration/">Docs</a>
+          <a href="/docs/">Docs</a>
           <a href={github}>GitHub</a>
           <a href={`${github}/releases`}>Releases</a>
         </nav>

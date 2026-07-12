@@ -1,0 +1,89 @@
+---
+title: Installation
+description: Trellis ships as a single prebuilt binary that installs in about a second with zero runtime dependencies.
+---
+
+import { Code } from "@astrojs/starlight/components";
+import { TRELLIS_VERSION } from "../../../lib/version";
+
+Trellis ships as a single prebuilt binary — the same distribution model as
+`just`, `changie`, and `ratchet` — so it installs in CI in about a second with
+zero runtime dependencies. Releases are built and published by
+[cargo-dist](https://opensource.axo.dev/cargo-dist/) for five targets (Linux
+gnu, macOS, and Windows, on x86_64 and aarch64), with SLSA build provenance
+attestations attached to every release.
+
+## Shell installer
+
+On Linux and macOS:
+
+```sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/tylerbutler/trellis/releases/latest/download/trellis-installer.sh | sh
+```
+
+## PowerShell installer
+
+On Windows:
+
+```powershell
+powershell -ExecutionPolicy Bypass -c "irm https://github.com/tylerbutler/trellis/releases/latest/download/trellis-installer.ps1 | iex"
+```
+
+## Homebrew
+
+```sh
+brew install tylerbutler/tap/trellis
+```
+
+## mise / asdf
+
+Via the [github](https://mise.jdx.dev/dev-tools/backends/github.html) backend.
+This is how a consuming workspace pins trellis in `.tool-versions` alongside
+its other tools, so every contributor and CI runner gets the same version:
+
+<Code lang="sh" code={`mise use "github:tylerbutler/trellis@${TRELLIS_VERSION}"`} />
+
+## From source
+
+The crate publishes to crates.io as `trellis-gleam` (the `trellis` name
+belongs to an unrelated project), but the installed binary is named `trellis`
+either way:
+
+```sh
+cargo install trellis-gleam
+# or straight from the repository:
+cargo install --git https://github.com/tylerbutler/trellis
+```
+
+## Pinning a version in CI
+
+The installer URLs above resolve `latest`. To pin a specific version, replace
+`latest/download` with `download/v<version>`:
+
+<Code
+  lang="sh"
+  code={`curl --proto '=https' --tlsv1.2 -LsSf https://github.com/tylerbutler/trellis/releases/download/v${TRELLIS_VERSION}/trellis-installer.sh | sh`}
+/>
+
+Prebuilt archives for every target are on the
+[releases page](https://github.com/tylerbutler/trellis/releases).
+
+## Verifying it
+
+From anywhere inside a workspace — trellis finds the root by walking up to the
+first `gleam.toml` with a `[tools.trellis]` table, like `git` or `cargo`:
+
+<Code
+  lang="console"
+  code={`$ trellis --version
+trellis ${TRELLIS_VERSION}
+
+$ trellis doctor
+checked: member globs resolve and every member has a parseable gleam.toml
+checked: path dependencies stay inside the workspace; graph is acyclic
+...
+ok: 4 member(s), 0 warning(s)`}
+/>
+
+If the workspace isn't set up yet, start with the
+[configuration guide](/docs/configuration/).

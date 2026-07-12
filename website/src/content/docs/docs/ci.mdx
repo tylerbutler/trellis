@@ -1,0 +1,124 @@
+---
+title: CI recipes
+description: Trellis is CI-native — structured JSON for GitHub Actions matrices and outputs, doctor as a PR tripwire, and workflows that shrink to a few commands.
+---
+
+import { Code } from "@astrojs/starlight/components";
+import Callout from "../../../components/Callout.astro";
+import { TRELLIS_VERSION } from "../../../lib/version";
+
+Trellis runs identically locally and in CI, and emits the exact structures
+GitHub Actions consumes — so workspace workflows shrink to thin triggers
+around a few commands. The recipes below are the shapes a Gleam workspace
+actually needs.
+
+## Installing trellis
+
+The shell installer puts a prebuilt binary on the runner in about a second.
+Pin the version so CI doesn't move under you (see
+[installation](/docs/installation/) for other options, including a
+`.tool-versions` pin through mise/asdf):
+
+<Code
+  lang="yaml"
+  code={`- name: Install trellis
+  run: |
+    curl --proto '=https' --tlsv1.2 -LsSf \\
+      https://github.com/tylerbutler/trellis/releases/download/v${TRELLIS_VERSION}/trellis-installer.sh | sh
+    # the installer adds its install dir to $GITHUB_PATH automatically`}
+/>
+
+## An affected-only test matrix
+
+`trellis ci matrix` emits a strategy matrix
+(`{"include":[{"name","path","version"},…]}`). With `--since` it covers only
+the packages a PR touched, dependents included:
+
+```yaml title=".github/workflows/ci.yml"
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0        # --since needs history
+      - id: plan
+        run: echo "matrix=$(trellis ci matrix --since origin/main)" >> "$GITHUB_OUTPUT"
+
+  test:
+    needs: plan
+    runs-on: ubuntu-latest
+    strategy:
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: trellis run test ${{ matrix.name }} --target all
+```
+
+<Callout>
+
+Full fan-out is the default on purpose: `--since` is opt-in because implicit
+coupling between packages — the kind the path-dep graph can't see — shouldn't
+be silently untested. A repo that wants affected-only CI writes
+`--since origin/main` into its workflow deliberately.
+
+</Callout>
+
+## Workspace facts as outputs
+
+`trellis ci outputs` emits workspace facts as `key=value` lines, ready for
+`$GITHUB_OUTPUT`:
+
+```console
+$ trellis ci outputs
+projects=["lat_core","lat_mid","lat_cli","package_a"]
+releasable=["lat_core","lat_mid","lat_cli"]
+version-files=["packages/lat_core/gleam.toml","packages/lat_mid/gleam.toml","packages/lat_cli/gleam.toml"]
+tags=["lat_core-v1.2.0","lat_mid-v0.5.0","lat_cli-v0.3.1"]
+```
+
+## PR gates
+
+Run `doctor` on every PR — it checks every workspace invariant at once and
+exits non-zero on any error. Pair it with `changelog check`, whose JSON
+payload (including a markdown `preview`) feeds a sticky comment:
+
+```yaml
+# on: pull_request
+- run: trellis doctor
+- run: trellis changelog check --base "origin/${{ github.base_ref }}" --json
+```
+
+## The release pipeline
+
+On every push to `main`, regenerate the release PR from pending fragments:
+
+```yaml title=".github/workflows/release.yml"
+# on push to main: batch fragments into a release PR
+- run: trellis release pr
+```
+
+When the release PR merges, pick one of the
+[two release shapes](/docs/publishing/#two-release-shapes). Tags as trigger —
+a tag-push workflow publishes each package:
+
+```yaml title=".github/workflows/publish.yml"
+# on tag push '*-v*': publish the tagged package
+- run: trellis publish --tag "$GITHUB_REF_NAME"
+- run: trellis lockfile refresh --package "$(trellis ci tag-package "$GITHUB_REF_NAME")"
+```
+
+Or publish-then-tag — one idempotent run publishes everything not yet on Hex,
+in topological order, then records what shipped:
+
+```yaml
+# on release-PR merge: publish everything, then record tags
+- run: trellis publish --all-untagged
+- run: trellis tag create --github-release
+```
+
+Because `publish` checks Hex before doing anything, re-running either
+workflow after a partial failure is safe: already-published versions are
+skipped.
