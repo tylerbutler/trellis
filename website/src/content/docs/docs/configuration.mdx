@@ -14,10 +14,10 @@ workspace model from the member manifests.
 ```toml title="gleam.toml" wrap
 # gleam.toml at the repo root
 [tools.trellis]
-members = ["packages/*", "examples"]
+members = ["packages/*", "examples/*"]
 # Exclusions are globbed against member paths and scoped by task.
 # `release` covers changelog, versioning, tagging, and publishing.
-exclude = { docs = ["examples"], release = ["examples"] }
+exclude = { docs = ["examples/*"], release = ["examples/*"] }
 
 # Custom tasks for `trellis run <name>`. Built-in verbs (build, test, check,
 # format, docs, deps, clean) need no declaration.
@@ -64,8 +64,8 @@ workspace:
 
 ```toml title="gleam.toml" wrap
 [tools.trellis]
-members = ["packages/*", "examples", "benchmarks/*"]
-exclude = { docs = ["examples", "benchmarks/*"], release = ["examples", "benchmarks/*"] }
+members = ["packages/*", "examples/*", "benchmarks/*"]
+exclude = { docs = ["examples/*", "benchmarks/*"], release = ["examples/*", "benchmarks/*"] }
 ```
 
 Inline TOML is concise for a small map. The equivalent table form is easier to
@@ -73,8 +73,8 @@ scan as more tasks gain exclusions:
 
 ```toml title="gleam.toml"
 [tools.trellis.exclude]
-docs = ["examples", "benchmarks/*"]
-release = ["examples", "benchmarks/*"]
+docs = ["examples/*", "benchmarks/*"]
+release = ["examples/*", "benchmarks/*"]
 ```
 
 Patterns are globs matched against member paths relative to the workspace

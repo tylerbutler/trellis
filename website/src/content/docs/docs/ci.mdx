@@ -73,10 +73,10 @@ be silently untested. A repo that wants affected-only CI writes
 
 ```console
 $ trellis ci outputs
-projects=["lat_core","lat_mid","lat_cli"]
-releasable=["lat_core","lat_cli"]
-version-files=["packages/lat_core/gleam.toml","packages/lat_cli/gleam.toml"]
-tags=["lat_core-v1.2.0","lat_cli-v0.4.3"]
+projects=["lat_core","lat_mid","lat_cli","package_a"]
+releasable=["lat_core","lat_mid","lat_cli"]
+version-files=["packages/lat_core/gleam.toml","packages/lat_mid/gleam.toml","packages/lat_cli/gleam.toml"]
+tags=["lat_core-v1.2.0","lat_mid-v0.5.0","lat_cli-v0.3.1"]
 ```
 
 ## PR gates

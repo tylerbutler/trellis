@@ -11,10 +11,10 @@ const miseCmd = `mise use "github:tylerbutler/trellis@${TRELLIS_VERSION}"`;
 const configSample = `# This table marks the workspace root.
 # Only \`members\` is required.
 [tools.trellis]
-members = ["packages/*", "examples"]
+members = ["packages/*", "examples/*"]
 # Exclusions are scoped by task. \`release\` covers changelog,
 # versioning, tagging, publishing, and release CI.
-exclude = { docs = ["examples"], release = ["examples"] }
+exclude = { docs = ["examples/*"], release = ["examples/*"] }
 
 [tools.trellis.tasks.lint]
 command = "gleam run -m glinter"
@@ -57,7 +57,7 @@ tag-format = "{name}-v{version}"`;
 <span class="name">lat_cli</span> <span class="dim">(0.3.1)</span>
 <span class="dim">  ├─</span> lat_core
 <span class="dim">  └─</span> lat_mid
-<span class="name">examples</span> <span class="dim">(0.0.0)</span>
+<span class="name">package_a</span> <span class="dim">(0.0.0)</span>
 <span class="dim">  └─</span> lat_cli</code></pre>
         <figcaption class="term-note">
           Real output. Trellis computes the graph from path dependencies.
@@ -198,7 +198,7 @@ tag-format = "{name}-v{version}"`;
                 <td><span class="state state-included">included</span></td>
               </tr>
               <tr>
-                <td><code>examples</code></td>
+                <td><code>examples/*</code></td>
                 <td><span class="state state-included">included</span></td>
                 <td><span class="state state-excluded">excluded</span></td>
                 <td><span class="state state-excluded">excluded</span></td>
@@ -213,9 +213,10 @@ tag-format = "{name}-v{version}"`;
 <span class="name">lat_mid</span>
 <span class="name">lat_cli</span></code></pre>
           <figcaption class="term-note">
-            <code>examples</code> still appears in <code>trellis list</code>,
-            <code>graph</code>, <code>exec</code>, and tasks that do not exclude
-            it. Only the configured task sets change.
+            <code>package_a</code> — the <code>examples/</code> member — still
+            appears in <code>trellis list</code>, <code>graph</code>,{" "}
+            <code>exec</code>, and tasks that do not exclude it. Only the
+            configured task sets change.
           </figcaption>
         </figure>
       </div>
