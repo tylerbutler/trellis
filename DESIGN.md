@@ -1,6 +1,6 @@
 ---
 name: Trellis
-description: The missing Gleam workspace — landing page and documentation site
+description: A Gleam workspace manager — landing page and documentation site
 colors:
   bg: "oklch(0.16 0.02 230)"
   surface: "oklch(0.205 0.026 230)"

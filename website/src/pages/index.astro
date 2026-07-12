@@ -21,19 +21,19 @@ tag-format = "{name}-v{version}"`;
 ---
 
 <Base
-  title="Trellis — the missing Gleam workspace"
-  description="One binary gives Gleam monorepos task fan-out, dependency-graph introspection, changelogs, versioning, and publish orchestration — all derived from gleam.toml."
+  title="Trellis — a Gleam workspace manager"
+  description="Trellis is a single binary for task fan-out, dependency-graph introspection, changelogs, versioning, and publish orchestration in multi-package Gleam repositories."
 >
   <!-- ============ HERO ============ -->
   <section class="hero">
     <div class="shell hero-grid">
       <div class="hero-copy">
         <h1>
-          Gleam has no workspace concept.
-          <em>Trellis is it.</em>
+          Workspace tooling for multi-package Gleam repositories.
+          <em>Derived from gleam.toml.</em>
         </h1>
         <p class="lead">
-          One binary gives a Gleam monorepo task fan-out, dependency-graph
+          Trellis is one binary for task fan-out, dependency-graph
           introspection, changelogs, versioning, and publish orchestration —
           all derived from the <code>gleam.toml</code> files you already have.
         </p>
@@ -57,7 +57,7 @@ tag-format = "{name}-v{version}"`;
 <span class="name">examples</span> <span class="dim">(0.0.0)</span>
 <span class="dim">  └─</span> lat_cli</code></pre>
         <figcaption class="term-note">
-          Real output. The graph is computed from path dependencies — never declared.
+          Real output. Trellis computes the graph from path dependencies.
         </figcaption>
       </figure>
     </div>
@@ -67,11 +67,11 @@ tag-format = "{name}-v{version}"`;
   <section class="glue">
     <div class="shell">
       <div class="section-head">
-        <h2>You're maintaining glue by hand.</h2>
+        <h2>A real repository before trellis.</h2>
         <p>
-          Without workspaces, every multi-package Gleam repo rebuilds the same
-          machinery out of bash loops, YAML blocks, and duplicated config.
-          This ledger is from a real workspace, before trellis:
+          Multi-package repositories can accumulate workspace glue in bash
+          loops, YAML blocks, and duplicated config. This ledger comes from one
+          Gleam repository before it adopted trellis:
         </p>
       </div>
       <div class="ledger-scroll">
@@ -80,7 +80,7 @@ tag-format = "{name}-v{version}"`;
             <tr>
               <th scope="col">Where it lives</th>
               <th scope="col">What's maintained by hand</th>
-              <th scope="col">How it fails</th>
+              <th scope="col">What can drift</th>
             </tr>
           </thead>
           <tbody>
@@ -113,8 +113,8 @@ tag-format = "{name}-v{version}"`;
         </table>
       </div>
       <p class="ledger-coda">
-        Every row in that table is <strong>derivable</strong> from one file
-        format the ecosystem already uses.
+        Trellis derives the information behind each row from
+        <code>gleam.toml</code>, a file format the ecosystem already uses.
       </p>
     </div>
   </section>
@@ -124,8 +124,8 @@ tag-format = "{name}-v{version}"`;
     <div class="shell">
       <blockquote class="doctrine">
         <p>
-          Configure nothing that can be derived.<br />
-          Verify anything that must be duplicated.
+          Trellis derives what it can.<br />
+          It verifies what must remain explicit.
         </p>
       </blockquote>
       <div class="derived-grid">
@@ -164,9 +164,9 @@ tag-format = "{name}-v{version}"`;
       <div class="section-head">
         <h2>One workspace. Different task sets.</h2>
         <p>
-          Examples, benchmarks, and internal tools belong in the workspace:
-          they should build, test, and appear in the graph, but they may not
-          need generated docs or a release on Hex.
+          Examples, benchmarks, and internal tools can remain workspace members
+          for builds, tests, and graphing without needing generated docs or a
+          release on Hex.
         </p>
         <p>
           In 0.2.0, <code>exclude</code> gives each built-in or custom task its
@@ -223,7 +223,7 @@ tag-format = "{name}-v{version}"`;
   <section class="lifecycle">
     <div class="shell">
       <div class="section-head">
-        <h2>One binary, the whole lifecycle.</h2>
+        <h2>One binary across the lifecycle.</h2>
         <p>
           The same tool runs locally and in CI. Commands work from anywhere in
           the workspace — the root is found by walking up, like
@@ -267,12 +267,11 @@ tag-format = "{name}-v{version}"`;
   <section class="drift">
     <div class="shell drift-stack">
       <div class="section-head">
-        <h2>It fails loudly on drift.</h2>
+        <h2>Checks for drift.</h2>
         <p>
           Some things can't be derived — locked versions, changelogs, tags,
-          toolchain pins. For those, <code>trellis doctor</code> verifies every
-          invariant that used to be enforced by hope, and exits non-zero the
-          moment one breaks.
+          toolchain pins. For those, <code>trellis doctor</code> checks the
+          invariants that remain explicit and exits non-zero when one breaks.
         </p>
       </div>
       <figure class="term">
@@ -295,11 +294,11 @@ tag-format = "{name}-v{version}"`;
   <section class="install" id="install">
     <div class="shell">
       <div class="section-head">
-        <h2>Install it in a second.</h2>
+        <h2>Install a prebuilt binary.</h2>
         <p>
-          One prebuilt binary — the same distribution model as
-          <code>just</code> and <code>ratchet</code>. Zero runtime
-          dependencies, SLSA build provenance, installs in CI in about a second.
+          Trellis has no runtime dependencies and includes SLSA build
+          provenance. Its shell installer typically completes in about a second
+          in CI.
         </p>
       </div>
       <dl class="channels">

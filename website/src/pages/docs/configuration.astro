@@ -44,15 +44,16 @@ lat_cli`;
 
 <Docs
   title="Configuration — Trellis docs"
-  description="A [tools.trellis] table in gleam.toml marks the workspace root. Only members is required; everything else is derived."
+  description="Trellis uses a [tools.trellis] table in gleam.toml to identify the workspace root. Only members is required."
 >
   <h1>Configuration</h1>
   <p>
-    A <code>[tools.trellis]</code> table in a <code>gleam.toml</code> marks the
-    workspace root — there is no separate config file. The root manifest may be
-    config-only, or a regular Gleam package that also anchors the workspace.
-    Only <code>members</code> is required; everything else trellis needs is
-    derived from the member manifests.
+    Trellis uses a <code>[tools.trellis]</code> table in a
+    <code>gleam.toml</code> to identify the workspace root, so it does not need a
+    separate config file. The root manifest may be config-only, or a regular
+    Gleam package that also anchors the workspace. Only
+    <code>members</code> is required; trellis derives the rest of its workspace
+    model from the member manifests.
   </p>
 
   <Code lang="toml" title="gleam.toml" code={rootConfig} />
@@ -66,9 +67,10 @@ lat_cli`;
   <div class="callout">
     <p>
       A <code>[tools.trellis]</code> table in a <em>member</em> manifest is a
-      <code>doctor</code> error — it would hijack root discovery, which walks
-      up from the current directory to the first manifest carrying the table,
-      the way <code>git</code> and <code>cargo</code> find their roots.
+      <code>doctor</code> error because it would change root discovery. Trellis
+      walks up from the current directory to the first manifest carrying the
+      table, similar to how <code>git</code> and <code>cargo</code> find their
+      roots.
     </p>
   </div>
 
