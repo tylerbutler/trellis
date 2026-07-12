@@ -9,6 +9,11 @@ The changelog engine is native — no second tool to install in CI, no config
 file to keep in sync with the workspace. Changes are recorded as small TOML
 fragments; version bumps and changelog sections are derived from them.
 
+The fragment-per-change workflow is modeled on
+[changie](https://changie.dev/)'s project mode: trellis originally wrapped
+changie directly, then reimplemented the same fragment-based approach
+natively so managed workspaces don't need a second binary in CI.
+
 ```txt wrap
 trellis changelog new [--package <pkg>] --kind <kind> --body <text>
 trellis changelog check --base <ref> [--head <ref>] [--json]
