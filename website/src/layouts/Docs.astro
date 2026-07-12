@@ -8,6 +8,19 @@ interface Props {
 
 const { title, description } = Astro.props;
 const github = "https://github.com/tylerbutler/trellis";
+
+const pages = [
+  { title: "Installation", href: "/docs/installation/" },
+  { title: "Configuration", href: "/docs/configuration/" },
+  { title: "Task running", href: "/docs/task-running/" },
+  { title: "Changelog & versioning", href: "/docs/changelog/" },
+  { title: "Publishing", href: "/docs/publishing/" },
+  { title: "CI recipes", href: "/docs/ci/" },
+];
+
+const current = Astro.url.pathname.endsWith("/")
+  ? Astro.url.pathname
+  : `${Astro.url.pathname}/`;
 ---
 
 <Base title={title} description={description}>
@@ -15,12 +28,18 @@ const github = "https://github.com/tylerbutler/trellis";
     <nav class="docs-nav" aria-label="Documentation">
       <p class="docs-nav-title">Documentation</p>
       <ul>
-        <li><a href="/docs/configuration/" aria-current="page">Configuration</a></li>
-        <li><span class="soon">Installation <small>soon</small></span></li>
-        <li><span class="soon">Task running <small>soon</small></span></li>
-        <li><span class="soon">Changelog &amp; versioning <small>soon</small></span></li>
-        <li><span class="soon">Publishing <small>soon</small></span></li>
-        <li><span class="soon">CI recipes <small>soon</small></span></li>
+        {
+          pages.map((page) => (
+            <li>
+              <a
+                href={page.href}
+                aria-current={page.href === current ? "page" : undefined}
+              >
+                {page.title}
+              </a>
+            </li>
+          ))
+        }
         <li class="docs-nav-ext"><a href={`${github}#readme`}>Full README ↗</a></li>
       </ul>
     </nav>
@@ -60,15 +79,11 @@ const github = "https://github.com/tylerbutler/trellis";
     gap: var(--sp-2xs);
   }
 
-  .docs-nav a,
-  .docs-nav .soon {
+  .docs-nav a {
     display: block;
     padding: 0.45rem var(--sp-sm);
     border-radius: var(--radius-sm);
     text-decoration: none;
-  }
-
-  .docs-nav a {
     color: var(--ink-soft);
   }
 
@@ -81,21 +96,6 @@ const github = "https://github.com/tylerbutler/trellis";
   .docs-nav a:hover {
     color: var(--brass-bright);
     background: var(--surface);
-  }
-
-  .docs-nav .soon {
-    color: var(--muted);
-  }
-
-  .docs-nav .soon small {
-    font-family: var(--font-mono);
-    font-size: 0.7rem;
-    color: var(--muted);
-    border: 1px solid var(--line);
-    border-radius: 999px;
-    padding: 0.05rem 0.5rem;
-    margin-left: 0.5ch;
-    vertical-align: middle;
   }
 
   .docs-nav-ext {

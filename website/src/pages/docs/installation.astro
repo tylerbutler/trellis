@@ -1,0 +1,96 @@
+---
+import { Code } from "astro-expressive-code/components";
+import Docs from "../../layouts/Docs.astro";
+
+const shellInstall = `curl --proto '=https' --tlsv1.2 -LsSf https://github.com/tylerbutler/trellis/releases/latest/download/trellis-installer.sh | sh`;
+
+const psInstall = `powershell -ExecutionPolicy Bypass -c "irm https://github.com/tylerbutler/trellis/releases/latest/download/trellis-installer.ps1 | iex"`;
+
+const brewInstall = `brew install tylerbutler/tap/trellis`;
+
+const miseInstall = `mise use "ubi:tylerbutler/trellis@0.2.0"`;
+
+const cargoInstall = `cargo install trellis-gleam
+# or straight from the repository:
+cargo install --git https://github.com/tylerbutler/trellis`;
+
+const pinnedInstall = `curl --proto '=https' --tlsv1.2 -LsSf https://github.com/tylerbutler/trellis/releases/download/v0.2.0/trellis-installer.sh | sh`;
+
+const verify = `$ trellis --version
+trellis 0.2.0
+
+$ trellis doctor
+checked: member globs resolve and every member has a parseable gleam.toml
+checked: path dependencies stay inside the workspace; graph is acyclic
+...
+ok: 4 member(s), 0 warning(s)`;
+---
+
+<Docs
+  title="Installation — Trellis docs"
+  description="Trellis ships as a single prebuilt binary that installs in about a second with zero runtime dependencies."
+>
+  <h1>Installation</h1>
+  <p>
+    Trellis ships as a single prebuilt binary — the same distribution model as
+    <code>just</code>, <code>changie</code>, and <code>ratchet</code> — so it
+    installs in CI in about a second with zero runtime dependencies. Releases
+    are built and published by
+    <a href="https://opensource.axo.dev/cargo-dist/">cargo-dist</a> for five
+    targets (Linux gnu, macOS, and Windows, on x86_64 and aarch64), with SLSA
+    build provenance attestations attached to every release.
+  </p>
+
+  <h2>Shell installer</h2>
+  <p>On Linux and macOS:</p>
+  <Code lang="sh" code={shellInstall} />
+
+  <h2>PowerShell installer</h2>
+  <p>On Windows:</p>
+  <Code lang="powershell" code={psInstall} />
+
+  <h2>Homebrew</h2>
+  <Code lang="sh" code={brewInstall} />
+
+  <h2>mise / asdf</h2>
+  <p>
+    Via the
+    <a href="https://mise.jdx.dev/dev-tools/backends/ubi.html">ubi</a> backend.
+    This is how a consuming workspace pins trellis in
+    <code>.tool-versions</code> alongside its other tools, so every
+    contributor and CI runner gets the same version:
+  </p>
+  <Code lang="sh" code={miseInstall} />
+
+  <h2>From source</h2>
+  <p>
+    The crate publishes to crates.io as <code>trellis-gleam</code> (the
+    <code>trellis</code> name belongs to an unrelated project), but the
+    installed binary is named <code>trellis</code> either way:
+  </p>
+  <Code lang="sh" code={cargoInstall} />
+
+  <h2>Pinning a version in CI</h2>
+  <p>
+    The installer URLs above resolve <code>latest</code>. To pin a specific
+    version, replace <code>latest/download</code> with
+    <code>download/v&lt;version&gt;</code>:
+  </p>
+  <Code lang="sh" code={pinnedInstall} />
+  <p>
+    Prebuilt archives for every target are on the
+    <a href="https://github.com/tylerbutler/trellis/releases">releases page</a>.
+  </p>
+
+  <h2>Verifying it</h2>
+  <p>
+    From anywhere inside a workspace — trellis finds the root by walking up to
+    the first <code>gleam.toml</code> with a <code>[tools.trellis]</code>
+    table, like <code>git</code> or <code>cargo</code>:
+  </p>
+  <Code lang="console" code={verify} />
+  <p>
+    If the workspace isn't set up yet, start with the
+    <a href="/docs/configuration/">configuration guide</a>.
+  </p>
+</Docs>

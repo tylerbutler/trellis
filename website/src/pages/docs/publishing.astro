@@ -1,0 +1,171 @@
+---
+import { Code } from "astro-expressive-code/components";
+import Docs from "../../layouts/Docs.astro";
+
+const synopsis = `trellis release pr [--base <branch>] [--branch <branch>]
+trellis tag plan [--json]
+trellis tag create [--push] [--github-release]
+trellis publish <pkg | --tag <tag> | --all-untagged> [--dry-run]
+trellis lockfile refresh [--package <pkg>]`;
+
+const publishConfig = `[tools.trellis.publish]
+tag-format = "{name}-v{version}"      # lat_core-v1.2.0
+# How a path dep is rewritten to a Hex requirement at publish time, from the
+# dependency's current version X.Y.Z:
+#   caret  → ">= X.Y.Z and < (X+1).0.0"   (default)
+#   exact  → "== X.Y.Z"
+path-dep-requirement = "caret"
+retry = { attempts = 5, initial-delay = "30s", multiplier = 2 }`;
+
+const tagExample = `$ trellis tag plan
+lat_core: 1.2.0 needs tag lat_core-v1.2.0
+lat_cli: 0.4.3 needs tag lat_cli-v0.4.3
+
+$ trellis tag create --github-release
+tagged lat_core-v1.2.0
+pushed lat_core-v1.2.0
+tagged lat_cli-v0.4.3
+pushed lat_cli-v0.4.3`;
+
+const publishExample = `# Publish the package a pushed tag points at:
+trellis publish --tag "$GITHUB_REF_NAME"
+
+# Or publish everything whose version isn't on Hex yet, in one run:
+trellis publish --all-untagged
+
+# See what would be published (and rewritten) without doing it:
+trellis publish --all-untagged --dry-run`;
+---
+
+<Docs
+  title="Publishing — Trellis docs"
+  description="Trellis turns changelog fragments into a release PR, creates per-package tags, and publishes to Hex in dependency order with path deps rewritten."
+>
+  <h1>Publishing</h1>
+  <p>
+    Publishing a workspace means turning pending
+    <a href="/docs/changelog/">changelog fragments</a> into version bumps,
+    recording what shipped as git tags, and pushing packages to Hex in
+    dependency order with workspace path dependencies rewritten to real Hex
+    requirements. Trellis covers each step, and every step is idempotent —
+    re-running a partially failed release is safe.
+  </p>
+
+  <Code lang="txt" code={synopsis} />
+  <p>Tag format, path-dep rewriting, and Hex retry policy are configured under <code>[tools.trellis.publish]</code>:</p>
+  <Code lang="toml" title="gleam.toml" code={publishConfig} />
+
+  <h2>The release PR</h2>
+  <p>
+    <code>trellis release pr</code> turns pending fragments into a release pull
+    request: it runs <code>version apply</code> on a release branch (default
+    <code>release/pending</code>), commits the bumps, force-pushes — so the
+    branch is regenerated on each run — and creates or updates the PR via the
+    <code>gh</code> CLI. The body carries the bump table and each package's new
+    CHANGELOG section. It requires a clean working tree and is a no-op when
+    there are no fragments.
+  </p>
+
+  <h2>Tags</h2>
+  <p>
+    <code>tag plan</code> lists releasable packages whose
+    <code>gleam.toml</code> version has no tag yet, per the configured
+    <code>tag-format</code>. <code>tag create</code> creates the missing tags
+    in topological order; <code>--push</code> pushes them, and
+    <code>--github-release</code> (which implies <code>--push</code> and
+    requires the <code>gh</code> CLI) also creates a GitHub Release per tag
+    with the matching CHANGELOG section as the body.
+  </p>
+  <Code lang="console" code={tagExample} />
+
+  <h2>Publishing to Hex</h2>
+  <p>
+    <code>publish</code> runs, per package and in dependency order:
+  </p>
+  <ol>
+    <li>
+      <strong>Idempotency check</strong> — one Hex API query; versions already
+      published are skipped.
+    </li>
+    <li>
+      <strong>Validation</strong> — <code>gleam format --check</code>,
+      <code>gleam build --warnings-as-errors</code>, <code>gleam test</code>,
+      run against the original manifest with path deps intact.
+    </li>
+    <li>
+      <strong>Path-dep rewrite</strong> — computed from the graph, never
+      hand-listed: each workspace path dependency becomes the Hex requirement
+      derived from that dep's current version, per
+      <code>path-dep-requirement</code>.
+    </li>
+    <li>
+      <strong>Publish</strong> — <code>gleam publish --yes</code>.
+    </li>
+    <li>
+      <strong>Restore</strong> — the original <code>gleam.toml</code> comes
+      back even when publishing fails; the repo never shows rewritten files.
+    </li>
+  </ol>
+  <p>
+    Every Hex-touching step runs under the configured <code>retry</code>
+    backoff policy.
+  </p>
+  <Code lang="sh" code={publishExample} />
+  <p>
+    <code>--tag lat_core-v1.2.0</code> resolves a pushed tag to its package and
+    refuses to publish if the tag version doesn't match
+    <code>gleam.toml</code>. <code>--all-untagged</code> publishes everything
+    not yet on Hex, enabling a single publish run per release instead of one
+    per tag.
+  </p>
+
+  <div class="callout">
+    <p>
+      Dev-only path deps to unreleasable members are left alone — Hex doesn't
+      ship dev dependencies. A regular <code>[dependencies]</code> path dep to
+      an unreleasable member refuses to publish, and <code>doctor</code>
+      catches that boundary on every PR.
+    </p>
+  </div>
+
+  <h2>Lockfiles</h2>
+  <p>
+    <code>lockfile refresh --package &lt;pkg&gt;</code> scopes
+    <code>gleam deps download</code> to one package (with retry), encoding the
+    "don't refresh the whole workspace or you'll get rate-limited" rule as
+    behavior instead of a workflow comment.
+  </p>
+
+  <h2>Two release shapes</h2>
+  <p>Both of these flows are supported; the difference is policy, not tooling:</p>
+  <table>
+    <thead>
+      <tr>
+        <th scope="col">Shape</th>
+        <th scope="col">Flow</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Tags as trigger</td>
+        <td>
+          Release PR merges → <code>tag create --push</code> → each pushed tag
+          triggers a workflow running
+          <code>publish --tag "$GITHUB_REF_NAME"</code>.
+        </td>
+      </tr>
+      <tr>
+        <td>Tags as record</td>
+        <td>
+          Release PR merges → <code>publish --all-untagged</code> (one run,
+          topologically ordered) → <code>tag create --github-release</code>
+          records what shipped.
+        </td>
+      </tr>
+    </tbody>
+  </table>
+  <p>
+    Ready-to-paste workflows for both are in the
+    <a href="/docs/ci/">CI recipes</a>.
+  </p>
+</Docs>
