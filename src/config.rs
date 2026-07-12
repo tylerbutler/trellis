@@ -259,9 +259,9 @@ mod tests {
             version = "0.0.0"
 
             [tools.trellis]
-            members = ["packages/lattice_*", "examples"]
-            ignore-release = ["examples"]
-            exclude = { docs = ["examples"], release = ["packages/private-*"] }
+            members = ["packages/lattice_*", "examples/*"]
+            ignore-release = ["examples/*"]
+            exclude = { docs = ["examples/*"], release = ["packages/private-*"] }
 
             [tools.trellis.tasks.lint]
             command = "gleam run -m glinter"
@@ -282,8 +282,8 @@ mod tests {
         "###;
         let config = ConfigFile::from_gleam_toml(text).unwrap();
         assert_eq!(config.members.len(), 2);
-        assert_eq!(config.ignore_release, vec!["examples"]);
-        assert_eq!(config.exclude["docs"], vec!["examples"]);
+        assert_eq!(config.ignore_release, vec!["examples/*"]);
+        assert_eq!(config.exclude["docs"], vec!["examples/*"]);
         assert_eq!(config.exclude["release"], vec!["packages/private-*"]);
         assert!(config.tasks["lint"].needs_deps);
         assert_eq!(config.publish.retry.attempts, 5);

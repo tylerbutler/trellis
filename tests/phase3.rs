@@ -201,7 +201,7 @@ fn tag_plan_lists_untagged_versions_and_create_tags_them() {
     let plan: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     let plan = plan.as_array().unwrap();
     let names: Vec<&str> = plan.iter().map(|p| p["name"].as_str().unwrap()).collect();
-    // examples is ignore-release; lat_core already tagged.
+    // package_a is ignore-release; lat_core already tagged.
     assert_eq!(names, vec!["lat_mid", "lat_cli"]);
     assert_eq!(plan[0]["tag"], "lat_mid-v0.5.0");
 
@@ -486,7 +486,7 @@ fn publish_all_untagged_goes_in_topological_order_and_is_idempotent() {
         "dependency must publish before dependent:\n{log}"
     );
     assert!(
-        !log.contains("examples"),
+        !log.contains("package_a"),
         "ignore-release members never publish"
     );
 }
@@ -571,7 +571,7 @@ fn publish_rejects_unreleasable_package() {
     let root = tmp.path();
     copy_fixture_to(root);
     trellis(root)
-        .args(["publish", "examples"])
+        .args(["publish", "package_a"])
         .assert()
         .failure()
         .stderr(predicate::str::contains("excluded from release"));
