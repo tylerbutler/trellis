@@ -376,8 +376,28 @@ fn strict_load_fails_on_broken_workspace_but_names_doctor() {
         .arg("list")
         .assert()
         .failure()
-        .stderr(predicate::str::contains("matches no directories"))
+        .stderr(predicate::str::contains("matches no packages"))
         .stderr(predicate::str::contains("trellis doctor"));
+}
+
+#[test]
+fn member_glob_skips_directories_without_gleam_toml() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    write(
+        &root.join("gleam.toml"),
+        "[tools.trellis]\nmembers = [\"pkgs/*\"]\n",
+    );
+    write(
+        &root.join("pkgs/a/gleam.toml"),
+        "name = \"a\"\nversion = \"0.1.0\"\n",
+    );
+    // Non-package clutter that a wildcard sweeps up (e.g. node_modules).
+    std::fs::create_dir_all(root.join("pkgs/node_modules")).unwrap();
+    let output = trellis(root).arg("list").assert().success();
+    let stdout = String::from_utf8_lossy(&output.get_output().stdout).to_string();
+    assert!(stdout.contains("a"));
+    assert!(!stdout.contains("node_modules"));
 }
 
 // ---- ci --------------------------------------------------------------
