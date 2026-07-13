@@ -365,6 +365,124 @@ fn doctor_flags_trellis_config_in_a_member_manifest() {
 }
 
 #[test]
+fn doctor_fix_seeds_missing_changelog() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    write(
+        &root.join("gleam.toml"),
+        "[tools.trellis]\nmembers = [\"packages/*\"]\n",
+    );
+    write(
+        &root.join("packages/a/gleam.toml"),
+        "name = \"a\"\nversion = \"1.0.0\"\n",
+    );
+
+    trellis(root)
+        .args(["doctor", "--fix"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("fixed: seed CHANGELOG.md for `a`"));
+
+    // The seeded file matches the header `trellis new` scaffolds.
+    let changelog = fs::read_to_string(root.join("packages/a/CHANGELOG.md")).unwrap();
+    assert_eq!(changelog, "# a changelog\n");
+
+    // A second run is clean: nothing left to fix.
+    trellis(root)
+        .arg("doctor")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("ok: 1 member(s), 0 warning(s)"));
+}
+
+#[test]
+fn doctor_fix_patches_stale_lockfile() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    write(
+        &root.join("gleam.toml"),
+        "[tools.trellis]\nmembers = [\"packages/*\"]\n",
+    );
+    write(
+        &root.join("packages/a/gleam.toml"),
+        "name = \"a\"\nversion = \"1.0.0\"\n[dependencies]\nb = { path = \"../b\" }\n",
+    );
+    write(
+        &root.join("packages/a/manifest.toml"),
+        "packages = [ { name = \"b\", version = \"0.9.0\", source = \"local\", path = \"../b\" } ]\n",
+    );
+    // Give `a` a CHANGELOG so the only finding is the stale lockfile.
+    write(&root.join("packages/a/CHANGELOG.md"), "# a changelog\n");
+    write(
+        &root.join("packages/b/gleam.toml"),
+        "name = \"b\"\nversion = \"1.0.0\"\n",
+    );
+    write(&root.join("packages/b/CHANGELOG.md"), "# b changelog\n");
+
+    trellis(root)
+        .args(["doctor", "--fix"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "fixed: patch locked versions in packages/a/manifest.toml",
+        ));
+
+    let manifest = fs::read_to_string(root.join("packages/a/manifest.toml")).unwrap();
+    assert!(manifest.contains("version = \"1.0.0\""));
+    assert!(!manifest.contains("0.9.0"));
+}
+
+#[test]
+fn doctor_dry_run_lists_fixes_without_writing() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    write(
+        &root.join("gleam.toml"),
+        "[tools.trellis]\nmembers = [\"packages/*\"]\n",
+    );
+    write(
+        &root.join("packages/a/gleam.toml"),
+        "name = \"a\"\nversion = \"1.0.0\"\n",
+    );
+
+    trellis(root)
+        .args(["doctor", "--dry-run"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "would fix: seed CHANGELOG.md for `a`",
+        ));
+
+    // Nothing was written.
+    assert!(!root.join("packages/a/CHANGELOG.md").exists());
+}
+
+#[test]
+fn doctor_fix_leaves_unfixable_findings_and_fails() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    write(
+        &root.join("gleam.toml"),
+        "[tools.trellis]\nmembers = [\"packages/*\"]\n",
+    );
+    // a: fixable (missing CHANGELOG) plus an unfixable escaping path dep.
+    write(
+        &root.join("packages/a/gleam.toml"),
+        "name = \"a\"\nversion = \"1.0.0\"\n[dependencies]\nout = { path = \"../../../elsewhere\" }\n",
+    );
+
+    trellis(root)
+        .args(["doctor", "--fix"])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("fixed: seed CHANGELOG.md for `a`"))
+        .stdout(predicate::str::contains("points outside the workspace"));
+
+    // The fixable finding really was applied even though the run failed.
+    assert!(root.join("packages/a/CHANGELOG.md").exists());
+}
+
+#[test]
 fn strict_load_fails_on_broken_workspace_but_names_doctor() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
@@ -430,6 +548,28 @@ fn ci_outputs_emits_key_value_lines() {
             "releasable=[\"lat_core\",\"lat_mid\",\"lat_cli\"]",
         ))
         .stdout(predicate::str::contains("lat_core-v1.2.0"));
+}
+
+// ---- markdown reference ----------------------------------------------
+
+#[test]
+fn markdown_reference_page_is_up_to_date() {
+    let output = Command::cargo_bin("trellis")
+        .unwrap()
+        .arg("markdown-help")
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let generated = String::from_utf8(output.stdout).unwrap();
+    let checked_in = fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("website/src/content/docs/docs/reference.md"),
+    )
+    .unwrap();
+    assert_eq!(
+        generated, checked_in,
+        "CLI reference is stale — regenerate with \
+         `trellis markdown-help > website/src/content/docs/docs/reference.md`"
+    );
 }
 
 // ---- --since ---------------------------------------------------------

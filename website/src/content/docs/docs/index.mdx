@@ -12,7 +12,11 @@ Trellis derives what it can, and verifies what must remain explicit. The
 member set, its topological order, change impact, and publish order all come
 from manifests that already exist; the things that can't be derived — locked
 versions, changelogs, tags, toolchain pins — are checked by
-`trellis doctor`, which exits non-zero when an invariant breaks.
+`trellis doctor`, which exits non-zero when an invariant breaks. When a
+finding is mechanically fixable — a releasable package missing its
+`CHANGELOG.md`, or a `manifest.toml` locked version that drifted from its
+package's `gleam.toml` — `trellis doctor --fix` writes the fix and re-reports
+whatever's left (`--dry-run` lists the same fixes without touching a file).
 
 ## Getting started
 
@@ -33,3 +37,4 @@ versions, changelogs, tags, toolchain pins — are checked by
 | [Changelog & versioning](/docs/changelog/) | TOML change fragments, PR enforcement, planning and applying version bumps. |
 | [Publishing](/docs/publishing/) | Release PRs, per-package tags, publishing to Hex in dependency order with path deps rewritten. |
 | [CI recipes](/docs/ci/) | GitHub Actions shapes: affected-only matrices, PR gates, and the release pipeline. |
+| [CLI reference](/docs/reference/) | Every command, flag, and argument, generated from the CLI itself. |

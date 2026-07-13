@@ -1,0 +1,3 @@
+kind: Added
+body: '`trellis doctor --fix` applies the mechanically-fixable findings — seeding a releasable package''s missing `CHANGELOG.md` with the canonical header, and rewriting `manifest.toml` locked versions that drifted from their package''s `gleam.toml` — then re-reports whatever remains. `--dry-run` lists the same fixes without writing. Report-only findings (path-dep escapes, tag collisions, versions behind their changelog) are left untouched, so it stays CI-safe.'
+time: 2026-07-13T00:00:00.000000000-08:00

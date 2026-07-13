@@ -1,0 +1,3 @@
+kind: Added
+body: '`trellis markdown-help` prints the full command reference as Markdown, generated from the clap definition. It backs the website''s new CLI reference page, and a test keeps that page from drifting out of sync with the actual flags.'
+time: 2026-07-13T00:00:00.000000000-08:00

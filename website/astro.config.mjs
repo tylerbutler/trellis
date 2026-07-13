@@ -24,6 +24,7 @@ export default defineConfig({
         { label: "Changelog & versioning", slug: "docs/changelog" },
         { label: "Publishing", slug: "docs/publishing" },
         { label: "CI recipes", slug: "docs/ci" },
+        { label: "CLI reference", slug: "docs/reference" },
         {
           label: "Full README ↗",
           link: `${github}#readme`,
