@@ -1,3 +1,0 @@
-kind: Changed
-body: Wildcard member globs now skip directories without a gleam.toml (e.g. node_modules alongside packages); literal member paths still require one.
-time: 2026-07-12T00:00:01.000000000-08:00
