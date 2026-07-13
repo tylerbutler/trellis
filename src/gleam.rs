@@ -31,6 +31,10 @@ pub enum Requirement {
     Hex(String),
     /// A path dependency, relative to the package directory.
     Path(String),
+    /// A git dependency, e.g. `{ git = "https://...", ref = "..." }`.
+    /// External to the workspace, like a Hex dependency, but not
+    /// publishable to Hex as a runtime requirement.
+    Git(String),
 }
 
 #[derive(Debug, Deserialize)]
@@ -57,6 +61,7 @@ enum RawDep {
     Detailed {
         path: Option<String>,
         version: Option<String>,
+        git: Option<String>,
     },
 }
 
@@ -81,8 +86,11 @@ impl GleamManifest {
                         version: Some(version),
                         ..
                     } => Requirement::Hex(version.clone()),
+                    RawDep::Detailed { git: Some(git), .. } => Requirement::Git(git.clone()),
                     RawDep::Detailed { .. } => {
-                        anyhow::bail!("dependency `{name}` has neither a version nor a path")
+                        anyhow::bail!(
+                            "dependency `{name}` has neither a version, a path, nor a git source"
+                        )
                     }
                 };
                 dependencies.push(Dependency {
@@ -111,7 +119,7 @@ impl GleamManifest {
             .iter()
             .filter_map(|dep| match &dep.requirement {
                 Requirement::Path(path) => Some((dep.name.as_str(), path.as_str(), dep.dev)),
-                Requirement::Hex(_) => None,
+                Requirement::Hex(_) | Requirement::Git(_) => None,
             })
     }
 }
@@ -182,6 +190,36 @@ mod tests {
                 ("lattice_testing", "../lattice_testing", true),
             ]
         );
+    }
+
+    #[test]
+    fn parses_git_deps_as_external() {
+        let manifest = GleamManifest::parse(
+            r#"
+            name = "beryl_mist"
+            version = "0.0.1"
+
+            [dependencies]
+            beryl = { path = "../beryl" }
+
+            [dev-dependencies]
+            aquamarine = { git = "https://github.com/tylerbutler/aquamarine.git", ref = "main" }
+            "#,
+        )
+        .unwrap();
+        let git_dep = manifest
+            .dependencies
+            .iter()
+            .find(|dep| dep.name == "aquamarine")
+            .unwrap();
+        assert_eq!(
+            git_dep.requirement,
+            Requirement::Git("https://github.com/tylerbutler/aquamarine.git".to_string())
+        );
+        assert!(git_dep.dev);
+        // Git deps are external: they never join the path-dependency graph.
+        let paths: Vec<_> = manifest.path_deps().collect();
+        assert_eq!(paths, vec![("beryl", "../beryl", false)]);
     }
 
     #[test]

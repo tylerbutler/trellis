@@ -436,12 +436,20 @@ fn expand_member_globs(
             diagnostics.error(format!("member glob `{pattern}` is not valid UTF-8"));
             continue;
         };
+        // A literal member path is a promise that a package lives there, so a
+        // missing gleam.toml stays a hard error downstream. A wildcard pattern
+        // sweeps directories that merely live alongside packages (node_modules,
+        // asset dirs), so matches without a gleam.toml are skipped.
+        let is_wildcard = pattern.contains(['*', '?', '[']);
         let mut matched = 0usize;
         match glob::glob(full) {
             Ok(paths) => {
                 for entry in paths {
                     match entry {
                         Ok(path) if path.is_dir() => {
+                            if is_wildcard && !path.join(GLEAM_TOML).is_file() {
+                                continue;
+                            }
                             matched += 1;
                             dirs.insert(normalize_path(&path));
                         }
@@ -457,7 +465,7 @@ fn expand_member_globs(
             }
         }
         if matched == 0 {
-            diagnostics.error(format!("member glob `{pattern}` matches no directories"));
+            diagnostics.error(format!("member glob `{pattern}` matches no packages"));
         }
     }
     dirs.into_iter().collect()
