@@ -66,6 +66,47 @@ tag-format = "{name}-v{version}"`;
     </div>
   </section>
 
+  <!-- ============ OPINIONATED, BUT MODULAR ============ -->
+  <section class="adopt">
+    <div class="shell">
+      <div class="section-head">
+        <h2>Opinionated, but modular.</h2>
+        <p>
+          Trellis has one way of doing each job — TOML change fragments, a
+          tag per package, bumps derived from fragment kinds. But the jobs
+          are independent: nothing requires the piece above it, so you adopt
+          a layer at a time and keep whatever already works.
+        </p>
+      </div>
+      <ol class="adopt-paths">
+        <li>
+          <h3>Just the task runner</h3>
+          <p>
+            <code>run</code>, <code>exec</code>, <code>list</code>, and{" "}
+            <code>graph</code> need only the <code>members</code> glob. Your
+            changelog tool and CI stay untouched.
+          </p>
+        </li>
+        <li>
+          <h3>Add releases</h3>
+          <p>
+            Fragments, <code>version</code>, <code>tag</code>, and{" "}
+            <code>publish</code> manage changelogs, bumps, and Hex — from
+            your own scripts, or no CI at all.
+          </p>
+        </li>
+        <li>
+          <h3>The full pipeline</h3>
+          <p>
+            <code>ci</code>, <code>changelog check</code>, and{" "}
+            <code>release pr</code> turn GitHub Actions workflows into thin
+            triggers around trellis commands.
+          </p>
+        </li>
+      </ol>
+    </div>
+  </section>
+
   <!-- ============ THE GLUE ============ -->
   <section class="glue">
     <div class="shell">
@@ -708,6 +749,49 @@ tag-format = "{name}-v{version}"`;
     margin: 0;
     color: var(--muted);
     font-size: var(--text-small);
+  }
+
+  /* ---- opinionated, but modular ---- */
+  .adopt-paths {
+    list-style: none;
+    padding: 0;
+    margin-top: var(--sp-2xl);
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(18rem, 100%), 1fr));
+    gap: var(--sp-xl);
+    counter-reset: adopt;
+  }
+
+  .adopt-paths li {
+    counter-increment: adopt;
+    padding-top: var(--sp-sm);
+    border-top: 1px solid var(--line);
+  }
+
+  .adopt-paths h3 {
+    display: flex;
+    align-items: baseline;
+    gap: var(--sp-md);
+    font-size: var(--text-h3);
+  }
+
+  .adopt-paths h3::before {
+    content: counter(adopt);
+    font-family: var(--font-mono);
+    font-size: var(--text-small);
+    font-weight: 640;
+    color: var(--brass);
+  }
+
+  .adopt-paths p {
+    margin-top: var(--sp-sm);
+    color: var(--muted);
+    font-size: var(--text-small);
+  }
+
+  .adopt-paths code {
+    color: var(--ink-soft);
+    font-size: 0.9em;
   }
 
   /* ---- drift / doctor ---- */
