@@ -39,13 +39,13 @@ provenance attestations.
 **Shell installer** (Linux and macOS):
 
 ```sh
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/tylerbutler/trellis/releases/latest/download/trellis-installer.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/tylerbutler/trellis/releases/latest/download/trellis-gleam-installer.sh | sh
 ```
 
 **PowerShell installer** (Windows):
 
 ```powershell
-powershell -ExecutionPolicy Bypass -c "irm https://github.com/tylerbutler/trellis/releases/latest/download/trellis-installer.ps1 | iex"
+powershell -ExecutionPolicy Bypass -c "irm https://github.com/tylerbutler/trellis/releases/latest/download/trellis-gleam-installer.ps1 | iex"
 ```
 
 **Homebrew:**
