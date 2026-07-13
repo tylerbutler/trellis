@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.3.0 - 2026-07-13
+
+
+### Added
+
+- Parse git dependencies (`{ git = "...", ref = "..." }`) in member manifests as external requirements instead of failing with "neither a version nor a path".
+
+### Changed
+
+- Wildcard member globs now skip directories without a gleam.toml (e.g. node_modules alongside packages); literal member paths still require one.
+
 ## v0.2.0 - 2026-07-11
 
 
