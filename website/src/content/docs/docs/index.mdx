@@ -18,6 +18,32 @@ finding is mechanically fixable — a releasable package missing its
 package's `gleam.toml` — `trellis doctor --fix` writes the fix and re-reports
 whatever's left (`--dry-run` lists the same fixes without touching a file).
 
+## Opinionated, but modular
+
+Trellis has one way of doing each job: change fragments are TOML files in
+`.changes/unreleased/`, every releasable package gets its own git tag, and
+version bumps are derived from fragment kinds. Those opinions are what make
+derivation and verification possible — there's no plugin system to configure
+around them.
+
+The jobs themselves are independent. Every capability is a plain command,
+and nothing requires the piece above it, so you can adopt trellis a layer at
+a time:
+
+- **Just the task runner.** `run`, `exec`, `list`, and `graph` need only the
+  `members` glob. Keep your existing changelog tool and CI untouched.
+- **Add changelogs and versioning.** Fragments, `version plan`, and
+  `version apply` manage bumps and changelogs without trellis owning your
+  release workflow — or any CI at all.
+- **Add publishing.** `tag` and `publish` push to Hex in dependency order,
+  from your own scripts or workflows.
+- **The full pipeline.** `ci`, `changelog check`, and `release pr` turn
+  GitHub Actions workflows into thin triggers around trellis commands.
+
+Commands that feed automation emit structured JSON (`--json`,
+`trellis ci`), so any single piece slots into whatever tooling already
+surrounds it.
+
 ## Getting started
 
 1. [Install trellis](/docs/installation/) — a single prebuilt binary; shell
