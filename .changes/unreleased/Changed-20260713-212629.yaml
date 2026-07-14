@@ -1,0 +1,3 @@
+kind: Changed
+body: All four minijinja changelog templates (`header-format`, `version-format`, `kind-format`, `change-format`) now share the same rendering context (`name`, `version`, `date`, `tag`, `kind`, `body`) instead of each getting a different subset.
+time: 2026-07-13T21:26:29.696443614-07:00

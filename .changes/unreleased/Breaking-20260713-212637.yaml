@@ -1,0 +1,3 @@
+kind: Breaking
+body: Remove `ignore-release`; release exclusions now live only in `exclude.@release`. Special `exclude` keys are namespaced under a reserved `@` prefix so they can never collide with a task name — task names and `exclude` keys are validated against it.
+time: 2026-07-13T21:26:37.600784481-07:00
