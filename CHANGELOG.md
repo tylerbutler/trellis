@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.4.0 - 2026-07-14
+
+
+### Added
+
+- `trellis markdown-help` prints the full CLI command reference as Markdown, useful for generating up-to-date documentation from the command's own help output.
+- `trellis doctor --fix` automatically fixes what it safely can — seeding a missing `CHANGELOG.md` with the canonical header, and rewriting `manifest.toml` locked versions that drifted from `gleam.toml` — then reports whatever issues remain. Use `--dry-run` to preview the fixes without writing anything. Findings that require a judgment call (path-dependency escapes, tag collisions, versions behind their changelog) are left for you to resolve.
+- Add `Initial Release` (major) to the default changelog kinds.
+
+### Changed
+
+- `path-dep-requirement`'s `caret` option is renamed to `minor`; a new `patch` option (`>= X.Y.Z and < X.(Y+1).0`) allows finer-grained control over the Hex requirement generated for workspace path deps at publish time.
+- Remove `ignore-release`; release exclusions now live only in `exclude.@release`. Special `exclude` keys are namespaced under a reserved `@` prefix so they can never collide with a task name — task names and `exclude` keys are validated against it.
+
 ## v0.3.0 - 2026-07-13
 
 
