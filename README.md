@@ -183,10 +183,8 @@ Hex network calls throughout. Invalid fragments (unknown package or kind,
 empty body, unparseable TOML) are hard errors for `plan`/`apply`: silently
 dropping a change is exactly the drift trellis exists to prevent.
 
-Rendering is controlled by minijinja templates in `[tools.trellis.changelog]`. All four
-formats (`header-format`, `version-format`, `kind-format`, `change-format`) share the same
-context — `name`, `version`, `date`, `tag`, `kind`, `body` — with fields that don't apply to
-a given template (e.g. `kind`/`body` in `header-format`) rendering as empty:
+Rendering is controlled by minijinja templates in `[tools.trellis.changelog]`, each with a
+small context (`name`, `version`, `date`, `tag`, `kind`, `body` as applicable):
 
 ```toml
 [tools.trellis.changelog]

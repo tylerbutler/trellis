@@ -113,11 +113,8 @@ will never exist on Hex.
 
 The changelog engine is native — no second tool to install, no config file to
 keep in sync. Changes live as TOML fragments in `.changes/unreleased/`;
-rendering is controlled by small minijinja templates. All four formats
-(`header-format`, `version-format`, `kind-format`, `change-format`) share the
-same context — `name`, `version`, `date`, `tag`, `kind`, `body` — with fields
-that don't apply to a given template (e.g. `kind`/`body` in `header-format`)
-rendering as empty:
+rendering is controlled by small minijinja templates, each with a context of
+`name`, `version`, `date`, `tag`, `kind`, and `body` as applicable:
 
 ```toml wrap
 [tools.trellis.changelog]
