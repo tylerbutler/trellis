@@ -129,9 +129,7 @@ fn default_multiplier() -> u32 {
 /// The native changelog engine's configuration. Fragments are TOML files in
 /// `<dir>/unreleased/`; batched version sections live in `<dir>/<package>/`;
 /// each package's CHANGELOG.md is assembled from those. All formats are
-/// minijinja templates and share the same context: `name`, `version`,
-/// `date`, `tag`, `kind`, `body` — fields not meaningful for a given
-/// template (e.g. `kind`/`body` in `header-format`) render as empty.
+/// minijinja templates.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct ChangelogConfig {
@@ -144,15 +142,19 @@ pub struct ChangelogConfig {
     #[serde(default = "default_kinds")]
     pub kinds: Vec<KindConfig>,
     /// Template for the first line of a package's CHANGELOG.md.
+    /// Context: `name`.
     #[serde(default = "default_header_format")]
     pub header_format: String,
-    /// Template for a version heading.
+    /// Template for a version heading. Context: `name`, `version`, `date`,
+    /// `tag`.
     #[serde(default = "default_version_format")]
     pub version_format: String,
-    /// Template for a kind heading within a version.
+    /// Template for a kind heading within a version. Context: `kind`, `name`,
+    /// `version`.
     #[serde(default = "default_kind_format")]
     pub kind_format: String,
-    /// Template for one change entry.
+    /// Template for one change entry. Context: `body`, `kind`, `name`,
+    /// `version`.
     #[serde(default = "default_change_format")]
     pub change_format: String,
 }
