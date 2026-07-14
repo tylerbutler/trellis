@@ -91,6 +91,13 @@ payload (including a markdown `preview`) feeds a sticky comment:
 - run: trellis changelog check --base "origin/${{ github.base_ref }}" --json
 ```
 
+When the tripwire fires on a mechanical finding — a missing `CHANGELOG.md` or a
+stale `manifest.toml` locked version — clear it locally with
+`trellis doctor --fix`, which applies exactly those fixes and re-reports the
+rest. `--fix` never touches the report-only findings (path-dep escapes, tag
+collisions, versions behind their changelog), so it stays safe to run
+anywhere; keep the bare `trellis doctor` in CI as the gate.
+
 ## The release pipeline
 
 On every push to `main`, regenerate the release PR from pending fragments:

@@ -165,12 +165,24 @@ enum Command {
         command: LockfileCommand,
     },
     /// Validate workspace invariants; non-zero exit on any error
-    Doctor,
+    Doctor {
+        /// Apply the mechanically-fixable findings (seed changelog stubs,
+        /// patch stale locked versions), then re-report what remains
+        #[arg(long)]
+        fix: bool,
+        /// List the fixes `--fix` would apply without writing anything
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Structured output for CI
     Ci {
         #[command(subcommand)]
         command: CiCommand,
     },
+    /// Print the full command reference as Markdown (used to regenerate the
+    /// website's CLI reference page; hidden from normal help)
+    #[command(hide = true)]
+    MarkdownHelp,
 }
 
 #[derive(Subcommand)]
@@ -299,9 +311,15 @@ fn dispatch(cli: Cli) -> Result<bool> {
 
     // Doctor loads leniently so it can report every problem instead of
     // failing on the first one.
-    if let Command::Doctor = cli.command {
+    // Reference generation needs no workspace — it reflects on the CLI itself.
+    if let Command::MarkdownHelp = cli.command {
+        print!("{}", commands::markdown_help());
+        return Ok(true);
+    }
+
+    if let Command::Doctor { fix, dry_run } = cli.command {
         let root = Workspace::find_root(&start)?;
-        return commands::doctor::run(&root);
+        return commands::doctor::run(&root, &commands::doctor::DoctorOptions { fix, dry_run });
     }
 
     let workspace = Workspace::load(&start)?;
@@ -459,7 +477,7 @@ fn dispatch(cli: Cli) -> Result<bool> {
                 commands::lockfile::refresh(&workspace, package.as_deref())
             }
         },
-        Command::Doctor => unreachable!("handled above"),
+        Command::Doctor { .. } | Command::MarkdownHelp => unreachable!("handled above"),
         Command::Ci { command } => {
             match command {
                 CiCommand::Matrix { since, releasable } => {

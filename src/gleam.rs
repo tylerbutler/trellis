@@ -124,41 +124,6 @@ impl GleamManifest {
     }
 }
 
-/// A locked package entry from a member's `manifest.toml`.
-#[derive(Debug, Clone)]
-pub struct LockedPackage {
-    pub name: String,
-    pub version: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct RawLockfile {
-    #[serde(default)]
-    packages: Vec<RawLockedPackage>,
-}
-
-#[derive(Debug, Deserialize)]
-struct RawLockedPackage {
-    name: String,
-    version: String,
-}
-
-/// Parse the locked package list from a `manifest.toml`.
-pub fn load_lockfile(path: &Path) -> Result<Vec<LockedPackage>> {
-    let text = std::fs::read_to_string(path)
-        .with_context(|| format!("failed to read {}", path.display()))?;
-    let raw: RawLockfile =
-        toml::from_str(&text).with_context(|| format!("failed to parse {}", path.display()))?;
-    Ok(raw
-        .packages
-        .into_iter()
-        .map(|p| LockedPackage {
-            name: p.name,
-            version: p.version,
-        })
-        .collect())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
