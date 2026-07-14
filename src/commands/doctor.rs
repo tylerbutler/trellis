@@ -133,9 +133,6 @@ fn check_tool_versions(workspace: &Workspace, report: &mut Report) {
 /// Check 6: every exclusion glob matches at least one member (catches typos),
 /// and no releasable member path-depends on a release-excluded member.
 fn check_exclusions(workspace: &Workspace, report: &mut Report) {
-    for pattern in &workspace.config.ignore_release {
-        check_exclusion_pattern(workspace, "ignore-release", pattern, report);
-    }
     for (task, patterns) in &workspace.config.exclude {
         for pattern in patterns {
             check_exclusion_pattern(workspace, task, pattern, report);

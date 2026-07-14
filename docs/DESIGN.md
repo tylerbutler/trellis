@@ -104,9 +104,10 @@ workspace marker lives in the manifest format the ecosystem already uses
 # gleam.toml at the workspace root
 [tools.trellis]
 members = ["packages/lattice_*", "examples/*"]
-# Glob arrays matched against member paths and scoped by task. The special
-# release key covers changelog, versioning, tagging, and publishing.
-exclude = { docs = ["examples/*"], release = ["examples/*"] }
+# Glob arrays matched against member paths and scoped by task. The reserved
+# @release key covers changelog, versioning, tagging, and publishing; the @
+# prefix keeps special keys from ever colliding with a task name.
+exclude = { docs = ["examples/*"], "@release" = ["examples/*"] }
 
 # Custom tasks, available to `trellis run <name>`. Built-in verbs (build, test,
 # check, format, docs, deps, clean) need no declaration.
@@ -118,9 +119,10 @@ needs-deps = true            # run `gleam deps download` first if not cached
 tag-format = "{name}-v{version}"      # lattice_core-v1.1.0
 # How a path dep is rewritten to a Hex requirement at publish time, from the
 # dependency's current version X.Y.Z:
-#   caret  → ">= X.Y.Z and < (X+1).0.0"   (default; matches current behavior)
+#   minor  → ">= X.Y.Z and < (X+1).0.0"   (default)
+#   patch  → ">= X.Y.Z and < X.(Y+1).0"
 #   exact  → "== X.Y.Z"
-path-dep-requirement = "caret"
+path-dep-requirement = "minor"
 retry = { attempts = 5, initial-delay = "30s", multiplier = 2 }
 
 [tools.trellis.changelog]
@@ -133,6 +135,7 @@ version-format = "## v{{ version }} - {{ date }}"
 kind-format = "### {{ kind }}"
 change-format = "- {{ body }}"
 kinds = [
+  { label = "Initial Release", bump = "major" },
   { label = "Breaking", bump = "major" },
   { label = "Removed", bump = "major" },
   { label = "Added", bump = "minor" },
@@ -159,7 +162,7 @@ trellis info <package> [--json]
 ```
 
 - `list` prints members in topological order — this alone replaces `justfile:18`.
-  `--releasable` filters out `ignore-release` matches, i.e. the set that
+  `--releasable` filters out `@release` matches, i.e. the set that
   changelog/tag/publish commands operate on.
 - `--since origin/main` filters to packages owning changed files (diff paths mapped
   to package directories); `--with-dependents` adds the reverse-dependency closure.
@@ -179,8 +182,9 @@ trellis exec [pkgs...] -- <command...>
   (`--check` variant), `docs`, `deps`, `clean`. Custom tasks come from `[tasks]`.
   Any built-in or custom task may have a same-named entry under
   `[tools.trellis.exclude]`; excluded member-path globs are removed after normal
-  CLI package selection. `exclude.release` defines the releasable set, with the
-  older `ignore-release` array retained as a compatible alias.
+  CLI package selection. The reserved `exclude.@release` key defines the
+  releasable set; its `@` prefix keeps it from ever colliding with a task name
+  (task names may not start with `@`).
 - Scheduling is **graph-parallel by default**: a package runs as soon as its
   workspace deps have finished, up to `--jobs N`. Output is streamed with a
   `pkg ▏` prefix, followed by a summary table. The justfile's serial loops become

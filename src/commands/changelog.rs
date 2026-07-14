@@ -28,7 +28,7 @@ pub fn new_fragment(
                 .member_index(name)
                 .with_context(|| format!("unknown package `{name}`"))?;
             if !workspace.members[idx].releasable {
-                bail!("package `{name}` is excluded from release by ignore-release");
+                bail!("package `{name}` is excluded from release by `@release`");
             }
             name
         }

@@ -18,7 +18,7 @@ pub struct Member {
     /// Path relative to the workspace root, with forward slashes.
     pub rel_path: String,
     pub manifest: GleamManifest,
-    /// False when the member matches an `ignore-release` glob.
+    /// False when the member matches an `@release` exclusion glob.
     pub releasable: bool,
 }
 
@@ -133,12 +133,11 @@ impl Workspace {
         }
 
         let release_exclusions = config
-            .ignore_release
-            .iter()
-            .chain(config.exclude.get("release").into_iter().flatten())
+            .exclude
+            .get(crate::config::RELEASE_EXCLUDE_KEY)
             .cloned()
-            .collect::<Vec<_>>();
-        let ignore_release = build_globset(&release_exclusions)
+            .unwrap_or_default();
+        let release_excludes = build_globset(&release_exclusions)
             .map_err(|err| {
                 diagnostics.error(format!("invalid release exclusion glob: {err:#}"));
             })
@@ -161,7 +160,7 @@ impl Workspace {
                              root's gleam.toml may have one"
                         ));
                     }
-                    let releasable = ignore_release
+                    let releasable = release_excludes
                         .as_ref()
                         .map(|set| !set.is_match(&rel_path))
                         .unwrap_or(true);
@@ -359,7 +358,7 @@ pub struct SelectionFilter {
     pub since: Option<String>,
     /// Add the reverse-dependency closure of the selection.
     pub with_dependents: bool,
-    /// Drop members matching `ignore-release`.
+    /// Drop members matching the `@release` exclusion glob.
     pub releasable_only: bool,
 }
 

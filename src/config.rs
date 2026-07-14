@@ -8,18 +8,24 @@ use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::path::Path;
 
+/// Prefix reserved for special `exclude` keys (currently just
+/// [`RELEASE_EXCLUDE_KEY`]) so they can never collide with a task name —
+/// built-in verbs and `[tools.trellis.tasks]` entries may not start with it.
+pub const RESERVED_PREFIX: &str = "@";
+
+/// The `exclude` key whose globs exclude members from changelog, versioning,
+/// tagging, and publishing, rather than from a single task.
+pub const RELEASE_EXCLUDE_KEY: &str = "@release";
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct ConfigFile {
     /// Glob array matched against directories relative to the workspace root.
     pub members: Vec<String>,
-    /// Members matching these globs participate in task fan-out but are
-    /// excluded from changelog, versioning, tagging, and publishing.
-    #[serde(default)]
-    pub ignore_release: Vec<String>,
-    /// Per-task glob arrays matched against member paths. The special
-    /// `release` key excludes members from changelog, versioning, tagging, and
-    /// publishing.
+    /// Per-task glob arrays matched against member paths. Keys are task names
+    /// (built-in verbs or `[tools.trellis.tasks]` entries), except the
+    /// reserved [`RELEASE_EXCLUDE_KEY`] (`@release`), whose globs exclude
+    /// members from changelog, versioning, tagging, and publishing instead.
     #[serde(default)]
     pub exclude: BTreeMap<String, Vec<String>>,
     #[serde(default)]
@@ -80,9 +86,11 @@ fn default_tag_format() -> String {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum PathDepRequirement {
-    /// `>= X.Y.Z and < (X+1).0.0`
+    /// `>= X.Y.Z and < (X+1).0.0` — allows minor and patch bumps.
     #[default]
-    Caret,
+    Minor,
+    /// `>= X.Y.Z and < X.(Y+1).0` — allows patch bumps only.
+    Patch,
     /// `== X.Y.Z`
     Exact,
 }
@@ -121,7 +129,9 @@ fn default_multiplier() -> u32 {
 /// The native changelog engine's configuration. Fragments are TOML files in
 /// `<dir>/unreleased/`; batched version sections live in `<dir>/<package>/`;
 /// each package's CHANGELOG.md is assembled from those. All formats are
-/// minijinja templates.
+/// minijinja templates and share the same context: `name`, `version`,
+/// `date`, `tag`, `kind`, `body` — fields not meaningful for a given
+/// template (e.g. `kind`/`body` in `header-format`) render as empty.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct ChangelogConfig {
@@ -134,19 +144,15 @@ pub struct ChangelogConfig {
     #[serde(default = "default_kinds")]
     pub kinds: Vec<KindConfig>,
     /// Template for the first line of a package's CHANGELOG.md.
-    /// Context: `name`.
     #[serde(default = "default_header_format")]
     pub header_format: String,
-    /// Template for a version heading. Context: `name`, `version`, `date`,
-    /// `tag`.
+    /// Template for a version heading.
     #[serde(default = "default_version_format")]
     pub version_format: String,
-    /// Template for a kind heading within a version. Context: `kind`, `name`,
-    /// `version`.
+    /// Template for a kind heading within a version.
     #[serde(default = "default_kind_format")]
     pub kind_format: String,
-    /// Template for one change entry. Context: `body`, `kind`, `name`,
-    /// `version`.
+    /// Template for one change entry.
     #[serde(default = "default_change_format")]
     pub change_format: String,
 }
@@ -185,6 +191,7 @@ fn default_changelog_dir() -> String {
 
 fn default_kinds() -> Vec<KindConfig> {
     [
+        ("Initial Release", Bump::Major),
         ("Breaking", Bump::Major),
         ("Removed", Bump::Major),
         ("Added", Bump::Minor),
@@ -232,10 +239,34 @@ impl ConfigFile {
         let Some(trellis) = document.get("tools").and_then(|tools| tools.get("trellis")) else {
             bail!("gleam.toml has no [tools.trellis] table");
         };
-        trellis
+        let config: Self = trellis
             .clone()
             .try_into()
-            .context("invalid [tools.trellis] configuration")
+            .context("invalid [tools.trellis] configuration")?;
+        config.validate()?;
+        Ok(config)
+    }
+
+    /// Reject task names that could collide with a reserved `exclude` key
+    /// (currently just `@release`), and any `exclude` key that misuses the
+    /// reserved prefix without being one.
+    fn validate(&self) -> Result<()> {
+        for name in self.tasks.keys() {
+            if name.starts_with(RESERVED_PREFIX) {
+                bail!(
+                    "task name `{name}` may not start with `{RESERVED_PREFIX}`; \
+                     that prefix is reserved for special `exclude` keys like `{RELEASE_EXCLUDE_KEY}`"
+                );
+            }
+        }
+        for key in self.exclude.keys() {
+            if key.starts_with(RESERVED_PREFIX) && key != RELEASE_EXCLUDE_KEY {
+                bail!(
+                    "unknown reserved `exclude` key `{key}`; did you mean `{RELEASE_EXCLUDE_KEY}`?"
+                );
+            }
+        }
+        Ok(())
     }
 
     pub fn format_tag(&self, name: &str, version: &str) -> String {
@@ -260,8 +291,7 @@ mod tests {
 
             [tools.trellis]
             members = ["packages/lattice_*", "examples/*"]
-            ignore-release = ["examples/*"]
-            exclude = { docs = ["examples/*"], release = ["packages/private-*"] }
+            exclude = { docs = ["examples/*"], "@release" = ["packages/private-*"] }
 
             [tools.trellis.tasks.lint]
             command = "gleam run -m glinter"
@@ -269,7 +299,7 @@ mod tests {
 
             [tools.trellis.publish]
             tag-format = "{name}-v{version}"
-            path-dep-requirement = "caret"
+            path-dep-requirement = "minor"
             retry = { attempts = 5, initial-delay = "30s", multiplier = 2 }
 
             [tools.trellis.changelog]
@@ -282,9 +312,11 @@ mod tests {
         "###;
         let config = ConfigFile::from_gleam_toml(text).unwrap();
         assert_eq!(config.members.len(), 2);
-        assert_eq!(config.ignore_release, vec!["examples/*"]);
         assert_eq!(config.exclude["docs"], vec!["examples/*"]);
-        assert_eq!(config.exclude["release"], vec!["packages/private-*"]);
+        assert_eq!(
+            config.exclude[RELEASE_EXCLUDE_KEY],
+            vec!["packages/private-*"]
+        );
         assert!(config.tasks["lint"].needs_deps);
         assert_eq!(config.publish.retry.attempts, 5);
         assert_eq!(config.changelog.dir, "changes");
@@ -296,20 +328,44 @@ mod tests {
     fn minimal_config_gets_defaults() {
         let config =
             ConfigFile::from_gleam_toml("[tools.trellis]\nmembers = [\"packages/*\"]").unwrap();
-        assert!(config.ignore_release.is_empty());
         assert!(config.exclude.is_empty());
         assert_eq!(config.publish.tag_format, "{name}-v{version}");
         assert_eq!(
             config.publish.path_dep_requirement,
-            PathDepRequirement::Caret
+            PathDepRequirement::Minor
         );
         assert_eq!(config.format_tag("core", "1.2.3"), "core-v1.2.3");
         assert_eq!(config.changelog.dir, ".changes");
         assert!(config.changelog.kinds.iter().any(|k| k.label == "Added"));
+        assert!(
+            config
+                .changelog
+                .kinds
+                .iter()
+                .any(|k| k.label == "Initial Release" && k.bump == Bump::Major)
+        );
         assert_eq!(
             config.changelog.version_format,
             "## v{{ version }} - {{ date }}"
         );
+    }
+
+    #[test]
+    fn task_name_may_not_use_the_reserved_prefix() {
+        let err = ConfigFile::from_gleam_toml(
+            "[tools.trellis]\nmembers = [\"packages/*\"]\n[tools.trellis.tasks.\"@lint\"]\ncommand = \"x\"\n",
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("@lint"));
+    }
+
+    #[test]
+    fn unknown_reserved_exclude_key_is_a_clear_error() {
+        let err = ConfigFile::from_gleam_toml(
+            "[tools.trellis]\nmembers = [\"packages/*\"]\nexclude = { \"@relase\" = [\"x\"] }\n",
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains(RELEASE_EXCLUDE_KEY));
     }
 
     #[test]

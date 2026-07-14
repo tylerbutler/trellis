@@ -38,7 +38,7 @@ fn list_works_from_inside_a_package() {
 }
 
 #[test]
-fn list_releasable_excludes_ignore_release_members() {
+fn list_releasable_excludes_release_excluded_members() {
     trellis(&fixture("basic"))
         .args(["list", "--releasable"])
         .assert()
@@ -255,7 +255,7 @@ fn doctor_reports_all_problems_at_once() {
     let root = dir.path();
     write(
         &root.join("gleam.toml"),
-        "[tools.trellis]\nmembers = [\"packages/*\"]\nignore-release = [\"nomatch\"]\nexclude = { docs = [\"also-missing\"] }\n",
+        "[tools.trellis]\nmembers = [\"packages/*\"]\nexclude = { docs = [\"also-missing\"], \"@release\" = [\"nomatch\"] }\n",
     );
     // a: stale lockfile for b, and a path dep escaping the workspace
     write(
@@ -283,7 +283,7 @@ fn doctor_reports_all_problems_at_once() {
         .failure()
         .stdout(predicate::str::contains("points outside the workspace"))
         .stdout(predicate::str::contains(
-            "`ignore-release` exclusion glob `nomatch` matches no member",
+            "`@release` exclusion glob `nomatch` matches no member",
         ))
         .stdout(predicate::str::contains(
             "`docs` exclusion glob `also-missing` matches no member",
@@ -322,7 +322,7 @@ fn doctor_flags_releasable_dep_on_unreleasable_member() {
     let root = dir.path();
     write(
         &root.join("gleam.toml"),
-        "[tools.trellis]\nmembers = [\"packages/*\", \"shared\"]\nignore-release = [\"shared\"]\n",
+        "[tools.trellis]\nmembers = [\"packages/*\", \"shared\"]\nexclude = { \"@release\" = [\"shared\"] }\n",
     );
     write(
         &root.join("packages/app/gleam.toml"),

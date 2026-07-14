@@ -100,7 +100,7 @@ pub fn load_fragments(workspace: &Workspace) -> Result<Fragments> {
             Some(idx) if workspace.members[idx].releasable => {}
             Some(_) => {
                 result.problems.push(format!(
-                    "fragment `{display}`: project `{}` is excluded from release by ignore-release",
+                    "fragment `{display}`: project `{}` is excluded from release by `@release`",
                     raw.project
                 ));
                 continue;
@@ -209,6 +209,20 @@ fn render(template: &str, what: &str, context: minijinja::Value) -> Result<Strin
         .with_context(|| format!("failed to render {what} template"))
 }
 
+/// The shared context for all four changelog templates: `name`, `version`,
+/// `date`, `tag`, `kind`, `body`. Fields not meaningful for a given template
+/// are passed as empty strings, so every template can reference any of them.
+fn context(
+    name: &str,
+    version: &str,
+    date: &str,
+    tag: &str,
+    kind: &str,
+    body: &str,
+) -> minijinja::Value {
+    minijinja::context! { name, version, date, tag, kind, body }
+}
+
 /// Render one version section: the version heading, then each kind (in
 /// configured order) with its entries.
 pub fn render_section(
@@ -222,7 +236,7 @@ pub fn render_section(
     let mut out = render(
         &config.version_format,
         "version-format",
-        minijinja::context! { name, version, date, tag },
+        context(name, version, date, tag, "", ""),
     )?;
     out.push('\n');
     for kind in &config.kinds {
@@ -234,7 +248,7 @@ pub fn render_section(
         out.push_str(&render(
             &config.kind_format,
             "kind-format",
-            minijinja::context! { kind => kind.label, name, version },
+            context(name, version, date, tag, &kind.label, ""),
         )?);
         out.push('\n');
         out.push('\n');
@@ -242,7 +256,7 @@ pub fn render_section(
             out.push_str(&render(
                 &config.change_format,
                 "change-format",
-                minijinja::context! { body => fragment.body, kind => fragment.kind, name, version },
+                context(name, version, date, tag, &fragment.kind, &fragment.body),
             )?);
             out.push('\n');
         }
@@ -309,7 +323,7 @@ pub fn render_header(config: &ChangelogConfig, name: &str) -> Result<String> {
     render(
         &config.header_format,
         "header-format",
-        minijinja::context! { name },
+        context(name, "", "", "", "", ""),
     )
 }
 
@@ -446,6 +460,16 @@ mod tests {
         assert!(section.starts_with("## p-v0.2.0 (2026-01-01)\n"));
         assert!(section.contains("**ADDED**"));
         assert!(section.contains("* thing [Added]"));
+    }
+
+    #[test]
+    fn header_format_gets_the_same_context_shape_as_the_other_templates() {
+        let config = ChangelogConfig {
+            header_format: "# {{ name }}{{ version }}{{ date }}{{ tag }}{{ kind }}{{ body }}!"
+                .to_string(),
+            ..Default::default()
+        };
+        assert_eq!(render_header(&config, "p").unwrap(), "# p!");
     }
 
     #[test]
