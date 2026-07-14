@@ -30,6 +30,7 @@ jobs:
         with:
           token: ${{ steps.app-token.outputs.token }}
           version-files: 'Cargo.toml:package.version'
+          pr-title-template: 'chore(release): {version}'
 
       # Update Cargo.lock to match the version bumped by changie-release
       - name: Update Cargo.lock
