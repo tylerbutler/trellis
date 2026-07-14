@@ -1,3 +1,3 @@
-kind: Breaking
+kind: Changed
 body: '`path-dep-requirement`''s `caret` option is renamed to `minor`; a new `patch` option (`>= X.Y.Z and < X.(Y+1).0`) allows finer-grained control over the Hex requirement generated for workspace path deps at publish time.'
 time: 2026-07-13T21:26:29.634978815-07:00
