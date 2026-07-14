@@ -47,7 +47,7 @@ enum Command {
         /// Add the reverse-dependency closure of the selection
         #[arg(long)]
         with_dependents: bool,
-        /// Only members that participate in releases (excludes ignore-release)
+        /// Only members that participate in releases (excludes `@release` matches)
         #[arg(long)]
         releasable: bool,
     },

@@ -74,7 +74,7 @@ List members in topological order (dependencies first)
 * `--json` — Emit JSON instead of names
 * `--since <REF>` — Only members owning files changed since this git ref
 * `--with-dependents` — Add the reverse-dependency closure of the selection
-* `--releasable` — Only members that participate in releases (excludes ignore-release)
+* `--releasable` — Only members that participate in releases (excludes `@release` matches)
 
 
 

@@ -84,9 +84,10 @@ gleam package that also anchors the workspace. Only `members` is required:
 # gleam.toml at the repo root
 [tools.trellis]
 members = ["packages/*", "examples/*"]
-# Exclusions are globbed against member paths and scoped by task. `release`
-# covers changelog, versioning, tagging, and publishing.
-exclude = { docs = ["examples/*"], release = ["examples/*"] }
+# Exclusions are globbed against member paths and scoped by task. The
+# reserved `@release` key covers changelog, versioning, tagging, and
+# publishing; the `@` prefix keeps it from ever colliding with a task name.
+exclude = { docs = ["examples/*"], "@release" = ["examples/*"] }
 
 # Custom tasks for `trellis run <name>`. Built-in verbs (build, test, check,
 # format, docs, deps, clean) need no declaration.
@@ -146,12 +147,13 @@ explicitly. For larger maps, use a table:
 ```toml
 [tools.trellis.exclude]
 docs = ["examples/*", "packages/internal-*"]
-release = ["examples/*"]
+"@release" = ["examples/*"]
 ```
 
-The special `release` key defines the package set used by changelog, version,
-tag, and publish commands. The older `ignore-release` array remains supported
-and is combined with `exclude.release`.
+The reserved `@release` key defines the package set used by changelog,
+version, tag, and publish commands. Special keys use a `@` prefix so they
+can never collide with a task name — trellis rejects any task named with
+that prefix.
 
 ### Changelog & versioning
 
@@ -182,8 +184,7 @@ empty body, unparseable TOML) are hard errors for `plan`/`apply`: silently
 dropping a change is exactly the drift trellis exists to prevent.
 
 Rendering is controlled by minijinja templates in `[tools.trellis.changelog]`, each with a
-small context (`name`, `version`, `date`, `tag`, `kind`, `body` as
-applicable):
+small context (`name`, `version`, `date`, `tag`, `kind`, `body` as applicable):
 
 ```toml
 [tools.trellis.changelog]
@@ -228,7 +229,7 @@ against the Hex API (already-published versions are skipped, so re-running a
 partially failed release is safe), validation (`gleam format --check`,
 `build --warnings-as-errors`, `test`), then a path-dep rewrite computed from
 the graph — each workspace path dep becomes the Hex requirement derived from
-that dep's current version (`caret` or `exact`, per `path-dep-requirement`) —
+that dep's current version (`minor`, `patch`, or `exact`, per `path-dep-requirement`) —
 followed by `gleam publish --yes`, and finally restoration of the original
 `gleam.toml` (the repo never shows rewritten files, even on failure). Every
 Hex-touching step runs under the configured `[tools.trellis.publish] retry` backoff policy.

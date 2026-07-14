@@ -100,7 +100,7 @@ pub fn load_fragments(workspace: &Workspace) -> Result<Fragments> {
             Some(idx) if workspace.members[idx].releasable => {}
             Some(_) => {
                 result.problems.push(format!(
-                    "fragment `{display}`: project `{}` is excluded from release by ignore-release",
+                    "fragment `{display}`: project `{}` is excluded from release by `@release`",
                     raw.project
                 ));
                 continue;

@@ -28,9 +28,10 @@ Tag format, path-dep rewriting, and Hex retry policy are configured under
 tag-format = "{name}-v{version}"      # lat_core-v1.2.0
 # How a path dep is rewritten to a Hex requirement at publish time, from the
 # dependency's current version X.Y.Z:
-#   caret  → ">= X.Y.Z and < (X+1).0.0"   (default)
+#   minor  → ">= X.Y.Z and < (X+1).0.0"   (default)
+#   patch  → ">= X.Y.Z and < X.(Y+1).0"
 #   exact  → "== X.Y.Z"
-path-dep-requirement = "caret"
+path-dep-requirement = "minor"
 retry = { attempts = 5, initial-delay = "30s", multiplier = 2 }
 ```
 

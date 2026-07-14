@@ -16,13 +16,21 @@ pub struct Rewrite {
 }
 
 /// The Hex requirement for a path dep at version `X.Y.Z`:
-/// caret → `>= X.Y.Z and < (X+1).0.0`, exact → `== X.Y.Z`.
+/// minor → `>= X.Y.Z and < (X+1).0.0`, patch → `>= X.Y.Z and < X.(Y+1).0`,
+/// exact → `== X.Y.Z`.
 pub fn hex_requirement(version: &str, mode: PathDepRequirement) -> Result<String> {
     let version = semver::Version::parse(version)
         .with_context(|| format!("`{version}` is not valid semver"))?;
     Ok(match mode {
-        PathDepRequirement::Caret => {
+        PathDepRequirement::Minor => {
             format!(">= {version} and < {}.0.0", version.major + 1)
+        }
+        PathDepRequirement::Patch => {
+            format!(
+                ">= {version} and < {}.{}.0",
+                version.major,
+                version.minor + 1
+            )
         }
         PathDepRequirement::Exact => format!("== {version}"),
     })
@@ -95,20 +103,24 @@ mod tests {
     }
 
     #[test]
-    fn caret_and_exact_requirements() {
+    fn minor_patch_and_exact_requirements() {
         assert_eq!(
-            hex_requirement("1.2.3", PathDepRequirement::Caret).unwrap(),
+            hex_requirement("1.2.3", PathDepRequirement::Minor).unwrap(),
             ">= 1.2.3 and < 2.0.0"
         );
         assert_eq!(
-            hex_requirement("0.5.0", PathDepRequirement::Caret).unwrap(),
+            hex_requirement("0.5.0", PathDepRequirement::Minor).unwrap(),
             ">= 0.5.0 and < 1.0.0"
+        );
+        assert_eq!(
+            hex_requirement("1.2.3", PathDepRequirement::Patch).unwrap(),
+            ">= 1.2.3 and < 1.3.0"
         );
         assert_eq!(
             hex_requirement("1.2.3", PathDepRequirement::Exact).unwrap(),
             "== 1.2.3"
         );
-        assert!(hex_requirement("not-a-version", PathDepRequirement::Caret).is_err());
+        assert!(hex_requirement("not-a-version", PathDepRequirement::Minor).is_err());
     }
 
     #[test]
@@ -125,7 +137,7 @@ mod tests {
         let (rewritten, rewrites) = rewrite_path_deps(
             text,
             &versions(&[("lat_core", "1.2.0")]),
-            PathDepRequirement::Caret,
+            PathDepRequirement::Minor,
         )
         .unwrap();
         assert_eq!(
@@ -164,7 +176,7 @@ mod tests {
     #[test]
     fn regular_path_dep_to_unreleasable_member_is_an_error() {
         let text = "name = \"app\"\n[dependencies]\nshared = { path = \"../shared\" }\n";
-        let err = rewrite_path_deps(text, &versions(&[]), PathDepRequirement::Caret).unwrap_err();
+        let err = rewrite_path_deps(text, &versions(&[]), PathDepRequirement::Minor).unwrap_err();
         assert!(err.to_string().contains("shared"));
     }
 }
