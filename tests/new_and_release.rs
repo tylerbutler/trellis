@@ -265,7 +265,7 @@ fn release_pr_creates_then_updates_the_pull_request() {
     // including the changelog section the native engine just rendered.
     let log = fs::read_to_string(root.join(".fake/gh-log")).unwrap();
     assert!(log.contains("pr create --base main --head release/pending"));
-    assert!(log.contains("--title Release: lat_core v1.3.0"));
+    assert!(log.contains("--title release: lat_core v1.3.0"));
     assert!(log.contains("| lat_core | 1.2.0 | 1.3.0 | 1 |"));
     assert!(
         log.contains("- pending change"),
@@ -323,7 +323,7 @@ fn release_pr_creates_then_updates_the_pull_request() {
         .success()
         .stdout(predicate::str::contains("updated release PR #42"));
     let log = fs::read_to_string(root.join(".fake/gh-log")).unwrap();
-    assert!(log.contains("pr edit 42 --title Release: lat_core v"));
+    assert!(log.contains("pr edit 42 --title release: lat_core v"));
 }
 
 #[test]

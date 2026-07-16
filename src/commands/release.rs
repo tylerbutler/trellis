@@ -67,7 +67,7 @@ fn build_release_commit_and_pr(
         .map(|entry| format!("{} v{}", entry.name, entry.next))
         .collect::<Vec<_>>()
         .join(", ");
-    let title = format!("Release: {summary}");
+    let title = format!("release: {summary}");
 
     git_stdout(root, &["add", "-A"])?;
     let mut commit_args = crate::git::identity_fallback_args(root);
