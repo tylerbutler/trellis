@@ -1,3 +1,0 @@
-kind: Fixed
-body: Release PR title now uses a lowercase `release:` type so it passes conventional-commit / commitlint PR-title checks (matching the release commit message).
-time: 2026-07-16T00:00:00.000000000-00:00
