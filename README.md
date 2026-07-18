@@ -1,5 +1,7 @@
 # trellis
 
+![Crates.io Version](https://img.shields.io/crates/v/trellis-gleam) ![GitHub Release Date](https://img.shields.io/github/release-date/tylerbutler/trellis?display_date=published_at)
+
 A workspace CLI for Gleam monorepos. A trellis is the frame a lattice grows on.
 
 Gleam has no native workspace concept — `gleam build`, `gleam test`, and
