@@ -1,5 +1,5 @@
-//! Git integration for `--since <ref>`: map changed files to the workspace
-//! members that own them.
+//! Git integration: map changed files to the workspace members that own them
+//! (`--since <ref>`), and enumerate manifests for member auto-discovery.
 
 use crate::workspace::Workspace;
 use anyhow::{Context, Result, bail};
@@ -87,6 +87,41 @@ fn owning_member(workspace: &Workspace, file: &Path) -> Option<usize> {
         .filter(|(_, member)| file.starts_with(&member.path))
         .max_by_key(|(_, member)| member.path.components().count())
         .map(|(idx, _)| idx)
+}
+
+/// The git repository root containing `dir`, if any. `None` means `dir` is
+/// not inside a work tree (or git itself is unavailable).
+pub fn repo_root(dir: &Path) -> Option<PathBuf> {
+    git_stdout(dir, &["rev-parse", "--show-toplevel"])
+        .ok()
+        .map(|out| PathBuf::from(out.trim()))
+}
+
+/// Every non-gitignored `gleam.toml` under `cwd` — tracked and untracked
+/// alike, so freshly created packages are discovered before their first
+/// commit. Paths are relative to `cwd`.
+pub fn ls_gleam_manifests(cwd: &Path) -> Result<Vec<String>> {
+    // A plain pathspec wildcard matches across `/`, so `*gleam.toml` finds
+    // manifests at any depth; the basename filter drops accidental matches
+    // like `mygleam.toml`.
+    let text = git_stdout(
+        cwd,
+        &[
+            "ls-files",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+            "--",
+            "*gleam.toml",
+        ],
+    )?;
+    Ok(lines(&text)
+        .filter(|path| {
+            Path::new(path)
+                .file_name()
+                .is_some_and(|name| name == "gleam.toml")
+        })
+        .collect())
 }
 
 /// `-c user.name=... -c user.email=...` args to prepend to a git command that

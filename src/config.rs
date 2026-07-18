@@ -1,15 +1,17 @@
 //! Schema for the `[tools.trellis]` table of the workspace root's
 //! `gleam.toml` — the single source of configured (not derived) workspace
 //! facts, living in the manifest format the ecosystem already uses.
-//! Everything except `members` is optional.
+//! Everything is optional: when `members` is omitted, workspace members are
+//! auto-discovered from git (every non-ignored `gleam.toml`), and when the
+//! whole table is absent trellis runs configless with the same discovery.
 
 use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::path::Path;
 
-/// Prefix reserved for special `exclude` keys (currently just
-/// [`RELEASE_EXCLUDE_KEY`]) so they can never collide with a task name —
+/// Prefix reserved for special `exclude` keys ([`RELEASE_EXCLUDE_KEY`] and
+/// [`MEMBERS_EXCLUDE_KEY`]) so they can never collide with a task name —
 /// built-in verbs and `[tools.trellis.tasks]` entries may not start with it.
 pub const RESERVED_PREFIX: &str = "@";
 
@@ -17,11 +19,21 @@ pub const RESERVED_PREFIX: &str = "@";
 /// tagging, and publishing, rather than from a single task.
 pub const RELEASE_EXCLUDE_KEY: &str = "@release";
 
+/// The `exclude` key whose globs remove directories from workspace membership
+/// entirely — they are never parsed, graphed, or touched by any command.
+/// Applies to explicit `members` globs and to auto-discovered members alike.
+pub const MEMBERS_EXCLUDE_KEY: &str = "@members";
+
+/// All special `exclude` keys, for validation and error messages.
+pub const RESERVED_EXCLUDE_KEYS: [&str; 2] = [RELEASE_EXCLUDE_KEY, MEMBERS_EXCLUDE_KEY];
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct ConfigFile {
     /// Glob array matched against directories relative to the workspace root.
-    pub members: Vec<String>,
+    /// When omitted, members are auto-discovered: every non-gitignored
+    /// `gleam.toml` in the repository (outside `build/`) marks a member.
+    pub members: Option<Vec<String>>,
     /// Per-task glob arrays matched against member paths. Keys are task names
     /// (built-in verbs or `[tools.trellis.tasks]` entries), except the
     /// reserved [`RELEASE_EXCLUDE_KEY`] (`@release`), whose globs exclude
@@ -249,10 +261,28 @@ impl ConfigFile {
         Ok(config)
     }
 
-    /// Reject task names that could collide with a reserved `exclude` key
-    /// (currently just `@release`), and any `exclude` key that misuses the
-    /// reserved prefix without being one.
+    /// The synthesized configuration for a workspace with no `[tools.trellis]`
+    /// table anywhere: members auto-discovered, everything else defaulted.
+    pub fn configless() -> Self {
+        Self {
+            members: None,
+            exclude: BTreeMap::new(),
+            tasks: BTreeMap::new(),
+            publish: PublishConfig::default(),
+            changelog: ChangelogConfig::default(),
+        }
+    }
+
+    /// Reject an explicitly empty `members` list (omit it to auto-discover),
+    /// task names that could collide with a reserved `exclude` key, and any
+    /// `exclude` key that misuses the reserved prefix without being one.
     fn validate(&self) -> Result<()> {
+        if self.members.as_ref().is_some_and(Vec::is_empty) {
+            bail!(
+                "`members` is empty; remove the key entirely to auto-discover members, \
+                 or list at least one glob"
+            );
+        }
         for name in self.tasks.keys() {
             if name.starts_with(RESERVED_PREFIX) {
                 bail!(
@@ -262,9 +292,12 @@ impl ConfigFile {
             }
         }
         for key in self.exclude.keys() {
-            if key.starts_with(RESERVED_PREFIX) && key != RELEASE_EXCLUDE_KEY {
+            if key.starts_with(RESERVED_PREFIX) && !RESERVED_EXCLUDE_KEYS.contains(&key.as_str()) {
                 bail!(
-                    "unknown reserved `exclude` key `{key}`; did you mean `{RELEASE_EXCLUDE_KEY}`?"
+                    "unknown reserved `exclude` key `{key}`; the special keys are {}",
+                    RESERVED_EXCLUDE_KEYS
+                        .map(|reserved| format!("`{reserved}`"))
+                        .join(" and ")
                 );
             }
         }
@@ -313,7 +346,7 @@ mod tests {
             ]
         "###;
         let config = ConfigFile::from_gleam_toml(text).unwrap();
-        assert_eq!(config.members.len(), 2);
+        assert_eq!(config.members.as_deref().unwrap().len(), 2);
         assert_eq!(config.exclude["docs"], vec!["examples/*"]);
         assert_eq!(
             config.exclude[RELEASE_EXCLUDE_KEY],
@@ -350,6 +383,34 @@ mod tests {
             config.changelog.version_format,
             "## v{{ version }} - {{ date }}"
         );
+    }
+
+    #[test]
+    fn omitted_members_means_auto_discovery() {
+        let config = ConfigFile::from_gleam_toml(
+            "[tools.trellis]\nexclude = { \"@members\" = [\"tests/fixtures/*\"] }",
+        )
+        .unwrap();
+        assert!(config.members.is_none());
+        assert_eq!(
+            config.exclude[MEMBERS_EXCLUDE_KEY],
+            vec!["tests/fixtures/*"]
+        );
+    }
+
+    #[test]
+    fn empty_members_is_a_clear_error() {
+        let err = ConfigFile::from_gleam_toml("[tools.trellis]\nmembers = []").unwrap_err();
+        assert!(err.to_string().contains("auto-discover"), "{err:#}");
+    }
+
+    #[test]
+    fn configless_config_has_defaults_and_no_members() {
+        let config = ConfigFile::configless();
+        assert!(config.members.is_none());
+        assert!(config.exclude.is_empty());
+        assert!(config.tasks.is_empty());
+        assert_eq!(config.format_tag("core", "1.2.3"), "core-v1.2.3");
     }
 
     #[test]
