@@ -133,9 +133,12 @@ impl Workspace {
         // configuration, its absence (or a missing manifest — a configless
         // git-root workspace) means everything is defaulted and discovered.
         let manifest_path = root.join(GLEAM_TOML);
-        let configless = match std::fs::read_to_string(&manifest_path) {
+        let (configless, root_is_package) = match std::fs::read_to_string(&manifest_path) {
             Ok(text) => match toml::from_str::<toml::Value>(&text) {
-                Ok(document) => !crate::config::has_trellis_table(&document),
+                Ok(document) => (
+                    !crate::config::has_trellis_table(&document),
+                    document.get("name").is_some(),
+                ),
                 Err(err) => {
                     diagnostics.error(format!(
                         "failed to parse {}: {err}",
@@ -144,7 +147,7 @@ impl Workspace {
                     return Ok((None, diagnostics));
                 }
             },
-            Err(_) => true,
+            Err(_) => (true, false),
         };
         let config = if configless {
             ConfigFile::configless()
@@ -162,6 +165,11 @@ impl Workspace {
             Some(globs) => expand_member_globs(root, globs, &mut diagnostics),
             None => discover_member_dirs(root, &mut diagnostics),
         };
+        // A config-only root manifest ([tools.trellis] without a `name`) is
+        // configuration, not a package — discovery must not sweep it in.
+        if config.members.is_none() && !root_is_package {
+            member_dirs.retain(|dir| dir != root);
+        }
 
         // Parse each member manifest; unparseable members are reported and dropped.
         for (task, patterns) in &config.exclude {
