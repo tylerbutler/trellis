@@ -1,0 +1,3 @@
+kind: Added
+body: 'Configless workspaces and member auto-discovery: `members` in `[tools.trellis]` is now optional — when omitted, every non-gitignored `gleam.toml` in the repository (outside `build/`) marks a member, and with no `[tools.trellis]` table anywhere the git repository root becomes the workspace root with an entirely defaulted configuration. A new reserved `exclude` key, `@members`, removes directories from workspace membership entirely (e.g. committed test fixtures), in both auto-discovered and explicit-members modes. `doctor` announces inferred roots and auto-discovered member counts.'
+time: 2026-07-18T00:00:00.000000000-00:00

@@ -1,23 +1,32 @@
 ---
 title: Configuration
-description: Trellis uses a [tools.trellis] table in gleam.toml to identify the workspace root. Only members is required.
+description: Trellis works with zero configuration; a [tools.trellis] table in gleam.toml identifies the workspace root when you need to configure anything.
 ---
 
 import Callout from "../../../components/Callout.astro";
 
-Trellis uses a `[tools.trellis]` table in a `gleam.toml` to identify the
-workspace root, so it does not need a separate config file. The root manifest
-may be config-only, or a regular Gleam package that also anchors the
-workspace. Only `members` is required; trellis derives the rest of its
-workspace model from the member manifests.
+Configuration is optional. With no configuration at all, the git repository
+root is the workspace root and every non-gitignored `gleam.toml` (outside
+`build/`) marks a member — a fresh Gleam monorepo, or a single-package repo,
+works with zero setup.
+
+When you need to configure something, trellis uses a `[tools.trellis]` table
+in a `gleam.toml` to identify the workspace root, so it does not need a
+separate config file. The root manifest may be config-only, or a regular
+Gleam package that also anchors the workspace. Every key is optional,
+including `members` — omit it to keep auto-discovering members from git while
+configuring everything else; trellis derives the rest of its workspace model
+from the member manifests.
 
 ```toml title="gleam.toml" wrap
 # gleam.toml at the repo root
 [tools.trellis]
+# Optional: pin membership to explicit globs instead of auto-discovery.
 members = ["packages/*", "examples/*"]
 # Exclusions are globbed against member paths and scoped by task. The
 # reserved `@release` key covers changelog, versioning, tagging, and
-# publishing; its `@` prefix keeps it from ever colliding with a task name.
+# publishing; `@members` removes directories from membership entirely; the
+# `@` prefix keeps them from ever colliding with a task name.
 exclude = { docs = ["examples/*"], "@release" = ["examples/*"] }
 
 # Custom tasks for `trellis run <name>`. Built-in verbs (build, test, check,
@@ -47,9 +56,10 @@ their roots.
 
 | Key | Required | What it does |
 | --- | --- | --- |
-| `members` | yes | Globs expanded into package directories. New packages join every command the moment their directory matches. |
+| `members` | no | Globs expanded into package directories. New packages join every command the moment their directory matches. When omitted, members are auto-discovered: every non-gitignored `gleam.toml` in the repository (outside `build/`) marks a member. An explicitly empty list is an error. |
 | `exclude.<task>` | no | Member-path globs omitted from that built-in or custom task. The exclusion still applies when a package is named explicitly. |
 | `exclude.@release` | no | The shared package set omitted from changelog, versioning, tagging, publishing, and release CI. The `@` prefix is reserved for special keys like this one, so it can never collide with a task name — task names may not start with `@`. |
+| `exclude.@members` | no | Directories removed from workspace membership entirely — never parsed, graphed, or touched by any command. Useful for committed test fixtures that auto-discovery would otherwise sweep in; also filters explicit `members` globs. |
 | `tasks.<name>` | no | Custom tasks for `trellis run`. A task with a built-in's name (`build`, `test`, …) overrides it. `needs-deps = true` downloads dependencies first. |
 | `publish.tag-format` | no | Template for per-member git tags. Default: `{name}-v{version}`. |
 | `publish.retry` | no | Backoff for Hex rate limits: `{ attempts, initial-delay, multiplier }`. |
@@ -87,6 +97,7 @@ through `--since`.
 | `docs` | Matching members from `trellis run docs`. Built-in tasks can be filtered without overriding their commands. |
 | Any custom task name | Matching members from that `trellis run <name>` invocation. |
 | `@release` | Matching members from changelog, version, tag, publish, and release CI operations. Explicit changelog creation and publishing are rejected. |
+| `@members` | Matching directories from workspace membership itself — they are invisible to every command, as if they held no `gleam.toml` at all. |
 
 Release-excluded members remain in the dependency graph and still participate
 in `list`, `graph`, `exec`, and every task that does not exclude them. `info`

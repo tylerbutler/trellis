@@ -85,9 +85,20 @@ starts by loading the **workspace model**:
    first `gleam.toml` with a `[tools.trellis]` table (so commands work from
    inside a package, like `git` or `cargo` — member manifests along the way
    are skipped, and a `[tools.trellis]` table in a member manifest is a
-   doctor error because it would hijack this walk).
+   doctor error because it would hijack this walk). When no manifest up the
+   tree has the table, trellis runs configless: the enclosing git repository
+   root becomes the workspace root with an entirely defaulted configuration.
+   An unparseable ancestor manifest blocks this fallback — it may be the
+   intended root hiding behind a syntax error, and guessing would silently
+   change discovery modes.
 2. Expand `members` globs into package directories; parse each `gleam.toml` for
-   `name`, `version`, and dependencies.
+   `name`, `version`, and dependencies. When `members` is omitted (or there is
+   no config at all), members are auto-discovered instead: every non-gitignored
+   `gleam.toml` in the repository — tracked or untracked, outside `build/` —
+   marks a member, and the reserved `@members` exclusion key removes
+   directories from membership entirely (committed test fixtures, say, which
+   gitignore cannot hide). A config-only root manifest (no `name`) is never
+   itself a member.
 3. Build the dependency graph from path dependencies between members. Reject cycles
    and path deps that point outside the workspace with a clear error.
 4. Compute the topological order once; every other command consumes it.
@@ -97,8 +108,13 @@ starts by loading the **workspace model**:
 The `[tools.trellis]` table of the root `gleam.toml` is the single source of
 configured truth, and stays small. There is no separate config file: the
 workspace marker lives in the manifest format the ecosystem already uses
-(the root manifest may be config-only or also a regular package). Schema
-(everything except `members` optional, with the defaults shown):
+(the root manifest may be config-only or also a regular package). The table
+itself is optional — configuration is a graduated ladder: no config at all
+(git-inferred root, auto-discovered members), a table without `members`
+(auto-discovery plus exclusions, tasks, and release settings), or explicit
+`members` globs pinning the set down. Schema (everything optional, with the
+defaults shown; omitting `members` auto-discovers, an explicitly empty list
+is an error):
 
 ```toml
 # gleam.toml at the workspace root

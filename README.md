@@ -76,17 +76,27 @@ specific version in CI by replacing `latest/download` with
 
 ## Configuration
 
-A `[tools.trellis]` table in a `gleam.toml` marks the workspace root — no
-separate config file. The root manifest may be config-only, or a regular
-gleam package that also anchors the workspace. Only `members` is required:
+Configuration is optional. With no configuration at all, the git repository
+root is the workspace root and every non-gitignored `gleam.toml` (outside
+`build/`) marks a member — a fresh Gleam monorepo, or a single-package repo,
+works with zero setup.
+
+When you need to configure something, a `[tools.trellis]` table in a
+`gleam.toml` marks the workspace root — no separate config file. The root
+manifest may be config-only, or a regular gleam package that also anchors the
+workspace. Every key is optional, including `members`: omit it to keep
+auto-discovering members from git while configuring everything else:
 
 ```toml
 # gleam.toml at the repo root
 [tools.trellis]
+# Optional: pin membership to explicit globs instead of auto-discovery.
 members = ["packages/*", "examples/*"]
 # Exclusions are globbed against member paths and scoped by task. The
 # reserved `@release` key covers changelog, versioning, tagging, and
-# publishing; the `@` prefix keeps it from ever colliding with a task name.
+# publishing; `@members` removes directories from membership entirely
+# (e.g. committed test fixtures that auto-discovery would sweep in); the
+# `@` prefix keeps them from ever colliding with a task name.
 exclude = { docs = ["examples/*"], "@release" = ["examples/*"] }
 
 # Custom tasks for `trellis run <name>`. Built-in verbs (build, test, check,
@@ -108,7 +118,9 @@ error (it would hijack root discovery).
 
 Every command works from anywhere inside the workspace (the root is found by
 walking up to the first `gleam.toml` with a `[tools.trellis]` table, like
-`git` or `cargo` — member manifests along the way are skipped).
+`git` or `cargo` — member manifests along the way are skipped). Without a
+`[tools.trellis]` table anywhere, the git repository root is the workspace
+root and members are auto-discovered.
 
 ### Introspection
 
@@ -151,9 +163,10 @@ docs = ["examples/*", "packages/internal-*"]
 ```
 
 The reserved `@release` key defines the package set used by changelog,
-version, tag, and publish commands. Special keys use a `@` prefix so they
-can never collide with a task name — trellis rejects any task named with
-that prefix.
+version, tag, and publish commands, and `@members` removes directories from
+workspace membership entirely (in both auto-discovered and explicit-members
+modes). Special keys use a `@` prefix so they can never collide with a task
+name — trellis rejects any task named with that prefix.
 
 ### Changelog & versioning
 
