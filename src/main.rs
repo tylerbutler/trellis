@@ -18,13 +18,28 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use workspace::Workspace;
 
+/// Crate version, with `git describe` output appended for builds that aren't
+/// a clean release tag. "VERGEN_IDEMPOTENT_OUTPUT" is the placeholder build.rs
+/// emits when git metadata is unavailable (e.g. a crates.io tarball).
+fn version() -> String {
+    let base = env!("CARGO_PKG_VERSION");
+    match option_env!("VERGEN_GIT_DESCRIBE") {
+        Some(describe)
+            if describe != "VERGEN_IDEMPOTENT_OUTPUT" && describe != format!("v{base}") =>
+        {
+            format!("{base} ({describe})")
+        }
+        _ => base.to_string(),
+    }
+}
+
 /// A workspace CLI for Gleam monorepos: task fan-out, introspection, and
 /// release orchestration derived entirely from gleam.toml files — the
 /// workspace root's [tools.trellis] table and each member's manifest.
 /// Configure nothing that can be derived; verify anything that must be
 /// duplicated.
 #[derive(Parser)]
-#[command(name = "trellis", version, about, max_term_width = 100)]
+#[command(name = "trellis", version = version(), about, max_term_width = 100)]
 struct Cli {
     /// Run as if started in this directory.
     #[arg(short = 'C', long = "directory", global = true, value_name = "DIR")]

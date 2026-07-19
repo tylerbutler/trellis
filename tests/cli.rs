@@ -624,6 +624,33 @@ fn since_selects_changed_packages_and_dependents() {
         .stdout("lat_core\nlat_mid\n");
 }
 
+// ---- version ---------------------------------------------------------
+
+#[test]
+fn version_appends_git_describe_on_dev_builds() {
+    let output = Command::cargo_bin("trellis")
+        .unwrap()
+        .arg("--version")
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let base = env!("CARGO_PKG_VERSION");
+
+    // Integration tests share the package's build-script env, so the same
+    // VERGEN_GIT_DESCRIBE the binary embedded is visible here.
+    match option_env!("VERGEN_GIT_DESCRIBE") {
+        // "VERGEN_IDEMPOTENT_OUTPUT" is vergen's fallback when git info is
+        // unavailable (e.g. building from a crates.io tarball).
+        Some(describe)
+            if describe != "VERGEN_IDEMPOTENT_OUTPUT" && describe != format!("v{base}") =>
+        {
+            assert_eq!(stdout.trim(), format!("trellis {base} ({describe})"));
+        }
+        _ => assert_eq!(stdout.trim(), format!("trellis {base}")),
+    }
+}
+
 fn copy_dir(from: &Path, to: &Path) {
     for entry in walk(from) {
         let rel = entry.strip_prefix(from).unwrap();
