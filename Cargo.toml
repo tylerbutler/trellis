@@ -1,6 +1,6 @@
 [package]
 name = "trellis-gleam"
-version = "0.4.1"
+version = "0.5.0"
 edition = "2024"
 description = "A workspace CLI for Gleam monorepos: task fan-out, introspection, and release orchestration derived entirely from gleam.toml"
 license = "MIT"

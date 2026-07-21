@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.5.0 - 2026-07-21
+
+
+### Added
+
+- Interactive commands now print a notice when a newer trellis has been published to crates.io. The check is cached for a day, runs only in a terminal, and is skipped in CI or when `DO_NOT_TRACK` / `TRELLIS_NO_UPDATE_CHECK` is set.
+- Configless workspaces and member auto-discovery: `members` in `[tools.trellis]` is now optional — when omitted, every non-gitignored `gleam.toml` in the repository (outside `build/`) marks a member, and with no `[tools.trellis]` table anywhere the git repository root becomes the workspace root with an entirely defaulted configuration. A new reserved `exclude` key, `@members`, removes directories from workspace membership entirely (e.g. committed test fixtures), in both auto-discovered and explicit-members modes. `doctor` announces inferred roots and auto-discovered member counts.
+
+### Fixed
+
+- Recursive member globs now respect repository Git ignore rules, preventing ignored build artifacts and vendored dependencies from being discovered as workspace members.
+
 ## v0.4.1 - 2026-07-16
 
 
