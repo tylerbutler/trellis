@@ -86,8 +86,10 @@ starts by loading the **workspace model**:
    inside a package, like `git` or `cargo` — member manifests along the way
    are skipped, and a `[tools.trellis]` table in a member manifest is a
    doctor error because it would hijack this walk).
-2. Expand `members` globs into package directories; parse each `gleam.toml` for
-   `name`, `version`, and dependencies.
+2. Expand `members` into package directories. Literal entries resolve directly;
+   wildcard entries use repository-aware traversal and retain only directories
+   containing `gleam.toml`. Parse each manifest for `name`, `version`, and
+   dependencies.
 3. Build the dependency graph from path dependencies between members. Reject cycles
    and path deps that point outside the workspace with a clear error.
 4. Compute the topological order once; every other command consumes it.
@@ -146,6 +148,15 @@ kinds = [
   { label = "Security", bump = "patch" },
 ]
 ```
+
+Wildcard discovery honors repository `.gitignore` files at every level and
+`.git/info/exclude`, but only when the workspace is in a Git repository. It
+deliberately ignores global `core.excludesFile` rules for reproducibility and
+generic `.ignore` files; hidden paths are traversed, symlinks are followed, and
+the `.git` directory itself is skipped. Literal member entries (those without
+`*`, `?`, or `[`) bypass ignore status and are resolved directly.
+`[tools.trellis.exclude]` is separate: task and `@release` exclusions filter
+the discovered member set afterward and never prune traversal.
 
 Notably absent, because derived: package lists, dependency order, per-package
 changelog wiring, version-file maps, path-dep rewrite maps, tag→package

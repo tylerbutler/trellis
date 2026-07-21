@@ -106,6 +106,19 @@ members define the graph; cycles and path deps escaping the workspace are
 rejected, and a `[tools.trellis]` table in a *member* manifest is a doctor
 error (it would hijack root discovery).
 
+Member entries containing `*`, `?`, or `[` are wildcard patterns. In a Git
+repository, wildcard discovery honors repository `.gitignore` files at every
+level and `.git/info/exclude`. It does not read global `core.excludesFile`
+rules, generic `.ignore` files, or automatically exclude hidden paths, so
+results do not depend on machine-local Git configuration. Outside a Git
+repository, Git ignore rules do not apply. Traversal follows symlinks but never
+enters `.git`, and only matching directories with a `gleam.toml` become members.
+
+Entries without wildcard metacharacters are resolved directly, so an explicit
+literal path remains included even when Git ignores it. `[tools.trellis.exclude]`
+is a separate post-discovery filter: task and `@release` exclusions do not
+control traversal.
+
 ## Commands
 
 Every command works from anywhere inside the workspace (the root is found by
