@@ -1,2 +1,0 @@
-kind: Added
-body: Interactive commands now print a notice when a newer trellis has been published to crates.io. The check is cached for a day, runs only in a terminal, and is skipped in CI or when `DO_NOT_TRACK` / `TRELLIS_NO_UPDATE_CHECK` is set.
