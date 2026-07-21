@@ -1,0 +1,2 @@
+kind: Fixed
+body: Recursive member globs now respect repository Git ignore rules, preventing ignored build artifacts and vendored dependencies from being discovered as workspace members.

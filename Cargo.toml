@@ -32,6 +32,7 @@ clap = { version = "4.6.1", features = ["derive", "string"] }
 clap-markdown = "0.1.5"
 glob = "0.3.3"
 globset = "0.4.18"
+ignore = "0.4.31"
 minijinja = "2.21.0"
 semver = "1.0.28"
 serde = { version = "1.0.228", features = ["derive"] }

@@ -91,14 +91,15 @@ starts by loading the **workspace model**:
    An unparseable ancestor manifest blocks this fallback — it may be the
    intended root hiding behind a syntax error, and guessing would silently
    change discovery modes.
-2. Expand `members` globs into package directories; parse each `gleam.toml` for
-   `name`, `version`, and dependencies. When `members` is omitted (or there is
-   no config at all), members are auto-discovered instead: every non-gitignored
-   `gleam.toml` in the repository — tracked or untracked, outside `build/` —
-   marks a member, and the reserved `@members` exclusion key removes
-   directories from membership entirely (committed test fixtures, say, which
-   gitignore cannot hide). A config-only root manifest (no `name`) is never
-   itself a member.
+2. Expand `members` into package directories. Literal entries resolve directly;
+   wildcard entries use repository-aware traversal and retain only directories
+   containing `gleam.toml`. When `members` is omitted (or there is no config at
+   all), members are auto-discovered instead: every non-gitignored `gleam.toml`
+   in the repository — tracked or untracked, outside `build/` — marks a member.
+   Parse each manifest for `name`, `version`, and dependencies. The reserved
+   `@members` exclusion key removes directories from membership entirely
+   (committed test fixtures, say, which gitignore cannot hide). A config-only
+   root manifest (no `name`) is never itself a member.
 3. Build the dependency graph from path dependencies between members. Reject cycles
    and path deps that point outside the workspace with a clear error.
 4. Compute the topological order once; every other command consumes it.
@@ -162,6 +163,15 @@ kinds = [
   { label = "Security", bump = "patch" },
 ]
 ```
+
+Wildcard discovery honors repository `.gitignore` files at every level and
+`.git/info/exclude`, but only when the workspace is in a Git repository. It
+deliberately ignores global `core.excludesFile` rules for reproducibility and
+generic `.ignore` files; hidden paths are traversed, symlinks are followed, and
+the `.git` directory itself is skipped. Literal member entries (those without
+`*`, `?`, or `[`) bypass ignore status and are resolved directly.
+`[tools.trellis.exclude]` is separate: task and `@release` exclusions filter
+the discovered member set afterward and never prune traversal.
 
 Notably absent, because derived: package lists, dependency order, per-package
 changelog wiring, version-file maps, path-dep rewrite maps, tag→package

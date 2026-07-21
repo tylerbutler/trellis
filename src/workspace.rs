@@ -499,6 +499,8 @@ fn expand_member_globs(
     diagnostics: &mut Diagnostics,
 ) -> Vec<PathBuf> {
     let mut dirs = BTreeSet::new();
+    let mut wildcard_patterns = Vec::new();
+
     for pattern in patterns {
         let full = root.join(pattern);
         let Some(full) = full.to_str() else {
@@ -510,33 +512,68 @@ fn expand_member_globs(
         // sweeps directories that merely live alongside packages (node_modules,
         // asset dirs), so matches without a gleam.toml are skipped.
         let is_wildcard = pattern.contains(['*', '?', '[']);
-        let mut matched = 0usize;
-        match glob::glob(full) {
-            Ok(paths) => {
-                for entry in paths {
-                    match entry {
-                        Ok(path) if path.is_dir() => {
-                            if is_wildcard && !path.join(GLEAM_TOML).is_file() {
-                                continue;
-                            }
-                            matched += 1;
-                            dirs.insert(normalize_path(&path));
+        if is_wildcard {
+            match glob::Pattern::new(full) {
+                Ok(matcher) => wildcard_patterns.push((pattern, matcher, 0usize)),
+                Err(err) => diagnostics.error(format!("invalid member glob `{pattern}`: {err}")),
+            }
+            continue;
+        }
+
+        let path = Path::new(full);
+        if path.is_dir() {
+            dirs.insert(normalize_path(path));
+        } else {
+            diagnostics.error(format!("member glob `{pattern}` matches no packages"));
+        }
+    }
+
+    if !wildcard_patterns.is_empty() {
+        let mut builder = ignore::WalkBuilder::new(root);
+        builder
+            .hidden(false)
+            .ignore(false)
+            .git_ignore(true)
+            .git_exclude(true)
+            .git_global(false)
+            .parents(true)
+            .require_git(true)
+            .follow_links(true)
+            .filter_entry(|entry| entry.depth() == 0 || entry.file_name() != ".git");
+
+        let match_options = glob::MatchOptions {
+            require_literal_separator: true,
+            ..Default::default()
+        };
+        for entry in builder.build() {
+            match entry {
+                Ok(entry)
+                    if entry
+                        .file_type()
+                        .is_some_and(|file_type| file_type.is_dir())
+                        && entry.path().join(GLEAM_TOML).is_file() =>
+                {
+                    for (_, matcher, matched) in &mut wildcard_patterns {
+                        if matcher.matches_path_with(entry.path(), match_options) {
+                            *matched += 1;
+                            dirs.insert(normalize_path(entry.path()));
                         }
-                        Ok(_) => {} // files can't be members
-                        Err(err) => diagnostics
-                            .warning(format!("while expanding member glob `{pattern}`: {err}")),
                     }
                 }
-            }
-            Err(err) => {
-                diagnostics.error(format!("invalid member glob `{pattern}`: {err}"));
-                continue;
+                Ok(_) => {}
+                Err(err) => {
+                    diagnostics.warning(format!("while expanding member globs: {err}"));
+                }
             }
         }
+    }
+
+    for (pattern, _, matched) in wildcard_patterns {
         if matched == 0 {
             diagnostics.error(format!("member glob `{pattern}` matches no packages"));
         }
     }
+
     dirs.into_iter().collect()
 }
 
