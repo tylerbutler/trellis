@@ -45,7 +45,9 @@ fn notice_enabled(stderr_is_terminal: bool, env: impl Fn(&str) -> Option<String>
 /// Print a notice to stderr if a newer trellis has been published. Best-effort:
 /// returns quietly on any error or when suppressed.
 pub fn notify() {
-    if !notice_enabled(std::io::stderr().is_terminal(), |key| std::env::var(key).ok()) {
+    if !notice_enabled(std::io::stderr().is_terminal(), |key| {
+        std::env::var(key).ok()
+    }) {
         return;
     }
 
@@ -97,6 +99,9 @@ mod tests {
 
     #[test]
     fn suppressed_by_opt_out_env() {
-        assert!(!notice_enabled(true, env_from(&[("TRELLIS_NO_UPDATE_CHECK", "1")])));
+        assert!(!notice_enabled(
+            true,
+            env_from(&[("TRELLIS_NO_UPDATE_CHECK", "1")])
+        ));
     }
 }
