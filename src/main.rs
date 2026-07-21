@@ -8,6 +8,7 @@ mod lockfile;
 mod rewrite;
 mod runner;
 mod tools;
+mod update_check;
 mod workspace;
 
 use anyhow::Result;
@@ -293,7 +294,15 @@ enum CiCommand {
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
-    match dispatch(cli) {
+    // Machine-consumed commands never get the interactive update notice, and it
+    // only prints when the command itself succeeded, so it never clutters error
+    // output or corrupts structured stdout.
+    let notify_update = !matches!(cli.command, Command::MarkdownHelp | Command::Ci { .. });
+    let result = dispatch(cli);
+    if notify_update && result.is_ok() {
+        update_check::notify();
+    }
+    match result {
         Ok(true) => ExitCode::SUCCESS,
         Ok(false) => ExitCode::FAILURE,
         Err(err) => {
