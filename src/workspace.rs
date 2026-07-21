@@ -32,6 +32,9 @@ impl Member {
 pub struct Workspace {
     pub root: PathBuf,
     pub config: ConfigFile,
+    /// True when no `[tools.trellis]` table exists anywhere: the root was
+    /// inferred from git and the configuration is entirely defaulted.
+    pub configless: bool,
     /// Members in topological order (dependencies before dependents).
     pub members: Vec<Member>,
     /// Direct workspace dependencies, indexed like `members`.
@@ -62,6 +65,12 @@ impl Workspace {
     /// `[tools.trellis]` table — the workspace root marker. Member manifests
     /// (gleam.toml without the table) are skipped, so commands work from
     /// inside a package, like `git` or `cargo`.
+    ///
+    /// When no manifest anywhere up the tree has the table, trellis runs
+    /// configless: the enclosing git repository root becomes the workspace
+    /// root and members are auto-discovered from git. An unparseable ancestor
+    /// manifest blocks the fallback — it may be the intended root hiding
+    /// behind a syntax error, and guessing would silently change modes.
     pub fn find_root(start: &Path) -> Result<PathBuf> {
         let start = start
             .canonicalize()
@@ -80,21 +89,26 @@ impl Workspace {
                 Err(_) => unparseable.push(manifest),
             }
         }
-        let mut message = format!(
-            "no {GLEAM_TOML} with a [tools.trellis] table found in {} or any parent directory",
-            start.display()
-        );
         if !unparseable.is_empty() {
-            message.push_str(&format!(
-                " (note: {} could not be parsed and may be the missing workspace root)",
+            bail!(
+                "no {GLEAM_TOML} with a [tools.trellis] table found in {} or any parent \
+                 directory, and {} could not be parsed and may be the intended workspace root",
+                start.display(),
                 unparseable
                     .iter()
                     .map(|p| p.display().to_string())
                     .collect::<Vec<_>>()
                     .join(", ")
-            ));
+            );
         }
-        bail!(message)
+        if let Some(root) = crate::git::repo_root(&start) {
+            return Ok(root);
+        }
+        bail!(
+            "no {GLEAM_TOML} with a [tools.trellis] table found in {} or any parent directory, \
+             and it is not inside a git repository (configless mode discovers members from git)",
+            start.display()
+        )
     }
 
     /// Strict load: any diagnostic error is fatal.
@@ -115,21 +129,67 @@ impl Workspace {
     /// coherent model exists (unreadable config or a dependency cycle).
     pub fn load_with_diagnostics(root: &Path) -> Result<(Option<Self>, Diagnostics)> {
         let mut diagnostics = Diagnostics::default();
-        let config = match ConfigFile::load(&root.join(GLEAM_TOML)) {
-            Ok(config) => config,
-            Err(err) => {
-                diagnostics.error(format!("{err:#}"));
-                return Ok((None, diagnostics));
+        // The root's gleam.toml decides the mode: a [tools.trellis] table is
+        // configuration, its absence (or a missing manifest — a configless
+        // git-root workspace) means everything is defaulted and discovered.
+        let manifest_path = root.join(GLEAM_TOML);
+        let (configless, root_is_package) = match std::fs::read_to_string(&manifest_path) {
+            Ok(text) => match toml::from_str::<toml::Value>(&text) {
+                Ok(document) => (
+                    !crate::config::has_trellis_table(&document),
+                    document.get("name").is_some(),
+                ),
+                Err(err) => {
+                    diagnostics.error(format!(
+                        "failed to parse {}: {err}",
+                        manifest_path.display()
+                    ));
+                    return Ok((None, diagnostics));
+                }
+            },
+            Err(_) => (true, false),
+        };
+        let config = if configless {
+            ConfigFile::configless()
+        } else {
+            match ConfigFile::load(&manifest_path) {
+                Ok(config) => config,
+                Err(err) => {
+                    diagnostics.error(format!("{err:#}"));
+                    return Ok((None, diagnostics));
+                }
             }
         };
 
-        let member_dirs = expand_member_globs(root, &config.members, &mut diagnostics);
+        let mut member_dirs = match &config.members {
+            Some(globs) => expand_member_globs(root, globs, &mut diagnostics),
+            None => discover_member_dirs(root, &mut diagnostics),
+        };
+        // A config-only root manifest ([tools.trellis] without a `name`) is
+        // configuration, not a package — discovery must not sweep it in.
+        if config.members.is_none() && !root_is_package {
+            member_dirs.retain(|dir| dir != root);
+        }
 
         // Parse each member manifest; unparseable members are reported and dropped.
         for (task, patterns) in &config.exclude {
             if let Err(err) = build_globset(patterns) {
                 diagnostics.error(format!("invalid `{task}` exclusion glob: {err:#}"));
             }
+        }
+
+        // `@members` removes directories from membership entirely, before
+        // their manifests are even parsed.
+        if let Some(patterns) = config.exclude.get(crate::config::MEMBERS_EXCLUDE_KEY)
+            && let Ok(excludes) = build_globset(patterns)
+        {
+            member_dirs.retain(|dir| !excludes.is_match(rel_path_string(root, dir)));
+        }
+        if member_dirs.is_empty() && diagnostics.errors.is_empty() {
+            diagnostics.error(format!(
+                "no workspace members left after `{}` exclusions",
+                crate::config::MEMBERS_EXCLUDE_KEY
+            ));
         }
 
         let release_exclusions = config
@@ -155,10 +215,19 @@ impl Workspace {
                     // A member manifest with its own [tools.trellis] would
                     // hijack root discovery for commands run inside it.
                     if manifest.has_trellis_config && dir != root {
-                        diagnostics.error(format!(
-                            "member `{rel_path}` has a [tools.trellis] table; only the workspace \
-                             root's gleam.toml may have one"
-                        ));
+                        if configless {
+                            diagnostics.error(format!(
+                                "`{rel_path}/gleam.toml` has a [tools.trellis] table but the \
+                                 workspace root was inferred as `{}`; run trellis from \
+                                 `{rel_path}`, or move the table to the repository root",
+                                root.display()
+                            ));
+                        } else {
+                            diagnostics.error(format!(
+                                "member `{rel_path}` has a [tools.trellis] table; only the \
+                                 workspace root's gleam.toml may have one"
+                            ));
+                        }
                     }
                     let releasable = release_excludes
                         .as_ref()
@@ -266,6 +335,7 @@ impl Workspace {
         let workspace = Workspace {
             root: root.to_path_buf(),
             config,
+            configless,
             members,
             deps,
             dependents,
@@ -507,6 +577,38 @@ fn expand_member_globs(
     dirs.into_iter().collect()
 }
 
+/// Auto-discovery: every directory owning a non-gitignored `gleam.toml` is a
+/// member. Gleam's `build/` tree is skipped unconditionally — it holds a
+/// manifest for every downloaded dependency, and while it is conventionally
+/// gitignored, membership must not hinge on that.
+fn discover_member_dirs(root: &Path, diagnostics: &mut Diagnostics) -> Vec<PathBuf> {
+    let manifests = match crate::git::ls_gleam_manifests(root) {
+        Ok(manifests) => manifests,
+        Err(err) => {
+            diagnostics.error(format!("cannot auto-discover members: {err:#}"));
+            return Vec::new();
+        }
+    };
+    let mut dirs = BTreeSet::new();
+    for manifest in &manifests {
+        let path = Path::new(manifest);
+        if path.components().any(|c| c.as_os_str() == "build") {
+            continue;
+        }
+        let dir = path.parent().unwrap_or(Path::new(""));
+        dirs.insert(normalize_path(&root.join(dir)));
+    }
+    if dirs.is_empty() {
+        diagnostics.error(format!(
+            "no members to auto-discover: no gleam.toml found under {} \
+             (gitignored paths are not searched); add packages, or configure \
+             `members` in a [tools.trellis] table",
+            root.display()
+        ));
+    }
+    dirs.into_iter().collect()
+}
+
 fn build_globset(patterns: &[String]) -> Result<globset::GlobSet> {
     let mut builder = globset::GlobSetBuilder::new();
     for pattern in patterns {
@@ -535,10 +637,18 @@ pub fn normalize_path(path: &Path) -> PathBuf {
 
 fn rel_path_string(root: &Path, path: &Path) -> String {
     let rel = path.strip_prefix(root).unwrap_or(path);
-    rel.components()
+    let joined = rel
+        .components()
         .map(|c| c.as_os_str().to_string_lossy())
         .collect::<Vec<_>>()
-        .join("/")
+        .join("/");
+    // The root itself can be a member (a single-package repo under
+    // auto-discovery); "." keeps `{rel_path}/...` displays working.
+    if joined.is_empty() {
+        ".".to_string()
+    } else {
+        joined
+    }
 }
 
 #[cfg(test)]

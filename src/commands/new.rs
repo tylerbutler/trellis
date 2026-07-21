@@ -67,27 +67,48 @@ pub fn run(workspace: &Workspace, options: &NewOptions) -> Result<()> {
         format!("{parent}/{name}")
     };
 
-    // A directory no members glob matches would be silently invisible to
-    // every other command — exactly the drift trellis exists to prevent.
-    let matched = workspace.config.members.iter().any(|pattern| {
-        glob::Pattern::new(pattern)
-            .map(|p| {
-                p.matches_with(
-                    &rel_path,
-                    glob::MatchOptions {
-                        require_literal_separator: true,
-                        ..Default::default()
-                    },
-                )
-            })
-            .unwrap_or(false)
-    });
-    if !matched {
-        bail!(
-            "`{rel_path}` does not match any members glob in [tools.trellis] ({}); \
-             pass a different --path or add a glob first",
-            workspace.config.members.join(", ")
-        );
+    // A directory that discovery won't pick up would be silently invisible to
+    // every other command — exactly the drift trellis exists to prevent. With
+    // explicit `members`, a glob must match; with auto-discovery, any
+    // gleam.toml is found, so only an `@members` exclusion can hide it.
+    if let Some(member_globs) = &workspace.config.members {
+        let matched = member_globs.iter().any(|pattern| {
+            glob::Pattern::new(pattern)
+                .map(|p| {
+                    p.matches_with(
+                        &rel_path,
+                        glob::MatchOptions {
+                            require_literal_separator: true,
+                            ..Default::default()
+                        },
+                    )
+                })
+                .unwrap_or(false)
+        });
+        if !matched {
+            bail!(
+                "`{rel_path}` does not match any members glob in [tools.trellis] ({}); \
+                 pass a different --path or add a glob first",
+                member_globs.join(", ")
+            );
+        }
+    } else if let Some(patterns) = workspace
+        .config
+        .exclude
+        .get(crate::config::MEMBERS_EXCLUDE_KEY)
+    {
+        let excluded = patterns.iter().any(|pattern| {
+            glob::Pattern::new(pattern)
+                .map(|p| p.matches(&rel_path))
+                .unwrap_or(false)
+        });
+        if excluded {
+            bail!(
+                "`{rel_path}` matches an `{}` exclusion glob, so the new package would be \
+                 invisible to trellis; pass a different --path or adjust the exclusion",
+                crate::config::MEMBERS_EXCLUDE_KEY
+            );
+        }
     }
 
     let dir = crate::workspace::normalize_path(&workspace.root.join(&rel_path));

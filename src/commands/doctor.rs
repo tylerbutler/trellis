@@ -58,6 +58,10 @@ struct Report {
     warnings: Vec<String>,
     fixes: Vec<Fix>,
     members: usize,
+    /// No [tools.trellis] anywhere; the root was inferred from git.
+    configless: bool,
+    /// `members` is not configured; the member list came from git.
+    auto_members: bool,
 }
 
 impl Report {
@@ -84,6 +88,8 @@ fn inspect(root: &Path) -> Result<Report> {
 
     if let Some(workspace) = &workspace {
         report.members = workspace.members.len();
+        report.configless = workspace.configless;
+        report.auto_members = workspace.config.members.is_none();
         check_exclusions(workspace, &mut report);
         check_tag_collisions(workspace, &mut report);
         check_lockfiles(workspace, &mut report);
@@ -145,6 +151,20 @@ pub fn run(root: &Path, options: &DoctorOptions) -> Result<bool> {
 }
 
 fn print_findings(report: &Report) {
+    // Auto-discovery leaves no file saying "this is the workspace", so doctor
+    // states the inference instead of leaving it invisible.
+    if report.configless {
+        println!(
+            "note: no [tools.trellis] configuration found; workspace root inferred from git, \
+             {} member(s) auto-discovered",
+            report.members
+        );
+    } else if report.auto_members {
+        println!(
+            "note: `members` is not configured; {} member(s) auto-discovered from git",
+            report.members
+        );
+    }
     for warning in &report.warnings {
         println!("warning: {warning}");
     }

@@ -30,8 +30,9 @@ The jobs themselves are independent. Every capability is a plain command,
 and nothing requires the piece above it, so you can adopt trellis a layer at
 a time:
 
-- **Just the task runner.** `run`, `exec`, `list`, and `graph` need only the
-  `members` glob. Keep your existing changelog tool and CI untouched.
+- **Just the task runner.** `run`, `exec`, `list`, and `graph` need no
+  configuration at all — members are auto-discovered from git. Keep your
+  existing changelog tool and CI untouched.
 - **Add changelogs and versioning.** Fragments, `version plan`, and
   `version apply` manage bumps and changelogs without trellis owning your
   release workflow — or any CI at all.
@@ -48,8 +49,9 @@ surrounds it.
 
 1. [Install trellis](/docs/installation/) — a single prebuilt binary; shell
    installer, Homebrew, mise/asdf, or cargo.
-2. [Configure the workspace](/docs/configuration/) — one `[tools.trellis]`
-   table in `gleam.toml`; only `members` is required.
+2. [Configure the workspace](/docs/configuration/) if you need to — with no
+   configuration, members are auto-discovered from git; one optional
+   `[tools.trellis]` table in `gleam.toml` covers everything else.
 3. Run `trellis doctor` to verify the setup, then
    [run tasks](/docs/task-running/) across the workspace.
 
