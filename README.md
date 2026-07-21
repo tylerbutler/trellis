@@ -76,6 +76,16 @@ Prebuilt archives for every target are on the
 specific version in CI by replacing `latest/download` with
 `download/v0.1.0` in the installer URL.
 
+### Update checks
+
+Interactive commands print a one-line notice to stderr when a newer trellis
+has been published to crates.io. The check is best-effort — cached for a day,
+capped at a short timeout, and silent on any error — so it never slows a
+command or changes its exit status. It runs only when stderr is a terminal, so
+scripts and structured output are never touched. It is additionally skipped in
+CI and when `DO_NOT_TRACK` or `TRELLIS_NO_UPDATE_CHECK` is set in the
+environment.
+
 ## Configuration
 
 Configuration is optional. With no configuration at all, the git repository
