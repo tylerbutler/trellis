@@ -34,6 +34,28 @@ Each member is a directory with its own `gleam.toml`. Path dependencies
 between members define the graph; cycles and path deps that escape the
 workspace are rejected with a clear error.
 
+## Member discovery
+
+`members` accepts paths relative to the workspace root. An entry containing
+`*`, `?`, or `[` is a wildcard member pattern; any other entry is literal.
+
+```toml title="gleam.toml"
+[tools.trellis]
+members = ["packages/core", "examples/**"]
+```
+
+In a Git repository, wildcard discovery honors nested `.gitignore` files and
+`.git/info/exclude`. It does not honor global `core.excludesFile`, generic
+`.ignore` files, or automatically hide dot paths. Outside a Git repository, Git
+ignore rules do not apply.
+
+Wildcard traversal follows symlinks but does not enter `.git`. Only matching
+directories that contain a `gleam.toml` become members. Literal entries bypass
+ignore status and are resolved directly, even when Git ignores the path.
+
+`[tools.trellis.exclude]` is a separate post-discovery filter. It can remove
+members from task or release package sets, but it never prunes traversal.
+
 <Callout>
 
 A `[tools.trellis]` table in a *member* manifest is a `doctor` error because
@@ -47,7 +69,7 @@ their roots.
 
 | Key | Required | What it does |
 | --- | --- | --- |
-| `members` | yes | Globs expanded into package directories. New packages join every command the moment their directory matches. |
+| `members` | yes | Literal directories and wildcard patterns relative to the workspace root. Entries containing `*`, `?`, or `[` use wildcard discovery; only matching directories with a `gleam.toml` become members. |
 | `exclude.<task>` | no | Member-path globs omitted from that built-in or custom task. The exclusion still applies when a package is named explicitly. |
 | `exclude.@release` | no | The shared package set omitted from changelog, versioning, tagging, publishing, and release CI. The `@` prefix is reserved for special keys like this one, so it can never collide with a task name — task names may not start with `@`. |
 | `tasks.<name>` | no | Custom tasks for `trellis run`. A task with a built-in's name (`build`, `test`, …) overrides it. `needs-deps = true` downloads dependencies first. |
