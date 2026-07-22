@@ -213,8 +213,10 @@ trellis exec [pkgs...] -- <command...>
   (task names may not start with `@`).
 - Scheduling is **graph-parallel by default**: a package runs as soon as its
   workspace deps have finished, up to `--jobs N`. Output is streamed with a
-  `pkg ▏` prefix, followed by a summary table. The justfile's serial loops become
-  the `--serial` fallback.
+  `pkg ▏` prefix. Interactive terminals keep active packages in live progress
+  rows and use stable, hash-derived colors for package names; pipes and CI keep
+  the plain prefixed stream. A summary table follows. The justfile's serial
+  loops become the `--serial` fallback.
 - `--target all` runs the task once per target, replacing the `*-js` recipe
   duplication (`test-js`, `build-strict-js`, …).
 - Compound flows stay in just as one-liners, e.g.

@@ -1,16 +1,21 @@
 //! Graph-parallel task scheduler: a package's job starts as soon as every
 //! selected package it (transitively) depends on has finished, up to
-//! `--jobs N` at once. Output is streamed with a `pkg ▏` prefix and a summary
-//! table is printed at the end.
+//! `--jobs N` at once. Interactive output keeps active jobs in live progress
+//! rows while logs scroll above; non-interactive output stays as a plain
+//! `pkg ▏`-prefixed stream. A summary table is printed at the end.
 
 use crate::workspace::Workspace;
 use anyhow::Result;
+use indicatif::{MultiProgress, ProgressBar, ProgressDrawTarget, ProgressStyle};
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, IsTerminal};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
-use std::sync::mpsc;
+use std::sync::{Arc, mpsc};
 use std::time::{Duration, Instant};
+
+const NAME_COLOR_CODES: &[u8] = &[31, 32, 33, 34, 35, 36, 91, 92, 93, 94, 95, 96];
+const SPINNER_TICKS: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
 #[derive(Debug, Clone)]
 pub struct CommandSpec {
@@ -66,6 +71,103 @@ pub struct RunOptions {
     pub keep_going: bool,
 }
 
+#[derive(Clone)]
+struct Output {
+    progress: Option<Arc<MultiProgress>>,
+    colors: bool,
+}
+
+impl Output {
+    fn new() -> Self {
+        let live =
+            std::io::stdout().is_terminal() && std::env::var("TERM").as_deref() != Ok("dumb");
+        Self {
+            progress: live
+                .then(|| Arc::new(MultiProgress::with_draw_target(ProgressDrawTarget::stdout()))),
+            colors: live
+                && std::env::var_os("NO_COLOR").is_none()
+                && std::env::var("CLICOLOR").as_deref() != Ok("0"),
+        }
+    }
+
+    fn start_job(&self, name: &str) -> JobDisplay {
+        let progress = self.progress.as_ref().map(|multi| {
+            let progress = multi.add(ProgressBar::new_spinner());
+            progress.set_style(
+                ProgressStyle::with_template(
+                    "{spinner:.cyan} {prefix}  {msg}  [{elapsed_precise}]",
+                )
+                .expect("progress template is valid")
+                .tick_strings(SPINNER_TICKS),
+            );
+            progress.set_prefix(self.format_name(name, name));
+            progress.set_message("starting");
+            progress.enable_steady_tick(Duration::from_millis(80));
+            progress
+        });
+        JobDisplay {
+            progress,
+            colors: self.colors,
+        }
+    }
+
+    fn emit(&self, name: &str, width: usize, line: &str) {
+        let padded = format!("{name:width$}");
+        let name = self.format_name(name, &padded);
+        self.println(format!("{name} ▏ {line}"));
+    }
+
+    fn println(&self, line: String) {
+        if let Some(progress) = &self.progress {
+            progress
+                .println(line)
+                .expect("failed to write progress output");
+        } else {
+            println!("{line}");
+        }
+    }
+
+    fn format_name(&self, name: &str, display: &str) -> String {
+        colorize_name(name, display, self.colors)
+    }
+
+    fn clear_live(&self) {
+        if let Some(progress) = &self.progress {
+            progress.clear().expect("failed to clear progress output");
+        }
+    }
+}
+
+#[derive(Clone)]
+struct JobDisplay {
+    progress: Option<ProgressBar>,
+    colors: bool,
+}
+
+impl JobDisplay {
+    fn set_command(&self, command: &str) {
+        if let Some(progress) = &self.progress {
+            progress.set_message(format!("$ {command}"));
+        }
+    }
+
+    fn finish(&self, status: &JobStatus, duration: Duration) {
+        let Some(progress) = &self.progress else {
+            return;
+        };
+        progress.set_style(
+            ProgressStyle::with_template("{prefix}  {msg}").expect("progress template is valid"),
+        );
+        let (symbol, label, color) = match status {
+            JobStatus::Success => ("✓", "ok", 32),
+            JobStatus::Failed(_) => ("✗", "FAILED", 31),
+            JobStatus::Skipped => ("-", "skipped", 33),
+        };
+        let status = colorize_text(&format!("{symbol} {label}"), color, self.colors);
+        progress.finish_with_message(format!("{status}  {:.1}s", duration.as_secs_f64()));
+    }
+}
+
 /// Run jobs respecting workspace dependency order among the selected members.
 /// Ordering constraints follow *transitive* deps, so order is preserved even
 /// when intermediate packages aren't part of the selection.
@@ -84,6 +186,7 @@ pub fn run_jobs(
         .map(|job| workspace.members[job.member].name.len())
         .max()
         .unwrap_or(0);
+    let output = Output::new();
 
     let selected: HashMap<usize, usize> = jobs
         .iter()
@@ -111,6 +214,8 @@ pub fn run_jobs(
     let (sender, receiver) = mpsc::channel::<JobResult>();
     let mut running = 0usize;
     let mut halted = false;
+    // Keep finished bars alive so later log lines do not erase their rows.
+    let mut live_displays = Vec::new();
 
     std::thread::scope(|scope| -> Result<()> {
         loop {
@@ -121,9 +226,13 @@ pub fn run_jobs(
                 let job = &jobs[job_idx];
                 let name = workspace.members[job.member].name.clone();
                 let sender = sender.clone();
+                let output = output.clone();
+                let display = output.start_job(&name);
+                live_displays.push(display.clone());
                 running += 1;
                 scope.spawn(move || {
-                    let status = execute_job(job, &name, prefix_width);
+                    let status = execute_job(job, &name, prefix_width, &output, &display);
+                    display.finish(&status.0, status.1);
                     let _ = sender.send(JobResult {
                         member: job_idx, // job index in-flight; remapped below
                         status: status.0,
@@ -167,24 +276,33 @@ pub fn run_jobs(
         })
         .collect();
 
-    print_summary(workspace, &results);
+    output.clear_live();
+    print_summary(workspace, &results, &output);
     Ok(results)
 }
 
-fn execute_job(job: &Job, name: &str, width: usize) -> (JobStatus, Duration) {
+fn execute_job(
+    job: &Job,
+    name: &str,
+    width: usize,
+    output: &Output,
+    display: &JobDisplay,
+) -> (JobStatus, Duration) {
     let started = Instant::now();
     for spec in &job.commands {
-        emit(name, width, &format!("$ {}", spec.display()));
-        match run_streaming(spec, name, width) {
+        let command = spec.display();
+        display.set_command(&command);
+        output.emit(name, width, &format!("$ {command}"));
+        match run_streaming(spec, name, width, output) {
             Ok(true) => {}
             Ok(false) => {
                 return (
-                    JobStatus::Failed(format!("`{}` failed", spec.display())),
+                    JobStatus::Failed(format!("`{command}` failed")),
                     started.elapsed(),
                 );
             }
             Err(err) => {
-                emit(name, width, &format!("error: {err:#}"));
+                output.emit(name, width, &format!("error: {err:#}"));
                 return (JobStatus::Failed(format!("{err:#}")), started.elapsed());
             }
         }
@@ -193,7 +311,7 @@ fn execute_job(job: &Job, name: &str, width: usize) -> (JobStatus, Duration) {
 }
 
 /// Run one command, streaming stdout and stderr lines with the `pkg ▏` prefix.
-fn run_streaming(spec: &CommandSpec, name: &str, width: usize) -> Result<bool> {
+fn run_streaming(spec: &CommandSpec, name: &str, width: usize, output: &Output) -> Result<bool> {
     let mut child = Command::new(&spec.program)
         .args(&spec.args)
         .current_dir(&spec.cwd)
@@ -210,9 +328,10 @@ fn run_streaming(spec: &CommandSpec, name: &str, width: usize) -> Result<bool> {
             Box::new(stdout) as Box<dyn std::io::Read + Send>,
             Box::new(stderr),
         ] {
+            let output = output.clone();
             scope.spawn(move || {
                 for line in BufReader::new(pipe).lines().map_while(Result::ok) {
-                    emit(name, width, &line);
+                    output.emit(name, width, &line);
                 }
             });
         }
@@ -220,11 +339,30 @@ fn run_streaming(spec: &CommandSpec, name: &str, width: usize) -> Result<bool> {
     Ok(child.wait()?.success())
 }
 
-fn emit(name: &str, width: usize, line: &str) {
-    println!("{name:width$} ▏ {line}");
+fn stable_name_hash(name: &str) -> u64 {
+    name.bytes().fold(0xcbf29ce484222325, |hash, byte| {
+        (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3)
+    })
 }
 
-fn print_summary(workspace: &Workspace, results: &[JobResult]) {
+fn colorize_name(name: &str, display: &str, enabled: bool) -> String {
+    colorize_text(display, name_color_code(name), enabled)
+}
+
+fn name_color_code(name: &str) -> u8 {
+    let index = stable_name_hash(name) as usize % NAME_COLOR_CODES.len();
+    NAME_COLOR_CODES[index]
+}
+
+fn colorize_text(text: &str, color: u8, enabled: bool) -> String {
+    if enabled {
+        format!("\x1b[1;{color}m{text}\x1b[0m")
+    } else {
+        text.to_string()
+    }
+}
+
+fn print_summary(workspace: &Workspace, results: &[JobResult], output: &Output) {
     let width = results
         .iter()
         .map(|r| workspace.members[r.member].name.len())
@@ -235,6 +373,8 @@ fn print_summary(workspace: &Workspace, results: &[JobResult]) {
     println!("{:width$}  {:8}  time", "package", "status");
     for result in results {
         let name = &workspace.members[result.member].name;
+        let padded_name = format!("{name:width$}");
+        let display_name = output.format_name(name, &padded_name);
         let (status, detail) = match &result.status {
             JobStatus::Success => ("ok", String::new()),
             JobStatus::Failed(reason) => ("FAILED", format!("  {reason}")),
@@ -245,11 +385,28 @@ fn print_summary(workspace: &Workspace, results: &[JobResult]) {
         } else {
             format!("{:.1}s", result.duration.as_secs_f64())
         };
-        println!("{name:width$}  {status:8}  {time}{detail}");
+        println!("{display_name}  {status:8}  {time}{detail}");
     }
 }
 
 /// True when every job succeeded (skipped counts as failure for exit codes).
 pub fn all_succeeded(results: &[JobResult]) -> bool {
     results.iter().all(|r| r.status == JobStatus::Success)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn package_name_colors_are_stable_and_hash_based() {
+        assert_eq!(name_color_code("lat_core"), 35);
+        assert_eq!(name_color_code("lat_core"), name_color_code("lat_core"));
+        assert_ne!(name_color_code("lat_core"), name_color_code("lat_mid"));
+    }
+
+    #[test]
+    fn package_name_colors_can_be_disabled() {
+        assert_eq!(colorize_name("lat_core", "lat_core", false), "lat_core");
+    }
 }
