@@ -1,3 +1,0 @@
-kind: Added
-body: Interactive task runs now show live per-package progress rows with stable, hash-derived package colors while logs scroll above them; pipes and CI retain plain prefixed output.
-time: 2026-07-21T17:25:39.932763-07:00
