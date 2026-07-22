@@ -171,7 +171,10 @@ trellis exec [pkgs...] [--since <ref>] [--serial] [--keep-going] -- <command...>
 
 Scheduling is graph-parallel by default: a package runs as soon as its
 workspace dependencies have finished, up to `--jobs N` at once. Output is
-streamed with a `pkg ▏` prefix and a summary table names any failures.
+streamed with a `pkg ▏` prefix and a summary table names any failures. In an
+interactive terminal, active packages remain visible as live progress rows and
+package names use stable, hash-derived colors. Pipes and CI receive plain text
+without terminal control sequences.
 `--target all` runs the task once per compile target. `--serial` runs one
 package at a time in dependency order.
 

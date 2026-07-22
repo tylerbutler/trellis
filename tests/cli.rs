@@ -125,6 +125,7 @@ fn run_custom_task_fans_out_with_prefixes() {
         // once for the echoed `$ ...` command line and once for its output
         .stdout(predicate::str::contains("hello-from-task").count(6))
         .stdout(predicate::str::contains("package_a").not())
+        .stdout(predicate::str::contains("\x1b[").not())
         .stdout(predicate::str::contains("ok"));
 }
 
