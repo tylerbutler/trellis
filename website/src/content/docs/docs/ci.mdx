@@ -82,7 +82,7 @@ series-tags=["lat_cli-v0.3"]
 
 `tags` lists the immutable per-version tags and `series-tags` the moving ones,
 each covering only the packages whose
-[`tag-mode`](/docs/configuration/#pre-10-series-tags) creates that kind — so a
+[`tag-mode`](/docs/configuration/#series-tags) creates that kind — so a
 `series`-only workspace reports an empty `tags`.
 
 ## PR gates
@@ -124,7 +124,7 @@ a tag-push workflow publishes each package:
 ```
 
 This shape needs per-version tags. A moving
-[series tag](/docs/configuration/#pre-10-series-tags) matches `*-v*` too, but
+[series tag](/docs/configuration/#series-tags) matches `*-v*` too, but
 names no particular version, so `publish --tag` rejects it by design —
 `ci tag-package` still resolves it, so the workflow can route on it. Packages
 tagged `series`-only belong in the publish-then-tag shape below.
