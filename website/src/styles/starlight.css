@@ -48,6 +48,18 @@
 
   /* layout */
   --sl-content-width: 38rem;
+
+  /* The announcement bar lives inside the fixed header, so the nav height
+     grows to cover both. Every other offset Starlight computes — sidebar
+     inset, main padding, scroll-padding — derives from --sl-nav-height and
+     follows automatically. Values mirror Starlight's own defaults. */
+  --sl-nav-height: calc(3.5rem + var(--announce-h));
+}
+
+@media (min-width: 50em) {
+  :root {
+    --sl-nav-height: calc(4rem + var(--announce-h));
+  }
 }
 
 /* -- base ----------------------------------------------------- */
@@ -85,6 +97,30 @@ kbd {
 header.header {
   background-color: var(--sl-color-bg-nav);
   border-bottom: 1px solid var(--line-soft);
+  /* Reserve the top strip of the header box for the announcement bar. */
+  padding-block-start: calc(var(--sl-nav-pad-y) + var(--announce-h));
+}
+
+/* The bar is pinned to the very top of the viewport; the padding above keeps
+   the nav row clear of it. */
+header.header .announce {
+  position: fixed;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  width: 100%;
+}
+
+/* Starlight sizes the logo and the mobile menu button off --sl-nav-height,
+   which now also covers the announcement strip. Subtract the strip back out so
+   both stay proportioned to the nav row itself. */
+.site-title img {
+  height: calc(var(--sl-nav-height) - var(--announce-h) - 2 * var(--sl-nav-pad-y));
+}
+
+starlight-menu-button button {
+  top: calc(
+    var(--announce-h) + (var(--sl-nav-height) - var(--announce-h) - var(--sl-menu-button-size)) / 2
+  );
 }
 
 .site-title {

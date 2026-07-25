@@ -37,6 +37,8 @@ export default defineConfig({
         "./src/styles/starlight.css",
       ],
       components: {
+        Head: "./src/components/starlight/Head.astro",
+        Header: "./src/components/starlight/Header.astro",
         ThemeProvider: "./src/components/starlight/ThemeProvider.astro",
         ThemeSelect: "./src/components/starlight/ThemeSelect.astro",
       },

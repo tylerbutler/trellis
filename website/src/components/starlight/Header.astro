@@ -1,0 +1,13 @@
+---
+// Starlight's header is fixed to the top of the viewport, so the announcement
+// bar rides along inside it: starlight.css grows --sl-nav-height by
+// --announce-h and pads the nav row down, leaving the top strip for the bar.
+// Growing the nav height (rather than absolutely placing a bar above it) keeps
+// the sidebar inset, main padding, and scroll offsets correct for free — they
+// are all derived from --sl-nav-height.
+import Default from "@astrojs/starlight/components/Header.astro";
+import AnnouncementBar from "../AnnouncementBar.astro";
+---
+
+<AnnouncementBar />
+<Default />

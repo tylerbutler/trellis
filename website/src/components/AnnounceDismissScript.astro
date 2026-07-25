@@ -1,0 +1,22 @@
+---
+// Runs in <head>, parser-blocking, before first paint: a reader who dismissed
+// the current release must never see the bar flash and the page jump. Setting
+// the attribute here zeroes --announce-h (tokens.css), which collapses every
+// offset derived from it — so the layout is correct on the very first frame.
+import { ANNOUNCE_STORAGE_KEY } from "../lib/announce";
+import { TRELLIS_VERSION } from "../lib/version";
+---
+
+<script
+  is:inline
+  define:vars={{ key: ANNOUNCE_STORAGE_KEY, version: TRELLIS_VERSION }}
+>
+  try {
+    if (localStorage.getItem(key) === version) {
+      document.documentElement.dataset.announceDismissed = "";
+    }
+  } catch {
+    // Storage can throw when cookies are blocked; showing the bar is the
+    // right fallback.
+  }
+</script>
