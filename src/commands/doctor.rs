@@ -251,7 +251,24 @@ fn check_tool_versions(workspace: &Workspace, report: &mut Report) {
 fn check_exclusions(workspace: &Workspace, report: &mut Report) {
     for (task, patterns) in &workspace.config.exclude {
         for pattern in patterns {
-            check_exclusion_pattern(workspace, task, pattern, report);
+            check_member_glob(
+                workspace,
+                &format!("`{task}` exclusion glob"),
+                pattern,
+                report,
+            );
+        }
+    }
+    // Same typo trap, one table over: a tag-mode override that matches nothing
+    // silently leaves its packages on the workspace default.
+    for (mode, patterns) in &workspace.config.publish.tag_mode_overrides {
+        for pattern in patterns {
+            check_member_glob(
+                workspace,
+                &format!("`tag-mode-overrides.{mode}` glob"),
+                pattern,
+                report,
+            );
         }
     }
 
@@ -272,7 +289,7 @@ fn check_exclusions(workspace: &Workspace, report: &mut Report) {
     }
 }
 
-fn check_exclusion_pattern(workspace: &Workspace, task: &str, pattern: &str, report: &mut Report) {
+fn check_member_glob(workspace: &Workspace, label: &str, pattern: &str, report: &mut Report) {
     let matches = globset::Glob::new(pattern)
         .ok()
         .map(|glob| glob.compile_matcher())
@@ -284,22 +301,80 @@ fn check_exclusion_pattern(workspace: &Workspace, task: &str, pattern: &str, rep
         });
     match matches {
         Some(true) => {}
-        Some(false) => report.error(format!(
-            "`{task}` exclusion glob `{pattern}` matches no member (typo?)"
-        )),
-        None => report.error(format!("`{task}` exclusion glob `{pattern}` is invalid")),
+        Some(false) => report.error(format!("{label} `{pattern}` matches no member (typo?)")),
+        None => report.error(format!("{label} `{pattern}` is invalid")),
     }
 }
 
-/// Check 7: no two releasable members produce the same tag.
+/// Check 7: no two releasable members produce the same tag, for series tags as
+/// well as exact ones.
+///
+/// A `series-tag-format` without `{name}` is the exception: sharing one
+/// repository-wide tag is the point, so it warns rather than errors. The
+/// warning is keyed on the format and the member count, not on today's
+/// versions — `resolve_tag` substitutes `{name}` per member, so with no
+/// `{name}` to substitute *every* series tag matches every member regardless
+/// of what they're versioned at. Warning only on a version collision would go
+/// quiet on exactly the configurations `trellis ci tag-package` still fails on.
 fn check_tag_collisions(workspace: &Workspace, report: &mut Report) {
     let mut seen: std::collections::HashMap<String, &str> = std::collections::HashMap::new();
     for member in workspace.members.iter().filter(|m| m.releasable) {
-        let tag = workspace.config.format_tag(&member.name, member.version());
-        if let Some(other) = seen.insert(tag.clone(), &member.name) {
+        if member.tag_mode.includes_exact() {
+            let tag = workspace.config.format_tag(&member.name, member.version());
+            if let Some(other) = seen.insert(tag.clone(), &member.name) {
+                report.error(format!(
+                    "tag collision: `{other}` and `{}` both produce tag `{tag}`",
+                    member.name
+                ));
+            }
+        }
+    }
+
+    let series_members: Vec<&str> = workspace
+        .members
+        .iter()
+        .filter(|m| m.releasable && m.tag_mode.includes_series())
+        .map(|m| m.name.as_str())
+        .collect();
+    let names = |members: &[&str]| {
+        members
+            .iter()
+            .map(|name| format!("`{name}`"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+
+    if workspace.config.series_tag_is_repo_wide() {
+        if series_members.len() > 1 {
+            report.warning(format!(
+                "`series-tag-format` `{}` has no {{name}}, so one repository-wide series tag \
+                 covers {}; `trellis ci tag-package` cannot resolve such a tag to one package",
+                workspace.config.publish.series_tag_format,
+                names(&series_members)
+            ));
+        }
+        return;
+    }
+
+    let mut sharing: std::collections::BTreeMap<String, Vec<&str>> =
+        std::collections::BTreeMap::new();
+    for member in workspace
+        .members
+        .iter()
+        .filter(|m| m.releasable && m.tag_mode.includes_series())
+    {
+        if let Some(tag) = workspace
+            .config
+            .format_series_tag(&member.name, member.version())
+        {
+            sharing.entry(tag).or_default().push(&member.name);
+        }
+    }
+    for (tag, members) in sharing {
+        if members.len() > 1 {
             report.error(format!(
-                "tag collision: `{other}` and `{}` both produce tag `{tag}`",
-                member.name
+                "series tag collision: {} all produce tag `{tag}`",
+                names(&members)
             ));
         }
     }

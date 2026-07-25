@@ -119,6 +119,12 @@ needs-deps = true            # run `gleam deps download` first if not cached
 
 [tools.trellis.publish]
 tag-format = "{name}-v{version}"
+# A moving tag per release series, for consumers who pin a series instead of
+# chasing patch tags. {series} is derived from the version: `0.Y` while the
+# major is 0, `X` after. `tag-mode` is exact (default), series, or both.
+series-tag-format = "{name}-v{series}"
+tag-mode = "exact"
+tag-mode-overrides = { both = ["packages/lat_cli"] }
 ```
 
 Each member is a directory with a `gleam.toml`. Path dependencies between
@@ -260,10 +266,18 @@ already open, updates — the PR via the `gh` CLI. The body carries the bump
 table and each package's new CHANGELOG section. Requires a clean working
 tree; a no-op when there are no fragments.
 
-`tag plan` lists releasable packages whose `gleam.toml` version has no
-`{name}-v{version}` tag yet; `tag create` creates the missing tags in
-topological order, optionally pushing them and creating GitHub Releases (via
-the `gh` CLI) with the matching CHANGELOG section as the body.
+`tag plan` lists the tags the current versions call for and don't have yet;
+`tag create` reconciles them in topological order, optionally pushing them and
+creating GitHub Releases (via the `gh` CLI) with the matching CHANGELOG
+section as the body.
+
+A package tags in one of two lifecycles, per `tag-mode`. Exact tags
+(`{name}-v{version}`) are immutable — created once, never rewritten. Series
+tags (`{name}-v{series}`) move: each release force-moves the tag to the
+release commit and force-pushes it. Because a moving tag names no particular
+version, it never carries a GitHub Release and `publish --tag` refuses it;
+`ci tag-package` still resolves it, and a `series`-only workspace publishes
+with `--all-untagged`.
 
 `publish` runs, per package and in dependency order: an idempotency check
 against the Hex API (already-published versions are skipped, so re-running a

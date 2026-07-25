@@ -73,6 +73,18 @@ pub struct PublishConfig {
     /// Tag naming scheme; `{name}` and `{version}` are substituted.
     #[serde(default = "default_tag_format")]
     pub tag_format: String,
+    /// Naming scheme for the moving series tag; `{name}` and `{series}` are
+    /// substituted. Omit `{name}` for a single repository-wide series tag.
+    #[serde(default = "default_series_tag_format")]
+    pub series_tag_format: String,
+    /// Which tags a release creates, for members without an override.
+    #[serde(default)]
+    pub tag_mode: TagMode,
+    /// Per-member overrides of [`PublishConfig::tag_mode`], keyed by mode name
+    /// ([`TagMode::key`]); values are globs matched against member paths. A
+    /// member matching globs under two different modes is an error.
+    #[serde(default)]
+    pub tag_mode_overrides: BTreeMap<String, Vec<String>>,
     /// How a path dep is rewritten to a Hex requirement at publish time.
     #[serde(default)]
     pub path_dep_requirement: PathDepRequirement,
@@ -85,6 +97,9 @@ impl Default for PublishConfig {
     fn default() -> Self {
         Self {
             tag_format: default_tag_format(),
+            series_tag_format: default_series_tag_format(),
+            tag_mode: TagMode::default(),
+            tag_mode_overrides: BTreeMap::new(),
             path_dep_requirement: PathDepRequirement::default(),
             retry: RetryConfig::default(),
         }
@@ -93,6 +108,66 @@ impl Default for PublishConfig {
 
 fn default_tag_format() -> String {
     "{name}-v{version}".to_string()
+}
+
+fn default_series_tag_format() -> String {
+    "{name}-v{series}".to_string()
+}
+
+/// Which git tags a release creates for a member.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum TagMode {
+    /// Immutable per-version tags only (`{name}-v1.2.0`).
+    #[default]
+    Exact,
+    /// Moving series tags only (`{name}-v0.0`, re-pointed at each release).
+    Series,
+    /// Both an immutable per-version tag and a moving series tag.
+    Both,
+}
+
+impl TagMode {
+    /// Every mode, in the order error messages list them.
+    pub const ALL: [TagMode; 3] = [TagMode::Exact, TagMode::Series, TagMode::Both];
+
+    /// The configuration key naming this mode.
+    pub fn key(self) -> &'static str {
+        match self {
+            TagMode::Exact => "exact",
+            TagMode::Series => "series",
+            TagMode::Both => "both",
+        }
+    }
+
+    pub fn from_key(key: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|mode| mode.key() == key)
+    }
+
+    /// True when releases create an immutable `tag-format` tag.
+    pub fn includes_exact(self) -> bool {
+        matches!(self, TagMode::Exact | TagMode::Both)
+    }
+
+    /// True when releases move a `series-tag-format` tag.
+    pub fn includes_series(self) -> bool {
+        matches!(self, TagMode::Series | TagMode::Both)
+    }
+}
+
+/// The moving series a version belongs to: `0.Y` while the major is 0 (where
+/// every minor bump is a breaking change), `X` afterward. Prereleases belong
+/// to no series — a release candidate must never move the tag consumers pin.
+pub fn series_of(version: &str) -> Option<String> {
+    let version = semver::Version::parse(version).ok()?;
+    if !version.pre.is_empty() {
+        return None;
+    }
+    Some(if version.major == 0 {
+        format!("0.{}", version.minor)
+    } else {
+        version.major.to_string()
+    })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
@@ -301,6 +376,22 @@ impl ConfigFile {
                 );
             }
         }
+        for key in self.publish.tag_mode_overrides.keys() {
+            if TagMode::from_key(key).is_none() {
+                bail!(
+                    "unknown `tag-mode-overrides` key `{key}`; the tag modes are {}",
+                    TagMode::ALL
+                        .map(|mode| format!("`{}`", mode.key()))
+                        .join(", ")
+                );
+            }
+        }
+        if !self.publish.series_tag_format.contains("{series}") {
+            bail!(
+                "`series-tag-format` `{}` has no {{series}} placeholder",
+                self.publish.series_tag_format
+            );
+        }
         Ok(())
     }
 
@@ -309,6 +400,23 @@ impl ConfigFile {
             .tag_format
             .replace("{name}", name)
             .replace("{version}", version)
+    }
+
+    /// The moving tag for `version`'s series, or `None` when the version has
+    /// no series (a prerelease, or an unparseable version).
+    pub fn format_series_tag(&self, name: &str, version: &str) -> Option<String> {
+        series_of(version).map(|series| {
+            self.publish
+                .series_tag_format
+                .replace("{name}", name)
+                .replace("{series}", &series)
+        })
+    }
+
+    /// True when the series tag is repository-wide — one tag shared by every
+    /// series-mode member rather than one per package.
+    pub fn series_tag_is_repo_wide(&self) -> bool {
+        !self.publish.series_tag_format.contains("{name}")
     }
 }
 
@@ -445,6 +553,101 @@ mod tests {
         assert!(!has_trellis_table(&without));
         let not_table: toml::Value = toml::from_str("[tools]\ntrellis = true").unwrap();
         assert!(!has_trellis_table(&not_table));
+    }
+
+    #[test]
+    fn series_is_derived_from_the_version() {
+        // Pre-1.0 packages get a major.minor series; 1.0 and later get the
+        // major alone.
+        assert_eq!(series_of("0.0.1").as_deref(), Some("0.0"));
+        assert_eq!(series_of("0.0.17").as_deref(), Some("0.0"));
+        assert_eq!(series_of("0.1.0").as_deref(), Some("0.1"));
+        assert_eq!(series_of("0.12.3").as_deref(), Some("0.12"));
+        assert_eq!(series_of("1.2.3").as_deref(), Some("1"));
+        assert_eq!(series_of("10.0.0").as_deref(), Some("10"));
+        // A prerelease belongs to no series, and so never moves a tag.
+        assert_eq!(series_of("0.0.1-rc.1"), None);
+        assert_eq!(series_of("1.0.0-beta"), None);
+        // Build metadata is not a prerelease.
+        assert_eq!(series_of("1.0.0+build.5").as_deref(), Some("1"));
+        assert_eq!(series_of("not-a-version"), None);
+    }
+
+    #[test]
+    fn formats_series_tags() {
+        let config =
+            ConfigFile::from_gleam_toml("[tools.trellis]\nmembers = [\"packages/*\"]").unwrap();
+        assert_eq!(config.publish.series_tag_format, "{name}-v{series}");
+        assert_eq!(
+            config.format_series_tag("core", "0.0.3").as_deref(),
+            Some("core-v0.0")
+        );
+        assert_eq!(config.format_series_tag("core", "0.0.3-rc.1"), None);
+
+        let repo_wide = ConfigFile::from_gleam_toml(
+            "[tools.trellis]\n[tools.trellis.publish]\nseries-tag-format = \"v{series}\"\n",
+        )
+        .unwrap();
+        assert_eq!(
+            repo_wide.format_series_tag("core", "0.0.3").as_deref(),
+            Some("v0.0")
+        );
+    }
+
+    #[test]
+    fn parses_tag_modes_and_overrides() {
+        let config = ConfigFile::from_gleam_toml(
+            r###"
+            [tools.trellis]
+            members = ["packages/*"]
+
+            [tools.trellis.publish]
+            tag-mode = "series"
+            tag-mode-overrides = { both = ["packages/lat_*"], exact = ["packages/old"] }
+        "###,
+        )
+        .unwrap();
+        assert_eq!(config.publish.tag_mode, TagMode::Series);
+        assert_eq!(
+            config.publish.tag_mode_overrides["both"],
+            vec!["packages/lat_*"]
+        );
+        assert_eq!(
+            config.publish.tag_mode_overrides["exact"],
+            vec!["packages/old"]
+        );
+    }
+
+    #[test]
+    fn tag_mode_defaults_to_exact_only() {
+        let config =
+            ConfigFile::from_gleam_toml("[tools.trellis]\nmembers = [\"packages/*\"]").unwrap();
+        assert_eq!(config.publish.tag_mode, TagMode::Exact);
+        assert!(config.publish.tag_mode_overrides.is_empty());
+        assert!(config.publish.tag_mode.includes_exact());
+        assert!(!config.publish.tag_mode.includes_series());
+        assert!(TagMode::Both.includes_exact() && TagMode::Both.includes_series());
+        assert!(TagMode::Series.includes_series() && !TagMode::Series.includes_exact());
+    }
+
+    #[test]
+    fn unknown_tag_mode_override_key_is_a_clear_error() {
+        let err = ConfigFile::from_gleam_toml(
+            "[tools.trellis]\n[tools.trellis.publish]\ntag-mode-overrides = { seires = [\"x\"] }\n",
+        )
+        .unwrap_err();
+        let message = format!("{err:#}");
+        assert!(message.contains("seires"), "{message}");
+        assert!(message.contains("series"), "{message}");
+    }
+
+    #[test]
+    fn series_tag_format_must_carry_the_series_placeholder() {
+        let err = ConfigFile::from_gleam_toml(
+            "[tools.trellis]\n[tools.trellis.publish]\nseries-tag-format = \"{name}-latest\"\n",
+        )
+        .unwrap_err();
+        assert!(format!("{err:#}").contains("{series}"), "{err:#}");
     }
 
     #[test]

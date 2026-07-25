@@ -21,10 +21,21 @@ pub fn run(workspace: &Workspace, name: &str, json: bool) -> Result<()> {
     println!("version:    {}", member.version());
     println!("path:       {}", member.rel_path);
     println!("releasable: {}", member.releasable);
-    println!(
-        "tag:        {}",
-        workspace.config.format_tag(&member.name, member.version())
-    );
+    // Only the tags this member's mode actually produces — a series-only
+    // package has no per-version tag to report.
+    if member.tag_mode.includes_exact() {
+        println!(
+            "tag:        {}",
+            workspace.config.format_tag(&member.name, member.version())
+        );
+    }
+    if member.tag_mode.includes_series()
+        && let Some(tag) = workspace
+            .config
+            .format_series_tag(&member.name, member.version())
+    {
+        println!("series tag: {tag}");
+    }
     let format_names = |indices: &[usize]| -> String {
         if indices.is_empty() {
             "(none)".to_string()

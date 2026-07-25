@@ -133,7 +133,15 @@ command = "gleam run -m glinter"
 needs-deps = true            # run `gleam deps download` first if not cached
 
 [tools.trellis.publish]
-tag-format = "{name}-v{version}"      # lattice_core-v1.1.0
+tag-format = "{name}-v{version}"          # lattice_core-v1.1.0
+# The moving series tag, re-pointed at each release in the series. {series} is
+# derived from the version — `0.Y` while the major is 0, `X` after — and never
+# configured. Omit {name} for one repository-wide tag.
+series-tag-format = "{name}-v{series}"    # lattice_core-v1, lattice_cli-v0.4
+# Which tags a release creates: exact (default), series, or both. The
+# overrides map picks it per member, as globs matched against member paths.
+tag-mode = "exact"
+tag-mode-overrides = { both = ["packages/lattice_cli"] }
 # How a path dep is rewritten to a Hex requirement at publish time, from the
 # dependency's current version X.Y.Z:
 #   minor  → ">= X.Y.Z and < (X+1).0.0"   (default)
@@ -267,6 +275,18 @@ trellis lockfile refresh [--package <pkg>]
   `gleam.toml` version against existing `{name}-v{version}` tags, create missing
   tags in topological order, optionally create GitHub Releases with the matching
   CHANGELOG section as the body.
+- A member may instead (or also) carry a **series tag** — `{name}-v{series}`,
+  where the series is derived from the version: `0.Y` while the major is 0,
+  `X` after. It is the one ref trellis rewrites: each release in the series
+  force-moves it to the release commit and force-pushes it, so consumers can
+  pin a series rather than chase patch tags. Divergence between local and
+  origin is the normal state for a moving tag, so the divergence check that
+  guards exact tags does not apply. Three consequences fall out of a tag that
+  names no particular version: it never carries a GitHub Release (which would
+  silently retarget), `publish --tag` refuses it (`ci tag-package` still
+  resolves it, so CI can route on it), and a `series`-only workspace releases
+  through `--all-untagged` rather than a tag-push trigger. `tag-mode` sets the
+  lifecycle for the workspace; `tag-mode-overrides` sets it per member.
 - `publish` performs, per package:
   1. **Idempotency check** — query Hex once; skip if this exact version is already
      published (makes re-runs of a partially failed release safe).
@@ -321,7 +341,13 @@ Checks, each of which is an unenforced invariant in lattice today:
 6. Every task exclusion glob matches at least one member (catches typos), and
    no releasable member path-depends on a release-excluded member — a published
    package cannot require a project that will never exist on Hex.
-7. Tag-format collisions (two members whose names would produce ambiguous tags).
+7. Tag-format collisions (two members whose names would produce ambiguous tags),
+   for series tags as well as exact ones — except a `series-tag-format` without
+   `{name}`, which warns instead once the workspace has more than one series
+   member, since sharing one repository-wide tag is the point and costs only
+   the ability to resolve it back to a single package. That warning keys on the
+   format, not on today's versions: with no `{name}` to substitute, every
+   series tag matches every member whatever they are versioned at.
 
 `doctor` is the CI tripwire for the duplication that can't be eliminated. Today,
 publish.yml's `replace-path-deps` being one package short would only be discovered

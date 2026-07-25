@@ -577,6 +577,377 @@ fn publish_rejects_unreleasable_package() {
         .stderr(predicate::str::contains("excluded from release"));
 }
 
+// ---- series tags -----------------------------------------------------------
+
+/// The basic fixture with `[tools.trellis.publish]` replaced by `publish`, in
+/// a git repo with a bare origin. The returned remote must outlive the test.
+fn series_repo(root: &Path, publish: &str) -> tempfile::TempDir {
+    copy_fixture_to(root);
+    write(
+        &root.join("gleam.toml"),
+        &format!(
+            "[tools.trellis]\nmembers = [\"packages/*\", \"examples/*\"]\n\
+             exclude = {{ \"@release\" = [\"examples/*\"] }}\n\n\
+             [tools.trellis.publish]\n{publish}\n"
+        ),
+    );
+    init_repo(root);
+    let remote = tempfile::tempdir().unwrap();
+    git(remote.path(), &["init", "-q", "--bare"]);
+    git(
+        root,
+        &["remote", "add", "origin", remote.path().to_str().unwrap()],
+    );
+    remote
+}
+
+fn set_version(root: &Path, package: &str, version: &str) {
+    let path = root.join("packages").join(package).join("gleam.toml");
+    let text = fs::read_to_string(&path).unwrap();
+    let text: Vec<String> = text
+        .lines()
+        .map(|line| {
+            if line.starts_with("version = ") {
+                format!("version = \"{version}\"")
+            } else {
+                line.to_string()
+            }
+        })
+        .collect();
+    fs::write(&path, text.join("\n") + "\n").unwrap();
+}
+
+fn git_stdout(dir: &Path, args: &[&str]) -> String {
+    let output = std::process::Command::new("git")
+        .args(args)
+        .current_dir(dir)
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "git {args:?} failed");
+    String::from_utf8_lossy(&output.stdout).trim().to_string()
+}
+
+fn commit_of(dir: &Path, revision: &str) -> String {
+    git_stdout(dir, &["rev-parse", &format!("{revision}^{{commit}}")])
+}
+
+#[test]
+fn series_tag_moves_with_each_release_while_exact_tags_stay_put() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let remote = series_repo(
+        root,
+        "tag-mode-overrides = { both = [\"packages/lat_cli\"] }",
+    );
+    let remote = remote.path();
+    set_version(root, "lat_cli", "0.0.1");
+    git(root, &["commit", "-qam", "lat_cli 0.0.1"]);
+
+    // The first release of a series creates both tags at the same commit.
+    trellis(root)
+        .args(["tag", "create", "--push"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("tagged lat_cli-v0.0.1"))
+        .stdout(predicate::str::contains("tagged lat_cli-v0.0"));
+    let first = commit_of(root, "HEAD");
+    assert_eq!(commit_of(root, "lat_cli-v0.0.1"), first);
+    assert_eq!(commit_of(root, "lat_cli-v0.0"), first);
+    // Other packages keep the default mode: exact tags only.
+    let tags = git_stdout(root, &["tag", "--list"]);
+    assert!(tags.contains("lat_core-v1.2.0"), "{tags}");
+    assert!(!tags.contains("lat_core-v1\n"), "{tags}");
+
+    set_version(root, "lat_cli", "0.0.2");
+    git(root, &["commit", "-qam", "lat_cli 0.0.2"]);
+    trellis(root)
+        .args(["tag", "create", "--push"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("tagged lat_cli-v0.0.2"))
+        .stdout(predicate::str::contains("moved lat_cli-v0.0"))
+        .stdout(predicate::str::contains("force-pushed lat_cli-v0.0"));
+
+    let second = commit_of(root, "HEAD");
+    assert_ne!(first, second);
+    assert_eq!(commit_of(root, "lat_cli-v0.0"), second, "series tag moved");
+    assert_eq!(
+        commit_of(root, "lat_cli-v0.0.1"),
+        first,
+        "exact tags are immutable"
+    );
+    assert_eq!(commit_of(root, "lat_cli-v0.0.2"), second);
+    // Origin has the move too, not just the local repo.
+    assert_eq!(commit_of(remote, "lat_cli-v0.0"), second);
+    assert_eq!(commit_of(remote, "lat_cli-v0.0.1"), first);
+
+    // Re-running moves nothing.
+    trellis(root)
+        .args(["tag", "create", "--push"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("moved").not())
+        .stdout(predicate::str::contains("force-pushed").not());
+    assert_eq!(commit_of(root, "lat_cli-v0.0"), second);
+    trellis(root)
+        .args(["tag", "plan"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("already tagged"));
+}
+
+#[test]
+fn info_reports_the_tags_a_package_actually_gets() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let _remote = series_repo(
+        root,
+        "tag-mode-overrides = { both = [\"packages/lat_cli\"] }",
+    );
+
+    trellis(root)
+        .args(["info", "lat_cli"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("tag:        lat_cli-v0.3.1"))
+        .stdout(predicate::str::contains("series tag: lat_cli-v0.3"));
+    trellis(root)
+        .args(["info", "lat_core"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("tag:        lat_core-v1.2.0"))
+        .stdout(predicate::str::contains("series tag:").not());
+}
+
+#[test]
+fn tag_plan_reports_the_series_move() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let _remote = series_repo(
+        root,
+        "tag-mode-overrides = { both = [\"packages/lat_cli\"] }",
+    );
+    trellis(root).args(["tag", "create"]).assert().success();
+    git(root, &["commit", "-q", "--allow-empty", "-m", "later work"]);
+
+    trellis(root)
+        .args(["tag", "plan"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "lat_cli: 0.3.1 moves tag lat_cli-v0.3",
+        ));
+
+    let output = trellis(root)
+        .args(["tag", "plan", "--json"])
+        .output()
+        .unwrap();
+    let plan: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let plan = plan.as_array().unwrap();
+    assert_eq!(plan.len(), 1, "only the series tag needs work: {plan:?}");
+    assert_eq!(plan[0]["tag"], "lat_cli-v0.3");
+    assert_eq!(plan[0]["kind"], "series");
+    assert_eq!(plan[0]["action"], "move");
+}
+
+#[test]
+fn github_releases_skip_series_tags() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let _remote = series_repo(
+        root,
+        "tag-mode-overrides = { both = [\"packages/lat_cli\"] }",
+    );
+    let gh = install_fake_gh(root);
+
+    trellis(root)
+        .env("TRELLIS_GH_BIN", &gh)
+        .args(["tag", "create", "--github-release"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "created GitHub release lat_cli-v0.3.1",
+        ));
+
+    let log = fs::read_to_string(root.join(".fake/gh-log")).unwrap();
+    assert!(log.contains("release create lat_cli-v0.3.1"), "{log}");
+    // A release bound to a moving tag would silently retarget on the next move.
+    assert!(!log.contains("release create lat_cli-v0.3 "), "{log}");
+    assert!(!log.contains("release view lat_cli-v0.3 "), "{log}");
+    // The series tag itself is still created and pushed.
+    assert_eq!(commit_of(root, "lat_cli-v0.3"), commit_of(root, "HEAD"));
+}
+
+#[test]
+fn series_only_mode_creates_no_exact_tags() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let _remote = series_repo(root, "tag-mode = \"series\"");
+    // A prerelease belongs to no series, so it moves nothing.
+    set_version(root, "lat_mid", "0.6.0-rc.1");
+    git(root, &["commit", "-qam", "lat_mid rc"]);
+
+    trellis(root).args(["tag", "create"]).assert().success();
+    let tags = git_stdout(root, &["tag", "--list"]);
+    assert_eq!(
+        tags.lines().collect::<Vec<_>>(),
+        vec!["lat_cli-v0.3", "lat_core-v1"]
+    );
+
+    trellis(root)
+        .args(["ci", "outputs"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("tags=[]\n"))
+        .stdout(predicate::str::contains(
+            "series-tags=[\"lat_core-v1\",\"lat_cli-v0.3\"]",
+        ));
+}
+
+#[test]
+fn default_config_creates_no_series_tags() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+    init_repo(root);
+
+    trellis(root).args(["tag", "create"]).assert().success();
+    let tags = git_stdout(root, &["tag", "--list"]);
+    assert_eq!(
+        tags.lines().collect::<Vec<_>>(),
+        vec!["lat_cli-v0.3.1", "lat_core-v1.2.0", "lat_mid-v0.5.0"]
+    );
+    trellis(root)
+        .args(["ci", "outputs"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("series-tags=[]"));
+}
+
+#[test]
+fn a_series_tag_names_a_package_but_never_a_release() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let _remote = series_repo(
+        root,
+        "tag-mode-overrides = { both = [\"packages/lat_cli\"] }",
+    );
+
+    // CI can still route on it…
+    trellis(root)
+        .args(["ci", "tag-package", "lat_cli-v0.3"])
+        .assert()
+        .success()
+        .stdout("lat_cli\n");
+    let output = trellis(root)
+        .args(["ci", "tag-package", "lat_cli-v0.3", "--json"])
+        .output()
+        .unwrap();
+    let resolved: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(resolved["name"], "lat_cli");
+    assert_eq!(resolved["tag-kind"], "series");
+    assert_eq!(resolved["tag-series"], "0.3");
+    assert!(resolved.get("tag-version").is_none());
+
+    // …but it names no version, so it cannot trigger a publish.
+    trellis(root)
+        .args(["publish", "--tag", "lat_cli-v0.3"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("moving v0.3 series tag"))
+        .stderr(predicate::str::contains("--all-untagged"));
+
+    // The exact tag still resolves as before.
+    let output = trellis(root)
+        .args(["ci", "tag-package", "lat_cli-v0.3.1", "--json"])
+        .output()
+        .unwrap();
+    let resolved: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(resolved["tag-kind"], "exact");
+    assert_eq!(resolved["tag-version"], "0.3.1");
+}
+
+#[test]
+fn doctor_warns_about_a_repo_wide_series_tag_whatever_the_versions() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let _remote = series_repo(
+        root,
+        "tag-mode = \"both\"\nseries-tag-format = \"v{series}\"",
+    );
+
+    // lat_core 1.2.0, lat_mid 0.5.0 and lat_cli 0.3.1 are three distinct
+    // series, so no two members render the same tag — and it is ambiguous
+    // anyway, because a `{name}`-less format matches every member.
+    trellis(root)
+        .args(["doctor"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "`series-tag-format` `v{series}` has no {name}, so one repository-wide series tag \
+             covers `lat_core`, `lat_mid`, `lat_cli`",
+        ));
+    trellis(root)
+        .args(["ci", "tag-package", "v0.3"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("names no single package"));
+
+    // Colliding versions are the same warning, not a new one.
+    set_version(root, "lat_cli", "0.5.2");
+    git(root, &["commit", "-qam", "lat_cli 0.5.2"]);
+    trellis(root)
+        .args(["doctor"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("has no {name}"));
+}
+
+#[test]
+fn a_named_series_format_stays_unambiguous() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let _remote = series_repo(root, "tag-mode = \"both\"");
+    // Two packages in the same series: with `{name}` in the format their tags
+    // stay distinct, so there is nothing to warn about and each still resolves.
+    set_version(root, "lat_cli", "0.5.2");
+    git(root, &["commit", "-qam", "lat_cli 0.5.2"]);
+
+    trellis(root)
+        .args(["doctor"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("series tag").not());
+    trellis(root)
+        .args(["ci", "tag-package", "lat_cli-v0.5"])
+        .assert()
+        .success()
+        .stdout("lat_cli\n");
+    trellis(root)
+        .args(["ci", "tag-package", "lat_mid-v0.5"])
+        .assert()
+        .success()
+        .stdout("lat_mid\n");
+}
+
+#[test]
+fn doctor_rejects_a_tag_mode_override_that_matches_nothing() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let _remote = series_repo(
+        root,
+        "tag-mode-overrides = { series = [\"packages/nope\"] }",
+    );
+
+    trellis(root)
+        .args(["doctor"])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains(
+            "`tag-mode-overrides.series` glob `packages/nope` matches no member",
+        ));
+}
+
 // ---- lockfile refresh ------------------------------------------------------
 
 #[test]
