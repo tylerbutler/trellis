@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.7.0 - 2026-07-25
+
+
+### Added
+
+- Packages can now move a series tag alongside (or instead of) their immutable per-version tag. `tag-mode` picks the lifecycle for the workspace and `tag-mode-overrides` picks it per package; the series is derived from the version — `0.Y` while the major is 0, `X` after — so releasing 0.0.1, 0.0.2, 0.0.3 keeps moving one `pkg-v0.0` tag.
+
 ## v0.6.0 - 2026-07-22
 
 
