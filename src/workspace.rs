@@ -2,7 +2,7 @@
 //! dependency graph. Every command starts here; the topological order is
 //! computed once and consumed everywhere.
 
-use crate::config::ConfigFile;
+use crate::config::{ConfigFile, TagMode};
 use crate::gleam::GleamManifest;
 use anyhow::{Context, Result, bail};
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -20,6 +20,9 @@ pub struct Member {
     pub manifest: GleamManifest,
     /// False when the member matches an `@release` exclusion glob.
     pub releasable: bool,
+    /// Which tags a release creates for this member: the workspace
+    /// `tag-mode`, unless a `tag-mode-overrides` glob claims it.
+    pub tag_mode: TagMode,
 }
 
 impl Member {
@@ -202,6 +205,21 @@ impl Workspace {
                 diagnostics.error(format!("invalid release exclusion glob: {err:#}"));
             })
             .ok();
+        // Unknown mode keys are already rejected by `ConfigFile::validate`;
+        // skipping them here keeps doctor's lenient load from panicking on a
+        // config it is about to report as invalid anyway.
+        let mut tag_mode_overrides: Vec<(TagMode, globset::GlobSet)> = Vec::new();
+        for (key, patterns) in &config.publish.tag_mode_overrides {
+            let Some(mode) = TagMode::from_key(key) else {
+                continue;
+            };
+            match build_globset(patterns) {
+                Ok(set) => tag_mode_overrides.push((mode, set)),
+                Err(err) => {
+                    diagnostics.error(format!("invalid `tag-mode-overrides.{key}` glob: {err:#}"));
+                }
+            }
+        }
         let mut members = Vec::new();
         for dir in member_dirs {
             let rel_path = rel_path_string(root, &dir);
@@ -233,12 +251,19 @@ impl Workspace {
                         .as_ref()
                         .map(|set| !set.is_match(&rel_path))
                         .unwrap_or(true);
+                    let tag_mode = resolve_tag_mode(
+                        &tag_mode_overrides,
+                        &rel_path,
+                        config.publish.tag_mode,
+                        &mut diagnostics,
+                    );
                     members.push(Member {
                         name: manifest.name.clone(),
                         path: dir,
                         rel_path,
                         manifest,
                         releasable,
+                        tag_mode,
                     });
                 }
                 Err(err) => diagnostics.error(format!("{err:#}")),
@@ -609,6 +634,39 @@ fn discover_member_dirs(root: &Path, diagnostics: &mut Diagnostics) -> Vec<PathB
     dirs.into_iter().collect()
 }
 
+/// The member's tag mode: `default`, unless exactly one override claims it.
+/// Two overrides claiming the same member is ambiguous — there is no sensible
+/// precedence between `series` and `both` — so it is reported rather than
+/// silently resolved.
+fn resolve_tag_mode(
+    overrides: &[(TagMode, globset::GlobSet)],
+    rel_path: &str,
+    default: TagMode,
+    diagnostics: &mut Diagnostics,
+) -> TagMode {
+    let matched: Vec<TagMode> = overrides
+        .iter()
+        .filter(|(_, set)| set.is_match(rel_path))
+        .map(|(mode, _)| *mode)
+        .collect();
+    match matched.as_slice() {
+        [] => default,
+        [mode] => *mode,
+        modes => {
+            diagnostics.error(format!(
+                "member `{rel_path}` matches `tag-mode-overrides` globs for {}; \
+                 a member may have only one tag mode",
+                modes
+                    .iter()
+                    .map(|mode| format!("`{}`", mode.key()))
+                    .collect::<Vec<_>>()
+                    .join(" and ")
+            ));
+            default
+        }
+    }
+}
+
 fn build_globset(patterns: &[String]) -> Result<globset::GlobSet> {
     let mut builder = globset::GlobSetBuilder::new();
     for pattern in patterns {
@@ -682,6 +740,53 @@ mod tests {
         assert!(
             cycle.len() == 4,
             "cycle should name all three members: {cycle:?}"
+        );
+    }
+
+    fn globs(patterns: &[&str]) -> globset::GlobSet {
+        build_globset(&names(patterns)).unwrap()
+    }
+
+    #[test]
+    fn tag_mode_falls_back_to_the_workspace_default() {
+        let mut diagnostics = Diagnostics::default();
+        let overrides = vec![(TagMode::Both, globs(&["packages/lat_*"]))];
+        assert_eq!(
+            resolve_tag_mode(&overrides, "packages/cli", TagMode::Exact, &mut diagnostics),
+            TagMode::Exact
+        );
+        assert_eq!(
+            resolve_tag_mode(
+                &overrides,
+                "packages/lat_core",
+                TagMode::Exact,
+                &mut diagnostics
+            ),
+            TagMode::Both
+        );
+        assert!(diagnostics.errors.is_empty());
+    }
+
+    #[test]
+    fn a_member_matching_two_tag_modes_is_an_error() {
+        let mut diagnostics = Diagnostics::default();
+        let overrides = vec![
+            (TagMode::Series, globs(&["packages/*"])),
+            (TagMode::Both, globs(&["packages/lat_*"])),
+        ];
+        let mode = resolve_tag_mode(
+            &overrides,
+            "packages/lat_core",
+            TagMode::Exact,
+            &mut diagnostics,
+        );
+        assert_eq!(mode, TagMode::Exact, "falls back to the default");
+        assert_eq!(diagnostics.errors.len(), 1);
+        let error = &diagnostics.errors[0];
+        assert!(error.contains("packages/lat_core"), "{error}");
+        assert!(
+            error.contains("`series`") && error.contains("`both`"),
+            "{error}"
         );
     }
 

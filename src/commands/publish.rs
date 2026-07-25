@@ -43,19 +43,37 @@ pub fn run(workspace: &Workspace, options: &PublishOptions) -> Result<bool> {
             }
             vec![idx]
         }
-        Selector::Tag(tag) => {
-            let (idx, tag_version) = super::tag::resolve_tag(workspace, tag)?;
-            let member = &workspace.members[idx];
-            if tag_version != member.version() {
+        Selector::Tag(tag) => match super::tag::resolve_tag(workspace, tag)? {
+            super::tag::ResolvedTag::Exact {
+                member: idx,
+                version: tag_version,
+            } => {
+                let member = &workspace.members[idx];
+                if tag_version != member.version() {
+                    bail!(
+                        "tag `{tag}` says version {tag_version} but {}/gleam.toml says {} — \
+                         refusing to publish a version that doesn't match its tag",
+                        member.rel_path,
+                        member.version()
+                    );
+                }
+                vec![idx]
+            }
+            // A moving tag names a series, not a release; publishing off one
+            // would ship whatever the working tree happens to say today.
+            super::tag::ResolvedTag::Series {
+                member: idx,
+                series,
+            } => {
+                let member = &workspace.members[idx];
                 bail!(
-                    "tag `{tag}` says version {tag_version} but {}/gleam.toml says {} — \
-                     refusing to publish a version that doesn't match its tag",
-                    member.rel_path,
-                    member.version()
+                    "tag `{tag}` is the moving v{series} series tag for `{}` and names no \
+                     specific version — publish with `--package {}` or `--all-untagged`",
+                    member.name,
+                    member.name
                 );
             }
-            vec![idx]
-        }
+        },
         // Member indices are already topological; publish order follows.
         Selector::AllUntagged => (0..workspace.members.len())
             .filter(|&idx| workspace.members[idx].releasable)

@@ -25,7 +25,15 @@ Tag format, path-dep rewriting, and Hex retry policy are configured under
 
 ```toml title="gleam.toml" wrap
 [tools.trellis.publish]
-tag-format = "{name}-v{version}"      # lat_core-v1.2.0
+tag-format = "{name}-v{version}"          # lat_core-v1.2.0
+series-tag-format = "{name}-v{series}"    # lat_core-v1, lat_cli-v0.4
+# Which tags a release creates:
+#   exact   → the immutable per-version tag only   (default)
+#   series  → the moving series tag only
+#   both    → one of each
+tag-mode = "exact"
+# Per-package overrides, as globs matched against member paths.
+tag-mode-overrides = { both = ["packages/lat_cli"] }
 # How a path dep is rewritten to a Hex requirement at publish time, from the
 # dependency's current version X.Y.Z:
 #   minor  → ">= X.Y.Z and < (X+1).0.0"   (default)
@@ -46,23 +54,48 @@ and is a no-op when there are no fragments.
 
 ## Tags
 
-`tag plan` lists releasable packages whose `gleam.toml` version has no tag
-yet, per the configured `tag-format`. `tag create` creates the missing tags
-in topological order; `--push` pushes them, and `--github-release` (which
-implies `--push` and requires the `gh` CLI) also creates a GitHub Release per
-tag with the matching CHANGELOG section as the body.
+`tag plan` lists the tags the current versions call for and don't have yet.
+`tag create` reconciles them in topological order; `--push` pushes them, and
+`--github-release` (which implies `--push` and requires the `gh` CLI) also
+creates a GitHub Release per tag with the matching CHANGELOG section as the
+body.
+
+A package tags in one of two lifecycles, chosen by `tag-mode`:
+
+- **Exact tags** (`{name}-v{version}`) are immutable. They are created once,
+  fetched when origin already has them, and never rewritten — local and remote
+  disagreeing about what one names is an error, not something to reconcile.
+- **Series tags** (`{name}-v{series}`) move. Every release in a series
+  force-moves its tag to the release commit and force-pushes it, so consumers
+  can pin `lat_cli-v0.4` and follow the series instead of chasing patch tags.
+  The series is derived from the version — see
+  [series tags](/docs/configuration/#series-tags).
 
 ```console
 $ trellis tag plan
 lat_core: 1.2.0 needs tag lat_core-v1.2.0
 lat_cli: 0.4.3 needs tag lat_cli-v0.4.3
+lat_cli: 0.4.3 moves tag lat_cli-v0.4
 
 $ trellis tag create --github-release
 tagged lat_core-v1.2.0
 pushed lat_core-v1.2.0
 tagged lat_cli-v0.4.3
 pushed lat_cli-v0.4.3
+moved lat_cli-v0.4
+force-pushed lat_cli-v0.4
 ```
+
+<Callout>
+`--github-release` skips series tags. A release attached to a moving tag would
+silently retarget on the next release, so only the immutable per-version tags
+carry one.
+</Callout>
+
+Under `tag-mode = "series"` a package has no per-version tags at all, so there
+is no tag to trigger a publish from: run `trellis publish --all-untagged` on
+release-PR merge instead. Passing a series tag to `publish --tag` is an error
+— it names a package, but no particular version.
 
 ## Publishing to Hex
 

@@ -37,6 +37,8 @@ needs-deps = true            # run `gleam deps download` first if not cached
 
 [tools.trellis.publish]
 tag-format = "{name}-v{version}"
+series-tag-format = "{name}-v{series}"
+tag-mode = "exact"
 ```
 
 Each member is a directory with its own `gleam.toml`. Path dependencies
@@ -84,6 +86,9 @@ their roots.
 | `exclude.@members` | no | Directories removed from workspace membership entirely — never parsed, graphed, or touched by any command. Useful for committed test fixtures that auto-discovery would otherwise sweep in; also filters explicit `members` globs. |
 | `tasks.<name>` | no | Custom tasks for `trellis run`. A task with a built-in's name (`build`, `test`, …) overrides it. `needs-deps = true` downloads dependencies first. |
 | `publish.tag-format` | no | Template for per-member git tags. Default: `{name}-v{version}`. |
+| `publish.series-tag-format` | no | Template for the moving series tag, substituting `{name}` and `{series}`. Omit `{name}` for one repository-wide tag. Default: `{name}-v{series}`. |
+| `publish.tag-mode` | no | Which tags a release creates: `exact` (default), `series`, or `both`. |
+| `publish.tag-mode-overrides` | no | Per-package tag modes: a map of mode name to member-path globs. A member matching globs under two modes is an error. |
 | `publish.retry` | no | Backoff for Hex rate limits: `{ attempts, initial-delay, multiplier }`. |
 | `changelog.kinds` | no | Change kinds and the version bump each implies. The largest bump among a package's unreleased fragments wins. |
 | `changelog.*-format` | no | Minijinja templates for rendered changelog sections: `version-format`, `kind-format`, `change-format`. |
@@ -142,12 +147,74 @@ will never exist on Hex.
 
 </Callout>
 
+## Series tags
+
+Trellis 0.7.0 added a second tag lifecycle. Alongside the immutable
+`{name}-v{version}` tag a release creates, a package can move a **series tag**
+that always points at the newest release in its series — so consumers pin
+`lat_cli-v0.0` once instead of chasing `0.0.1`, `0.0.2`, `0.0.3`.
+
+The series is derived from the version, never configured. While the major is
+0, every minor bump is a breaking change, so the series is `major.minor`;
+afterward it is the major alone:
+
+| Version | Series tag |
+| --- | --- |
+| `0.0.1`, `0.0.2`, `0.0.3` | `lat_cli-v0.0` |
+| `0.1.0`, `0.1.4` | `lat_cli-v0.1` |
+| `1.2.1`, `1.9.0` | `lat_cli-v1` |
+| `0.0.1-rc.1` | none — a prerelease belongs to no series and moves no tag |
+
+`tag-mode` picks the lifecycle for the workspace, and `tag-mode-overrides`
+picks it per package, as globs matched against member paths:
+
+```toml title="gleam.toml"
+[tools.trellis.publish]
+tag-mode = "exact"                                    # workspace default
+tag-mode-overrides = { both = ["packages/lat_cli"] }  # lat_cli also moves a series tag
+```
+
+Releasing `lat_cli` twice then leaves the exact tags where they were and the
+series tag on the newest release:
+
+```console
+$ trellis tag create --push        # releasing 0.0.1
+tagged lat_cli-v0.0.1
+pushed lat_cli-v0.0.1
+tagged lat_cli-v0.0
+pushed lat_cli-v0.0
+
+$ trellis tag create --push        # releasing 0.0.2
+tagged lat_cli-v0.0.2
+pushed lat_cli-v0.0.2
+moved lat_cli-v0.0
+force-pushed lat_cli-v0.0
+```
+
+Setting `series-tag-format = "v{series}"` drops `{name}` and gives the whole
+repository one shared series tag — exactly right for a single-package repo.
+With more than one package it is still allowed, but it costs something: the
+tag no longer identifies a package, so `trellis ci tag-package` cannot resolve
+it. That is true of every such tag regardless of how the packages are
+versioned — there is no `{name}` to tell them apart — so `doctor` warns as
+soon as a second package moves one, rather than waiting for two packages to
+land in the same series.
+
+<Callout>
+
+Series tags are the one ref trellis rewrites — they are force-moved and
+force-pushed on every release. That is also why they never carry a GitHub
+Release: the release would silently retarget on the next move. See
+[Publishing](/docs/publishing/#tags) for how the two lifecycles differ.
+
+</Callout>
+
 ## Changelog configuration
 
 The changelog engine is native — no second tool to install, no config file to
 keep in sync. Changes live as TOML fragments in `.changes/unreleased/`;
 rendering is controlled by small minijinja templates, each with a context of
-`name`, `version`, `date`, `tag`, `kind`, and `body` as applicable:
+`name`, `version`, `date`, `tag`, `series`, `kind`, and `body` as applicable:
 
 ```toml wrap
 [tools.trellis.changelog]

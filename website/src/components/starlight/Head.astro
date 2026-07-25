@@ -1,0 +1,10 @@
+---
+// Starlight builds the whole <head>, so the dismissal script joins it through
+// an override — it has to run before first paint, which the `head` config
+// array can't express (it has no access to the derived version).
+import Default from "@astrojs/starlight/components/Head.astro";
+import AnnounceDismissScript from "../AnnounceDismissScript.astro";
+---
+
+<Default />
+<AnnounceDismissScript />

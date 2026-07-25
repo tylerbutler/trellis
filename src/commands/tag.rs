@@ -1,56 +1,167 @@
 //! `trellis tag` — compare each releasable member's gleam.toml version
-//! against existing `{name}-v{version}` tags; create the missing ones in
-//! topological order, optionally with GitHub Releases carrying the matching
-//! CHANGELOG section.
+//! against existing tags and reconcile the difference, in topological order.
+//!
+//! A member tags in one of two lifecycles, chosen by `tag-mode`: immutable
+//! `{name}-v{version}` tags, created once and never touched again, and moving
+//! `{name}-v{series}` tags, force-moved to the release commit every time that
+//! series releases. Only the immutable ones can carry a GitHub Release — a
+//! release bound to a moving tag would silently retarget.
 
 use crate::tools;
 use crate::workspace::Workspace;
 use anyhow::{Context, Result, bail};
 use serde_json::json;
+use std::collections::HashSet;
 use std::path::Path;
 use std::process::Command;
 
-/// Releasable members (topo order) whose current version has no tag yet.
-fn missing_tags(workspace: &Workspace) -> Result<Vec<(usize, String)>> {
+/// Which tag lifecycle a planned tag belongs to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TagKind {
+    /// An immutable `tag-format` tag naming one version.
+    Exact,
+    /// A moving `series-tag-format` tag naming a release series.
+    Series,
+}
+
+impl TagKind {
+    fn key(self) -> &'static str {
+        match self {
+            TagKind::Exact => "exact",
+            TagKind::Series => "series",
+        }
+    }
+}
+
+/// The work `tag create` would do for a planned tag, from local state alone.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TagAction {
+    /// The tag does not exist locally.
+    Create,
+    /// A series tag exists locally but points somewhere other than HEAD.
+    Move,
+    /// The tag already points where it should; only the remote may need work.
+    UpToDate,
+}
+
+impl TagAction {
+    fn key(self) -> &'static str {
+        match self {
+            TagAction::Create => "create",
+            TagAction::Move => "move",
+            TagAction::UpToDate => "up-to-date",
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct PlannedTag {
+    /// Index into `workspace.members`.
+    pub member: usize,
+    pub tag: String,
+    pub kind: TagKind,
+    pub action: TagAction,
+}
+
+/// Every tag the current versions call for, in topological order, each with
+/// the work it needs. A repository-wide series tag (a `series-tag-format`
+/// without `{name}`) is claimed by the first member that would produce it, so
+/// it is moved once rather than once per package.
+fn plan_tags(workspace: &Workspace) -> Result<Vec<PlannedTag>> {
     let existing = git_stdout(&workspace.root, &["tag", "--list"])?;
-    let existing: std::collections::HashSet<&str> = existing
+    let existing: HashSet<&str> = existing
         .lines()
         .map(str::trim)
         .filter(|l| !l.is_empty())
         .collect();
-    Ok(workspace
+    // Unborn in a repository with no commits, where nothing can be tagged yet.
+    let head = commit_of(&workspace.root, "HEAD")?;
+
+    let mut planned: Vec<PlannedTag> = Vec::new();
+    let mut claimed: HashSet<String> = HashSet::new();
+    for (member, index) in workspace
         .members
         .iter()
-        .enumerate()
-        .filter(|(_, member)| member.releasable)
-        .filter_map(|(idx, member)| {
+        .zip(0..)
+        .filter(|(member, _)| member.releasable)
+    {
+        if member.tag_mode.includes_exact() {
             let tag = workspace.config.format_tag(&member.name, member.version());
-            (!existing.contains(tag.as_str())).then_some((idx, tag))
-        })
-        .collect())
+            let action = if existing.contains(tag.as_str()) {
+                TagAction::UpToDate
+            } else {
+                TagAction::Create
+            };
+            if claimed.insert(tag.clone()) {
+                planned.push(PlannedTag {
+                    member: index,
+                    tag,
+                    kind: TagKind::Exact,
+                    action,
+                });
+            }
+        }
+        // A prerelease belongs to no series, and so moves no tag.
+        if member.tag_mode.includes_series()
+            && let Some(tag) = workspace
+                .config
+                .format_series_tag(&member.name, member.version())
+        {
+            let action = if !existing.contains(tag.as_str()) {
+                TagAction::Create
+            } else if head.is_some() && commit_of(&workspace.root, &tag)? == head {
+                TagAction::UpToDate
+            } else {
+                TagAction::Move
+            };
+            if claimed.insert(tag.clone()) {
+                planned.push(PlannedTag {
+                    member: index,
+                    tag,
+                    kind: TagKind::Series,
+                    action,
+                });
+            }
+        }
+    }
+    Ok(planned)
 }
 
 pub fn plan(workspace: &Workspace, json: bool) -> Result<()> {
-    let missing = missing_tags(workspace)?;
+    let pending: Vec<PlannedTag> = plan_tags(workspace)?
+        .into_iter()
+        .filter(|planned| planned.action != TagAction::UpToDate)
+        .collect();
     if json {
-        let items: Vec<_> = missing
+        let items: Vec<_> = pending
             .iter()
-            .map(|(idx, tag)| {
-                let member = &workspace.members[*idx];
+            .map(|planned| {
+                let member = &workspace.members[planned.member];
                 json!({
                     "name": member.name,
                     "version": member.version(),
-                    "tag": tag,
+                    "tag": planned.tag,
+                    "kind": planned.kind.key(),
+                    "action": planned.action.key(),
                 })
             })
             .collect();
         println!("{}", serde_json::to_string_pretty(&items)?);
-    } else if missing.is_empty() {
+    } else if pending.is_empty() {
         println!("every releasable package version is already tagged");
     } else {
-        for (idx, tag) in &missing {
-            let member = &workspace.members[*idx];
-            println!("{}: {} needs tag {tag}", member.name, member.version());
+        for planned in &pending {
+            let member = &workspace.members[planned.member];
+            let verb = match planned.action {
+                TagAction::Move => "moves tag",
+                _ => "needs tag",
+            };
+            println!(
+                "{}: {} {verb} {}",
+                member.name,
+                member.version(),
+                planned.tag
+            );
         }
     }
     Ok(())
@@ -63,85 +174,136 @@ pub struct CreateOptions {
 
 pub fn create(workspace: &Workspace, options: &CreateOptions) -> Result<()> {
     let push = options.push || options.github_release;
-    let targets = if push {
-        workspace
-            .members
-            .iter()
-            .enumerate()
-            .filter(|(_, member)| member.releasable)
-            .map(|(idx, member)| {
-                (
-                    idx,
-                    workspace.config.format_tag(&member.name, member.version()),
-                )
-            })
-            .collect()
-    } else {
-        missing_tags(workspace)?
-    };
+    let planned = plan_tags(workspace)?;
+    // Without a remote to reconcile, a tag that already points where it
+    // should is nothing to do; with one, it may still be missing from origin.
+    let targets: Vec<&PlannedTag> = planned
+        .iter()
+        .filter(|planned| push || planned.action != TagAction::UpToDate)
+        .collect();
     if targets.is_empty() {
         println!("every releasable package version is already tagged");
         return Ok(());
     }
 
-    for (idx, tag) in &targets {
-        let member = &workspace.members[*idx];
-        let local_oid = local_tag_oid(&workspace.root, tag)?;
-        let remote_oid = if push {
-            remote_tag_oid(&workspace.root, tag)?
+    for planned in targets {
+        match planned.kind {
+            TagKind::Exact => create_exact_tag(workspace, planned, options, push)?,
+            TagKind::Series => move_series_tag(workspace, planned, push)?,
+        }
+    }
+    Ok(())
+}
+
+/// An immutable tag: created once, fetched when origin already has it, and
+/// never rewritten. Local and remote disagreeing about what it names is a
+/// history problem trellis refuses to paper over.
+fn create_exact_tag(
+    workspace: &Workspace,
+    planned: &PlannedTag,
+    options: &CreateOptions,
+    push: bool,
+) -> Result<()> {
+    let member = &workspace.members[planned.member];
+    let tag = &planned.tag;
+    let local_oid = local_tag_oid(&workspace.root, tag)?;
+    let remote_oid = if push {
+        remote_tag_oid(&workspace.root, tag)?
+    } else {
+        None
+    };
+    if let (Some(local), Some(remote)) = (&local_oid, &remote_oid)
+        && local != remote
+    {
+        bail!("tag `{tag}` points to different objects locally ({local}) and on origin ({remote})");
+    }
+    if local_oid.is_none() {
+        if remote_oid.is_some() {
+            git_stdout(&workspace.root, &["fetch", "origin", "tag", tag])?;
+            println!("fetched {tag}");
         } else {
-            None
-        };
-        if let (Some(local), Some(remote)) = (&local_oid, &remote_oid)
-            && local != remote
-        {
-            bail!(
-                "tag `{tag}` points to different objects locally ({local}) and on origin ({remote})"
-            );
+            let mut args = crate::git::identity_fallback_args(&workspace.root);
+            args.extend([
+                "tag".into(),
+                "-a".into(),
+                tag.clone(),
+                "-m".into(),
+                format!("{} {}", member.name, member.version()),
+            ]);
+            let args: Vec<&str> = args.iter().map(String::as_str).collect();
+            git_stdout(&workspace.root, &args)?;
+            println!("tagged {tag}");
         }
-        if local_oid.is_none() {
-            if remote_oid.is_some() {
-                git_stdout(&workspace.root, &["fetch", "origin", "tag", tag])?;
-                println!("fetched {tag}");
-            } else {
-                let mut args = crate::git::identity_fallback_args(&workspace.root);
-                args.extend([
-                    "tag".into(),
-                    "-a".into(),
-                    tag.clone(),
-                    "-m".into(),
-                    format!("{} {}", member.name, member.version()),
-                ]);
-                let args: Vec<&str> = args.iter().map(String::as_str).collect();
-                git_stdout(&workspace.root, &args)?;
-                println!("tagged {tag}");
+    }
+    if push && remote_oid.is_none() {
+        git_stdout(&workspace.root, &["push", "origin", tag])
+            .with_context(|| format!("failed to push tag {tag}"))?;
+        println!("pushed {tag}");
+    }
+    if options.github_release {
+        if github_release_exists(&workspace.root, tag)? {
+            println!("GitHub release {tag} already exists; skipping");
+        } else {
+            let notes = release_notes(workspace, planned.member);
+            let gh = tools::gh_bin();
+            let output = Command::new(&gh)
+                .args(["release", "create", tag, "--title", tag, "--notes", &notes])
+                .current_dir(&workspace.root)
+                .output()
+                .with_context(|| format!("failed to run `{gh}` — is the GitHub CLI installed?"))?;
+            if !output.status.success() {
+                bail!(
+                    "`{gh} release create {tag}` failed: {}",
+                    String::from_utf8_lossy(&output.stderr).trim()
+                );
             }
+            println!("created GitHub release {tag}");
         }
-        if push && remote_oid.is_none() {
-            git_stdout(&workspace.root, &["push", "origin", tag])
+    }
+    Ok(())
+}
+
+/// A series tag is the one ref trellis rewrites: it is force-moved to the
+/// release commit and force-pushed. Local and remote pointing at different
+/// objects is the normal state between releases, not an error, and no GitHub
+/// Release is ever attached — it would silently retarget on the next move.
+fn move_series_tag(workspace: &Workspace, planned: &PlannedTag, push: bool) -> Result<()> {
+    let member = &workspace.members[planned.member];
+    let tag = &planned.tag;
+    let remote_oid = if push {
+        remote_tag_oid(&workspace.root, tag)?
+    } else {
+        None
+    };
+    if planned.action != TagAction::UpToDate {
+        let mut args = crate::git::identity_fallback_args(&workspace.root);
+        args.extend([
+            "tag".into(),
+            "-f".into(),
+            "-a".into(),
+            tag.clone(),
+            "-m".into(),
+            format!("{} {}", member.name, member.version()),
+        ]);
+        let args: Vec<&str> = args.iter().map(String::as_str).collect();
+        git_stdout(&workspace.root, &args)?;
+        if planned.action == TagAction::Create {
+            println!("tagged {tag}");
+        } else {
+            println!("moved {tag}");
+        }
+    }
+    if push {
+        // Re-read after any move: a re-tag writes a fresh annotated object, so
+        // this also catches "already where it belongs, but origin disagrees".
+        let local_oid = local_tag_oid(&workspace.root, tag)?;
+        if local_oid != remote_oid {
+            git_stdout(&workspace.root, &["push", "--force", "origin", tag])
                 .with_context(|| format!("failed to push tag {tag}"))?;
-            println!("pushed {tag}");
-        }
-        if options.github_release {
-            if github_release_exists(&workspace.root, tag)? {
-                println!("GitHub release {tag} already exists; skipping");
+            if remote_oid.is_none() {
+                println!("pushed {tag}");
             } else {
-                let notes = release_notes(workspace, *idx);
-                let gh = tools::gh_bin();
-                let output = Command::new(&gh)
-                    .args(["release", "create", tag, "--title", tag, "--notes", &notes])
-                    .current_dir(&workspace.root)
-                    .output()
-                    .with_context(|| {
-                        format!("failed to run `{gh}` — is the GitHub CLI installed?")
-                    })?;
-                if !output.status.success() {
-                    bail!(
-                        "`{gh} release create {tag}` failed: {}",
-                        String::from_utf8_lossy(&output.stderr).trim()
-                    );
-                }
-                println!("created GitHub release {tag}");
+                println!("force-pushed {tag}");
             }
         }
     }
@@ -149,9 +311,19 @@ pub fn create(workspace: &Workspace, options: &CreateOptions) -> Result<()> {
 }
 
 fn local_tag_oid(root: &Path, tag: &str) -> Result<Option<String>> {
-    let reference = format!("refs/tags/{tag}");
+    rev_parse(root, &format!("refs/tags/{tag}"), tag)
+}
+
+/// The commit a revision points at, peeling annotated tags — the comparison a
+/// series tag needs, since re-tagging the same commit still writes a fresh tag
+/// object. `None` when the revision doesn't exist, including an unborn HEAD.
+fn commit_of(root: &Path, revision: &str) -> Result<Option<String>> {
+    rev_parse(root, &format!("{revision}^{{commit}}"), revision)
+}
+
+fn rev_parse(root: &Path, reference: &str, subject: &str) -> Result<Option<String>> {
     let output = Command::new("git")
-        .args(["rev-parse", "--verify", "--quiet", &reference])
+        .args(["rev-parse", "--verify", "--quiet", reference])
         .current_dir(root)
         .output()
         .context("failed to run git")?;
@@ -164,7 +336,7 @@ fn local_tag_oid(root: &Path, tag: &str) -> Result<Option<String>> {
             .map(Some)
             .context("git rev-parse returned no object ID"),
         Some(1) => Ok(None),
-        _ => bail!("git rev-parse failed while checking tag `{tag}`"),
+        _ => bail!("git rev-parse failed while checking `{subject}`"),
     }
 }
 
@@ -252,46 +424,127 @@ fn heading_version(heading: &str) -> Option<semver::Version> {
     semver::Version::parse(token).ok()
 }
 
-/// Resolve a tag like `lat_core-v1.2.0` to a releasable member and the
-/// version the tag claims (which may differ from gleam.toml — the caller
-/// decides whether that's fatal). Prefers the longest package-name match so
-/// `lat_core_extra-v1.0.0` never resolves to `lat_core`.
-pub fn resolve_tag(workspace: &Workspace, tag: &str) -> Result<(usize, String)> {
-    let Some((prefix_tpl, suffix_tpl)) =
-        workspace.config.publish.tag_format.split_once("{version}")
-    else {
-        bail!(
-            "tag-format `{}` has no {{version}} placeholder",
-            workspace.config.publish.tag_format
-        );
-    };
+/// A pushed tag resolved back to the package it names.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ResolvedTag {
+    /// An immutable tag, carrying the version it claims — which may differ
+    /// from gleam.toml; the caller decides whether that's fatal.
+    Exact { member: usize, version: String },
+    /// A moving series tag, carrying the series it names. It identifies a
+    /// package but no particular version.
+    Series { member: usize, series: String },
+}
 
-    let mut best: Option<(usize, String)> = None;
-    for (idx, member) in workspace.members.iter().enumerate() {
-        if !member.releasable {
-            continue;
+impl ResolvedTag {
+    pub fn member(&self) -> usize {
+        match self {
+            ResolvedTag::Exact { member, .. } | ResolvedTag::Series { member, .. } => *member,
         }
-        let prefix = prefix_tpl.replace("{name}", &member.name);
-        let suffix = suffix_tpl.replace("{name}", &member.name);
+    }
+}
+
+/// Resolve a tag like `lat_core-v1.2.0` or `lat_core-v0.3` to the releasable
+/// member it belongs to. Exact tags are tried first; a candidate only counts
+/// if what the template captured is actually a version (or, for series tags, a
+/// series), so `lat_core-v0.3` doesn't resolve as version "0.3".
+pub fn resolve_tag(workspace: &Workspace, tag: &str) -> Result<ResolvedTag> {
+    let exact = match_tag_template(
+        &candidates(workspace, |mode| mode.includes_exact()),
+        tag,
+        &workspace.config.publish.tag_format,
+        "{version}",
+        |captured| semver::Version::parse(captured).is_ok(),
+    )?;
+    if let Some((member, version)) = exact.into_iter().next() {
+        return Ok(ResolvedTag::Exact { member, version });
+    }
+
+    let series = match_tag_template(
+        &candidates(workspace, |mode| mode.includes_series()),
+        tag,
+        &workspace.config.publish.series_tag_format,
+        "{series}",
+        is_series,
+    )?;
+    if series.len() > 1 && workspace.config.series_tag_is_repo_wide() {
+        bail!(
+            "tag `{tag}` is a repository-wide series tag shared by {}; it names no single package",
+            series
+                .iter()
+                .map(|(member, _)| format!("`{}`", workspace.members[*member].name))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+    }
+    if let Some((member, series)) = series.into_iter().next() {
+        return Ok(ResolvedTag::Series { member, series });
+    }
+
+    bail!(
+        "tag `{tag}` does not match any releasable package (tag format: {}, series tag format: {})",
+        workspace.config.publish.tag_format,
+        workspace.config.publish.series_tag_format
+    )
+}
+
+/// Releasable members whose tag mode passes `wanted`, as `match_tag_template`
+/// candidates.
+fn candidates(
+    workspace: &Workspace,
+    wanted: impl Fn(crate::config::TagMode) -> bool,
+) -> Vec<(usize, &str)> {
+    workspace
+        .members
+        .iter()
+        .zip(0..)
+        .filter(|(member, _)| member.releasable && wanted(member.tag_mode))
+        .map(|(member, index)| (index, member.name.as_str()))
+        .collect()
+}
+
+/// Match `tag` against `template` once per candidate, with `{name}`
+/// substituted, and return what `placeholder` captured. Longest package name
+/// first, so `lat_core_extra-v1.0.0` never resolves to `lat_core`.
+fn match_tag_template(
+    candidates: &[(usize, &str)],
+    tag: &str,
+    template: &str,
+    placeholder: &str,
+    accept: impl Fn(&str) -> bool,
+) -> Result<Vec<(usize, String)>> {
+    let Some((prefix_template, suffix_template)) = template.split_once(placeholder) else {
+        bail!("tag format `{template}` has no {placeholder} placeholder");
+    };
+    let mut matches: Vec<(usize, &str, String)> = Vec::new();
+    for (index, name) in candidates {
+        let prefix = prefix_template.replace("{name}", name);
+        let suffix = suffix_template.replace("{name}", name);
         if tag.len() > prefix.len() + suffix.len()
             && tag.starts_with(&prefix)
             && tag.ends_with(&suffix)
         {
-            let version = tag[prefix.len()..tag.len() - suffix.len()].to_string();
-            let longer = best
-                .as_ref()
-                .is_none_or(|(other, _)| member.name.len() > workspace.members[*other].name.len());
-            if longer {
-                best = Some((idx, version));
+            let captured = &tag[prefix.len()..tag.len() - suffix.len()];
+            if accept(captured) {
+                matches.push((*index, name, captured.to_string()));
             }
         }
     }
-    best.with_context(|| {
-        format!(
-            "tag `{tag}` does not match any releasable package (tag format: {})",
-            workspace.config.publish.tag_format
-        )
-    })
+    matches.sort_by_key(|(_, name, _)| std::cmp::Reverse(name.len()));
+    Ok(matches
+        .into_iter()
+        .map(|(index, _, captured)| (index, captured))
+        .collect())
+}
+
+/// A series is `X` or `0.Y` — one or two all-numeric parts. Requiring the
+/// shape is what keeps the two tag formats from claiming each other's tags
+/// when they share a prefix, as the defaults do.
+fn is_series(token: &str) -> bool {
+    let parts: Vec<&str> = token.split('.').collect();
+    (1..=2).contains(&parts.len())
+        && parts
+            .iter()
+            .all(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit()))
 }
 
 fn git_stdout(cwd: &Path, args: &[&str]) -> Result<String> {
@@ -312,7 +565,66 @@ fn git_stdout(cwd: &Path, args: &[&str]) -> Result<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::changelog_section;
+    use super::{changelog_section, is_series, match_tag_template};
+
+    fn packages() -> Vec<(usize, &'static str)> {
+        vec![(0, "lat_core"), (1, "lat_core_extra")]
+    }
+
+    fn versions(tag: &str) -> Vec<(usize, String)> {
+        match_tag_template(&packages(), tag, "{name}-v{version}", "{version}", |c| {
+            semver::Version::parse(c).is_ok()
+        })
+        .unwrap()
+    }
+
+    fn series(tag: &str) -> Vec<(usize, String)> {
+        match_tag_template(&packages(), tag, "{name}-v{series}", "{series}", is_series).unwrap()
+    }
+
+    #[test]
+    fn longest_package_name_matches_first() {
+        assert_eq!(
+            versions("lat_core_extra-v1.0.0"),
+            vec![(1, "1.0.0".to_string())]
+        );
+        assert_eq!(versions("lat_core-v1.2.0"), vec![(0, "1.2.0".to_string())]);
+    }
+
+    #[test]
+    fn the_two_tag_formats_do_not_claim_each_others_tags() {
+        // `lat_core-v0.3` fits the exact template too, but "0.3" is not a
+        // version — so only the series template matches it, and vice versa.
+        assert!(versions("lat_core-v0.3").is_empty());
+        assert_eq!(series("lat_core-v0.3"), vec![(0, "0.3".to_string())]);
+        assert!(series("lat_core-v1.2.0").is_empty());
+        assert_eq!(series("lat_core-v2"), vec![(0, "2".to_string())]);
+    }
+
+    #[test]
+    fn a_repo_wide_series_tag_matches_every_candidate() {
+        let matches =
+            match_tag_template(&packages(), "v0.0", "v{series}", "{series}", is_series).unwrap();
+        assert_eq!(matches.len(), 2, "ambiguous by construction: {matches:?}");
+    }
+
+    #[test]
+    fn unmatched_and_malformed_templates() {
+        assert!(versions("some-other-tag").is_empty());
+        let err = match_tag_template(&packages(), "v1", "{name}-latest", "{version}", |_| true)
+            .unwrap_err();
+        assert!(err.to_string().contains("{version}"), "{err:#}");
+    }
+
+    #[test]
+    fn series_tokens_are_one_or_two_numbers() {
+        assert!(is_series("0") && is_series("0.0") && is_series("12") && is_series("0.12"));
+        assert!(!is_series("1.2.3"));
+        assert!(!is_series("0.0-rc"));
+        assert!(!is_series(""));
+        assert!(!is_series("0."));
+        assert!(!is_series("v1"));
+    }
 
     #[test]
     fn extracts_the_matching_section_only() {

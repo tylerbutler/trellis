@@ -110,11 +110,21 @@ kbd {
   margin-inline: auto;
 }
 
+/* -- announcement bar ---------------------------------------- */
+
+/* Pinned above the header so the current release stays one click away.
+   Visual styling lives in components/AnnouncementBar.astro. */
+.announce {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky);
+}
+
 /* -- header -------------------------------------------------- */
 
 .site-header {
   position: sticky;
-  top: 0;
+  top: var(--announce-h);
   z-index: var(--z-sticky);
   background: color-mix(in oklch, var(--bg) 94%, transparent);
   border-bottom: 1px solid var(--line-soft);

@@ -219,10 +219,12 @@ pub fn render_section(
     date: &str,
     fragments: &[&Fragment],
 ) -> Result<String> {
+    // Empty for a prerelease, which belongs to no series.
+    let series = crate::config::series_of(version).unwrap_or_default();
     let mut out = render(
         &config.version_format,
         "version-format",
-        minijinja::context! { name, version, date, tag },
+        minijinja::context! { name, version, date, tag, series },
     )?;
     out.push('\n');
     for kind in &config.kinds {

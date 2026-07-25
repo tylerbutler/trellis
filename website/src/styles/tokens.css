@@ -52,10 +52,24 @@
 
   --measure: 68ch;
   --content-width: 72rem;
+  --announce-h: 2.25rem;
 
   /* semantic z scale */
   --z-sticky: 10;
   --z-skip: 20;
 
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* A dismissed announcement collapses the token rather than just hiding the
+   bar: every offset that reserves room for it — the landing header's sticky
+   top, Starlight's nav height and the sizes derived from it — is expressed in
+   --announce-h, so zeroing it reclaims the space with no leftover gap.
+   Set by AnnounceDismissScript before first paint. */
+:root[data-announce-dismissed] {
+  --announce-h: 0px;
+}
+
+:root[data-announce-dismissed] .announce {
+  display: none;
 }

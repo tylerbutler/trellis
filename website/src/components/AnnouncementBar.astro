@@ -1,0 +1,155 @@
+---
+// A thin band naming the current release and linking to its notes. The version
+// is derived from Cargo.toml (see lib/version.ts), so cutting a release is the
+// only edit this bar ever needs. Positioning is left to the consumer: the
+// landing page sticks it above the header (global.css), the docs pin it to the
+// top strip of Starlight's fixed header (starlight.css).
+// Dismissal is version-keyed and applied in <head> by AnnounceDismissScript.
+import { TRELLIS_VERSION } from "../lib/version";
+
+const href = `https://github.com/tylerbutler/trellis/releases/tag/v${TRELLIS_VERSION}`;
+---
+
+<div class="announce" data-version={TRELLIS_VERSION}>
+  <a
+    class="announce-link"
+    href={href}
+    aria-label={`Latest release: trellis v${TRELLIS_VERSION} — read the release notes`}
+  >
+    <span class="announce-label">Latest release</span>
+    <span class="announce-version">v{TRELLIS_VERSION}</span>
+    <span class="announce-cta">
+      Release notes<span class="announce-arrow" aria-hidden="true">→</span>
+    </span>
+  </a>
+  <button class="announce-dismiss" type="button" aria-label="Dismiss release announcement">
+    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+      <path
+        d="M2.5 2.5 9.5 9.5M9.5 2.5 2.5 9.5"
+        stroke="currentColor"
+        stroke-width="1.5"
+        stroke-linecap="round"
+      ></path>
+    </svg>
+  </button>
+</div>
+
+<script>
+  import { ANNOUNCE_STORAGE_KEY } from "../lib/announce";
+
+  const bar = document.querySelector<HTMLElement>(".announce");
+  const dismiss = bar?.querySelector<HTMLButtonElement>(".announce-dismiss");
+
+  dismiss?.addEventListener("click", () => {
+    const version = bar?.dataset.version;
+    if (version) {
+      try {
+        localStorage.setItem(ANNOUNCE_STORAGE_KEY, version);
+      } catch {
+        // Dismissal simply won't persist if storage is unavailable.
+      }
+    }
+    document.documentElement.dataset.announceDismissed = "";
+  });
+</script>
+
+<style>
+  .announce {
+    position: relative;
+    height: var(--announce-h);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--cobalt-band);
+    border-bottom: 1px solid var(--line-soft);
+  }
+
+  .announce-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6rem;
+    max-width: 100%;
+    /* Keeps the message centred in the bar rather than in the space left
+       over by the dismiss button. */
+    padding-inline: 2.75rem;
+    color: var(--ink-soft);
+    font-size: var(--text-fine);
+    text-decoration: none;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+
+  .announce-label {
+    color: var(--muted);
+    font-size: 0.6875rem;
+    font-weight: 620;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+  }
+
+  .announce-version {
+    color: var(--brass);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+  }
+
+  .announce-cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .announce-arrow {
+    transition: transform 160ms var(--ease-out);
+  }
+
+  .announce-link:hover {
+    color: var(--brass-bright);
+  }
+
+  .announce-link:hover .announce-cta {
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
+  }
+
+  .announce-link:hover .announce-arrow {
+    transform: translateX(0.15rem);
+  }
+
+  .announce-dismiss {
+    position: absolute;
+    inset-inline-end: var(--sp-xs);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.75rem;
+    height: 1.75rem;
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    transition: color 160ms var(--ease-out), background 160ms var(--ease-out);
+  }
+
+  .announce-dismiss:hover {
+    color: var(--ink);
+    background: color-mix(in oklch, var(--ink) 10%, transparent);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .announce-arrow,
+    .announce-dismiss {
+      transition: none;
+    }
+  }
+
+  @media (max-width: 30rem) {
+    .announce-label {
+      display: none;
+    }
+  }
+</style>

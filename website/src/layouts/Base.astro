@@ -2,6 +2,8 @@
 import "@fontsource-variable/archivo/wdth.css";
 import "@fontsource-variable/martian-mono";
 import "../styles/global.css";
+import AnnouncementBar from "../components/AnnouncementBar.astro";
+import AnnounceDismissScript from "../components/AnnounceDismissScript.astro";
 
 interface Props {
   title: string;
@@ -29,9 +31,11 @@ const github = "https://github.com/tylerbutler/trellis";
     <meta property="og:url" content={Astro.url.href} />
     <meta property="og:image" content={new URL("/og.png", Astro.site)} />
     <meta name="twitter:card" content="summary_large_image" />
+    <AnnounceDismissScript />
   </head>
   <body>
     <a class="skip-link" href="#main">Skip to content</a>
+    <AnnouncementBar />
     <header class="site-header">
       <div class="shell">
         <a class="brand" href="/" aria-label="Trellis home">
