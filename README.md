@@ -358,7 +358,7 @@ to a package name for shell substitution.
 ### Validation
 
 ```
-trellis doctor
+trellis doctor [--fix] [--dry-run] [--format text|json|github]
 ```
 
 Checks every workspace invariant and reports all problems at once: member
@@ -371,6 +371,17 @@ parses and references a valid package and kind. When `.tool-versions` pins
 gleam, a mismatched gleam on PATH is reported as an advisory warning
 (enforcing toolchains stays mise/asdf's job). Non-zero exit on any error —
 run it on every PR.
+
+`--fix` applies the mechanical remedies (seed a missing CHANGELOG, patch stale
+locked versions) and re-checks; `--dry-run` lists them without writing.
+`--format json` emits each finding as `{check, severity, message, file,
+package, fixable}`, and `--format github` emits the same findings as workflow
+commands, so they annotate the changed lines in a PR instead of scrolling past
+in a log:
+
+```yaml
+- run: trellis doctor --format github
+```
 
 ### Scaffolding
 

@@ -1,0 +1,58 @@
+---
+source: tests/json_contract.rs
+expression: "json_output(&fixture(\"basic\"), &[\"doctor\", \"--format\", \"json\"], true)"
+---
+{
+  "applied": [],
+  "auto-members": false,
+  "configless": false,
+  "findings": [
+    {
+      "check": "changelog-adoption",
+      "file": "packages/lat_core/CHANGELOG.md",
+      "fixable": true,
+      "message": "package `lat_core` has changelog history that trellis has not batched yet; it will be adopted on the next release",
+      "package": "lat_core",
+      "severity": "warning"
+    },
+    {
+      "check": "changelog-adoption",
+      "file": "packages/lat_mid/CHANGELOG.md",
+      "fixable": true,
+      "message": "package `lat_mid` has changelog history that trellis has not batched yet; it will be adopted on the next release",
+      "package": "lat_mid",
+      "severity": "warning"
+    },
+    {
+      "check": "changelog-adoption",
+      "file": "packages/lat_cli/CHANGELOG.md",
+      "fixable": true,
+      "message": "package `lat_cli` has changelog history that trellis has not batched yet; it will be adopted on the next release",
+      "package": "lat_cli",
+      "severity": "warning"
+    }
+  ],
+  "fixes": [
+    {
+      "description": "adopt existing changelog history for `lat_core`",
+      "file": "packages/lat_core/CHANGELOG.md",
+      "kind": "adopt-changelog",
+      "package": "lat_core"
+    },
+    {
+      "description": "adopt existing changelog history for `lat_mid`",
+      "file": "packages/lat_mid/CHANGELOG.md",
+      "kind": "adopt-changelog",
+      "package": "lat_mid"
+    },
+    {
+      "description": "adopt existing changelog history for `lat_cli`",
+      "file": "packages/lat_cli/CHANGELOG.md",
+      "kind": "adopt-changelog",
+      "package": "lat_cli"
+    }
+  ],
+  "members": 4,
+  "ok": true,
+  "schema": "trellis.doctor/1"
+}

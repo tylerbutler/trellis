@@ -5,7 +5,7 @@ description: What trellis promises about its --json payloads — the schema fiel
 
 import Callout from "../../../components/Callout.astro";
 
-Nine trellis commands emit JSON for machine consumption, and workflows are
+Ten trellis commands emit JSON for machine consumption, and workflows are
 built on them. This page states what those shapes promise, so you can wire one
 into CI and know what would break it.
 
@@ -74,6 +74,7 @@ Two things are explicitly **not** part of the contract:
 | `version apply --json` | `trellis.version-apply/1`<br />`{schema, bumped[], lockfiles[], adopted[]}` |
 | `tag plan --json` | `trellis.tag-plan/1`<br />`{schema, tags[]}` |
 | `ci tag-package --json` | `trellis.ci-tag-package/1`<br />`{schema, name, path, version, tag-kind, tag-version \| tag-series}` |
+| `doctor --format json` | `trellis.doctor/1`<br />`{schema, ok, members, configless, auto-members, findings[], fixes[], applied[]}` |
 
 A `packages[]` entry in `list` and the top level of `info` are the same shape,
 so a consumer can handle one package the same way whichever command produced
@@ -106,6 +107,64 @@ no version, which is why it cannot trigger a publish.
 comment. The field is contractual — always present, always a string. **Its
 prose is not**, and will change without a schema bump. Render it; don't parse
 it.
+
+## `doctor` findings
+
+`doctor --format json` reports one entry per problem:
+
+```json
+{
+  "check": "lockfile-drift",
+  "severity": "error",
+  "message": "packages/lat_mid/manifest.toml locks `lat_core` at 1.1.0 …",
+  "file": "packages/lat_mid/manifest.toml",
+  "package": "lat_mid",
+  "fixable": true
+}
+```
+
+`severity` is `error` or `warning`; only an error fails the run, and `ok`
+mirrors the exit code. `file` is workspace-relative with forward slashes, and
+`file` and `package` are **absent rather than null** when the finding is a
+property of the workspace instead of one file — a dependency cycle names no
+single manifest. `fixable` says `doctor --fix` would remediate it; the `fixes[]`
+array describes those remedies, and one entry there can clear several findings.
+After a successful `--fix`, `fixes[]` is empty and `applied[]` holds what was
+written.
+
+Like `preview`, **`message` is prose and not contractual** — it is written for a
+person and will be reworded without a schema bump. Branch on `check`:
+
+| `check` | Raised when |
+| --- | --- |
+| `member-glob` | a `members` glob is invalid, unreadable, or matches nothing |
+| `member-manifest` | a member's `gleam.toml` is missing, unparseable, carries a `[tools.trellis]` table, or repeats another member's name |
+| `path-dependency` | a path dependency escapes the workspace or names no member |
+| `dependency-cycle` | the graph is cyclic |
+| `workspace-config` | the root `[tools.trellis]` table is itself wrong |
+| `exclusion-glob` | a task-exclusion or tag-mode-override glob matches no member |
+| `release-boundary` | a releasable package depends on one excluded from release |
+| `tag-collision` | two releasable packages produce the same tag |
+| `lockfile-drift` | a `manifest.toml` locks a workspace-internal dep at a stale version |
+| `changelog-missing` | a releasable package has no `CHANGELOG.md` |
+| `changelog-unreadable` | a `CHANGELOG.md` exists but could not be read |
+| `changelog-behind` | a package's version is behind the newest one in its changelog |
+| `changelog-adoption` | a package has pre-trellis changelog history the next release will adopt |
+| `package-version` | a package's version is not valid semver |
+| `changelog-fragment` | an unreleased fragment does not parse, or names an unknown project or kind |
+| `toolchain` | the gleam on PATH disagrees with the `.tool-versions` pin |
+
+These values are a documented enum, so the table above is the contract: a new
+`check` may appear without a bump — handle an unrecognized one by reporting it
+rather than dropping it — but renaming or removing one bumps the major.
+
+<Callout>
+  **`--format github` is not JSON.** It emits GitHub Actions workflow commands
+  (`::error title=lockfile-drift,file=packages/lat_mid/manifest.toml::…`) so
+  findings land on the file in a PR's Files tab. `title` is the `check`, `file`
+  is the same path — one line per finding, nothing else on stdout, and nothing
+  at all when the workspace is healthy. See [CI recipes](/docs/ci/).
+</Callout>
 
 ## The two exceptions
 

@@ -99,13 +99,16 @@ pub fn check(workspace: &Workspace, options: &CheckOptions) -> Result<bool> {
         .map(|status| status.name.as_str())
         .collect();
     let ok = needs_entry.is_empty() && fragments.problems.is_empty();
+    // `invalid-fragments` is a contract field of `trellis.changelog-check/1`
+    // and stays an array of strings; the structured form exists for `doctor`.
+    let invalid = fragments.problem_messages();
 
     if options.json {
         let document = ChangelogCheckDocument {
             schema: ChangelogCheckDocument::SCHEMA,
             has_entries: !fragments.fragments.is_empty(),
             needs_entry: !needs_entry.is_empty(),
-            invalid_fragments: &fragments.problems,
+            invalid_fragments: &invalid,
             packages: statuses
                 .iter()
                 .map(|status| ChangelogPackage {
@@ -115,7 +118,7 @@ pub fn check(workspace: &Workspace, options: &CheckOptions) -> Result<bool> {
                     fragments: status.fragments,
                 })
                 .collect(),
-            preview: preview(&statuses, &fragments.problems),
+            preview: preview(&statuses, &invalid),
         };
         println!("{}", serde_json::to_string_pretty(&document)?);
     } else {
@@ -133,7 +136,7 @@ pub fn check(workspace: &Workspace, options: &CheckOptions) -> Result<bool> {
             };
             println!("{}: {state}", status.name);
         }
-        for problem in &fragments.problems {
+        for problem in &invalid {
             println!("invalid: {problem}");
         }
     }

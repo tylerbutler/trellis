@@ -292,3 +292,47 @@ fn ci_tag_package_json_contract_for_a_series_tag() {
         true,
     ));
 }
+
+// ---- doctor --------------------------------------------------------------
+
+/// The passing shape: `ok` is true because warnings are advisory, so this also
+/// pins that a warning does not fail the run.
+#[test]
+fn doctor_json_contract_when_passing() {
+    insta::assert_json_snapshot!(json_output(
+        &fixture("basic"),
+        &["doctor", "--format", "json"],
+        true
+    ));
+}
+
+/// The interesting payload is the failing one: it is what a PR workflow reads.
+/// The fixture is broken four ways on purpose, to pin an error with a file and
+/// no package, a fixable error, a fixable warning, and a finding attributed to
+/// a file outside any member.
+#[test]
+fn doctor_json_contract_with_findings() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+
+    // An exclusion glob that matches nothing: an error with no package.
+    write(
+        &root.join("gleam.toml"),
+        "[tools.trellis]\nmembers = [\"packages/*\", \"examples/*\"]\n\
+         exclude = { \"@release\" = [\"examples/*\"], build = [\"nope/*\"] }\n",
+    );
+    // Stale locked version: a fixable error naming a manifest.
+    write(
+        &root.join("packages/lat_mid/manifest.toml"),
+        "packages = [\n  \
+         { name = \"lat_core\", version = \"1.1.0\", source = \"local\", path = \"../lat_core\" },\n]\n",
+    );
+    // Missing changelog: a fixable warning.
+    fs::remove_file(root.join("packages/lat_core/CHANGELOG.md")).unwrap();
+    // A fragment naming no member: an error pointing at the fragment file.
+    add_fragment(root, "ghost", "Added", "from nowhere");
+
+    let payload = json_output(root, &["doctor", "--format", "json"], false);
+    insta::assert_json_snapshot!(payload);
+}

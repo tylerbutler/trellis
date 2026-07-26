@@ -4,7 +4,7 @@
 .SH NAME
 trellis\-doctor \- Validate workspace invariants; non\-zero exit on any error
 .SH SYNOPSIS
-\fBtrellis doctor\fR [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-\-fix\fR] [\fB\-\-dry\-run\fR] [\fB\-h\fR|\fB\-\-help\fR] 
+\fBtrellis doctor\fR [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-\-fix\fR] [\fB\-\-dry\-run\fR] [\fB\-\-format\fR] [\fB\-h\fR|\fB\-\-help\fR] 
 .SH DESCRIPTION
 Validate workspace invariants; non\-zero exit on any error
 .SH OPTIONS
@@ -18,5 +18,20 @@ Apply the mechanically\-fixable findings (seed changelog stubs, patch stale lock
 \fB\-\-dry\-run\fR
 List the fixes `\-\-fix` would apply without writing anything
 .TP
+\fB\-\-format\fR \fI<FORMAT>\fR [default: text]
+How to report findings: prose, the `trellis.doctor/1` JSON payload, or GitHub Actions annotations that land on the file in a PR
+.br
+
+.br
+\fIPossible values:\fR
+.RS 14
+.IP \(bu 2
+text
+.IP \(bu 2
+json: The `trellis.doctor/1` payload
+.IP \(bu 2
+github: GitHub Actions workflow commands, so findings land on the file in the PR\*(Aqs Files tab instead of in a log nobody expands
+.RE
+.TP
 \fB\-h\fR, \fB\-\-help\fR
-Print help
+Print help (see a summary with \*(Aq\-h\*(Aq)

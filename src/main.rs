@@ -15,6 +15,7 @@ mod workspace;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use commands::doctor::DoctorFormat;
 use commands::graph::GraphFormat;
 use commands::run::Target;
 use std::path::PathBuf;
@@ -203,6 +204,10 @@ enum Command {
         /// List the fixes `--fix` would apply without writing anything
         #[arg(long)]
         dry_run: bool,
+        /// How to report findings: prose, the `trellis.doctor/1` JSON payload,
+        /// or GitHub Actions annotations that land on the file in a PR
+        #[arg(long, value_enum, default_value = "text")]
+        format: DoctorFormat,
     },
     /// Structured output for CI
     Ci {
@@ -367,6 +372,10 @@ fn main() -> ExitCode {
             | Command::Man { .. }
             | Command::Completions { .. }
             | Command::Ci { .. }
+            | Command::Doctor {
+                format: DoctorFormat::Json | DoctorFormat::Github,
+                ..
+            }
     );
     let result = dispatch(cli);
     if notify_update && result.is_ok() {
@@ -407,9 +416,21 @@ fn dispatch(cli: Cli) -> Result<bool> {
         _ => {}
     }
 
-    if let Command::Doctor { fix, dry_run } = cli.command {
+    if let Command::Doctor {
+        fix,
+        dry_run,
+        format,
+    } = cli.command
+    {
         let root = Workspace::find_root(&start)?;
-        return commands::doctor::run(&root, &commands::doctor::DoctorOptions { fix, dry_run });
+        return commands::doctor::run(
+            &root,
+            &commands::doctor::DoctorOptions {
+                fix,
+                dry_run,
+                format,
+            },
+        );
     }
 
     let workspace = Workspace::load(&start)?;

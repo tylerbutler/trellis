@@ -109,6 +109,35 @@ rest. `--fix` never touches the report-only findings (path-dep escapes, tag
 collisions, versions behind their changelog), so it stays safe to run
 anywhere; keep the bare `trellis doctor` in CI as the gate.
 
+### Annotating the diff
+
+A `doctor` failure in a log tells a contributor a file is wrong; an annotation
+puts the message on the file itself in the PR's Files tab. `--format github`
+emits one workflow command per finding and nothing else, so it drops straight
+into the gate:
+
+```yaml
+# on: pull_request
+- run: trellis doctor --format github
+```
+
+Errors become `::error`, advisory warnings become `::warning`, and the exit
+code is unchanged — the job still fails on any error. A healthy workspace
+prints nothing at all.
+
+For anything richer than annotations — grouping findings by package, rendering
+them into a sticky comment, filtering to the ones `--fix` would clear — use
+`--format json` and read `check`, `severity`, `file`, and `fixable` off each
+finding:
+
+```yaml
+- id: doctor
+  run: trellis doctor --format json > doctor.json || true
+- run: jq -r '.findings[] | select(.fixable) | .message' doctor.json
+```
+
+The [payload is contractual](/docs/json-output/); the `message` prose is not.
+
 ## The release pipeline
 
 On every push to `main`, regenerate the release PR from pending fragments:
