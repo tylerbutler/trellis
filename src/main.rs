@@ -62,7 +62,7 @@ struct Cli {
     #[arg(long, global = true, value_name = "WHEN", default_value = "auto")]
     color: ColorChoice,
 
-    /// Suppress the per-package output stream and the summary table
+    /// Suppress normal-path output; JSON/report payloads and errors still print
     #[arg(short, long, global = true, conflicts_with = "verbose")]
     quiet: bool,
 

@@ -28,8 +28,10 @@ pub enum ColorChoice {
 /// this is one axis rather than two flags.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Verbosity {
-    /// `-q`: drop the per-package stream and the summary table. Errors and the
-    /// exit code are unaffected.
+    /// `-q`: drop every command's normal-path narration — progress lines,
+    /// summaries, confirmations. `--json`/`--format json`/`github` payloads,
+    /// generated output (`man`, `completions`, `markdown-help`), fatal
+    /// errors, and the exit code are all unaffected.
     Quiet,
     #[default]
     Normal,
@@ -89,6 +91,23 @@ pub fn quiet() -> bool {
 
 pub fn verbose() -> bool {
     settings().verbosity == Verbosity::Verbose
+}
+
+/// Print a line of human-facing narration, unless `-q` suppressed it.
+///
+/// Every command's normal-path prose goes through this — progress lines,
+/// summaries, confirmations. It never gates a `--json`/`--format json` (or
+/// `github`) payload, or `man`/`completions`/`markdown-help`: those are the
+/// thing a command exists to produce for a script or a file, not narration
+/// about producing it, so `-q` leaves them alone. Fatal errors bypass it too:
+/// they print in `main`, outside any command's quiet-gated text.
+#[macro_export]
+macro_rules! status {
+    ($($arg:tt)*) => {
+        if !$crate::term::quiet() {
+            println!($($arg)*);
+        }
+    };
 }
 
 /// Echo a command trellis is about to run, on stderr, when `-v` is set.

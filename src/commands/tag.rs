@@ -137,7 +137,7 @@ pub fn plan(workspace: &Workspace, json: bool) -> Result<()> {
         };
         println!("{}", serde_json::to_string_pretty(&document)?);
     } else if pending.is_empty() {
-        println!("every releasable package version is already tagged");
+        crate::status!("every releasable package version is already tagged");
     } else {
         for planned in &pending {
             let member = &workspace.members[planned.member];
@@ -145,7 +145,7 @@ pub fn plan(workspace: &Workspace, json: bool) -> Result<()> {
                 TagAction::Move => "moves tag",
                 _ => "needs tag",
             };
-            println!(
+            crate::status!(
                 "{}: {} {verb} {}",
                 member.name,
                 member.version(),
@@ -171,7 +171,7 @@ pub fn create(workspace: &Workspace, options: &CreateOptions) -> Result<()> {
         .filter(|planned| push || planned.action != TagAction::UpToDate)
         .collect();
     if targets.is_empty() {
-        println!("every releasable package version is already tagged");
+        crate::status!("every releasable package version is already tagged");
         return Ok(());
     }
 
@@ -209,7 +209,7 @@ fn create_exact_tag(
     if local_oid.is_none() {
         if remote_oid.is_some() {
             git_stdout(&workspace.root, &["fetch", "origin", "tag", tag])?;
-            println!("fetched {tag}");
+            crate::status!("fetched {tag}");
         } else {
             let mut args = crate::git::identity_fallback_args(&workspace.root);
             args.extend([
@@ -221,17 +221,17 @@ fn create_exact_tag(
             ]);
             let args: Vec<&str> = args.iter().map(String::as_str).collect();
             git_stdout(&workspace.root, &args)?;
-            println!("tagged {tag}");
+            crate::status!("tagged {tag}");
         }
     }
     if push && remote_oid.is_none() {
         git_stdout(&workspace.root, &["push", "origin", tag])
             .with_context(|| format!("failed to push tag {tag}"))?;
-        println!("pushed {tag}");
+        crate::status!("pushed {tag}");
     }
     if options.github_release {
         if github_release_exists(&workspace.root, tag)? {
-            println!("GitHub release {tag} already exists; skipping");
+            crate::status!("GitHub release {tag} already exists; skipping");
         } else {
             let notes = release_notes(workspace, planned.member);
             let gh = tools::gh_bin();
@@ -248,7 +248,7 @@ fn create_exact_tag(
                     String::from_utf8_lossy(&output.stderr).trim()
                 );
             }
-            println!("created GitHub release {tag}");
+            crate::status!("created GitHub release {tag}");
         }
     }
     Ok(())
@@ -279,9 +279,9 @@ fn move_series_tag(workspace: &Workspace, planned: &PlannedTag, push: bool) -> R
         let args: Vec<&str> = args.iter().map(String::as_str).collect();
         git_stdout(&workspace.root, &args)?;
         if planned.action == TagAction::Create {
-            println!("tagged {tag}");
+            crate::status!("tagged {tag}");
         } else {
-            println!("moved {tag}");
+            crate::status!("moved {tag}");
         }
     }
     if push {
@@ -292,9 +292,9 @@ fn move_series_tag(workspace: &Workspace, planned: &PlannedTag, push: bool) -> R
             git_stdout(&workspace.root, &["push", "--force", "origin", tag])
                 .with_context(|| format!("failed to push tag {tag}"))?;
             if remote_oid.is_none() {
-                println!("pushed {tag}");
+                crate::status!("pushed {tag}");
             } else {
-                println!("force-pushed {tag}");
+                crate::status!("force-pushed {tag}");
             }
         }
     }

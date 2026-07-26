@@ -24,7 +24,7 @@ pub fn refresh(workspace: &Workspace, package: Option<&str>) -> Result<bool> {
         let member = &workspace.members[idx];
         tools::with_retry(retry, &format!("deps download for {}", member.name), || {
             let gleam = tools::gleam_bin();
-            println!("[{}] $ gleam deps download", member.name);
+            crate::status!("[{}] $ gleam deps download", member.name);
             let status = Command::new(&gleam)
                 .args(["deps", "download"])
                 .current_dir(&member.path)

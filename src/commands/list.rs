@@ -25,7 +25,7 @@ pub fn run(workspace: &Workspace, options: &ListOptions) -> Result<()> {
         println!("{}", serde_json::to_string_pretty(&document)?);
     } else {
         for idx in selected {
-            println!("{}", workspace.members[idx].name);
+            crate::status!("{}", workspace.members[idx].name);
         }
     }
     Ok(())

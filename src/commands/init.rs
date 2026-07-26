@@ -48,7 +48,7 @@ pub fn run(start: &Path) -> Result<bool> {
     let document = render_config(existing.as_deref())?;
     std::fs::write(&manifest_path, document)
         .with_context(|| format!("failed to write {}", manifest_path.display()))?;
-    println!(
+    crate::status!(
         "{} {}",
         if existing.is_some() {
             "added [tools.trellis] to"
@@ -64,14 +64,14 @@ pub fn run(start: &Path) -> Result<bool> {
     // user whether it needs narrowing, and printing it costs nothing.
     let members = workspace::discovered_member_paths(&root);
     if members.is_empty() {
-        println!("no packages discovered yet — doctor will say so below");
+        crate::status!("no packages discovered yet — doctor will say so below");
     } else {
-        println!("members are auto-discovered; found {}:", members.len());
+        crate::status!("members are auto-discovered; found {}:", members.len());
         for member in &members {
-            println!("  {member}");
+            crate::status!("  {member}");
         }
     }
-    println!();
+    crate::status!();
 
     // The issue asks for this, and it is the honest close: init's job is done
     // when doctor agrees the workspace is coherent.

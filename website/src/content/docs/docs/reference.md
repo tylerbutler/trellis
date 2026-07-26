@@ -70,7 +70,7 @@ A workspace CLI for Gleam monorepos: task fan-out, introspection, and release or
 
   Possible values: `auto`, `always`, `never`
 
-* `-q`, `--quiet` — Suppress the per-package output stream and the summary table
+* `-q`, `--quiet` — Suppress normal-path output; JSON/report payloads and errors still print
 * `-v`, `--verbose` — Trace every command trellis shells out to, on stderr
 * `--no-update-check` — Don't check whether a newer trellis release is available
 

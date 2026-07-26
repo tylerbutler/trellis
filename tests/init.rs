@@ -82,6 +82,25 @@ fn init_writes_a_table_that_declares_nothing_derivable() {
     );
 }
 
+/// `-q` is a global flag, so it reaches `init` too — including the `doctor`
+/// run it finishes with — even though `init` writes the file regardless of
+/// whether anything printed.
+#[test]
+fn quiet_suppresses_init_and_the_doctor_run_it_finishes_with() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    repo_with_packages(root);
+
+    trellis(root)
+        .args(["init", "--quiet"])
+        .assert()
+        .success()
+        .stdout("");
+
+    let config = root_config(root);
+    assert!(config.contains("[tools.trellis]"), "{config}");
+}
+
 #[test]
 fn the_written_table_is_what_root_discovery_finds() {
     // Before init the root is inferred from git; after it, it is declared. Both

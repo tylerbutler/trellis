@@ -148,10 +148,10 @@ pub fn plan(workspace: &Workspace, overrides: &Overrides, json: bool) -> Result<
         };
         println!("{}", serde_json::to_string_pretty(&document)?);
     } else if plan.is_empty() {
-        println!("no unreleased changes; nothing to bump");
+        crate::status!("no unreleased changes; nothing to bump");
     } else {
         for entry in &plan {
-            println!(
+            crate::status!(
                 "{}: {} -> {} ({})",
                 entry.name,
                 entry.current,
@@ -160,7 +160,7 @@ pub fn plan(workspace: &Workspace, overrides: &Overrides, json: bool) -> Result<
             );
         }
         if overrides.retains_fragments() {
-            println!(
+            crate::status!(
                 "note: prerelease — fragments stay unreleased and will be released again \
                  by the final version"
             );
@@ -224,7 +224,7 @@ pub fn apply(workspace: &Workspace, overrides: &Overrides, json: bool) -> Result
             };
             println!("{}", serde_json::to_string_pretty(&document)?);
         } else {
-            println!("no unreleased changes; nothing to apply");
+            crate::status!("no unreleased changes; nothing to apply");
         }
         return Ok(true);
     }
@@ -384,16 +384,16 @@ pub fn apply(workspace: &Workspace, overrides: &Overrides, json: bool) -> Result
         println!("{}", serde_json::to_string_pretty(&document)?);
     } else {
         for entry in &plan {
-            println!("bumped {}: {} -> {}", entry.name, entry.current, entry.next);
+            crate::status!("bumped {}: {} -> {}", entry.name, entry.current, entry.next);
         }
         for file in &patched_files {
-            println!("patched {file}");
+            crate::status!("patched {file}");
         }
         for file in &adopted_files {
-            println!("adopted existing changelog history as {file}");
+            crate::status!("adopted existing changelog history as {file}");
         }
         if overrides.retains_fragments() {
-            println!("kept fragments unreleased for the final version");
+            crate::status!("kept fragments unreleased for the final version");
         }
     }
     Ok(true)
