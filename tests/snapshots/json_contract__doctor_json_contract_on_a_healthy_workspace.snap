@@ -1,0 +1,14 @@
+---
+source: tests/json_contract.rs
+expression: "json_output(&fixture(\"basic\"), &[\"doctor\", \"--format\", \"json\"], true)"
+---
+{
+  "applied": [],
+  "auto-members": false,
+  "configless": false,
+  "findings": [],
+  "fixes": [],
+  "members": 4,
+  "ok": true,
+  "schema": "trellis.doctor/1"
+}

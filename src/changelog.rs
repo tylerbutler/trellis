@@ -31,6 +31,18 @@ struct RawFragment {
     body: String,
 }
 
+/// A fragment that could not be used, and the file it came from. The path is
+/// kept so `doctor` can point a GitHub annotation at the offending file rather
+/// than at the workspace in general.
+#[derive(Debug, Clone)]
+pub struct FragmentProblem {
+    pub message: String,
+    pub path: PathBuf,
+    /// The `project` the fragment claimed, when it parsed far enough to have
+    /// one.
+    pub project: Option<String>,
+}
+
 /// All unreleased fragments plus every problem found while reading them.
 /// Callers decide whether problems are warnings (`changelog check` reports
 /// them) or fatal (`version plan/apply` refuses — silently dropping a
@@ -38,7 +50,7 @@ struct RawFragment {
 #[derive(Debug, Default)]
 pub struct Fragments {
     pub fragments: Vec<Fragment>,
-    pub problems: Vec<String>,
+    pub problems: Vec<FragmentProblem>,
 }
 
 impl Fragments {
@@ -48,6 +60,14 @@ impl Fragments {
 
     pub fn count_for(&self, project: &str) -> usize {
         self.for_project(project).count()
+    }
+
+    /// Problem messages alone, for the callers that only render prose.
+    pub fn problem_messages(&self) -> Vec<String> {
+        self.problems
+            .iter()
+            .map(|problem| problem.message.clone())
+            .collect()
     }
 }
 
@@ -92,39 +112,49 @@ pub fn load_fragments(workspace: &Workspace) -> Result<Fragments> {
         let raw: RawFragment = match toml::from_str(&text) {
             Ok(raw) => raw,
             Err(err) => {
-                result.problems.push(format!("fragment `{display}`: {err}"));
+                result.problems.push(FragmentProblem {
+                    message: format!("fragment `{display}`: {err}"),
+                    path,
+                    project: None,
+                });
                 continue;
             }
+        };
+        // Past the parse, every problem names the same file and project.
+        let blame = |message: String| FragmentProblem {
+            message,
+            path: path.clone(),
+            project: Some(raw.project.clone()),
         };
         match workspace.member_index(&raw.project) {
             Some(idx) if workspace.members[idx].releasable => {}
             Some(_) => {
-                result.problems.push(format!(
+                result.problems.push(blame(format!(
                     "fragment `{display}`: project `{}` is excluded from release by `@release`",
                     raw.project
-                ));
+                )));
                 continue;
             }
             None => {
-                result.problems.push(format!(
+                result.problems.push(blame(format!(
                     "fragment `{display}`: project `{}` is not a workspace member",
                     raw.project
-                ));
+                )));
                 continue;
             }
         }
         if !kinds.iter().any(|k| k.label == raw.kind) {
-            result.problems.push(format!(
+            result.problems.push(blame(format!(
                 "fragment `{display}`: kind `{}` is not one of {}",
                 raw.kind,
                 kind_labels(kinds)
-            ));
+            )));
             continue;
         }
         if raw.body.trim().is_empty() {
             result
                 .problems
-                .push(format!("fragment `{display}`: body is empty"));
+                .push(blame(format!("fragment `{display}`: body is empty")));
             continue;
         }
         result.fragments.push(Fragment {

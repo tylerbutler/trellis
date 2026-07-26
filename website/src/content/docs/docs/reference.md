@@ -376,6 +376,17 @@ Validate workspace invariants; non-zero exit on any error
 
 * `--fix` — Apply the mechanically-fixable findings (seed changelog stubs, patch stale locked versions), then re-report what remains
 * `--dry-run` — List the fixes `--fix` would apply without writing anything
+* `--format <FORMAT>` — How to report findings: prose, the `trellis.doctor/1` JSON payload, or GitHub Actions annotations that land on the file in a PR
+
+  Default value: `text`
+
+  Possible values:
+  - `text`
+  - `json`:
+    The `trellis.doctor/1` payload
+  - `github`:
+    GitHub Actions workflow commands, so findings land on the file in the PR's Files tab instead of in a log nobody expands
+
 
 
 

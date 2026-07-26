@@ -485,6 +485,124 @@ fn doctor_fix_leaves_unfixable_findings_and_fails() {
 }
 
 #[test]
+fn doctor_github_format_emits_annotations_and_nothing_else() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    write(
+        &root.join("gleam.toml"),
+        "[tools.trellis]\nmembers = [\"packages/*\"]\n",
+    );
+    // a: a fixable warning (missing CHANGELOG) and an unfixable error, so both
+    // annotation levels appear.
+    write(
+        &root.join("packages/a/gleam.toml"),
+        "name = \"a\"\nversion = \"1.0.0\"\n[dependencies]\nout = { path = \"../../../elsewhere\" }\n",
+    );
+
+    let assert = trellis(root)
+        .args(["doctor", "--format", "github"])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains(
+            "::error title=path-dependency,file=packages/a/gleam.toml::",
+        ))
+        .stdout(predicate::str::contains(
+            "::warning title=changelog-missing,file=packages/a/CHANGELOG.md::",
+        ))
+        // The prose surfaces belong to text mode alone.
+        .stdout(predicate::str::contains("checked:").not())
+        .stdout(predicate::str::contains("FAILED:").not())
+        .stdout(predicate::str::contains("auto-fixable").not());
+
+    // Every line is a workflow command; nothing else shares the stream.
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+    for line in stdout.lines() {
+        assert!(line.starts_with("::"), "stray output: {line}");
+    }
+}
+
+/// A healthy run has nothing to annotate, so it must say nothing at all — a
+/// summary line would show up as an unexplained log entry on every green PR.
+#[test]
+fn doctor_github_format_is_silent_when_healthy() {
+    trellis(&fixture("basic"))
+        .args(["doctor", "--format", "github"])
+        .assert()
+        .success()
+        .stdout("");
+}
+
+/// A message spanning lines would otherwise truncate the annotation at the
+/// break, or inject a second workflow command.
+#[test]
+fn doctor_github_format_escapes_multiline_messages() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    write(
+        &root.join("gleam.toml"),
+        "[tools.trellis]\nmembers = [\"packages/*\"]\n",
+    );
+    write(
+        &root.join("packages/a/gleam.toml"),
+        "name = \"a\"\nversion =\n",
+    );
+
+    let assert = trellis(root)
+        .args(["doctor", "--format", "github"])
+        .assert()
+        .failure();
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+    assert!(stdout.contains("%0A"), "newline was not escaped: {stdout}");
+    assert_eq!(stdout.lines().count(), 1, "annotation spilled: {stdout}");
+}
+
+/// `--json` owns stdout the same way, and still reports through the exit code.
+#[test]
+fn doctor_json_format_emits_only_the_payload() {
+    let assert = trellis(&fixture("basic"))
+        .args(["doctor", "--format", "json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("checked:").not());
+
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+    let payload: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(payload["schema"], "trellis.doctor/1");
+    assert_eq!(payload["ok"], true);
+}
+
+/// `--fix` in a structured format reports what it wrote through `applied`
+/// rather than through the `fixed:` prose it suppresses.
+#[test]
+fn doctor_json_format_reports_applied_fixes() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    write(
+        &root.join("gleam.toml"),
+        "[tools.trellis]\nmembers = [\"packages/*\"]\n",
+    );
+    write(
+        &root.join("packages/a/gleam.toml"),
+        "name = \"a\"\nversion = \"1.0.0\"\n",
+    );
+
+    let assert = trellis(root)
+        .args(["doctor", "--fix", "--format", "json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("fixed:").not());
+
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+    let payload: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(payload["applied"][0]["kind"], "seed-changelog");
+    assert_eq!(payload["applied"][0]["file"], "packages/a/CHANGELOG.md");
+    // The re-inspect ran, so the warning it fixed is gone from the payload.
+    assert_eq!(payload["findings"].as_array().unwrap().len(), 0);
+    assert_eq!(payload["fixes"].as_array().unwrap().len(), 0);
+    assert!(root.join("packages/a/CHANGELOG.md").exists());
+}
+
+#[test]
 fn strict_load_fails_on_broken_workspace_but_names_doctor() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();

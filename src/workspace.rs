@@ -4,6 +4,7 @@
 
 use crate::config::{ConfigFile, TagMode};
 use crate::gleam::GleamManifest;
+use crate::json::{Check, Finding};
 use anyhow::{Context, Result, bail};
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::{Component, Path, PathBuf};
@@ -47,19 +48,29 @@ pub struct Workspace {
 }
 
 /// Problems collected while loading. `Workspace::load` turns any error into a
-/// failure; `trellis doctor` reports them all instead.
+/// failure; `trellis doctor` reports them all instead — which is why these are
+/// [`Finding`]s and not strings: doctor's structured output needs the check
+/// identity and file attribution that prose would have dissolved.
 #[derive(Debug, Default)]
 pub struct Diagnostics {
-    pub errors: Vec<String>,
-    pub warnings: Vec<String>,
+    pub findings: Vec<Finding>,
 }
 
 impl Diagnostics {
-    fn error(&mut self, message: impl Into<String>) {
-        self.errors.push(message.into());
+    fn push(&mut self, finding: Finding) {
+        self.findings.push(finding);
     }
-    fn warning(&mut self, message: impl Into<String>) {
-        self.warnings.push(message.into());
+
+    /// Error messages only, in the order they were found.
+    pub fn errors(&self) -> impl Iterator<Item = &str> {
+        self.findings
+            .iter()
+            .filter(|f| f.is_error())
+            .map(|f| f.message.as_str())
+    }
+
+    pub fn has_errors(&self) -> bool {
+        self.findings.iter().any(Finding::is_error)
     }
 }
 
@@ -118,10 +129,10 @@ impl Workspace {
     pub fn load(start: &Path) -> Result<Self> {
         let root = Self::find_root(start)?;
         let (workspace, diagnostics) = Self::load_with_diagnostics(&root)?;
-        if !diagnostics.errors.is_empty() {
+        if diagnostics.has_errors() {
             bail!(
                 "workspace is invalid:\n  - {}\n(run `trellis doctor` for details)",
-                diagnostics.errors.join("\n  - ")
+                diagnostics.errors().collect::<Vec<_>>().join("\n  - ")
             );
         }
         workspace.context("workspace could not be loaded")
@@ -143,10 +154,13 @@ impl Workspace {
                     document.get("name").is_some(),
                 ),
                 Err(err) => {
-                    diagnostics.error(format!(
-                        "failed to parse {}: {err}",
-                        manifest_path.display()
-                    ));
+                    diagnostics.push(
+                        Finding::error(
+                            Check::WorkspaceConfig,
+                            format!("failed to parse {}: {err}", manifest_path.display()),
+                        )
+                        .at(GLEAM_TOML),
+                    );
                     return Ok((None, diagnostics));
                 }
             },
@@ -158,7 +172,9 @@ impl Workspace {
             match ConfigFile::load(&manifest_path) {
                 Ok(config) => config,
                 Err(err) => {
-                    diagnostics.error(format!("{err:#}"));
+                    diagnostics.push(
+                        Finding::error(Check::WorkspaceConfig, format!("{err:#}")).at(GLEAM_TOML),
+                    );
                     return Ok((None, diagnostics));
                 }
             }
@@ -177,7 +193,13 @@ impl Workspace {
         // Parse each member manifest; unparseable members are reported and dropped.
         for (task, patterns) in &config.exclude {
             if let Err(err) = build_globset(patterns) {
-                diagnostics.error(format!("invalid `{task}` exclusion glob: {err:#}"));
+                diagnostics.push(
+                    Finding::error(
+                        Check::WorkspaceConfig,
+                        format!("invalid `{task}` exclusion glob: {err:#}"),
+                    )
+                    .at(GLEAM_TOML),
+                );
             }
         }
 
@@ -188,11 +210,17 @@ impl Workspace {
         {
             member_dirs.retain(|dir| !excludes.is_match(rel_path_string(root, dir)));
         }
-        if member_dirs.is_empty() && diagnostics.errors.is_empty() {
-            diagnostics.error(format!(
-                "no workspace members left after `{}` exclusions",
-                crate::config::MEMBERS_EXCLUDE_KEY
-            ));
+        if member_dirs.is_empty() && !diagnostics.has_errors() {
+            diagnostics.push(
+                Finding::error(
+                    Check::WorkspaceConfig,
+                    format!(
+                        "no workspace members left after `{}` exclusions",
+                        crate::config::MEMBERS_EXCLUDE_KEY
+                    ),
+                )
+                .at(GLEAM_TOML),
+            );
         }
 
         let release_exclusions = config
@@ -202,7 +230,13 @@ impl Workspace {
             .unwrap_or_default();
         let release_excludes = build_globset(&release_exclusions)
             .map_err(|err| {
-                diagnostics.error(format!("invalid release exclusion glob: {err:#}"));
+                diagnostics.push(
+                    Finding::error(
+                        Check::WorkspaceConfig,
+                        format!("invalid release exclusion glob: {err:#}"),
+                    )
+                    .at(GLEAM_TOML),
+                );
             })
             .ok();
         // Unknown mode keys are already rejected by `ConfigFile::validate`;
@@ -216,7 +250,13 @@ impl Workspace {
             match build_globset(patterns) {
                 Ok(set) => tag_mode_overrides.push((mode, set)),
                 Err(err) => {
-                    diagnostics.error(format!("invalid `tag-mode-overrides.{key}` glob: {err:#}"));
+                    diagnostics.push(
+                        Finding::error(
+                            Check::WorkspaceConfig,
+                            format!("invalid `tag-mode-overrides.{key}` glob: {err:#}"),
+                        )
+                        .at(GLEAM_TOML),
+                    );
                 }
             }
         }
@@ -225,7 +265,13 @@ impl Workspace {
             let rel_path = rel_path_string(root, &dir);
             let manifest_path = dir.join("gleam.toml");
             if !manifest_path.is_file() {
-                diagnostics.error(format!("member `{rel_path}` has no gleam.toml"));
+                diagnostics.push(
+                    Finding::error(
+                        Check::MemberManifest,
+                        format!("member `{rel_path}` has no gleam.toml"),
+                    )
+                    .at(format!("{rel_path}/{GLEAM_TOML}")),
+                );
                 continue;
             }
             match GleamManifest::load(&manifest_path) {
@@ -233,19 +279,24 @@ impl Workspace {
                     // A member manifest with its own [tools.trellis] would
                     // hijack root discovery for commands run inside it.
                     if manifest.has_trellis_config && dir != root {
-                        if configless {
-                            diagnostics.error(format!(
+                        let message = if configless {
+                            format!(
                                 "`{rel_path}/gleam.toml` has a [tools.trellis] table but the \
                                  workspace root was inferred as `{}`; run trellis from \
                                  `{rel_path}`, or move the table to the repository root",
                                 root.display()
-                            ));
+                            )
                         } else {
-                            diagnostics.error(format!(
+                            format!(
                                 "member `{rel_path}` has a [tools.trellis] table; only the \
                                  workspace root's gleam.toml may have one"
-                            ));
-                        }
+                            )
+                        };
+                        diagnostics.push(
+                            Finding::error(Check::MemberManifest, message)
+                                .at(format!("{rel_path}/{GLEAM_TOML}"))
+                                .in_package(manifest.name.clone()),
+                        );
                     }
                     let releasable = release_excludes
                         .as_ref()
@@ -266,7 +317,10 @@ impl Workspace {
                         tag_mode,
                     });
                 }
-                Err(err) => diagnostics.error(format!("{err:#}")),
+                Err(err) => diagnostics.push(
+                    Finding::error(Check::MemberManifest, format!("{err:#}"))
+                        .at(format!("{rel_path}/{GLEAM_TOML}")),
+                ),
             }
         }
 
@@ -274,10 +328,17 @@ impl Workspace {
         let mut seen: HashMap<&str, &str> = HashMap::new();
         for member in &members {
             if let Some(other) = seen.insert(&member.name, &member.rel_path) {
-                diagnostics.error(format!(
-                    "duplicate package name `{}` in `{}` and `{}`",
-                    member.name, other, member.rel_path
-                ));
+                diagnostics.push(
+                    Finding::error(
+                        Check::MemberManifest,
+                        format!(
+                            "duplicate package name `{}` in `{}` and `{}`",
+                            member.name, other, member.rel_path
+                        ),
+                    )
+                    .at(format!("{}/{GLEAM_TOML}", member.rel_path))
+                    .in_package(member.name.clone()),
+                );
             }
         }
 
@@ -289,36 +350,43 @@ impl Workspace {
             .collect();
         let mut edges: BTreeSet<(usize, usize)> = BTreeSet::new();
         for (idx, member) in members.iter().enumerate() {
+            // Every problem here is a claim about this member's manifest, so
+            // they all annotate the same file.
+            let blame = |message: String| {
+                Finding::error(Check::PathDependency, message)
+                    .at(format!("{}/{GLEAM_TOML}", member.rel_path))
+                    .in_package(member.name.clone())
+            };
             for (dep_name, dep_path, _dev) in member.manifest.path_deps() {
                 let resolved = normalize_path(&member.path.join(dep_path));
                 if !resolved.starts_with(root) {
-                    diagnostics.error(format!(
+                    diagnostics.push(blame(format!(
                         "package `{}`: path dependency `{dep_name}` ({dep_path}) points outside the workspace",
                         member.name
-                    ));
+                    )));
                     continue;
                 }
                 match path_to_idx.get(&resolved) {
                     Some(&dep_idx) => {
                         if members[dep_idx].name != dep_name {
-                            diagnostics.error(format!(
+                            diagnostics.push(blame(format!(
                                 "package `{}`: path dependency `{dep_name}` resolves to `{}`, which is named `{}`",
                                 member.name, members[dep_idx].rel_path, members[dep_idx].name
-                            ));
+                            )));
                         }
                         if dep_idx == idx {
-                            diagnostics.error(format!(
+                            diagnostics.push(blame(format!(
                                 "package `{}` path-depends on itself",
                                 member.name
-                            ));
+                            )));
                         } else {
                             edges.insert((dep_idx, idx)); // dependency -> dependent
                         }
                     }
-                    None => diagnostics.error(format!(
+                    None => diagnostics.push(blame(format!(
                         "package `{}`: path dependency `{dep_name}` ({dep_path}) is not a workspace member",
                         member.name
-                    )),
+                    ))),
                 }
             }
         }
@@ -328,9 +396,12 @@ impl Workspace {
         let order = match toposort(members.len(), &names, &edge_list) {
             Ok(order) => order,
             Err(cycle) => {
-                diagnostics.error(format!(
-                    "dependency cycle between workspace members: {}",
-                    cycle.join(" -> ")
+                diagnostics.push(Finding::error(
+                    Check::DependencyCycle,
+                    format!(
+                        "dependency cycle between workspace members: {}",
+                        cycle.join(" -> ")
+                    ),
                 ));
                 return Ok((None, diagnostics));
             }
@@ -370,6 +441,13 @@ impl Workspace {
 
     pub fn member_index(&self, name: &str) -> Option<usize> {
         self.members.iter().position(|m| m.name == name)
+    }
+
+    /// `path` relative to the workspace root, with forward slashes — the form
+    /// `doctor`'s findings and GitHub annotations use. Paths outside the root
+    /// are returned unchanged rather than rewritten into `../` chains.
+    pub fn rel_path_of(&self, path: &Path) -> String {
+        rel_path_string(&self.root, path)
     }
 
     /// Direct workspace dependencies of a member.
@@ -529,7 +607,10 @@ fn expand_member_globs(
     for pattern in patterns {
         let full = root.join(pattern);
         let Some(full) = full.to_str() else {
-            diagnostics.error(format!("member glob `{pattern}` is not valid UTF-8"));
+            diagnostics.push(Finding::error(
+                Check::MemberGlob,
+                format!("member glob `{pattern}` is not valid UTF-8"),
+            ));
             continue;
         };
         // A literal member path is a promise that a package lives there, so a
@@ -540,7 +621,10 @@ fn expand_member_globs(
         if is_wildcard {
             match glob::Pattern::new(full) {
                 Ok(matcher) => wildcard_patterns.push((pattern, matcher, 0usize)),
-                Err(err) => diagnostics.error(format!("invalid member glob `{pattern}`: {err}")),
+                Err(err) => diagnostics.push(Finding::error(
+                    Check::MemberGlob,
+                    format!("invalid member glob `{pattern}`: {err}"),
+                )),
             }
             continue;
         }
@@ -549,7 +633,10 @@ fn expand_member_globs(
         if path.is_dir() {
             dirs.insert(normalize_path(path));
         } else {
-            diagnostics.error(format!("member glob `{pattern}` matches no packages"));
+            diagnostics.push(Finding::error(
+                Check::MemberGlob,
+                format!("member glob `{pattern}` matches no packages"),
+            ));
         }
     }
 
@@ -587,7 +674,10 @@ fn expand_member_globs(
                 }
                 Ok(_) => {}
                 Err(err) => {
-                    diagnostics.warning(format!("while expanding member globs: {err}"));
+                    diagnostics.push(Finding::warning(
+                        Check::MemberGlob,
+                        format!("while expanding member globs: {err}"),
+                    ));
                 }
             }
         }
@@ -595,7 +685,10 @@ fn expand_member_globs(
 
     for (pattern, _, matched) in wildcard_patterns {
         if matched == 0 {
-            diagnostics.error(format!("member glob `{pattern}` matches no packages"));
+            diagnostics.push(Finding::error(
+                Check::MemberGlob,
+                format!("member glob `{pattern}` matches no packages"),
+            ));
         }
     }
 
@@ -610,7 +703,10 @@ fn discover_member_dirs(root: &Path, diagnostics: &mut Diagnostics) -> Vec<PathB
     let manifests = match crate::git::ls_gleam_manifests(root) {
         Ok(manifests) => manifests,
         Err(err) => {
-            diagnostics.error(format!("cannot auto-discover members: {err:#}"));
+            diagnostics.push(Finding::error(
+                Check::MemberGlob,
+                format!("cannot auto-discover members: {err:#}"),
+            ));
             return Vec::new();
         }
     };
@@ -624,11 +720,14 @@ fn discover_member_dirs(root: &Path, diagnostics: &mut Diagnostics) -> Vec<PathB
         dirs.insert(normalize_path(&root.join(dir)));
     }
     if dirs.is_empty() {
-        diagnostics.error(format!(
-            "no members to auto-discover: no gleam.toml found under {} \
-             (gitignored paths are not searched); add packages, or configure \
-             `members` in a [tools.trellis] table",
-            root.display()
+        diagnostics.push(Finding::error(
+            Check::MemberGlob,
+            format!(
+                "no members to auto-discover: no gleam.toml found under {} \
+                 (gitignored paths are not searched); add packages, or configure \
+                 `members` in a [tools.trellis] table",
+                root.display()
+            ),
         ));
     }
     dirs.into_iter().collect()
@@ -653,15 +752,21 @@ fn resolve_tag_mode(
         [] => default,
         [mode] => *mode,
         modes => {
-            diagnostics.error(format!(
-                "member `{rel_path}` matches `tag-mode-overrides` globs for {}; \
-                 a member may have only one tag mode",
-                modes
-                    .iter()
-                    .map(|mode| format!("`{}`", mode.key()))
-                    .collect::<Vec<_>>()
-                    .join(" and ")
-            ));
+            diagnostics.push(
+                Finding::error(
+                    Check::WorkspaceConfig,
+                    format!(
+                        "member `{rel_path}` matches `tag-mode-overrides` globs for {}; \
+                         a member may have only one tag mode",
+                        modes
+                            .iter()
+                            .map(|mode| format!("`{}`", mode.key()))
+                            .collect::<Vec<_>>()
+                            .join(" and ")
+                    ),
+                )
+                .at(GLEAM_TOML),
+            );
             default
         }
     }
@@ -764,7 +869,7 @@ mod tests {
             ),
             TagMode::Both
         );
-        assert!(diagnostics.errors.is_empty());
+        assert!(!diagnostics.has_errors());
     }
 
     #[test]
@@ -781,8 +886,9 @@ mod tests {
             &mut diagnostics,
         );
         assert_eq!(mode, TagMode::Exact, "falls back to the default");
-        assert_eq!(diagnostics.errors.len(), 1);
-        let error = &diagnostics.errors[0];
+        let errors: Vec<&str> = diagnostics.errors().collect();
+        assert_eq!(errors.len(), 1);
+        let error = errors[0];
         assert!(error.contains("packages/lat_core"), "{error}");
         assert!(
             error.contains("`series`") && error.contains("`both`"),

@@ -28,7 +28,7 @@ pub fn compute_plan(workspace: &Workspace) -> Result<Vec<PlanEntry>> {
     if !fragments.problems.is_empty() {
         bail!(
             "invalid changelog fragment(s):\n  - {}",
-            fragments.problems.join("\n  - ")
+            fragments.problem_messages().join("\n  - ")
         );
     }
 

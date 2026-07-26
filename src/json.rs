@@ -22,6 +22,222 @@
 use crate::workspace::Workspace;
 use serde::Serialize;
 
+/// Which invariant a [`Finding`] came from — a stable identifier a workflow can
+/// branch on, rather than a substring of the message.
+///
+/// This is a documented enum, so adding a variant is a compatible change but
+/// renaming or removing one bumps `trellis.doctor`'s major. Keep the set
+/// aligned with the `checked:` lines `doctor` prints in text mode: a check the
+/// preamble claims to run should be nameable here.
+///
+/// Unlike [`crate::commands::tag::TagKind`], this lives in `json.rs` rather
+/// than in its command module, because `workspace::Diagnostics` produces
+/// findings too and must not depend on `commands::doctor`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Check {
+    /// A `members` glob is invalid, unreadable, or matches nothing.
+    MemberGlob,
+    /// A member's `gleam.toml` is missing, unparseable, carries a
+    /// `[tools.trellis]` table, or repeats another member's name.
+    MemberManifest,
+    /// A path dependency escapes the workspace or names no member.
+    PathDependency,
+    /// The dependency graph has a cycle.
+    DependencyCycle,
+    /// The root `[tools.trellis]` table itself is wrong.
+    WorkspaceConfig,
+    /// A task-exclusion or tag-mode-override glob matches no member.
+    ExclusionGlob,
+    /// A releasable package depends on one excluded from release.
+    ReleaseBoundary,
+    /// Two releasable packages produce the same tag.
+    TagCollision,
+    /// A `manifest.toml` locks a workspace-internal dep at a stale version.
+    LockfileDrift,
+    /// A releasable package has no `CHANGELOG.md`.
+    ChangelogMissing,
+    /// A `CHANGELOG.md` exists but could not be read.
+    ChangelogUnreadable,
+    /// A package's version is behind the newest one in its changelog.
+    ChangelogBehind,
+    /// A package's version is not valid semver, or no header could be rendered
+    /// for it.
+    PackageVersion,
+    /// An unreleased changelog fragment does not parse, or names an unknown
+    /// project or kind.
+    ChangelogFragment,
+    /// The gleam on PATH disagrees with the `.tool-versions` pin.
+    Toolchain,
+}
+
+impl Check {
+    /// The serialized identifier, for renderings that are not serde — the
+    /// `title=` of a GitHub annotation, say. Kept beside the `Serialize` derive
+    /// so the two cannot disagree; `check_names_match_serde` asserts it.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Check::MemberGlob => "member-glob",
+            Check::MemberManifest => "member-manifest",
+            Check::PathDependency => "path-dependency",
+            Check::DependencyCycle => "dependency-cycle",
+            Check::WorkspaceConfig => "workspace-config",
+            Check::ExclusionGlob => "exclusion-glob",
+            Check::ReleaseBoundary => "release-boundary",
+            Check::TagCollision => "tag-collision",
+            Check::LockfileDrift => "lockfile-drift",
+            Check::ChangelogMissing => "changelog-missing",
+            Check::ChangelogUnreadable => "changelog-unreadable",
+            Check::ChangelogBehind => "changelog-behind",
+            Check::PackageVersion => "package-version",
+            Check::ChangelogFragment => "changelog-fragment",
+            Check::Toolchain => "toolchain",
+        }
+    }
+
+    /// Every variant, so `check_names_match_serde` can cover the whole enum.
+    #[cfg(test)]
+    const ALL: &'static [Check] = &[
+        Check::MemberGlob,
+        Check::MemberManifest,
+        Check::PathDependency,
+        Check::DependencyCycle,
+        Check::WorkspaceConfig,
+        Check::ExclusionGlob,
+        Check::ReleaseBoundary,
+        Check::TagCollision,
+        Check::LockfileDrift,
+        Check::ChangelogMissing,
+        Check::ChangelogUnreadable,
+        Check::ChangelogBehind,
+        Check::PackageVersion,
+        Check::ChangelogFragment,
+        Check::Toolchain,
+    ];
+}
+
+/// Whether a [`Finding`] fails the run. Warnings are advisory; `doctor` exits
+/// non-zero only on an error.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Severity {
+    Error,
+    Warning,
+}
+
+/// One problem `doctor` found.
+///
+/// Owned rather than borrowed, unlike the rest of this module: a finding
+/// outlives the workspace load that produced it, and `doctor --fix` re-inspects
+/// from disk, discarding the `Workspace` a borrowed finding would point into.
+///
+/// `message` is prose written for a person, like `changelog check`'s `preview`.
+/// The field is contractual; its wording is not. Branch on `check`.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct Finding {
+    pub check: Check,
+    pub severity: Severity,
+    pub message: String,
+    /// Workspace-relative, forward slashes, when the finding is attributable to
+    /// one file. Absent — not null — when it is a property of the workspace.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub package: Option<String>,
+    /// Whether `doctor --fix` would remediate this. One fix can clear several
+    /// findings, so this is not a one-to-one map onto `fixes`.
+    pub fixable: bool,
+}
+
+impl Finding {
+    pub fn error(check: Check, message: impl Into<String>) -> Self {
+        Self {
+            check,
+            severity: Severity::Error,
+            message: message.into(),
+            file: None,
+            package: None,
+            fixable: false,
+        }
+    }
+
+    pub fn warning(check: Check, message: impl Into<String>) -> Self {
+        Self {
+            severity: Severity::Warning,
+            ..Self::error(check, message)
+        }
+    }
+
+    /// `AsRef<str>` rather than `Into<String>` so a caller can pass a `&String`
+    /// it still needs — several checks attribute many findings to one path.
+    #[must_use]
+    pub fn at(mut self, file: impl AsRef<str>) -> Self {
+        self.file = Some(file.as_ref().to_string());
+        self
+    }
+
+    #[must_use]
+    pub fn in_package(mut self, package: impl AsRef<str>) -> Self {
+        self.package = Some(package.as_ref().to_string());
+        self
+    }
+
+    #[must_use]
+    pub fn fixable(self) -> Self {
+        self.fixable_if(true)
+    }
+
+    #[must_use]
+    pub fn fixable_if(mut self, fixable: bool) -> Self {
+        self.fixable = fixable;
+        self
+    }
+
+    pub fn is_error(&self) -> bool {
+        self.severity == Severity::Error
+    }
+}
+
+/// A mechanical remedy `doctor --fix` can apply, as `doctor --format json`
+/// reports it. `kind` is the stable identifier; `description` is the same prose
+/// text mode prints after `would fix:`.
+#[derive(Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct FixRecord<'a> {
+    pub kind: &'static str,
+    pub description: String,
+    pub file: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub package: Option<&'a str>,
+}
+
+/// `trellis doctor --format json`.
+///
+/// `configless` and `auto-members` are workspace facts rather than problems —
+/// they are the `note:` lines text mode prints — so they sit at the top level
+/// instead of masquerading as findings.
+///
+/// `fixes` is what `--fix` would still apply; after a successful `--fix` it is
+/// empty and `applied` holds what was written. Both are always present.
+#[derive(Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct DoctorDocument<'a> {
+    pub schema: &'static str,
+    /// Mirrors the exit code: false when any finding is an error.
+    pub ok: bool,
+    pub members: usize,
+    pub configless: bool,
+    pub auto_members: bool,
+    pub findings: &'a [Finding],
+    pub fixes: Vec<FixRecord<'a>>,
+    pub applied: Vec<FixRecord<'a>>,
+}
+
+impl DoctorDocument<'_> {
+    pub const SCHEMA: &'static str = "trellis.doctor/1";
+}
+
 /// A workspace member, as `list` and `info` report it.
 #[derive(Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -306,6 +522,22 @@ impl<'a> CiMatrix<'a> {
                     }
                 })
                 .collect(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Check;
+
+    /// `Check::as_str` is hand-written; serde derives its own name from the
+    /// variant. A GitHub annotation's `title=` and the JSON payload's `check`
+    /// must be the same string, so assert they are.
+    #[test]
+    fn check_names_match_serde() {
+        for &check in Check::ALL {
+            let serialized = serde_json::to_string(&check).unwrap();
+            assert_eq!(serialized, format!("\"{}\"", check.as_str()));
         }
     }
 }
