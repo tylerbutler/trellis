@@ -72,6 +72,18 @@ pub fn tasks() -> ArgValueCandidates {
     })
 }
 
+/// The three bump levels `--bump` accepts. The `<pkg>=<level>` form is not
+/// offered: completing it would need the package name already typed, which the
+/// completion engine does not hand a value completer.
+pub fn bump_levels() -> ArgValueCandidates {
+    ArgValueCandidates::new(|| {
+        [("major", "X.0.0"), ("minor", "X.Y.0"), ("patch", "X.Y.Z+1")]
+            .iter()
+            .map(|(level, shape)| candidate(level, (*shape).to_owned()))
+            .collect()
+    })
+}
+
 /// Change kinds from `[tools.trellis.changelog]`. Empty outside a workspace —
 /// unlike tasks, there are no kinds that are valid without one.
 pub fn changelog_kinds() -> ArgValueCandidates {

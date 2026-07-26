@@ -14,6 +14,7 @@ pub mod release;
 pub mod run;
 pub mod tag;
 pub mod version;
+pub mod version_override;
 
 /// Render the whole command tree as a Starlight `.md` page, straight from the
 /// clap definition, so the website's CLI reference can never drift from the

@@ -9,6 +9,7 @@ mod json;
 mod lockfile;
 mod rewrite;
 mod runner;
+mod term;
 mod tools;
 mod update_check;
 mod workspace;
@@ -20,6 +21,7 @@ use commands::graph::GraphFormat;
 use commands::run::Target;
 use std::path::PathBuf;
 use std::process::ExitCode;
+use term::{ColorChoice, Verbosity};
 use workspace::Workspace;
 
 /// Crate version, with `git describe` output appended for builds that aren't
@@ -54,6 +56,26 @@ struct Cli {
         value_hint = clap::ValueHint::DirPath
     )]
     directory: Option<PathBuf>,
+
+    /// When to color output. `auto` follows the terminal, `NO_COLOR`, and
+    /// `CLICOLOR=0`; the other two override that detection.
+    #[arg(long, global = true, value_name = "WHEN", default_value = "auto")]
+    color: ColorChoice,
+
+    /// Suppress the per-package output stream and the summary table
+    #[arg(short, long, global = true, conflicts_with = "verbose")]
+    quiet: bool,
+
+    /// Trace every command trellis shells out to, on stderr
+    #[arg(short, long, global = true)]
+    verbose: bool,
+
+    /// Don't check whether a newer trellis release is available
+    ///
+    /// The check is also skipped in CI, when not attached to a terminal, and
+    /// when `TRELLIS_NO_UPDATE_CHECK` or `DO_NOT_TRACK` is set.
+    #[arg(long, global = true)]
+    no_update_check: bool,
 
     #[command(subcommand)]
     command: Command,
@@ -121,6 +143,10 @@ enum Command {
         /// Maximum concurrent packages (default: CPU count)
         #[arg(short, long, value_name = "N")]
         jobs: Option<usize>,
+        /// Emit the `trellis.run/1` payload instead of the summary table;
+        /// package output moves to stderr
+        #[arg(long)]
+        json: bool,
     },
     /// Run an arbitrary command in each member directory
     Exec {
@@ -139,6 +165,10 @@ enum Command {
         /// Maximum concurrent packages (default: CPU count)
         #[arg(short, long, value_name = "N")]
         jobs: Option<usize>,
+        /// Emit the `trellis.exec/1` payload instead of the summary table;
+        /// package output moves to stderr
+        #[arg(long)]
+        json: bool,
         /// The command to run (after `--`)
         #[arg(last = true, required = true)]
         command: Vec<String>,
@@ -285,16 +315,48 @@ enum ChangelogCommand {
 enum VersionCommand {
     /// Dry-run: show what `version apply` would bump
     Plan {
+        #[command(flatten)]
+        overrides: VersionOverrideArgs,
         /// Emit JSON instead of text
         #[arg(long)]
         json: bool,
     },
     /// Bump versions, render changelogs, patch manifest.toml locked versions
     Apply {
+        #[command(flatten)]
+        overrides: VersionOverrideArgs,
         /// Emit JSON listing every bump and patched lockfile
         #[arg(long)]
         json: bool,
     },
+}
+
+/// Overrides for the version a plan would otherwise derive from fragment kinds.
+///
+/// Flattened into both `plan` and `apply` so an override is visible in the
+/// dry-run before it is applied — the two must accept exactly the same flags or
+/// `plan` stops being a preview of `apply`.
+#[derive(clap::Args)]
+struct VersionOverrideArgs {
+    /// Override the derived bump level, workspace-wide (`--bump major`) or for
+    /// one package (`--bump lat_core=major`). Repeatable.
+    #[arg(long, value_name = "LEVEL|PKG=LEVEL", add = completion::bump_levels())]
+    bump: Vec<String>,
+    /// Pin a package's next version exactly (`--set lat_core=1.0.0`).
+    /// Repeatable.
+    #[arg(long, value_name = "PKG=VERSION")]
+    set: Vec<String>,
+    /// Cut a prerelease: `--pre rc` gives 1.0.0-rc.1, and again 1.0.0-rc.2.
+    /// Fragments stay unreleased until the final version. `--pre none` promotes
+    /// the current prerelease to its final version and consumes them.
+    #[arg(long, value_name = "LABEL")]
+    pre: Option<String>,
+}
+
+impl VersionOverrideArgs {
+    fn parse(&self) -> Result<commands::version_override::Overrides> {
+        commands::version_override::Overrides::parse(&self.bump, &self.set, self.pre.as_deref())
+    }
 }
 
 #[derive(Subcommand)]
@@ -371,20 +433,32 @@ fn main() -> ExitCode {
         .complete();
 
     let cli = Cli::parse();
+    // Before anything prints, so every writer sees the same resolved settings.
+    term::init(
+        cli.color,
+        match (cli.quiet, cli.verbose) {
+            (true, _) => Verbosity::Quiet,
+            (_, true) => Verbosity::Verbose,
+            _ => Verbosity::Normal,
+        },
+    );
     // Machine-consumed commands never get the interactive update notice, and it
     // only prints when the command itself succeeded, so it never clutters error
     // output or corrupts structured stdout.
-    let notify_update = !matches!(
-        cli.command,
-        Command::MarkdownHelp
-            | Command::Man { .. }
-            | Command::Completions { .. }
-            | Command::Ci { .. }
-            | Command::Doctor {
-                format: DoctorFormat::Json | DoctorFormat::Github,
-                ..
-            }
-    );
+    let notify_update = !cli.no_update_check
+        && !matches!(
+            cli.command,
+            Command::MarkdownHelp
+                | Command::Man { .. }
+                | Command::Completions { .. }
+                | Command::Ci { .. }
+                | Command::Doctor {
+                    format: DoctorFormat::Json | DoctorFormat::Github,
+                    ..
+                }
+                | Command::Run { json: true, .. }
+                | Command::Exec { json: true, .. }
+        );
     let result = dispatch(cli);
     if notify_update && result.is_ok() {
         update_check::notify();
@@ -482,6 +556,7 @@ fn dispatch(cli: Cli) -> Result<bool> {
             serial,
             keep_going,
             jobs,
+            json,
         } => commands::run::run(
             &workspace,
             &commands::run::TaskOptions {
@@ -495,6 +570,7 @@ fn dispatch(cli: Cli) -> Result<bool> {
                 serial,
                 keep_going,
                 jobs,
+                json,
             },
         ),
         Command::Exec {
@@ -503,6 +579,7 @@ fn dispatch(cli: Cli) -> Result<bool> {
             serial,
             keep_going,
             jobs,
+            json,
             command,
         } => commands::exec::run(
             &workspace,
@@ -513,6 +590,7 @@ fn dispatch(cli: Cli) -> Result<bool> {
                 serial,
                 keep_going,
                 jobs,
+                json,
             },
         ),
         Command::Changelog { command } => match command {
@@ -530,11 +608,13 @@ fn dispatch(cli: Cli) -> Result<bool> {
             ),
         },
         Command::Version { command } => match command {
-            VersionCommand::Plan { json } => {
-                commands::version::plan(&workspace, json)?;
+            VersionCommand::Plan { overrides, json } => {
+                commands::version::plan(&workspace, &overrides.parse()?, json)?;
                 Ok(true)
             }
-            VersionCommand::Apply { json } => commands::version::apply(&workspace, json),
+            VersionCommand::Apply { overrides, json } => {
+                commands::version::apply(&workspace, &overrides.parse()?, json)
+            }
         },
         Command::New {
             name,

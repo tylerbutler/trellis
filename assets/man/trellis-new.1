@@ -4,7 +4,7 @@
 .SH NAME
 trellis\-new \- Scaffold a new workspace member
 .SH SYNOPSIS
-\fBtrellis new\fR [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-\-template\fR] [\fB\-\-path\fR] [\fB\-h\fR|\fB\-\-help\fR] <\fINAME\fR> 
+\fBtrellis new\fR [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-\-template\fR] [\fB\-\-color\fR] [\fB\-\-path\fR] [\fB\-q\fR|\fB\-\-quiet\fR] [\fB\-v\fR|\fB\-\-verbose\fR] [\fB\-\-no\-update\-check\fR] [\fB\-h\fR|\fB\-\-help\fR] <\fINAME\fR> 
 .SH DESCRIPTION
 Scaffold a new workspace member
 .SH OPTIONS
@@ -15,11 +15,37 @@ Run as if started in this directory
 \fB\-\-template\fR \fI<TEMPLATE>\fR [default: lib]
 Template to scaffold from
 .TP
+\fB\-\-color\fR \fI<WHEN>\fR [default: auto]
+When to color output. `auto` follows the terminal, `NO_COLOR`, and `CLICOLOR=0`; the other two override that detection
+.br
+
+.br
+\fIPossible values:\fR
+.RS 14
+.IP \(bu 2
+auto
+.IP \(bu 2
+always
+.IP \(bu 2
+never
+.RE
+.TP
 \fB\-\-path\fR \fI<PATH>\fR
 Parent directory relative to the workspace root (derived from existing members when omitted)
 .TP
+\fB\-q\fR, \fB\-\-quiet\fR
+Suppress the per\-package output stream and the summary table
+.TP
+\fB\-v\fR, \fB\-\-verbose\fR
+Trace every command trellis shells out to, on stderr
+.TP
+\fB\-\-no\-update\-check\fR
+Don\*(Aqt check whether a newer trellis release is available
+
+The check is also skipped in CI, when not attached to a terminal, and when `TRELLIS_NO_UPDATE_CHECK` or `DO_NOT_TRACK` is set.
+.TP
 \fB\-h\fR, \fB\-\-help\fR
-Print help
+Print help (see a summary with \*(Aq\-h\*(Aq)
 .TP
 <\fINAME\fR>
 Package name (lowercase letters, digits, and _)

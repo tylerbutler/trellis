@@ -5,6 +5,7 @@ expression: "json_output(root, &[\"version\", \"apply\", \"--json\"], true)"
 {
   "adopted": [],
   "bumped": [],
+  "fragments-retained": false,
   "lockfiles": [],
   "schema": "trellis.version-apply/1"
 }

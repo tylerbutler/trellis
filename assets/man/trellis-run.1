@@ -4,7 +4,7 @@
 .SH NAME
 trellis\-run \- Run a task across members, graph\-parallel by default
 .SH SYNOPSIS
-\fBtrellis run\fR [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-\-since\fR] [\fB\-\-with\-dependents\fR] [\fB\-\-target\fR] [\fB\-\-strict\fR] [\fB\-\-check\fR] [\fB\-\-serial\fR] [\fB\-\-keep\-going\fR] [\fB\-j\fR|\fB\-\-jobs\fR] [\fB\-h\fR|\fB\-\-help\fR] <\fITASK\fR> [\fIPACKAGES\fR] 
+\fBtrellis run\fR [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-\-since\fR] [\fB\-\-color\fR] [\fB\-\-with\-dependents\fR] [\fB\-q\fR|\fB\-\-quiet\fR] [\fB\-\-target\fR] [\fB\-\-strict\fR] [\fB\-v\fR|\fB\-\-verbose\fR] [\fB\-\-check\fR] [\fB\-\-no\-update\-check\fR] [\fB\-\-serial\fR] [\fB\-\-keep\-going\fR] [\fB\-j\fR|\fB\-\-jobs\fR] [\fB\-\-json\fR] [\fB\-h\fR|\fB\-\-help\fR] <\fITASK\fR> [\fIPACKAGES\fR] 
 .SH DESCRIPTION
 Run a task across members, graph\-parallel by default
 .SH OPTIONS
@@ -15,8 +15,26 @@ Run as if started in this directory
 \fB\-\-since\fR \fI<REF>\fR
 Only members owning files changed since this git ref
 .TP
+\fB\-\-color\fR \fI<WHEN>\fR [default: auto]
+When to color output. `auto` follows the terminal, `NO_COLOR`, and `CLICOLOR=0`; the other two override that detection
+.br
+
+.br
+\fIPossible values:\fR
+.RS 14
+.IP \(bu 2
+auto
+.IP \(bu 2
+always
+.IP \(bu 2
+never
+.RE
+.TP
 \fB\-\-with\-dependents\fR
 Add the reverse\-dependency closure of the selection
+.TP
+\fB\-q\fR, \fB\-\-quiet\fR
+Suppress the per\-package output stream and the summary table
 .TP
 \fB\-\-target\fR \fI<TARGET>\fR
 Gleam compile target; `all` runs the task once per target
@@ -36,8 +54,16 @@ all
 \fB\-\-strict\fR
 Treat warnings as errors (build)
 .TP
+\fB\-v\fR, \fB\-\-verbose\fR
+Trace every command trellis shells out to, on stderr
+.TP
 \fB\-\-check\fR
 Check instead of write (format)
+.TP
+\fB\-\-no\-update\-check\fR
+Don\*(Aqt check whether a newer trellis release is available
+
+The check is also skipped in CI, when not attached to a terminal, and when `TRELLIS_NO_UPDATE_CHECK` or `DO_NOT_TRACK` is set.
 .TP
 \fB\-\-serial\fR
 Run one package at a time, in dependency order
@@ -48,8 +74,11 @@ Keep scheduling packages after a failure
 \fB\-j\fR, \fB\-\-jobs\fR \fI<N>\fR
 Maximum concurrent packages (default: CPU count)
 .TP
+\fB\-\-json\fR
+Emit the `trellis.run/1` payload instead of the summary table; package output moves to stderr
+.TP
 \fB\-h\fR, \fB\-\-help\fR
-Print help
+Print help (see a summary with \*(Aq\-h\*(Aq)
 .TP
 <\fITASK\fR>
 Built\-in (build, test, check, format, docs, deps, clean) or a [tools.trellis.tasks] entry

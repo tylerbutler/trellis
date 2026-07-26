@@ -382,10 +382,9 @@ fn check_tool_versions(workspace: &Workspace, report: &mut Report) {
     }) else {
         return;
     };
-    let Ok(output) = std::process::Command::new(crate::tools::gleam_bin())
-        .arg("--version")
-        .output()
-    else {
+    let gleam = crate::tools::gleam_bin();
+    crate::term::trace_command(&gleam, &["--version"], &workspace.root);
+    let Ok(output) = std::process::Command::new(&gleam).arg("--version").output() else {
         report.push(
             Finding::warning(
                 Check::Toolchain,

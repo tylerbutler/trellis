@@ -4,7 +4,7 @@
 .SH NAME
 trellis\-lockfile\-refresh \- Run `gleam deps download`, scoped to one package (with retry/backoff)
 .SH SYNOPSIS
-\fBtrellis lockfile refresh\fR [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-\-package\fR] [\fB\-h\fR|\fB\-\-help\fR] 
+\fBtrellis lockfile refresh\fR [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-\-package\fR] [\fB\-\-color\fR] [\fB\-q\fR|\fB\-\-quiet\fR] [\fB\-v\fR|\fB\-\-verbose\fR] [\fB\-\-no\-update\-check\fR] [\fB\-h\fR|\fB\-\-help\fR] 
 .SH DESCRIPTION
 Run `gleam deps download`, scoped to one package (with retry/backoff)
 .SH OPTIONS
@@ -15,5 +15,31 @@ Run as if started in this directory
 \fB\-\-package\fR \fI<PACKAGE>\fR
 Refresh only this package instead of every member
 .TP
+\fB\-\-color\fR \fI<WHEN>\fR [default: auto]
+When to color output. `auto` follows the terminal, `NO_COLOR`, and `CLICOLOR=0`; the other two override that detection
+.br
+
+.br
+\fIPossible values:\fR
+.RS 14
+.IP \(bu 2
+auto
+.IP \(bu 2
+always
+.IP \(bu 2
+never
+.RE
+.TP
+\fB\-q\fR, \fB\-\-quiet\fR
+Suppress the per\-package output stream and the summary table
+.TP
+\fB\-v\fR, \fB\-\-verbose\fR
+Trace every command trellis shells out to, on stderr
+.TP
+\fB\-\-no\-update\-check\fR
+Don\*(Aqt check whether a newer trellis release is available
+
+The check is also skipped in CI, when not attached to a terminal, and when `TRELLIS_NO_UPDATE_CHECK` or `DO_NOT_TRACK` is set.
+.TP
 \fB\-h\fR, \fB\-\-help\fR
-Print help
+Print help (see a summary with \*(Aq\-h\*(Aq)

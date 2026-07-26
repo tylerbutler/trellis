@@ -64,29 +64,48 @@ pub struct JobResult {
     pub member: usize,
     pub status: JobStatus,
     pub duration: Duration,
+    /// Exit code of the command that failed. `None` when the job succeeded or
+    /// was skipped, and also when the process left no code of its own — killed
+    /// by a signal, or never started because the program was not found.
+    pub exit_code: Option<i32>,
+    /// The command that failed, as it was run. `None` unless the job failed.
+    pub failed_command: Option<String>,
 }
 
 pub struct RunOptions {
     pub parallelism: usize,
     pub keep_going: bool,
+    /// Keep stdout clear for the caller's JSON document: no progress rows, no
+    /// summary table, and the package stream on stderr.
+    pub json: bool,
 }
 
 #[derive(Clone)]
 struct Output {
     progress: Option<Arc<MultiProgress>>,
     colors: bool,
+    /// `-q`: drop the package stream and the summary table entirely.
+    quiet: bool,
+    /// `--json`: keep the package stream, but off stdout.
+    to_stderr: bool,
 }
 
 impl Output {
-    fn new() -> Self {
-        let live =
-            std::io::stdout().is_terminal() && std::env::var("TERM").as_deref() != Ok("dumb");
+    fn new(json: bool) -> Self {
+        let quiet = crate::term::quiet();
+        // Progress rows are a terminal affordance, so they stay tied to TTY
+        // detection rather than to `--color` — forcing color into a pipe should
+        // not start drawing spinners into it.
+        let live = !quiet
+            && !json
+            && std::io::stdout().is_terminal()
+            && std::env::var("TERM").as_deref() != Ok("dumb");
         Self {
             progress: live
                 .then(|| Arc::new(MultiProgress::with_draw_target(ProgressDrawTarget::stdout()))),
-            colors: live
-                && std::env::var_os("NO_COLOR").is_none()
-                && std::env::var("CLICOLOR").as_deref() != Ok("0"),
+            colors: crate::term::colors_enabled(),
+            quiet,
+            to_stderr: json,
         }
     }
 
@@ -112,6 +131,9 @@ impl Output {
     }
 
     fn emit(&self, name: &str, width: usize, line: &str) {
+        if self.quiet {
+            return;
+        }
         let padded = format!("{name:width$}");
         let name = self.format_name(name, &padded);
         self.println(format!("{name} ▏ {line}"));
@@ -122,6 +144,8 @@ impl Output {
             progress
                 .println(line)
                 .expect("failed to write progress output");
+        } else if self.to_stderr {
+            eprintln!("{line}");
         } else {
             println!("{line}");
         }
@@ -177,7 +201,11 @@ pub fn run_jobs(
     options: &RunOptions,
 ) -> Result<Vec<JobResult>> {
     if jobs.is_empty() {
-        println!("no packages selected");
+        // Under `--json` the caller still emits a document with no results, so
+        // this notice would be the one thing corrupting it.
+        if !options.json && !crate::term::quiet() {
+            println!("no packages selected");
+        }
         return Ok(Vec::new());
     }
 
@@ -186,7 +214,7 @@ pub fn run_jobs(
         .map(|job| workspace.members[job.member].name.len())
         .max()
         .unwrap_or(0);
-    let output = Output::new();
+    let output = Output::new(options.json);
 
     let selected: HashMap<usize, usize> = jobs
         .iter()
@@ -231,12 +259,14 @@ pub fn run_jobs(
                 live_displays.push(display.clone());
                 running += 1;
                 scope.spawn(move || {
-                    let status = execute_job(job, &name, prefix_width, &output, &display);
-                    display.finish(&status.0, status.1);
+                    let outcome = execute_job(job, &name, prefix_width, &output, &display);
+                    display.finish(&outcome.status, outcome.duration);
                     let _ = sender.send(JobResult {
                         member: job_idx, // job index in-flight; remapped below
-                        status: status.0,
-                        duration: status.1,
+                        status: outcome.status,
+                        duration: outcome.duration,
+                        exit_code: outcome.exit_code,
+                        failed_command: outcome.failed_command,
                     });
                 });
             }
@@ -272,6 +302,8 @@ pub fn run_jobs(
                 member: job.member,
                 status: JobStatus::Skipped,
                 duration: Duration::ZERO,
+                exit_code: None,
+                failed_command: None,
             })
         })
         .collect();
@@ -281,37 +313,75 @@ pub fn run_jobs(
     Ok(results)
 }
 
+/// What one job produced, before it is paired back up with its member index.
+struct JobOutcome {
+    status: JobStatus,
+    duration: Duration,
+    exit_code: Option<i32>,
+    failed_command: Option<String>,
+}
+
+impl JobOutcome {
+    fn succeeded(duration: Duration) -> Self {
+        Self {
+            status: JobStatus::Success,
+            duration,
+            exit_code: None,
+            failed_command: None,
+        }
+    }
+
+    fn failed(reason: String, command: String, exit_code: Option<i32>, duration: Duration) -> Self {
+        Self {
+            status: JobStatus::Failed(reason),
+            duration,
+            exit_code,
+            failed_command: Some(command),
+        }
+    }
+}
+
 fn execute_job(
     job: &Job,
     name: &str,
     width: usize,
     output: &Output,
     display: &JobDisplay,
-) -> (JobStatus, Duration) {
+) -> JobOutcome {
     let started = Instant::now();
     for spec in &job.commands {
         let command = spec.display();
         display.set_command(&command);
         output.emit(name, width, &format!("$ {command}"));
         match run_streaming(spec, name, width, output) {
-            Ok(true) => {}
-            Ok(false) => {
-                return (
-                    JobStatus::Failed(format!("`{command}` failed")),
+            Ok(status) if status.success() => {}
+            Ok(status) => {
+                return JobOutcome::failed(
+                    format!("`{command}` failed"),
+                    command,
+                    status.code(),
                     started.elapsed(),
                 );
             }
             Err(err) => {
                 output.emit(name, width, &format!("error: {err:#}"));
-                return (JobStatus::Failed(format!("{err:#}")), started.elapsed());
+                // No exit code: the program never ran, so there is nothing to
+                // report but the spawn failure itself.
+                return JobOutcome::failed(format!("{err:#}"), command, None, started.elapsed());
             }
         }
     }
-    (JobStatus::Success, started.elapsed())
+    JobOutcome::succeeded(started.elapsed())
 }
 
 /// Run one command, streaming stdout and stderr lines with the `pkg ▏` prefix.
-fn run_streaming(spec: &CommandSpec, name: &str, width: usize, output: &Output) -> Result<bool> {
+fn run_streaming(
+    spec: &CommandSpec,
+    name: &str,
+    width: usize,
+    output: &Output,
+) -> Result<std::process::ExitStatus> {
+    crate::term::trace_command(&spec.program, &spec.args, &spec.cwd);
     let mut child = Command::new(&spec.program)
         .args(&spec.args)
         .current_dir(&spec.cwd)
@@ -336,7 +406,7 @@ fn run_streaming(spec: &CommandSpec, name: &str, width: usize, output: &Output) 
             });
         }
     });
-    Ok(child.wait()?.success())
+    Ok(child.wait()?)
 }
 
 fn stable_name_hash(name: &str) -> u64 {
@@ -363,6 +433,10 @@ fn colorize_text(text: &str, color: u8, enabled: bool) -> String {
 }
 
 fn print_summary(workspace: &Workspace, results: &[JobResult], output: &Output) {
+    // `-q` drops it; `--json` replaces it with the payload the caller prints.
+    if output.quiet || output.to_stderr {
+        return;
+    }
     let width = results
         .iter()
         .map(|r| workspace.members[r.member].name.len())
