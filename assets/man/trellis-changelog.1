@@ -1,0 +1,23 @@
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
+.TH trellis-changelog 1 "" trellis "Trellis Manual"
+.SH NAME
+trellis\-changelog \- Changelog fragment management (see [tools.trellis.changelog])
+.SH SYNOPSIS
+\fBtrellis changelog\fR [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-h\fR|\fB\-\-help\fR] <\fIsubcommands\fR>
+.SH DESCRIPTION
+Changelog fragment management (see [tools.trellis.changelog])
+.SH OPTIONS
+.TP
+\fB\-C\fR, \fB\-\-directory\fR \fI<DIR>\fR
+Run as if started in this directory
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Print help
+.SH SUBCOMMANDS
+.TP
+trellis\-changelog\-new(1)
+Add an unreleased changelog fragment
+.TP
+trellis\-changelog\-check(1)
+Verify changed packages have changelog fragments; non\-zero exit if not

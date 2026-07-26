@@ -1,0 +1,22 @@
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
+.TH trellis-release-pr 1 "" trellis "Trellis Manual"
+.SH NAME
+trellis\-release\-pr \- Create or update the release PR: version apply on a branch, push, gh pr
+.SH SYNOPSIS
+\fBtrellis release pr\fR [\fB\-\-base\fR] [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-\-branch\fR] [\fB\-h\fR|\fB\-\-help\fR] 
+.SH DESCRIPTION
+Create or update the release PR: version apply on a branch, push, gh pr
+.SH OPTIONS
+.TP
+\fB\-\-base\fR \fI<BASE>\fR [default: main]
+Base branch the PR targets
+.TP
+\fB\-C\fR, \fB\-\-directory\fR \fI<DIR>\fR
+Run as if started in this directory
+.TP
+\fB\-\-branch\fR \fI<BRANCH>\fR [default: release/pending]
+Branch the release commit is force\-pushed to
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Print help

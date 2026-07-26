@@ -19,6 +19,12 @@ install-path = "CARGO_HOME"
 pr-run-mode = "plan"
 # Whether to install an updater program
 install-updater = false
+# Extra files to place at the root of every archive. `assets/man` is generated
+# from the CLI definition (`just docs`) and committed, so it exists in any
+# checkout. Note neither the shell installer nor the Homebrew formula installs
+# non-binary files — this is for people who unpack the tarball directly and for
+# downstream packagers.
+include = ["assets/man"]
 # Whether to enable GitHub Attestations
 github-attestations = true
 # Where to host releases

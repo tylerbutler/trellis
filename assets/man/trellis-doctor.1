@@ -1,0 +1,22 @@
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
+.TH trellis-doctor 1 "" trellis "Trellis Manual"
+.SH NAME
+trellis\-doctor \- Validate workspace invariants; non\-zero exit on any error
+.SH SYNOPSIS
+\fBtrellis doctor\fR [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-\-fix\fR] [\fB\-\-dry\-run\fR] [\fB\-h\fR|\fB\-\-help\fR] 
+.SH DESCRIPTION
+Validate workspace invariants; non\-zero exit on any error
+.SH OPTIONS
+.TP
+\fB\-C\fR, \fB\-\-directory\fR \fI<DIR>\fR
+Run as if started in this directory
+.TP
+\fB\-\-fix\fR
+Apply the mechanically\-fixable findings (seed changelog stubs, patch stale locked versions), then re\-report what remains
+.TP
+\fB\-\-dry\-run\fR
+List the fixes `\-\-fix` would apply without writing anything
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Print help

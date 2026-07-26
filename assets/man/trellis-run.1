@@ -1,0 +1,58 @@
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
+.TH trellis-run 1 "" trellis "Trellis Manual"
+.SH NAME
+trellis\-run \- Run a task across members, graph\-parallel by default
+.SH SYNOPSIS
+\fBtrellis run\fR [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-\-since\fR] [\fB\-\-with\-dependents\fR] [\fB\-\-target\fR] [\fB\-\-strict\fR] [\fB\-\-check\fR] [\fB\-\-serial\fR] [\fB\-\-keep\-going\fR] [\fB\-j\fR|\fB\-\-jobs\fR] [\fB\-h\fR|\fB\-\-help\fR] <\fITASK\fR> [\fIPACKAGES\fR] 
+.SH DESCRIPTION
+Run a task across members, graph\-parallel by default
+.SH OPTIONS
+.TP
+\fB\-C\fR, \fB\-\-directory\fR \fI<DIR>\fR
+Run as if started in this directory
+.TP
+\fB\-\-since\fR \fI<REF>\fR
+Only members owning files changed since this git ref
+.TP
+\fB\-\-with\-dependents\fR
+Add the reverse\-dependency closure of the selection
+.TP
+\fB\-\-target\fR \fI<TARGET>\fR
+Gleam compile target; `all` runs the task once per target
+.br
+
+.br
+\fIPossible values:\fR
+.RS 14
+.IP \(bu 2
+erlang
+.IP \(bu 2
+javascript
+.IP \(bu 2
+all
+.RE
+.TP
+\fB\-\-strict\fR
+Treat warnings as errors (build)
+.TP
+\fB\-\-check\fR
+Check instead of write (format)
+.TP
+\fB\-\-serial\fR
+Run one package at a time, in dependency order
+.TP
+\fB\-\-keep\-going\fR
+Keep scheduling packages after a failure
+.TP
+\fB\-j\fR, \fB\-\-jobs\fR \fI<N>\fR
+Maximum concurrent packages (default: CPU count)
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Print help
+.TP
+<\fITASK\fR>
+Built\-in (build, test, check, format, docs, deps, clean) or a [tools.trellis.tasks] entry
+.TP
+[\fIPACKAGES\fR]
+Packages to run in; all members when omitted

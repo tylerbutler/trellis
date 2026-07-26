@@ -1,0 +1,19 @@
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
+.TH trellis-lockfile-refresh 1 "" trellis "Trellis Manual"
+.SH NAME
+trellis\-lockfile\-refresh \- Run `gleam deps download`, scoped to one package (with retry/backoff)
+.SH SYNOPSIS
+\fBtrellis lockfile refresh\fR [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-\-package\fR] [\fB\-h\fR|\fB\-\-help\fR] 
+.SH DESCRIPTION
+Run `gleam deps download`, scoped to one package (with retry/backoff)
+.SH OPTIONS
+.TP
+\fB\-C\fR, \fB\-\-directory\fR \fI<DIR>\fR
+Run as if started in this directory
+.TP
+\fB\-\-package\fR \fI<PACKAGE>\fR
+Refresh only this package instead of every member
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Print help

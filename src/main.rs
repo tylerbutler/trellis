@@ -1,5 +1,6 @@
 mod changelog;
 mod commands;
+mod completion;
 mod config;
 mod git;
 mod gleam;
@@ -43,7 +44,13 @@ fn version() -> String {
 #[command(name = "trellis", version = version(), about, max_term_width = 100)]
 struct Cli {
     /// Run as if started in this directory.
-    #[arg(short = 'C', long = "directory", global = true, value_name = "DIR")]
+    #[arg(
+        short = 'C',
+        long = "directory",
+        global = true,
+        value_name = "DIR",
+        value_hint = clap::ValueHint::DirPath
+    )]
     directory: Option<PathBuf>,
 
     #[command(subcommand)]
@@ -74,6 +81,7 @@ enum Command {
     },
     /// Show details for one package
     Info {
+        #[arg(add = completion::packages())]
         package: String,
         #[arg(long)]
         json: bool,
@@ -81,8 +89,10 @@ enum Command {
     /// Run a task across members, graph-parallel by default
     Run {
         /// Built-in (build, test, check, format, docs, deps, clean) or a [tools.trellis.tasks] entry
+        #[arg(add = completion::tasks())]
         task: String,
         /// Packages to run in; all members when omitted
+        #[arg(add = completion::packages())]
         packages: Vec<String>,
         /// Only members owning files changed since this git ref
         #[arg(long, value_name = "REF")]
@@ -112,6 +122,7 @@ enum Command {
     /// Run an arbitrary command in each member directory
     Exec {
         /// Packages to run in; all members when omitted
+        #[arg(add = completion::packages())]
         packages: Vec<String>,
         /// Only members owning files changed since this git ref
         #[arg(long, value_name = "REF")]
@@ -164,6 +175,7 @@ enum Command {
     /// Publish packages to Hex, in dependency order, with path deps rewritten
     Publish {
         /// A single package to publish
+        #[arg(add = completion::releasable_packages())]
         package: Option<String>,
         /// Resolve a pushed tag (e.g. lat_core-v1.2.0) to its package
         #[arg(long, conflicts_with = "package")]
@@ -195,10 +207,33 @@ enum Command {
         #[command(subcommand)]
         command: CiCommand,
     },
+    /// Print the shell snippet that enables tab-completion
+    ///
+    /// The snippet asks trellis for candidates on each tab-press, so completions
+    /// offer real package and task names from the surrounding workspace and can
+    /// never drift from the flags you have. Evaluate it on shell startup rather
+    /// than saving it to a completions directory — it talks to trellis over an
+    /// interface that changes between releases, so an `eval` stays in sync where
+    /// a saved copy goes stale. For zsh, in ~/.zshrc after compinit:
+    ///
+    ///     eval "$(trellis completions zsh)"
+    Completions {
+        /// Shell to emit a registration snippet for
+        #[arg(value_enum)]
+        shell: clap_complete::aot::Shell,
+    },
     /// Print the full command reference as Markdown (used to regenerate the
     /// website's CLI reference page; hidden from normal help)
     #[command(hide = true)]
     MarkdownHelp,
+    /// Write the man page tree (used to regenerate assets/man; hidden from
+    /// normal help)
+    #[command(hide = true)]
+    Man {
+        /// Directory to write `trellis.1` and the per-subcommand pages into
+        #[arg(long, value_name = "DIR", value_hint = clap::ValueHint::DirPath)]
+        out: PathBuf,
+    },
 }
 
 #[derive(Subcommand)]
@@ -207,11 +242,11 @@ enum ChangelogCommand {
     New {
         /// The package the change belongs to (optional when the workspace
         /// has exactly one releasable package)
-        #[arg(long)]
+        #[arg(long, add = completion::releasable_packages())]
         package: Option<String>,
         /// Change kind (see [tools.trellis.changelog] kinds; defaults include Added,
         /// Fixed, Breaking, …)
-        #[arg(long)]
+        #[arg(long, add = completion::changelog_kinds())]
         kind: String,
         /// The changelog entry text
         #[arg(long)]
@@ -281,7 +316,7 @@ enum LockfileCommand {
     /// Run `gleam deps download`, scoped to one package (with retry/backoff)
     Refresh {
         /// Refresh only this package instead of every member
-        #[arg(long)]
+        #[arg(long, add = completion::packages())]
         package: Option<String>,
     },
 }
@@ -308,11 +343,24 @@ enum CiCommand {
 }
 
 fn main() -> ExitCode {
+    // Answers the shell when $COMPLETE is set and exits; a normal run falls
+    // through untouched. Must come before anything writes to stdout, and before
+    // `Cli::parse`, since a completion request is not a valid command line.
+    clap_complete::env::CompleteEnv::with_factory(<Cli as clap::CommandFactory>::command)
+        .var(commands::generate::COMPLETE_VAR)
+        .complete();
+
     let cli = Cli::parse();
     // Machine-consumed commands never get the interactive update notice, and it
     // only prints when the command itself succeeded, so it never clutters error
     // output or corrupts structured stdout.
-    let notify_update = !matches!(cli.command, Command::MarkdownHelp | Command::Ci { .. });
+    let notify_update = !matches!(
+        cli.command,
+        Command::MarkdownHelp
+            | Command::Man { .. }
+            | Command::Completions { .. }
+            | Command::Ci { .. }
+    );
     let result = dispatch(cli);
     if notify_update && result.is_ok() {
         update_check::notify();
@@ -336,9 +384,20 @@ fn dispatch(cli: Cli) -> Result<bool> {
     // Doctor loads leniently so it can report every problem instead of
     // failing on the first one.
     // Reference generation needs no workspace — it reflects on the CLI itself.
-    if let Command::MarkdownHelp = cli.command {
-        print!("{}", commands::markdown_help());
-        return Ok(true);
+    match &cli.command {
+        Command::MarkdownHelp => {
+            print!("{}", commands::markdown_help());
+            return Ok(true);
+        }
+        Command::Completions { shell } => {
+            commands::generate::completions(*shell)?;
+            return Ok(true);
+        }
+        Command::Man { out } => {
+            commands::generate::man_pages(out)?;
+            return Ok(true);
+        }
+        _ => {}
     }
 
     if let Command::Doctor { fix, dry_run } = cli.command {
@@ -501,7 +560,10 @@ fn dispatch(cli: Cli) -> Result<bool> {
                 commands::lockfile::refresh(&workspace, package.as_deref())
             }
         },
-        Command::Doctor { .. } | Command::MarkdownHelp => unreachable!("handled above"),
+        Command::Doctor { .. }
+        | Command::MarkdownHelp
+        | Command::Completions { .. }
+        | Command::Man { .. } => unreachable!("handled above"),
         Command::Ci { command } => {
             match command {
                 CiCommand::Matrix { since, releasable } => {

@@ -1,0 +1,22 @@
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
+.TH trellis-tag-create 1 "" trellis "Trellis Manual"
+.SH NAME
+trellis\-tag\-create \- Create missing tags in topological order
+.SH SYNOPSIS
+\fBtrellis tag create\fR [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-\-push\fR] [\fB\-\-github\-release\fR] [\fB\-h\fR|\fB\-\-help\fR] 
+.SH DESCRIPTION
+Create missing tags in topological order
+.SH OPTIONS
+.TP
+\fB\-C\fR, \fB\-\-directory\fR \fI<DIR>\fR
+Run as if started in this directory
+.TP
+\fB\-\-push\fR
+Push each created tag to origin
+.TP
+\fB\-\-github\-release\fR
+Also create a GitHub Release per tag, with the matching CHANGELOG section as the body (implies \-\-push; requires the gh CLI)
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Print help

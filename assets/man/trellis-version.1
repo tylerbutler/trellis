@@ -1,0 +1,23 @@
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
+.TH trellis-version 1 "" trellis "Trellis Manual"
+.SH NAME
+trellis\-version \- Plan and apply version bumps from unreleased changelog fragments
+.SH SYNOPSIS
+\fBtrellis version\fR [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-h\fR|\fB\-\-help\fR] <\fIsubcommands\fR>
+.SH DESCRIPTION
+Plan and apply version bumps from unreleased changelog fragments
+.SH OPTIONS
+.TP
+\fB\-C\fR, \fB\-\-directory\fR \fI<DIR>\fR
+Run as if started in this directory
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Print help
+.SH SUBCOMMANDS
+.TP
+trellis\-version\-plan(1)
+Dry\-run: show what `version apply` would bump
+.TP
+trellis\-version\-apply(1)
+Bump versions, render changelogs, patch manifest.toml locked versions

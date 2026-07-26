@@ -29,7 +29,14 @@ lto = "thin"
 [dependencies]
 anyhow = "1.0.103"
 clap = { version = "4.6.1", features = ["derive", "string"] }
+# `unstable-dynamic` (the `env`/`engine` modules powering runtime completion) is
+# semver-exempt: a patch release inside 4.6.x may break the API. The committed
+# Cargo.lock plus clippy `-D warnings` in CI is the guard — breakage surfaces as
+# a red dependency-bump PR, not in a user's shell. Floored at 4.6.7 for the
+# PowerShell `pwsh` detection fix, which the windows-msvc target needs.
+clap_complete = { version = "4.6.7", features = ["unstable-dynamic"] }
 clap-markdown = "0.1.5"
+clap_mangen = "0.3.0"
 glob = "0.3.3"
 globset = "0.4.18"
 ignore = "0.4.31"

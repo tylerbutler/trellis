@@ -1,0 +1,28 @@
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
+.TH trellis-list 1 "" trellis "Trellis Manual"
+.SH NAME
+trellis\-list \- List members in topological order (dependencies first)
+.SH SYNOPSIS
+\fBtrellis list\fR [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-\-json\fR] [\fB\-\-since\fR] [\fB\-\-with\-dependents\fR] [\fB\-\-releasable\fR] [\fB\-h\fR|\fB\-\-help\fR] 
+.SH DESCRIPTION
+List members in topological order (dependencies first)
+.SH OPTIONS
+.TP
+\fB\-C\fR, \fB\-\-directory\fR \fI<DIR>\fR
+Run as if started in this directory
+.TP
+\fB\-\-json\fR
+Emit JSON instead of names
+.TP
+\fB\-\-since\fR \fI<REF>\fR
+Only members owning files changed since this git ref
+.TP
+\fB\-\-with\-dependents\fR
+Add the reverse\-dependency closure of the selection
+.TP
+\fB\-\-releasable\fR
+Only members that participate in releases (excludes `@release` matches)
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Print help
