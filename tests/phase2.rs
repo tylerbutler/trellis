@@ -267,10 +267,13 @@ fn version_plan_bumps_by_the_largest_kind() {
     let plan: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(
         plan,
-        serde_json::json!([
-            {"name": "lat_core", "current": "1.2.0", "next": "1.3.0", "fragments": 2},
-            {"name": "lat_mid", "current": "0.5.0", "next": "1.0.0", "fragments": 1},
-        ])
+        serde_json::json!({
+            "schema": "trellis.version-plan/1",
+            "bumped": [
+                {"name": "lat_core", "current": "1.2.0", "next": "1.3.0", "fragments": 2},
+                {"name": "lat_mid", "current": "0.5.0", "next": "1.0.0", "fragments": 1},
+            ],
+        })
     );
 }
 

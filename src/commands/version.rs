@@ -5,10 +5,10 @@
 //! CHANGELOG.md — all with zero Hex network calls.
 
 use crate::changelog;
+use crate::json::{Bump, VersionApplyDocument, VersionPlanDocument};
 use crate::lockfile;
 use crate::workspace::Workspace;
 use anyhow::{Context, Result, bail};
-use serde_json::json;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
@@ -55,7 +55,11 @@ pub fn compute_plan(workspace: &Workspace) -> Result<Vec<PlanEntry>> {
 pub fn plan(workspace: &Workspace, json: bool) -> Result<()> {
     let plan = compute_plan(workspace)?;
     if json {
-        println!("{}", serde_json::to_string_pretty(&plan_json(&plan))?);
+        let document = VersionPlanDocument {
+            schema: VersionPlanDocument::SCHEMA,
+            bumped: bumps(&plan),
+        };
+        println!("{}", serde_json::to_string_pretty(&document)?);
     } else if plan.is_empty() {
         println!("no unreleased changes; nothing to bump");
     } else {
@@ -69,19 +73,17 @@ pub fn plan(workspace: &Workspace, json: bool) -> Result<()> {
     Ok(())
 }
 
-fn plan_json(plan: &[PlanEntry]) -> serde_json::Value {
-    json!(
-        plan.iter()
-            .map(|entry| {
-                json!({
-                    "name": entry.name,
-                    "current": entry.current,
-                    "next": entry.next,
-                    "fragments": entry.fragments,
-                })
-            })
-            .collect::<Vec<_>>()
-    )
+/// `version plan` and `version apply` report the same entry shape under the
+/// same `bumped` key, so they share one conversion.
+fn bumps(plan: &[PlanEntry]) -> Vec<Bump<'_>> {
+    plan.iter()
+        .map(|entry| Bump {
+            name: &entry.name,
+            current: &entry.current,
+            next: &entry.next,
+            fragments: entry.fragments,
+        })
+        .collect()
 }
 
 /// The release step: preflight every pending package and lockfile, write all
@@ -90,7 +92,12 @@ pub fn apply(workspace: &Workspace, json: bool) -> Result<bool> {
     let plan = compute_plan(workspace)?;
     if plan.is_empty() {
         if json {
-            println!("{}", json!({"bumped": [], "lockfiles": []}));
+            let document = VersionApplyDocument {
+                schema: VersionApplyDocument::SCHEMA,
+                bumped: Vec::new(),
+                lockfiles: Vec::new(),
+            };
+            println!("{}", serde_json::to_string_pretty(&document)?);
         } else {
             println!("no unreleased changes; nothing to apply");
         }
@@ -211,13 +218,12 @@ pub fn apply(workspace: &Workspace, json: bool) -> Result<bool> {
         .collect();
 
     if json {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&json!({
-                "bumped": plan_json(&plan),
-                "lockfiles": patched_files,
-            }))?
-        );
+        let document = VersionApplyDocument {
+            schema: VersionApplyDocument::SCHEMA,
+            bumped: bumps(&plan),
+            lockfiles: patched_files,
+        };
+        println!("{}", serde_json::to_string_pretty(&document)?);
     } else {
         for entry in &plan {
             println!("bumped {}: {} -> {}", entry.name, entry.current, entry.next);

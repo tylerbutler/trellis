@@ -1,6 +1,7 @@
 //! `trellis info <package>` — details for a single member.
 
 use crate::gleam::Requirement;
+use crate::json::InfoDocument;
 use crate::workspace::Workspace;
 use anyhow::{Context, Result};
 
@@ -9,10 +10,8 @@ pub fn run(workspace: &Workspace, name: &str, json: bool) -> Result<()> {
         .member_index(name)
         .with_context(|| format!("unknown package `{name}`"))?;
     if json {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&super::member_json(workspace, idx))?
-        );
+        let document = InfoDocument::new(workspace, idx);
+        println!("{}", serde_json::to_string_pretty(&document)?);
         return Ok(());
     }
 

@@ -1,0 +1,18 @@
+---
+source: tests/json_contract.rs
+expression: "json_output(root, &[\"version\", \"apply\", \"--json\"], true)"
+---
+{
+  "bumped": [
+    {
+      "current": "1.2.0",
+      "fragments": 1,
+      "name": "lat_core",
+      "next": "1.3.0"
+    }
+  ],
+  "lockfiles": [
+    "packages/lat_mid/manifest.toml"
+  ],
+  "schema": "trellis.version-apply/1"
+}

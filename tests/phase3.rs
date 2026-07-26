@@ -198,8 +198,9 @@ fn tag_plan_lists_untagged_versions_and_create_tags_them() {
         .output()
         .unwrap();
     assert!(output.status.success());
-    let plan: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    let plan = plan.as_array().unwrap();
+    let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(document["schema"], "trellis.tag-plan/1");
+    let plan = document["tags"].as_array().unwrap();
     let names: Vec<&str> = plan.iter().map(|p| p["name"].as_str().unwrap()).collect();
     // package_a is @release-excluded; lat_core already tagged.
     assert_eq!(names, vec!["lat_mid", "lat_cli"]);
@@ -742,8 +743,8 @@ fn tag_plan_reports_the_series_move() {
         .args(["tag", "plan", "--json"])
         .output()
         .unwrap();
-    let plan: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    let plan = plan.as_array().unwrap();
+    let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let plan = document["tags"].as_array().unwrap();
     assert_eq!(plan.len(), 1, "only the series tag needs work: {plan:?}");
     assert_eq!(plan[0]["tag"], "lat_cli-v0.3");
     assert_eq!(plan[0]["kind"], "series");

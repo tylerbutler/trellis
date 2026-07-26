@@ -1,6 +1,7 @@
 //! `trellis list` — members in topological order. This alone replaces the
 //! hand-maintained, hand-ordered package list in a justfile.
 
+use crate::json::ListDocument;
 use crate::workspace::{SelectionFilter, Workspace};
 use anyhow::Result;
 
@@ -20,11 +21,8 @@ pub fn run(workspace: &Workspace, options: &ListOptions) -> Result<()> {
     })?;
 
     if options.json {
-        let items: Vec<_> = selected
-            .iter()
-            .map(|&idx| super::member_json(workspace, idx))
-            .collect();
-        println!("{}", serde_json::to_string_pretty(&items)?);
+        let document = ListDocument::new(workspace, &selected);
+        println!("{}", serde_json::to_string_pretty(&document)?);
     } else {
         for idx in selected {
             println!("{}", workspace.members[idx].name);

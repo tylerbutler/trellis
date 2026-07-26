@@ -166,6 +166,18 @@ origin/main` filters to packages owning changed files (committed, uncommitted,
 and untracked); `--with-dependents` adds the reverse-dependency closure. This
 is the primitive behind "only test what a PR touched."
 
+#### JSON output
+
+Every `--json` payload carries a `schema` field naming the payload and its
+major version (`"schema": "trellis.list/1"`), so a workflow can assert on the
+shape it was built against and detect a breaking change instead of silently
+producing wrong results. Fields may be added without a bump; renaming,
+removing, or retyping one bumps the major. Human-readable text output carries
+no such guarantee. `trellis ci matrix` and `ci outputs` are the two
+exceptions — their shapes are dictated by GitHub Actions.
+
+Full details: [docs/json-output](https://trellis.tylerbutler.com/docs/json-output/).
+
 ### Task running
 
 ```

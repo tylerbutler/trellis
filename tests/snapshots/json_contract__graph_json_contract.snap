@@ -1,0 +1,51 @@
+---
+source: tests/json_contract.rs
+expression: "json_output(&fixture(\"basic\"), &[\"graph\", \"--format\", \"json\"], true)"
+---
+{
+  "edges": [
+    {
+      "from": "lat_mid",
+      "to": "lat_core"
+    },
+    {
+      "from": "lat_cli",
+      "to": "lat_core"
+    },
+    {
+      "from": "lat_cli",
+      "to": "lat_mid"
+    },
+    {
+      "from": "package_a",
+      "to": "lat_cli"
+    }
+  ],
+  "nodes": [
+    {
+      "name": "lat_core",
+      "path": "packages/lat_core",
+      "releasable": true,
+      "version": "1.2.0"
+    },
+    {
+      "name": "lat_mid",
+      "path": "packages/lat_mid",
+      "releasable": true,
+      "version": "0.5.0"
+    },
+    {
+      "name": "lat_cli",
+      "path": "packages/lat_cli",
+      "releasable": true,
+      "version": "0.3.1"
+    },
+    {
+      "name": "package_a",
+      "path": "examples/package-a",
+      "releasable": false,
+      "version": "0.0.0"
+    }
+  ],
+  "schema": "trellis.graph/1"
+}

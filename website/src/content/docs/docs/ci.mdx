@@ -85,11 +85,16 @@ each covering only the packages whose
 [`tag-mode`](/docs/configuration/#series-tags) creates that kind — so a
 `series`-only workspace reports an empty `tags`.
 
+Both `ci matrix` and `ci outputs` are shaped by GitHub rather than by trellis,
+which is why neither carries the `schema` field every other payload does — see
+the [JSON output contract](/docs/json-output/) for what each one promises.
+
 ## PR gates
 
 Run `doctor` on every PR — it checks every workspace invariant at once and
-exits non-zero on any error. Pair it with `changelog check`, whose JSON
-payload (including a markdown `preview`) feeds a sticky comment:
+exits non-zero on any error. Pair it with `changelog check`, whose
+[JSON payload](/docs/json-output/) (including a markdown `preview`) feeds a
+sticky comment:
 
 ```yaml
 # on: pull_request

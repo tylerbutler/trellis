@@ -53,8 +53,9 @@ fn list_json_includes_graph_facts() {
         .output()
         .unwrap();
     assert!(output.status.success());
-    let items: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    let items = items.as_array().unwrap();
+    let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(document["schema"], "trellis.list/1");
+    let items = document["packages"].as_array().unwrap();
     assert_eq!(items.len(), 4);
     let mid = items.iter().find(|i| i["name"] == "lat_mid").unwrap();
     assert_eq!(mid["version"], "0.5.0");

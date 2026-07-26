@@ -1,0 +1,12 @@
+---
+source: tests/json_contract.rs
+expression: "json_output(root, &[\"ci\", \"tag-package\", \"lat_mid-v0.5.0\", \"--json\"], true,)"
+---
+{
+  "name": "lat_mid",
+  "path": "packages/lat_mid",
+  "schema": "trellis.ci-tag-package/1",
+  "tag-kind": "exact",
+  "tag-version": "0.5.0",
+  "version": "0.5.0"
+}

@@ -1,0 +1,9 @@
+---
+source: tests/json_contract.rs
+expression: "json_output(root, &[\"version\", \"apply\", \"--json\"], true)"
+---
+{
+  "bumped": [],
+  "lockfiles": [],
+  "schema": "trellis.version-apply/1"
+}
