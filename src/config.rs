@@ -46,6 +46,118 @@ pub struct ConfigFile {
     pub publish: PublishConfig,
     #[serde(default)]
     pub changelog: ChangelogConfig,
+    #[serde(default)]
+    pub doctor: DoctorConfig,
+    /// Keys under `[tools.trellis]` that no field claimed. Collected rather
+    /// than deserialized — see [`ConfigFile::from_gleam_toml`].
+    #[serde(skip)]
+    pub unknown_keys: Vec<UnknownKey>,
+}
+
+/// A key under `[tools.trellis]` that trellis does not recognize.
+///
+/// Goal #5 in the design is "fail loudly on drift", and a silently ignored
+/// `tag_format` is drift that fails silently: the workspace keeps using the
+/// default and produces the wrong tags with no signal at all.
+#[derive(Debug, Clone)]
+pub struct UnknownKey {
+    /// Dotted path beneath `[tools.trellis]`, e.g. `publish.tag_format`.
+    pub path: String,
+    /// The key this is unambiguously a misspelling of — set when kebab-casing
+    /// the path turns it into one trellis accepts. `None` for a key that is
+    /// merely unrecognized, which may simply belong to a newer trellis.
+    pub typo_of: Option<String>,
+}
+
+/// What `doctor` does about a check that is a judgment call.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Strictness {
+    #[default]
+    Warn,
+    Error,
+    Off,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct DoctorConfig {
+    /// Whether members disagreeing on a shared external dependency's
+    /// requirement is a warning (the default), an error, or unchecked.
+    /// Divergence is sometimes deliberate, so this does not fail CI by default.
+    #[serde(default)]
+    pub shared_dependencies: Strictness,
+}
+
+/// Deserialize the `[tools.trellis]` table, recording the keys no field
+/// claimed rather than dropping them on the floor.
+///
+/// Parsing stays lenient — an unrecognized key does not stop the workspace
+/// loading. Straight `deny_unknown_fields` would mean a workspace using a key
+/// from a newer trellis becomes unloadable under a pinned older one, which is a
+/// bad failure for a tool CI pins. The keys are reported by `doctor` instead.
+///
+/// The free-form tables (`exclude`, `tasks`, `tag-mode-overrides`) accept any
+/// key by construction, so serde consumes them and they are never reported.
+fn deserialize_collecting_unknown(trellis: &toml::Value) -> Result<(ConfigFile, Vec<String>)> {
+    let mut ignored = Vec::new();
+    let config = serde_ignored::deserialize(trellis.clone(), |path| ignored.push(path.to_string()))
+        .context("invalid [tools.trellis] configuration")?;
+    Ok((config, ignored))
+}
+
+/// Separate the unambiguous typos from the merely unrecognized.
+///
+/// Every key trellis defines is kebab-case, so an underscore is the plausible
+/// slip. Rather than compare against a hand-listed set of key names — which
+/// would rot the moment a key is added — this re-runs the collection over a
+/// copy of the table with every underscore key kebab-cased. A path that was
+/// ignored before and is accepted after was a misspelling of a real key;
+/// anything still ignored may simply belong to a newer trellis.
+fn classify_unknown(trellis: &toml::Value, ignored: Vec<String>) -> Vec<UnknownKey> {
+    let accepted_when_kebab_cased = |paths: &[String]| {
+        let Ok((_, still_ignored)) = deserialize_collecting_unknown(&kebab_case_keys(trellis))
+        else {
+            return Vec::new();
+        };
+        paths
+            .iter()
+            .filter(|path| path.contains('_'))
+            .filter(|path| !still_ignored.contains(&kebab_case(path)))
+            .cloned()
+            .collect::<Vec<_>>()
+    };
+    let typos = accepted_when_kebab_cased(&ignored);
+    ignored
+        .into_iter()
+        .map(|path| UnknownKey {
+            typo_of: typos.contains(&path).then(|| kebab_case(&path)),
+            path,
+        })
+        .collect()
+}
+
+fn kebab_case(key: &str) -> String {
+    key.replace('_', "-")
+}
+
+/// A copy of the table with every underscore in every key turned into a
+/// hyphen. Renaming a key of a free-form table along the way is harmless:
+/// those keys are accepted either way, so they never enter the ignored set and
+/// cannot produce a false typo.
+fn kebab_case_keys(value: &toml::Value) -> toml::Value {
+    match value {
+        toml::Value::Table(table) => toml::Value::Table(
+            table
+                .iter()
+                .map(|(key, value)| (kebab_case(key), kebab_case_keys(value)))
+                .collect(),
+        ),
+        toml::Value::Array(items) => {
+            toml::Value::Array(items.iter().map(kebab_case_keys).collect())
+        }
+        other => other.clone(),
+    }
 }
 
 /// True when a parsed `gleam.toml` carries a `[tools.trellis]` table — the
@@ -348,10 +460,8 @@ impl ConfigFile {
         let Some(trellis) = document.get("tools").and_then(|tools| tools.get("trellis")) else {
             bail!("gleam.toml has no [tools.trellis] table");
         };
-        let config: Self = trellis
-            .clone()
-            .try_into()
-            .context("invalid [tools.trellis] configuration")?;
+        let (mut config, ignored) = deserialize_collecting_unknown(trellis)?;
+        config.unknown_keys = classify_unknown(trellis, ignored);
         config.validate()?;
         Ok(config)
     }
@@ -365,6 +475,9 @@ impl ConfigFile {
             tasks: BTreeMap::new(),
             publish: PublishConfig::default(),
             changelog: ChangelogConfig::default(),
+            doctor: DoctorConfig::default(),
+            // There is no table, so there is nothing in it to misspell.
+            unknown_keys: Vec::new(),
         }
     }
 

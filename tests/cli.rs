@@ -1003,3 +1003,208 @@ fn walk(dir: &Path) -> Vec<PathBuf> {
     }
     files
 }
+
+// ---- doctor: unrecognized config keys ---------------------------------
+
+/// A two-member workspace, so the shared-dependency check has something to
+/// compare. `config` is spliced in under `[tools.trellis]`.
+fn workspace_with(root: &Path, config: &str, a_deps: &str, b_deps: &str) {
+    write(
+        &root.join("gleam.toml"),
+        &format!("[tools.trellis]\nmembers = [\"packages/*\"]\n{config}"),
+    );
+    write(
+        &root.join("packages/a/gleam.toml"),
+        &format!("name = \"a\"\nversion = \"1.0.0\"\n[dependencies]\n{a_deps}"),
+    );
+    write(
+        &root.join("packages/b/gleam.toml"),
+        &format!("name = \"b\"\nversion = \"1.0.0\"\n[dependencies]\n{b_deps}"),
+    );
+}
+
+#[test]
+fn a_misspelled_config_key_is_an_error_naming_the_real_one() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    // Underscore instead of hyphen: reads as configuring the tag scheme, and
+    // silently does not.
+    workspace_with(
+        root,
+        "[tools.trellis.publish]\ntag_format = \"{name}@{version}\"\n",
+        "",
+        "",
+    );
+
+    trellis(root)
+        .arg("doctor")
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains(
+            "[tools.trellis] has no `publish.tag_format`; did you mean `publish.tag-format`?",
+        ));
+
+    // Loudly, everywhere — not just in doctor. Producing the default tags
+    // while the config says otherwise is the failure this exists to prevent.
+    trellis(root)
+        .arg("list")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "did you mean `publish.tag-format`",
+        ));
+}
+
+#[test]
+fn an_unrecognized_config_key_warns_but_still_loads() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    // No kebab-cased form of this is a real key, so it may belong to a newer
+    // trellis. Erroring would make a workspace unloadable under a pinned older
+    // trellis, which is a bad failure for a tool CI pins.
+    workspace_with(root, "future-thing = true\n", "", "");
+
+    trellis(root)
+        .arg("doctor")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "key `future-thing` is not recognized and is being ignored",
+        ));
+    trellis(root)
+        .arg("list")
+        .assert()
+        .success()
+        .stdout("a\nb\n");
+}
+
+#[test]
+fn unknown_key_detection_reaches_nested_tables_and_leaves_free_form_ones_alone() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    workspace_with(
+        root,
+        // `tasks` and `exclude` take arbitrary user-chosen keys, underscores
+        // and all; only the typed structs have a fixed key set.
+        "exclude = { my_task = [\"packages/a\"] }\n\
+         [tools.trellis.tasks.my_task]\ncommand = \"true\"\n\
+         [tools.trellis.changelog]\nnonsense = 1\n",
+        "",
+        "",
+    );
+
+    trellis(root)
+        .arg("doctor")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("`changelog.nonsense`"))
+        .stdout(predicate::str::contains("my_task").not());
+}
+
+// ---- doctor: shared dependency agreement ------------------------------
+
+#[test]
+fn divergent_shared_dependencies_warn_by_default() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    workspace_with(
+        root,
+        "",
+        "gleam_stdlib = \">= 0.44.0\"\n",
+        "gleam_stdlib = \">= 0.60.0\"\n",
+    );
+
+    trellis(root)
+        .arg("doctor")
+        .assert()
+        // A warning: divergence is sometimes deliberate, so it does not fail CI.
+        .success()
+        .stdout(predicate::str::contains(
+            "members disagree on `gleam_stdlib`",
+        ))
+        .stdout(predicate::str::contains("`>= 0.44.0` (a)"))
+        .stdout(predicate::str::contains("`>= 0.60.0` (b)"));
+}
+
+#[test]
+fn agreeing_members_and_path_deps_produce_no_finding() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    workspace_with(
+        root,
+        "",
+        "gleam_stdlib = \">= 0.44.0\"\n",
+        "gleam_stdlib = \">= 0.44.0\"\na = { path = \"../a\" }\n",
+    );
+
+    trellis(root)
+        .arg("doctor")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("disagree").not());
+}
+
+#[test]
+fn shared_dependency_strictness_is_configurable() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let diverging = |config: &str| {
+        workspace_with(
+            root,
+            config,
+            "gleam_stdlib = \">= 0.44.0\"\n",
+            "gleam_stdlib = \">= 0.60.0\"\n",
+        );
+    };
+
+    diverging("[tools.trellis.doctor]\nshared-dependencies = \"error\"\n");
+    trellis(root)
+        .arg("doctor")
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains(
+            "members disagree on `gleam_stdlib`",
+        ));
+
+    diverging("[tools.trellis.doctor]\nshared-dependencies = \"off\"\n");
+    trellis(root)
+        .arg("doctor")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("disagree").not());
+}
+
+#[test]
+fn the_new_doctor_table_is_itself_a_recognized_key() {
+    // The two halves of this change meet here: [tools.trellis.doctor] must not
+    // trip the unknown-key detection it shipped alongside.
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    workspace_with(
+        root,
+        "[tools.trellis.doctor]\nshared-dependencies = \"warn\"\n",
+        "",
+        "",
+    );
+
+    trellis(root)
+        .arg("doctor")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("not recognized").not());
+
+    // ...and its own keys are checked like any other.
+    workspace_with(
+        root,
+        "[tools.trellis.doctor]\nshared_dependencies = \"warn\"\n",
+        "",
+        "",
+    );
+    trellis(root)
+        .arg("doctor")
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains(
+            "did you mean `doctor.shared-dependencies`?",
+        ));
+}

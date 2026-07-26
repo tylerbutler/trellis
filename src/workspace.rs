@@ -179,6 +179,7 @@ impl Workspace {
                 }
             }
         };
+        report_unknown_config_keys(&config, &mut diagnostics);
 
         let mut member_dirs = match &config.members {
             Some(globs) => expand_member_globs(root, globs, &mut diagnostics),
@@ -593,6 +594,39 @@ pub fn toposort(
         }
         path.push(next);
         current = next;
+    }
+}
+
+/// Report keys under `[tools.trellis]` that trellis does not recognize.
+///
+/// A misspelling is an **error**: `tag_format` looks like it configures the tag
+/// scheme, silently doesn't, and the workspace goes on producing default tags.
+/// Failing every command is the point — that is drift the tool exists to catch,
+/// and the message names the key it meant.
+///
+/// Anything else is a **warning**, so a workspace using a key from a newer
+/// trellis still loads under a pinned older one.
+fn report_unknown_config_keys(config: &ConfigFile, diagnostics: &mut Diagnostics) {
+    for key in &config.unknown_keys {
+        let finding = match &key.typo_of {
+            Some(intended) => Finding::error(
+                Check::WorkspaceConfig,
+                format!(
+                    "[tools.trellis] has no `{}`; did you mean `{intended}`? \
+                     (trellis config keys are kebab-case)",
+                    key.path
+                ),
+            ),
+            None => Finding::warning(
+                Check::WorkspaceConfig,
+                format!(
+                    "[tools.trellis] key `{}` is not recognized and is being ignored; \
+                     it may belong to a newer trellis",
+                    key.path
+                ),
+            ),
+        };
+        diagnostics.push(finding.at(GLEAM_TOML));
     }
 }
 

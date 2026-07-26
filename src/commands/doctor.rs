@@ -1,6 +1,8 @@
 //! `trellis doctor` — validate every workspace invariant that would otherwise
 //! be enforced only by hope. Reports all problems, exits non-zero on any error.
 
+use crate::config::Strictness;
+use crate::gleam::Requirement;
 use crate::json::{Check, DoctorDocument, Finding, FixRecord, Severity};
 use crate::lockfile;
 use crate::workspace::Workspace;
@@ -184,6 +186,7 @@ fn inspect(root: &Path) -> Result<Report> {
         check_lockfiles(workspace, &mut report);
         check_changelogs(workspace, &mut report);
         check_fragments(workspace, &mut report);
+        check_shared_dependencies(workspace, &mut report);
         check_tool_versions(workspace, &mut report);
     }
     Ok(report)
@@ -201,6 +204,8 @@ pub fn run(root: &Path, options: &DoctorOptions) -> Result<bool> {
             "manifest.toml locked versions match workspace-internal gleam.toml versions",
             "each releasable member's version is not behind its CHANGELOG",
             "unreleased changelog fragments parse and reference valid packages and kinds",
+            "[tools.trellis] carries no unrecognized keys",
+            "members agree on the external dependencies they share",
             "gleam on PATH matches the .tool-versions pin (advisory)",
         ];
         for check in checked {
@@ -365,6 +370,62 @@ fn check_fragments(workspace: &Workspace, report: &mut Report) {
             }
         }
         Err(err) => report.error(Check::ChangelogFragment, format!("{err:#}")),
+    }
+}
+
+/// Members must agree on the external dependencies they share.
+///
+/// This is the purest instance of the design principle — *verify anything that
+/// must be duplicated*. Nothing else notices that `lat_core` requires
+/// `gleam_stdlib >= 0.44.0` while `lat_cli` requires `>= 0.60.0`; it is what
+/// people install syncpack for in other ecosystems, and trellis already has
+/// every input in the workspace model.
+///
+/// Requirement strings are compared verbatim, never parsed as ranges: trellis
+/// stores them as written, and a check that must-be-identical strings are
+/// identical is the honest reading of "these are duplicated". `>= 1.0` and
+/// `>=1.0` therefore read as divergent, which the message says out loud.
+///
+/// Path dependencies are out of scope — they carry no requirement to agree on,
+/// and lockfile drift already covers them.
+fn check_shared_dependencies(workspace: &Workspace, report: &mut Report) {
+    let strictness = workspace.config.doctor.shared_dependencies;
+    if strictness == Strictness::Off {
+        return;
+    }
+
+    // dependency name -> requirement -> the members asking for it.
+    let mut requirements: BTreeMap<&str, BTreeMap<&str, Vec<&str>>> = BTreeMap::new();
+    for member in &workspace.members {
+        for dependency in &member.manifest.dependencies {
+            if let Requirement::Hex(requirement) = &dependency.requirement {
+                requirements
+                    .entry(&dependency.name)
+                    .or_default()
+                    .entry(requirement)
+                    .or_default()
+                    .push(&member.name);
+            }
+        }
+    }
+
+    for (dependency, by_requirement) in requirements {
+        if by_requirement.len() < 2 {
+            continue;
+        }
+        let detail = by_requirement
+            .iter()
+            .map(|(requirement, members)| format!("`{requirement}` ({})", members.join(", ")))
+            .collect::<Vec<_>>()
+            .join(" vs ");
+        let message = format!(
+            "members disagree on `{dependency}`: {detail}. Requirements are compared as \
+             written, so whitespace counts"
+        );
+        report.push(match strictness {
+            Strictness::Error => Finding::error(Check::SharedDependency, message),
+            _ => Finding::warning(Check::SharedDependency, message),
+        });
     }
 }
 

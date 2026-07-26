@@ -372,6 +372,28 @@ gleam, a mismatched gleam on PATH is reported as an advisory warning
 (enforcing toolchains stays mise/asdf's job). Non-zero exit on any error —
 run it on every PR.
 
+Two further checks cover things that must agree because they are duplicated:
+
+**Unrecognized `[tools.trellis]` keys.** Every trellis config key is
+kebab-case, so `tag_format = "..."` under `[tools.trellis.publish]` was
+silently ignored — the workspace kept producing default tags with no signal.
+A key whose kebab-cased form *is* a real one is now an error naming what you
+meant; anything else is a warning, since it may belong to a newer trellis and
+erroring would make the workspace unloadable under a pinned older one.
+
+**Shared external dependencies.** Members are checked for agreeing on the
+non-path dependencies they share — `lat_core` requiring `gleam_stdlib >=
+0.44.0` while `lat_cli` requires `>= 0.60.0`. Requirements are compared as
+written, never parsed as ranges, so whitespace counts. Divergence is sometimes
+deliberate, so it warns by default:
+
+```toml
+[tools.trellis.doctor]
+shared-dependencies = "warn"   # or "error" to fail CI, "off" to skip
+```
+
+There is no `--fix` for it: picking a winner is a judgment call.
+
 `--fix` applies the mechanical remedies (seed a missing CHANGELOG, patch stale
 locked versions) and re-checks; `--dry-run` lists them without writing.
 `--format json` emits each finding as `{check, severity, message, file,
