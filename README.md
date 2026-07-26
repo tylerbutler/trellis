@@ -269,8 +269,10 @@ name — trellis rejects any task named with that prefix.
 ```
 trellis changelog new [--package <pkg>] --kind <kind> --body <text>
 trellis changelog check --base <ref> [--head <ref>] [--json]
-trellis version plan [--json]
-trellis version apply [--json]
+trellis version plan  [--bump <level>|<pkg>=<level>] [--set <pkg>=<version>]
+                      [--pre <label>|none] [--json]
+trellis version apply [--bump <level>|<pkg>=<level>] [--set <pkg>=<version>]
+                      [--pre <label>|none] [--json]
 ```
 
 The changelog engine is native — no second tool to install, no config file
@@ -301,6 +303,54 @@ lat_core: 1.2.0 -> 1.3.0 (1 fragment(s))
 lat_mid: 0.5.0 -> 0.5.1 (dependencies: lat_core)
 lat_cli: 0.3.1 -> 0.3.2 (dependencies: lat_core, lat_mid)
 ```
+
+#### Overriding the derived version
+
+The fragment kinds do not always determine the version you want. Three flags
+override them, accepted identically by `plan` and `apply` so an override is
+previewable before it is applied:
+
+```sh
+trellis version apply --bump major                 # whole plan
+trellis version apply --bump lat_core=major        # one package
+trellis version apply --set lat_core=1.0.0         # an exact version
+```
+
+`--set` beats a per-package `--bump`, which beats a workspace-wide one, which
+beats the derived level. Naming a package in both `--bump` and `--set`, naming
+one that isn't a releasable member, or pinning a version that isn't ahead of
+the current one are all errors before anything is written.
+
+#### Prereleases
+
+`--pre <label>` cuts a release candidate, and repeating it advances the
+counter within the same base version:
+
+```sh
+trellis version apply --set lat_core=1.0.0 --pre rc   # 1.0.0-rc.1
+trellis version apply --pre rc                        # 1.0.0-rc.2
+trellis version apply --pre none                      # 1.0.0
+```
+
+**Fragments survive a prerelease.** The candidate renders its changelog
+section, but the fragments behind it stay in `.changes/unreleased/` — they are
+still unreleased as far as `1.0.0` is concerned, and retiring them at `rc.1`
+would leave the final release with nothing to say. `--pre none` promotes the
+candidate to its final version and consumes them. This means an entry appears
+twice in `CHANGELOG.md`: once under the RC that shipped it, once under the
+final. `version --json` reports `fragments-retained` so a workflow can tell the
+two cases apart.
+
+A prerelease labels the whole plan, rippled dependents included, so the
+workspace moves as one coherent candidate. A package that only gained fragments
+after the RC was cut still bumps normally under `--pre none`, so a late arrival
+never blocks the promotion.
+
+Once a package is at a prerelease, a plain `version apply` is an error rather
+than a silent bump to the next release — resolving the cycle has to be
+deliberate. A prerelease belongs to no series, so it moves no
+[series tag](#release--publish); exact tags apply as usual, and Hex accepts
+prerelease versions.
 
 This is not a convenience. A path dep's Hex requirement is derived from the
 dependency's version at publish time, so leaving `lat_mid` at 0.5.0 would let

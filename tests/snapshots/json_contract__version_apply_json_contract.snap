@@ -45,6 +45,7 @@ expression: "json_output(root, &[\"version\", \"apply\", \"--json\"], true)"
       ]
     }
   ],
+  "fragments-retained": false,
   "lockfiles": [
     "packages/lat_mid/manifest.toml"
   ],

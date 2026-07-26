@@ -4,16 +4,16 @@
 .SH NAME
 trellis\-version\-plan \- Dry\-run: show what `version apply` would bump
 .SH SYNOPSIS
-\fBtrellis version plan\fR [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-\-json\fR] [\fB\-\-color\fR] [\fB\-q\fR|\fB\-\-quiet\fR] [\fB\-v\fR|\fB\-\-verbose\fR] [\fB\-\-no\-update\-check\fR] [\fB\-h\fR|\fB\-\-help\fR] 
+\fBtrellis version plan\fR [\fB\-\-bump\fR] [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-\-color\fR] [\fB\-\-set\fR] [\fB\-\-pre\fR] [\fB\-q\fR|\fB\-\-quiet\fR] [\fB\-\-json\fR] [\fB\-v\fR|\fB\-\-verbose\fR] [\fB\-\-no\-update\-check\fR] [\fB\-h\fR|\fB\-\-help\fR] 
 .SH DESCRIPTION
 Dry\-run: show what `version apply` would bump
 .SH OPTIONS
 .TP
+\fB\-\-bump\fR \fI<LEVEL|PKG=LEVEL>\fR
+Override the derived bump level, workspace\-wide (`\-\-bump major`) or for one package (`\-\-bump lat_core=major`). Repeatable
+.TP
 \fB\-C\fR, \fB\-\-directory\fR \fI<DIR>\fR
 Run as if started in this directory
-.TP
-\fB\-\-json\fR
-Emit JSON instead of text
 .TP
 \fB\-\-color\fR \fI<WHEN>\fR [default: auto]
 When to color output. `auto` follows the terminal, `NO_COLOR`, and `CLICOLOR=0`; the other two override that detection
@@ -30,8 +30,17 @@ always
 never
 .RE
 .TP
+\fB\-\-set\fR \fI<PKG=VERSION>\fR
+Pin a package\*(Aqs next version exactly (`\-\-set lat_core=1.0.0`). Repeatable
+.TP
+\fB\-\-pre\fR \fI<LABEL>\fR
+Cut a prerelease: `\-\-pre rc` gives 1.0.0\-rc.1, and again 1.0.0\-rc.2. Fragments stay unreleased until the final version. `\-\-pre none` promotes the current prerelease to its final version and consumes them
+.TP
 \fB\-q\fR, \fB\-\-quiet\fR
 Suppress the per\-package output stream and the summary table
+.TP
+\fB\-\-json\fR
+Emit JSON instead of text
 .TP
 \fB\-v\fR, \fB\-\-verbose\fR
 Trace every command trellis shells out to, on stderr

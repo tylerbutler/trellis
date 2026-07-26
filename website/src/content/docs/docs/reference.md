@@ -237,6 +237,9 @@ Dry-run: show what `version apply` would bump
 
 ###### **Options:**
 
+* `--bump <LEVEL|PKG=LEVEL>` — Override the derived bump level, workspace-wide (`--bump major`) or for one package (`--bump lat_core=major`). Repeatable
+* `--set <PKG=VERSION>` — Pin a package's next version exactly (`--set lat_core=1.0.0`). Repeatable
+* `--pre <LABEL>` — Cut a prerelease: `--pre rc` gives 1.0.0-rc.1, and again 1.0.0-rc.2. Fragments stay unreleased until the final version. `--pre none` promotes the current prerelease to its final version and consumes them
 * `--json` — Emit JSON instead of text
 
 
@@ -249,6 +252,9 @@ Bump versions, render changelogs, patch manifest.toml locked versions
 
 ###### **Options:**
 
+* `--bump <LEVEL|PKG=LEVEL>` — Override the derived bump level, workspace-wide (`--bump major`) or for one package (`--bump lat_core=major`). Repeatable
+* `--set <PKG=VERSION>` — Pin a package's next version exactly (`--set lat_core=1.0.0`). Repeatable
+* `--pre <LABEL>` — Cut a prerelease: `--pre rc` gives 1.0.0-rc.1, and again 1.0.0-rc.2. Fragments stay unreleased until the final version. `--pre none` promotes the current prerelease to its final version and consumes them
 * `--json` — Emit JSON listing every bump and patched lockfile
 
 

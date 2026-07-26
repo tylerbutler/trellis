@@ -230,16 +230,13 @@ pub fn write_fragment(
 
 // ---- version computation ----------------------------------------------------
 
-/// The next version for a package: current bumped by the largest bump among
-/// its fragments' kinds.
-pub fn next_version(
-    current: &str,
-    fragments: &[&Fragment],
-    kinds: &[KindConfig],
-) -> Result<semver::Version> {
-    let current = semver::Version::parse(current)
-        .with_context(|| format!("`{current}` is not valid semver"))?;
-    let bump = fragments
+/// The bump the fragments call for: the largest among their kinds.
+///
+/// Deriving the *level* rather than the whole version is what lets
+/// `version --bump/--set/--pre` override it, or combine it with a prerelease
+/// label, before any version is constructed.
+pub fn derive_bump(fragments: &[&Fragment], kinds: &[KindConfig]) -> Result<Bump> {
+    fragments
         .iter()
         .filter_map(|fragment| {
             kinds
@@ -248,12 +245,20 @@ pub fn next_version(
                 .map(|k| k.bump)
         })
         .max()
-        .context("no fragments to compute a version bump from")?;
-    Ok(match bump {
+        .context("no fragments to compute a version bump from")
+}
+
+/// Apply a bump level, producing a clean release version.
+///
+/// Prerelease and build metadata on `current` are dropped: bumping *from*
+/// `1.0.0-rc.1` by a minor means 1.1.0, not 1.1.0-rc.1. A caller that wants to
+/// stay in a prerelease cycle bumps from the base version itself.
+pub fn apply_bump(current: &semver::Version, bump: Bump) -> semver::Version {
+    match bump {
         Bump::Major => semver::Version::new(current.major + 1, 0, 0),
         Bump::Minor => semver::Version::new(current.major, current.minor + 1, 0),
         Bump::Patch => semver::Version::new(current.major, current.minor, current.patch + 1),
-    })
+    }
 }
 
 // ---- rendering ---------------------------------------------------------------
@@ -554,17 +559,40 @@ mod tests {
         }
     }
 
+    /// Bump one version by what a set of fragments derives, the way
+    /// `compute_plan` does.
+    fn next_version(current: &str, fragments: &[&Fragment], kinds: &[KindConfig]) -> String {
+        let current = semver::Version::parse(current).unwrap();
+        apply_bump(&current, derive_bump(fragments, kinds).unwrap()).to_string()
+    }
+
     #[test]
-    fn next_version_uses_the_largest_bump() {
+    fn the_largest_bump_among_the_kinds_wins() {
         let kinds = ChangelogConfig::default().kinds;
         let fixed = fragment("p", "Fixed", "x");
         let added = fragment("p", "Added", "y");
         let breaking = fragment("p", "Breaking", "z");
-        let next =
-            |frags: Vec<&Fragment>| next_version("1.2.3", &frags, &kinds).unwrap().to_string();
+        let next = |frags: Vec<&Fragment>| next_version("1.2.3", &frags, &kinds);
         assert_eq!(next(vec![&fixed]), "1.2.4");
         assert_eq!(next(vec![&fixed, &added]), "1.3.0");
         assert_eq!(next(vec![&fixed, &added, &breaking]), "2.0.0");
+    }
+
+    #[test]
+    fn deriving_a_bump_needs_at_least_one_known_kind() {
+        let kinds = ChangelogConfig::default().kinds;
+        let unknown = fragment("p", "Invented", "x");
+        assert!(derive_bump(&[], &kinds).is_err());
+        assert!(derive_bump(&[&unknown], &kinds).is_err());
+    }
+
+    #[test]
+    fn applying_a_bump_drops_any_prerelease() {
+        // The RC cycle bumps from the base version instead; this is the path a
+        // package takes when it leaves a cycle behind entirely.
+        let rc = semver::Version::parse("1.0.0-rc.1").unwrap();
+        assert_eq!(apply_bump(&rc, Bump::Minor).to_string(), "1.1.0");
+        assert_eq!(apply_bump(&rc, Bump::Patch).to_string(), "1.0.1");
     }
 
     #[test]
@@ -642,11 +670,7 @@ mod tests {
         let config = ChangelogConfig::default();
         let generated = dependency_fragment(&config, "lat_mid", "lat_core", "1.3.0").unwrap();
         let added = fragment("lat_mid", "Added", "a feature");
-        let next = |frags: Vec<&Fragment>| {
-            next_version("0.5.0", &frags, &config.kinds)
-                .unwrap()
-                .to_string()
-        };
+        let next = |frags: Vec<&Fragment>| next_version("0.5.0", &frags, &config.kinds);
         assert_eq!(next(vec![&generated]), "0.5.1");
         assert_eq!(next(vec![&generated, &added]), "0.6.0");
     }

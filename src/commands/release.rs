@@ -4,6 +4,7 @@
 //! refresh the PR. The tool already knows exactly what changed; gh does the
 //! PR mechanics.
 
+use crate::commands::version_override::Overrides;
 use crate::commands::{tag, version};
 use crate::tools;
 use crate::workspace::Workspace;
@@ -38,7 +39,9 @@ pub fn pr(workspace: &Workspace, options: &PrOptions) -> Result<bool> {
     let result = (|| {
         let workspace = Workspace::load(root)
             .with_context(|| format!("failed to load base branch `{}`", options.base))?;
-        let plan = version::compute_plan(&workspace)?;
+        // `release pr` cuts an ordinary release; an override belongs on the
+        // `version` commands, where it can be previewed by `plan` first.
+        let plan = version::compute_plan(&workspace, &Overrides::default())?;
         if plan.is_empty() {
             println!("no unreleased changes; nothing to release");
             return Ok(true);
@@ -59,7 +62,7 @@ fn build_release_commit_and_pr(
     plan: &[version::PlanEntry],
 ) -> Result<bool> {
     let root = &workspace.root;
-    if !version::apply(workspace, false)? {
+    if !version::apply(workspace, &Overrides::default(), false)? {
         bail!("version apply failed");
     }
 

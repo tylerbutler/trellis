@@ -531,6 +531,10 @@ pub struct Bump<'a> {
 pub struct VersionPlanDocument<'a> {
     pub schema: &'static str,
     pub bumped: Vec<Bump<'a>>,
+    /// True under `--pre <label>`: the fragments behind this release stay
+    /// unreleased, and the final version will render them again. False for
+    /// every ordinary release and for a `--pre none` promotion.
+    pub fragments_retained: bool,
 }
 
 impl VersionPlanDocument<'_> {
@@ -547,6 +551,11 @@ pub struct VersionApplyDocument<'a> {
     pub bumped: Vec<Bump<'a>>,
     pub lockfiles: Vec<&'a str>,
     pub adopted: Vec<&'a str>,
+    /// True under `--pre <label>`: the fragments behind this release were left
+    /// in place, so a follow-up release will render them again. A workflow that
+    /// gates on "are there unreleased changes" needs this to tell a cut RC from
+    /// an incomplete release.
+    pub fragments_retained: bool,
 }
 
 impl VersionApplyDocument<'_> {
