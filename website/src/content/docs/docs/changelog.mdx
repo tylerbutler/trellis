@@ -81,8 +81,48 @@ kinds and the bump each implies are configurable under
 ```console
 $ trellis version plan
 lat_core: 1.1.0 -> 1.2.0 (2 fragment(s))
-lat_cli: 0.4.2 -> 0.4.3 (1 fragment(s))
+lat_mid: 0.5.0 -> 0.5.1 (dependencies: lat_core)
+lat_cli: 0.4.2 -> 0.4.3 (1 fragment(s), dependencies: lat_core, lat_mid)
 ```
+
+## Dependents bump too
+
+`lat_mid` owns no fragment, yet it is in that plan. When a package bumps, so
+does everything that path-depends on it, transitively.
+
+This is a correctness requirement, not a convenience. A path dependency has no
+version in the repository — it is rewritten into a Hex requirement at publish
+time, derived from whatever version the dependency is on *then*. If `lat_core`
+went 1.1.0 → 1.2.0 and `lat_mid` stayed at 0.5.0, then `lat_mid` 0.5.0 would
+mean `>= 1.1.0 and < 2.0.0` to anyone who fetched it before the release and
+`>= 1.2.0 and < 2.0.0` to anyone who fetched it after. One published version,
+two dependency sets.
+
+The rules:
+
+- A rippled package bumps by whatever `dependency-kind` is configured to bump,
+  patch by default. It needs no fragment of its own.
+- A package with its own fragments keeps its own bump; a ripple never lowers
+  it. `lat_cli` above is `0.4.3` from its own fragment, not `0.4.3` from the
+  ripple — whichever is larger wins.
+- Ripples follow `[dev-dependencies]` path deps as well as `[dependencies]`.
+- A package excluded by `@release` never bumps, and a ripple stops there rather
+  than skipping past it to its dependents.
+
+Each rippled package gets a generated changelog entry, rendered like any other:
+
+```markdown
+## v0.5.1 - 2026-07-11
+
+### Dependencies
+
+- Updated lat_core to 1.2.0
+```
+
+The entries are generated at plan time and never written to
+`.changes/unreleased/` — the body embeds the dependency's new version, which is
+only settled once the whole plan is computed. Hand-written entries of the same
+kind share the heading rather than producing a second section.
 
 ## Applying it
 
@@ -109,6 +149,37 @@ version sections under `.changes/<package>/`, and `apply` reassembles the
 changelog from them.
 
 </Callout>
+
+## Adopting an existing changelog
+
+Because `CHANGELOG.md` is regenerated from `.changes/<package>/`, a package
+that already had a changelog before adopting trellis would lose it the first
+time it was released — there is nothing under `.changes/<package>/` to
+reassemble from.
+
+Trellis handles this on a package's first release: everything below the header
+line is captured verbatim as a single section, filed under the newest version
+its headings mention (or the version being released from, if none parse).
+
+```console
+$ trellis version apply
+bumped lat_core: 1.2.0 -> 1.3.0
+adopted existing changelog history as .changes/lat_core/v1.2.0.md
+```
+
+The captured block is byte-for-byte — no heading parsing, no reformatting — and
+sorts below every section trellis goes on to write. It happens once; after that
+the changelog is fully generated.
+
+`doctor` reports pending adoptions so this is never a surprise mid-release, and
+`doctor --fix` performs the capture up front, so the restructuring lands in its
+own reviewable diff:
+
+```console
+$ trellis doctor
+warning: package `lat_core` has changelog history that trellis has not batched
+yet; it will be adopted on the next release
+```
 
 From here, [publishing](/docs/publishing/) covers turning pending fragments
 into a release PR (`trellis release pr`), tags, and Hex publishes.

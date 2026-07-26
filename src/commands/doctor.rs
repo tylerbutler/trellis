@@ -32,6 +32,14 @@ enum Fix {
         path: PathBuf,
         contents: String,
     },
+    /// Capture a package's pre-trellis CHANGELOG.md body as a version section,
+    /// so regenerating the changelog preserves it. `version apply` does this on
+    /// a first release anyway; doing it here makes it visible beforehand.
+    AdoptChangelog {
+        package: String,
+        path: PathBuf,
+        contents: String,
+    },
 }
 
 impl Fix {
@@ -39,6 +47,9 @@ impl Fix {
         match self {
             Fix::SeedChangelog { package, .. } => format!("seed CHANGELOG.md for `{package}`"),
             Fix::PatchLockfile { display, .. } => format!("patch locked versions in {display}"),
+            Fix::AdoptChangelog { package, .. } => {
+                format!("adopt existing changelog history for `{package}`")
+            }
         }
     }
 
@@ -46,6 +57,13 @@ impl Fix {
         let (path, contents) = match self {
             Fix::SeedChangelog { path, contents, .. } => (path, contents),
             Fix::PatchLockfile { path, contents, .. } => (path, contents),
+            Fix::AdoptChangelog { path, contents, .. } => {
+                if let Some(parent) = path.parent() {
+                    std::fs::create_dir_all(parent)
+                        .with_context(|| format!("failed to create {}", parent.display()))?;
+                }
+                (path, contents)
+            }
         };
         std::fs::write(path, contents)
             .with_context(|| format!("failed to write {}", path.display()))
@@ -468,7 +486,7 @@ fn check_changelogs(workspace: &Workspace, report: &mut Report) {
             ));
             continue;
         };
-        if let Some(latest) = latest_changelog_version(&text)
+        if let Some(latest) = crate::changelog::latest_changelog_version(&text)
             && current < latest
         {
             report.error(format!(
@@ -476,41 +494,29 @@ fn check_changelogs(workspace: &Workspace, report: &mut Report) {
                 member.name, current
             ));
         }
-    }
-}
 
-/// Newest semver mentioned in a `## ...` heading, tolerating the common
-/// changie/keep-a-changelog shapes: `## 1.2.3`, `## [1.2.3]`, `## v1.2.3`,
-/// `## name-v1.2.3 - 2026-01-01`.
-fn latest_changelog_version(text: &str) -> Option<semver::Version> {
-    text.lines()
-        .filter_map(|line| line.strip_prefix("## "))
-        .filter_map(|heading| {
-            let token = heading.split_whitespace().next()?;
-            let token = token.trim_matches(['[', ']']);
-            let token = token.rsplit_once("-v").map(|(_, v)| v).unwrap_or(token);
-            let token = token.strip_prefix('v').unwrap_or(token);
-            semver::Version::parse(token).ok()
-        })
-        .max()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::latest_changelog_version;
-
-    #[test]
-    fn parses_common_changelog_headings() {
-        let text =
-            "# Changelog\n\n## lattice_core-v1.2.0 - 2026-01-05\n\n## [1.1.0]\n\n## v1.0.0\n";
-        assert_eq!(
-            latest_changelog_version(text),
-            Some(semver::Version::new(1, 2, 0))
-        );
-    }
-
-    #[test]
-    fn ignores_non_version_headings() {
-        assert_eq!(latest_changelog_version("## Unreleased\n## Notes\n"), None);
+        // CHANGELOG.md is regenerated from `.changes/<pkg>/`, so history that
+        // was never batched would vanish on the next release. `version apply`
+        // adopts it automatically; surfacing it here means nobody meets it for
+        // the first time mid-release.
+        match crate::changelog::plan_adoption(workspace, &member.name, member.version()) {
+            Ok(Some(adoption)) => {
+                report.warning(format!(
+                    "package `{}` has changelog history that trellis has not batched yet; \
+                     it will be adopted on the next release",
+                    member.name
+                ));
+                report.fix(Fix::AdoptChangelog {
+                    package: member.name.clone(),
+                    path: adoption.path,
+                    contents: adoption.contents,
+                });
+            }
+            Ok(None) => {}
+            Err(err) => report.error(format!(
+                "cannot read `{}`'s changelog history: {err:#}",
+                member.name
+            )),
+        }
     }
 }

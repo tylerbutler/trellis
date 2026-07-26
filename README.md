@@ -230,6 +230,24 @@ Hex network calls throughout. Invalid fragments (unknown package or kind,
 empty body, unparseable TOML) are hard errors for `plan`/`apply`: silently
 dropping a change is exactly the drift trellis exists to prevent.
 
+A bump ripples to the bumping package's workspace dependents. When `lat_core`
+goes 1.2.0 → 1.3.0, every package that path-depends on it is released too —
+by a patch, and with a generated changelog entry saying why:
+
+```
+lat_core: 1.2.0 -> 1.3.0 (1 fragment(s))
+lat_mid: 0.5.0 -> 0.5.1 (dependencies: lat_core)
+lat_cli: 0.3.1 -> 0.3.2 (dependencies: lat_core, lat_mid)
+```
+
+This is not a convenience. A path dep's Hex requirement is derived from the
+dependency's version at publish time, so leaving `lat_mid` at 0.5.0 would let
+one published version resolve two different ways depending on whether it was
+fetched before or after `lat_core`'s release. A dependent needs no fragment of
+its own to ripple; a package that has one keeps its own, larger bump. Packages
+excluded by `@release` never bump, and a ripple stops at one rather than
+skipping past it to its dependents.
+
 Rendering is controlled by minijinja templates in `[tools.trellis.changelog]`, each with a
 small context (`name`, `version`, `date`, `tag`, `kind`, `body` as applicable):
 
@@ -243,11 +261,22 @@ kinds = [
   { label = "Added", bump = "minor" },
   { label = "Fixed", bump = "patch" },
 ]
+
+# Generated ripple entries are ordinary entries of one configured kind, so
+# they sort and render like any other. `dependency-kind` must name one of
+# `kinds`; its bump is what a package bumps by when a dependency bump is the
+# only reason it is being released.
+dependency-kind = "Dependencies"                                  # default
+dependency-body = "Updated {{ dependency }} to {{ dependency_version }}"  # default
 ```
 
 Note that each package's CHANGELOG.md is a generated file: the source of
 truth is the version sections under `.changes/<package>/`, and `apply`
-reassembles the changelog from them.
+reassembles the changelog from them. A package that already had a changelog
+when it adopted trellis keeps it: on its first release, whatever sits below
+the header is captured verbatim as one section under `.changes/<package>/`, so
+regenerating preserves the history rather than replacing it. `doctor` reports
+this before release day, and `doctor --fix` does the capture up front.
 
 ### Release & publish
 
