@@ -14,9 +14,6 @@ pub mod run;
 pub mod tag;
 pub mod version;
 
-use crate::workspace::Workspace;
-use serde_json::json;
-
 /// Render the whole command tree as a Starlight `.md` page, straight from the
 /// clap definition, so the website's CLI reference can never drift from the
 /// actual flags. `trellis markdown-help` prints exactly this; a test asserts
@@ -44,25 +41,4 @@ pub fn markdown_help() -> String {
          {}",
         body.trim_end()
     ) + "\n"
-}
-
-/// The JSON shape shared by `list --json` and `info --json`.
-pub fn member_json(workspace: &Workspace, idx: usize) -> serde_json::Value {
-    let member = &workspace.members[idx];
-    json!({
-        "name": member.name,
-        "version": member.version(),
-        "path": member.rel_path,
-        "releasable": member.releasable,
-        "dependencies": workspace
-            .deps_of(idx)
-            .iter()
-            .map(|&dep| workspace.members[dep].name.clone())
-            .collect::<Vec<_>>(),
-        "dependents": workspace
-            .dependents_of(idx)
-            .iter()
-            .map(|&dep| workspace.members[dep].name.clone())
-            .collect::<Vec<_>>(),
-    })
 }

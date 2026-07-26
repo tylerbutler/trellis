@@ -5,10 +5,10 @@
 //! CHANGELOG.md — all with zero Hex network calls.
 
 use crate::changelog;
+use crate::json::{Bump, UpdatedDependency, VersionApplyDocument, VersionPlanDocument};
 use crate::lockfile;
 use crate::workspace::Workspace;
 use anyhow::{Context, Result, bail};
-use serde_json::json;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
@@ -17,12 +17,36 @@ pub struct PlanEntry {
     pub name: String,
     pub current: String,
     pub next: String,
+    /// How many fragments the package owns on disk.
     pub fragments: usize,
+    /// Workspace dependencies that bumped in this same plan, sorted by name.
+    /// Empty when nothing rippled into this package.
+    pub updated_deps: Vec<UpdatedDep>,
+    /// The changelog entries `updated_deps` renders as. Held alongside rather
+    /// than derived on demand so `apply` renders exactly what `plan` reported.
+    pub generated: Vec<changelog::Fragment>,
 }
 
-/// One entry per releasable member with unreleased fragments, in topological
-/// order. Any invalid fragment is a hard error — silently dropping one is
-/// exactly the drift this tool exists to prevent.
+#[derive(Debug)]
+pub struct UpdatedDep {
+    pub name: String,
+    pub version: String,
+}
+
+/// One entry per releasable member that either owns unreleased fragments or
+/// depends on something that bumped, in topological order. Any invalid
+/// fragment is a hard error — silently dropping one is exactly the drift this
+/// tool exists to prevent.
+///
+/// Dependents ripple because a path dep's Hex requirement is derived from the
+/// dependency's version at publish time (`crate::rewrite`). Leaving a dependent
+/// unbumped would let one published version resolve to two different dependency
+/// sets, depending on whether it was fetched before or after the bump.
+///
+/// `workspace.members` is topologically ordered, so one forward sweep is enough:
+/// by the time it reaches a member, every dependency's final version is settled.
+/// Unreleasable members are never recorded, so a ripple stops at one rather than
+/// skipping over it to its dependents.
 pub fn compute_plan(workspace: &Workspace) -> Result<Vec<PlanEntry>> {
     let fragments = changelog::load_fragments(workspace)?;
     if !fragments.problems.is_empty() {
@@ -32,21 +56,54 @@ pub fn compute_plan(workspace: &Workspace) -> Result<Vec<PlanEntry>> {
         );
     }
 
-    let kinds = &workspace.config.changelog.kinds;
+    let config = &workspace.config.changelog;
     let mut plan = Vec::new();
-    for member in workspace.members.iter().filter(|m| m.releasable) {
-        let member_fragments: Vec<&changelog::Fragment> =
-            fragments.for_project(&member.name).collect();
-        if member_fragments.is_empty() {
+    let mut bumped: BTreeMap<&str, String> = BTreeMap::new();
+    for (idx, member) in workspace.members.iter().enumerate() {
+        if !member.releasable {
             continue;
         }
-        let next = changelog::next_version(member.version(), &member_fragments, kinds)
+        // Sorted by dependency name so the rendered order does not depend on
+        // the graph's internal indexing.
+        let mut rippled: Vec<(&str, &String)> = workspace
+            .deps_of(idx)
+            .iter()
+            .filter_map(|&dep| {
+                let dep_name = workspace.members[dep].name.as_str();
+                bumped.get(dep_name).map(|version| (dep_name, version))
+            })
+            .collect();
+        rippled.sort_unstable_by_key(|(name, _)| *name);
+        let generated = rippled
+            .iter()
+            .map(|(dep_name, dep_version)| {
+                changelog::dependency_fragment(config, &member.name, dep_name, dep_version)
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let updated_deps: Vec<UpdatedDep> = rippled
+            .into_iter()
+            .map(|(name, version)| UpdatedDep {
+                name: name.to_string(),
+                version: version.clone(),
+            })
+            .collect();
+
+        let owned: Vec<&changelog::Fragment> = fragments.for_project(&member.name).collect();
+        if owned.is_empty() && generated.is_empty() {
+            continue;
+        }
+        let all: Vec<&changelog::Fragment> =
+            owned.iter().copied().chain(generated.iter()).collect();
+        let next = changelog::next_version(member.version(), &all, &config.kinds)
             .with_context(|| format!("cannot compute next version for `{}`", member.name))?;
+        bumped.insert(&member.name, next.to_string());
         plan.push(PlanEntry {
             name: member.name.clone(),
             current: member.version().to_string(),
             next: next.to_string(),
-            fragments: member_fragments.len(),
+            fragments: owned.len(),
+            updated_deps,
+            generated,
         });
     }
     Ok(plan)
@@ -55,33 +112,65 @@ pub fn compute_plan(workspace: &Workspace) -> Result<Vec<PlanEntry>> {
 pub fn plan(workspace: &Workspace, json: bool) -> Result<()> {
     let plan = compute_plan(workspace)?;
     if json {
-        println!("{}", serde_json::to_string_pretty(&plan_json(&plan))?);
+        let document = VersionPlanDocument {
+            schema: VersionPlanDocument::SCHEMA,
+            bumped: bumps(&plan),
+        };
+        println!("{}", serde_json::to_string_pretty(&document)?);
     } else if plan.is_empty() {
         println!("no unreleased changes; nothing to bump");
     } else {
         for entry in &plan {
             println!(
-                "{}: {} -> {} ({} fragment(s))",
-                entry.name, entry.current, entry.next, entry.fragments
+                "{}: {} -> {} ({})",
+                entry.name,
+                entry.current,
+                entry.next,
+                entry.why()
             );
         }
     }
     Ok(())
 }
 
-fn plan_json(plan: &[PlanEntry]) -> serde_json::Value {
-    json!(
-        plan.iter()
-            .map(|entry| {
-                json!({
-                    "name": entry.name,
-                    "current": entry.current,
-                    "next": entry.next,
-                    "fragments": entry.fragments,
+impl PlanEntry {
+    /// Why this package is being released, for the human-readable plan.
+    fn why(&self) -> String {
+        let mut parts = Vec::new();
+        if self.fragments > 0 {
+            parts.push(format!("{} fragment(s)", self.fragments));
+        }
+        if !self.updated_deps.is_empty() {
+            let names: Vec<&str> = self
+                .updated_deps
+                .iter()
+                .map(|dep| dep.name.as_str())
+                .collect();
+            parts.push(format!("dependencies: {}", names.join(", ")));
+        }
+        parts.join(", ")
+    }
+}
+
+/// `version plan` and `version apply` report the same entry shape under the
+/// same `bumped` key, so they share one conversion.
+fn bumps(plan: &[PlanEntry]) -> Vec<Bump<'_>> {
+    plan.iter()
+        .map(|entry| Bump {
+            name: &entry.name,
+            current: &entry.current,
+            next: &entry.next,
+            fragments: entry.fragments,
+            updated_dependencies: entry
+                .updated_deps
+                .iter()
+                .map(|dep| UpdatedDependency {
+                    name: &dep.name,
+                    version: &dep.version,
                 })
-            })
-            .collect::<Vec<_>>()
-    )
+                .collect(),
+        })
+        .collect()
 }
 
 /// The release step: preflight every pending package and lockfile, write all
@@ -90,7 +179,13 @@ pub fn apply(workspace: &Workspace, json: bool) -> Result<bool> {
     let plan = compute_plan(workspace)?;
     if plan.is_empty() {
         if json {
-            println!("{}", json!({"bumped": [], "lockfiles": []}));
+            let document = VersionApplyDocument {
+                schema: VersionApplyDocument::SCHEMA,
+                bumped: Vec::new(),
+                lockfiles: Vec::new(),
+                adopted: Vec::new(),
+            };
+            println!("{}", serde_json::to_string_pretty(&document)?);
         } else {
             println!("no unreleased changes; nothing to apply");
         }
@@ -107,6 +202,13 @@ pub fn apply(workspace: &Workspace, json: bool) -> Result<bool> {
         let member = &workspace.members[idx];
         let member_fragments: Vec<&changelog::Fragment> =
             fragments.for_project(&entry.name).collect();
+        // Generated ripple entries render alongside the real ones, but are
+        // deliberately absent from what `consume_fragments` is later given.
+        let rendered: Vec<&changelog::Fragment> = member_fragments
+            .iter()
+            .copied()
+            .chain(entry.generated.iter())
+            .collect();
         let next = semver::Version::parse(&entry.next).expect("plan versions are valid");
         let tag = workspace.config.format_tag(&entry.name, &entry.next);
         let section = changelog::render_section(
@@ -115,11 +217,19 @@ pub fn apply(workspace: &Workspace, json: bool) -> Result<bool> {
             &entry.next,
             &tag,
             &date,
-            &member_fragments,
+            &rendered,
         )?;
-        let changelog =
-            changelog::render_merged_changelog(workspace, &entry.name, Some((&next, &section)))
-                .with_context(|| format!("failed to merge `{}`", entry.name))?;
+        // A package releasing for the first time may already have a
+        // hand-written CHANGELOG.md; adopt it so regenerating preserves it.
+        let adoption = changelog::plan_adoption(workspace, &entry.name, &entry.current)
+            .with_context(|| format!("failed to read `{}`'s changelog history", entry.name))?;
+        let changelog = changelog::render_merged_changelog(
+            workspace,
+            &entry.name,
+            Some((&next, &section)),
+            adoption.as_ref(),
+        )
+        .with_context(|| format!("failed to merge `{}`", entry.name))?;
         let manifest_path = member.path.join("gleam.toml");
         let manifest = std::fs::read_to_string(&manifest_path)
             .with_context(|| format!("failed to read {}", manifest_path.display()))?;
@@ -132,6 +242,7 @@ pub fn apply(workspace: &Workspace, json: bool) -> Result<bool> {
             changelog,
             manifest_path,
             manifest,
+            adoption,
         });
     }
 
@@ -188,7 +299,17 @@ pub fn apply(workspace: &Workspace, json: bool) -> Result<bool> {
         }
     }
 
+    let mut adopted_files = Vec::new();
     for prepared in &prepared_versions {
+        if let Some(adoption) = &prepared.adoption {
+            if let Some(parent) = adoption.path.parent() {
+                std::fs::create_dir_all(parent)
+                    .with_context(|| format!("failed to create {}", parent.display()))?;
+            }
+            std::fs::write(&adoption.path, &adoption.contents)
+                .with_context(|| format!("failed to write {}", adoption.path.display()))?;
+            adopted_files.push(display_path(&workspace, &adoption.path));
+        }
         changelog::write_batch(
             &workspace,
             &prepared.name,
@@ -211,13 +332,13 @@ pub fn apply(workspace: &Workspace, json: bool) -> Result<bool> {
         .collect();
 
     if json {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&json!({
-                "bumped": plan_json(&plan),
-                "lockfiles": patched_files,
-            }))?
-        );
+        let document = VersionApplyDocument {
+            schema: VersionApplyDocument::SCHEMA,
+            bumped: bumps(&plan),
+            lockfiles: patched_files,
+            adopted: adopted_files.iter().map(String::as_str).collect(),
+        };
+        println!("{}", serde_json::to_string_pretty(&document)?);
     } else {
         for entry in &plan {
             println!("bumped {}: {} -> {}", entry.name, entry.current, entry.next);
@@ -225,8 +346,20 @@ pub fn apply(workspace: &Workspace, json: bool) -> Result<bool> {
         for file in &patched_files {
             println!("patched {file}");
         }
+        for file in &adopted_files {
+            println!("adopted existing changelog history as {file}");
+        }
     }
     Ok(true)
+}
+
+/// A path relative to the workspace root, for output that stays stable
+/// wherever the repository is checked out.
+fn display_path(workspace: &Workspace, path: &std::path::Path) -> String {
+    path.strip_prefix(&workspace.root)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .replace('\\', "/")
 }
 
 struct PreparedVersion {
@@ -236,6 +369,8 @@ struct PreparedVersion {
     changelog: String,
     manifest_path: PathBuf,
     manifest: String,
+    /// Pre-trellis changelog history to preserve, on a first release.
+    adoption: Option<changelog::Adoption>,
 }
 
 struct PreparedLockfile {

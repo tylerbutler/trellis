@@ -3,10 +3,10 @@
 //! lines suitable for `$GITHUB_OUTPUT`; `tag-package` resolves a pushed tag
 //! ($GITHUB_REF_NAME) to the package it belongs to.
 
-use super::tag::ResolvedTag;
+use super::tag::{ResolvedTag, TagKind};
+use crate::json::{CiMatrix, CiTagPackageDocument};
 use crate::workspace::{SelectionFilter, Workspace};
 use anyhow::Result;
-use serde_json::json;
 
 /// Resolve a tag to its package for shell substitution, e.g.
 /// `trellis lockfile refresh --package "$(trellis ci tag-package "$GITHUB_REF_NAME")"`.
@@ -16,23 +16,20 @@ pub fn tag_package(workspace: &Workspace, tag: &str, json_output: bool) -> Resul
     if json_output {
         // A series tag identifies the package but no version, so it reports
         // the series it names instead of `tag-version`.
-        let payload = match &resolved {
-            ResolvedTag::Exact { version, .. } => json!({
-                "name": member.name,
-                "path": member.rel_path,
-                "version": member.version(),
-                "tag-kind": "exact",
-                "tag-version": version,
-            }),
-            ResolvedTag::Series { series, .. } => json!({
-                "name": member.name,
-                "path": member.rel_path,
-                "version": member.version(),
-                "tag-kind": "series",
-                "tag-series": series,
-            }),
+        let (tag_kind, tag_version, tag_series) = match &resolved {
+            ResolvedTag::Exact { version, .. } => (TagKind::Exact, Some(version.as_str()), None),
+            ResolvedTag::Series { series, .. } => (TagKind::Series, None, Some(series.as_str())),
         };
-        println!("{}", serde_json::to_string(&payload)?);
+        let document = CiTagPackageDocument {
+            schema: CiTagPackageDocument::SCHEMA,
+            name: &member.name,
+            path: &member.rel_path,
+            version: member.version(),
+            tag_kind,
+            tag_version,
+            tag_series,
+        };
+        println!("{}", serde_json::to_string(&document)?);
     } else {
         println!("{}", member.name);
     }
@@ -46,18 +43,8 @@ pub fn matrix(workspace: &Workspace, since: Option<String>, releasable: bool) ->
         with_dependents: true, // a change to a dep can break its dependents
         releasable_only: releasable,
     })?;
-    let include: Vec<_> = selected
-        .iter()
-        .map(|&idx| {
-            let member = &workspace.members[idx];
-            json!({
-                "name": member.name,
-                "path": member.rel_path,
-                "version": member.version(),
-            })
-        })
-        .collect();
-    println!("{}", serde_json::to_string(&json!({ "include": include }))?);
+    let matrix = CiMatrix::new(workspace, &selected);
+    println!("{}", serde_json::to_string(&matrix)?);
     Ok(())
 }
 

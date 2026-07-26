@@ -1,0 +1,28 @@
+---
+source: tests/json_contract.rs
+expression: "serde_json::Value::Object(pairs.into_iter().map(|(key, value)|\n(key.to_string(), value)).collect())"
+---
+{
+  "projects": [
+    "lat_core",
+    "lat_mid",
+    "lat_cli",
+    "package_a"
+  ],
+  "releasable": [
+    "lat_core",
+    "lat_mid",
+    "lat_cli"
+  ],
+  "series-tags": [],
+  "tags": [
+    "lat_core-v1.2.0",
+    "lat_mid-v0.5.0",
+    "lat_cli-v0.3.1"
+  ],
+  "version-files": [
+    "packages/lat_core/gleam.toml",
+    "packages/lat_mid/gleam.toml",
+    "packages/lat_cli/gleam.toml"
+  ]
+}

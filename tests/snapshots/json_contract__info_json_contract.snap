@@ -1,0 +1,17 @@
+---
+source: tests/json_contract.rs
+expression: "json_output(&fixture(\"basic\"), &[\"info\", \"lat_mid\", \"--json\"], true)"
+---
+{
+  "dependencies": [
+    "lat_core"
+  ],
+  "dependents": [
+    "lat_cli"
+  ],
+  "name": "lat_mid",
+  "path": "packages/lat_mid",
+  "releasable": true,
+  "schema": "trellis.info/1",
+  "version": "0.5.0"
+}

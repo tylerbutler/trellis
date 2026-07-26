@@ -265,13 +265,122 @@ fn version_plan_bumps_by_the_largest_kind() {
         .unwrap();
     assert!(output.status.success());
     let plan: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    // lat_cli owns no fragment, but both of its workspace deps bumped, so it
+    // ripples by a patch. Entries stay in topological order.
     assert_eq!(
         plan,
+        serde_json::json!({
+            "schema": "trellis.version-plan/1",
+            "bumped": [
+                {"name": "lat_core", "current": "1.2.0", "next": "1.3.0", "fragments": 2,
+                 "updated-dependencies": []},
+                {"name": "lat_mid", "current": "0.5.0", "next": "1.0.0", "fragments": 1,
+                 "updated-dependencies": [{"name": "lat_core", "version": "1.3.0"}]},
+                {"name": "lat_cli", "current": "0.3.1", "next": "0.3.2", "fragments": 0,
+                 "updated-dependencies": [
+                     {"name": "lat_core", "version": "1.3.0"},
+                     {"name": "lat_mid", "version": "1.0.0"},
+                 ]},
+            ],
+        })
+    );
+}
+
+/// A dependency's own bump wins over the patch a ripple would apply, and a
+/// ripple never lowers it.
+#[test]
+fn own_fragment_bump_wins_over_ripple() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+    add_fragment(root, "lat_core", "Breaking", "major-level change");
+    add_fragment(root, "lat_mid", "Added", "minor-level change");
+
+    let output = trellis(root)
+        .args(["version", "plan", "--json"])
+        .output()
+        .unwrap();
+    let plan: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let bumped = &plan["bumped"];
+    assert_eq!(bumped[0]["name"], "lat_core");
+    assert_eq!(bumped[0]["next"], "2.0.0");
+    // Minor from its own fragment, not the 0.5.1 a bare ripple would give.
+    assert_eq!(bumped[1]["name"], "lat_mid");
+    assert_eq!(bumped[1]["next"], "0.6.0");
+    assert_eq!(bumped[2]["name"], "lat_cli");
+    assert_eq!(bumped[2]["next"], "0.3.2");
+}
+
+/// `examples/package-a` is `@release`-excluded, so it never bumps even though
+/// it path-depends on `lat_cli`, which does.
+#[test]
+fn ripple_skips_unreleasable_members() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+    add_fragment(root, "lat_core", "Fixed", "patch-level change");
+
+    let output = trellis(root)
+        .args(["version", "plan", "--json"])
+        .output()
+        .unwrap();
+    let plan: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let names: Vec<&str> = plan["bumped"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|entry| entry["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, ["lat_core", "lat_mid", "lat_cli"]);
+}
+
+/// The graph does not distinguish dev-dependency edges, and neither does the
+/// ripple: `lat_cli` dev-depends on `lat_core` and runtime-depends on `lat_mid`.
+#[test]
+fn ripple_reaches_dev_dependents() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+    add_fragment(root, "lat_core", "Fixed", "patch-level change");
+
+    let output = trellis(root)
+        .args(["version", "plan", "--json"])
+        .output()
+        .unwrap();
+    let plan: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let cli = plan["bumped"].as_array().unwrap().last().unwrap();
+    assert_eq!(cli["name"], "lat_cli");
+    assert_eq!(
+        cli["updated-dependencies"],
         serde_json::json!([
-            {"name": "lat_core", "current": "1.2.0", "next": "1.3.0", "fragments": 2},
-            {"name": "lat_mid", "current": "0.5.0", "next": "1.0.0", "fragments": 1},
+            {"name": "lat_core", "version": "1.2.1"},
+            {"name": "lat_mid", "version": "0.5.1"},
         ])
     );
+}
+
+/// The human-readable plan says *why* each package is being released.
+#[test]
+fn version_plan_text_explains_ripples() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+    add_fragment(root, "lat_core", "Added", "a feature");
+    add_fragment(root, "lat_mid", "Fixed", "a bug");
+
+    trellis(root)
+        .args(["version", "plan"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "lat_core: 1.2.0 -> 1.3.0 (1 fragment(s))",
+        ))
+        .stdout(predicate::str::contains(
+            "lat_mid: 0.5.0 -> 0.5.1 (1 fragment(s), dependencies: lat_core)",
+        ))
+        .stdout(predicate::str::contains(
+            "lat_cli: 0.3.1 -> 0.3.2 (dependencies: lat_core, lat_mid)",
+        ));
 }
 
 #[test]
@@ -344,6 +453,217 @@ fn version_apply_batches_renders_bumps_and_patches_lockfiles() {
         .assert()
         .success()
         .stdout(predicate::str::contains("nothing to apply"));
+}
+
+/// The ripple's whole point: a dependent's version and the requirement it will
+/// publish move together, and the changelog says why it moved.
+#[test]
+fn version_apply_writes_dependency_entries() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+    add_fragment(root, "lat_core", "Added", "grow more vines");
+
+    trellis(root).args(["version", "apply"]).assert().success();
+
+    // The direct dependent bumped by a patch and records the ripple.
+    assert!(
+        fs::read_to_string(root.join("packages/lat_mid/gleam.toml"))
+            .unwrap()
+            .contains("version = \"0.5.1\"")
+    );
+    let section = fs::read_to_string(root.join(".changes/lat_mid/v0.5.1.md")).unwrap();
+    assert_eq!(
+        section,
+        "## v0.5.1 - 2026-07-11\n\n### Dependencies\n\n- Updated lat_core to 1.3.0\n"
+    );
+
+    // …and so did the transitive one, naming both of its deps.
+    assert!(
+        fs::read_to_string(root.join("packages/lat_cli/gleam.toml"))
+            .unwrap()
+            .contains("version = \"0.3.2\"")
+    );
+    let section = fs::read_to_string(root.join(".changes/lat_cli/v0.3.2.md")).unwrap();
+    assert_eq!(
+        section,
+        "## v0.3.2 - 2026-07-11\n\n### Dependencies\n\n- Updated lat_core to 1.3.0\n- Updated lat_mid to 0.5.1\n"
+    );
+
+    // Generated fragments are never written to disk, so nothing is left to
+    // consume and a second apply is a no-op.
+    assert_eq!(
+        fs::read_dir(root.join(".changes/unreleased"))
+            .unwrap()
+            .count(),
+        0
+    );
+    trellis(root).arg("doctor").assert().success();
+    trellis(root)
+        .args(["version", "apply"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("nothing to apply"));
+}
+
+/// A hand-written entry of the dependency kind shares one heading with the
+/// generated ones rather than producing a second section.
+#[test]
+fn hand_written_dependency_entries_merge_with_generated_ones() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+    add_fragment(root, "lat_core", "Added", "grow more vines");
+    add_fragment(root, "lat_mid", "Dependencies", "dropped an unused hex dep");
+
+    trellis(root).args(["version", "apply"]).assert().success();
+
+    let section = fs::read_to_string(root.join(".changes/lat_mid/v0.5.1.md")).unwrap();
+    assert_eq!(
+        section,
+        "## v0.5.1 - 2026-07-11\n\n### Dependencies\n\n- dropped an unused hex dep\n- Updated lat_core to 1.3.0\n"
+    );
+}
+
+// ---- changelog adoption ---------------------------------------------------
+
+/// CHANGELOG.md is regenerated from `.changes/<pkg>/`, so a package's first
+/// release under trellis has to capture whatever history it already had.
+#[test]
+fn version_apply_adopts_existing_changelog_history() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+    add_fragment(root, "lat_core", "Added", "grow more vines");
+
+    let output = trellis(root)
+        .args(["version", "apply", "--json"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let payload: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    // Every package this release touches keeps its history, in topological
+    // order — including the two that only bumped because lat_core did.
+    assert_eq!(
+        payload["adopted"],
+        serde_json::json!([
+            ".changes/lat_core/v1.2.0.md",
+            ".changes/lat_mid/v0.5.0.md",
+            ".changes/lat_cli/v0.3.1.md",
+        ])
+    );
+
+    // The old body is preserved byte-for-byte, minus the header line.
+    let adopted = fs::read_to_string(root.join(".changes/lat_core/v1.2.0.md")).unwrap();
+    assert_eq!(adopted, "## lat_core-v1.2.0 - 2026-06-01\n\n- initial\n");
+
+    // …and the regenerated changelog carries the new section above it.
+    let changelog = fs::read_to_string(root.join("packages/lat_core/CHANGELOG.md")).unwrap();
+    assert_eq!(
+        changelog,
+        "# lat_core changelog\n\
+         \n## v1.3.0 - 2026-07-11\n\n### Added\n\n- grow more vines\n\
+         \n## lat_core-v1.2.0 - 2026-06-01\n\n- initial\n"
+    );
+}
+
+/// Adoption happens once. After the first release CHANGELOG.md is fully
+/// generated, so a second apply must not capture it again.
+#[test]
+fn changelog_adoption_happens_only_once() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+
+    add_fragment(root, "lat_core", "Fixed", "first release");
+    trellis(root).args(["version", "apply"]).assert().success();
+    add_fragment(root, "lat_core", "Added", "second release");
+    let output = trellis(root)
+        .args(["version", "apply", "--json"])
+        .output()
+        .unwrap();
+    let payload: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["adopted"], serde_json::json!([]));
+
+    let sections: Vec<String> = fs::read_dir(root.join(".changes/lat_core"))
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(
+        sections.len(),
+        3,
+        "one adopted + two released: {sections:?}"
+    );
+    let changelog = fs::read_to_string(root.join("packages/lat_core/CHANGELOG.md")).unwrap();
+    assert_eq!(changelog.matches("- initial").count(), 1, "{changelog}");
+}
+
+/// The `trellis new` / `doctor --fix` stub is a header and nothing else, so
+/// there is no history to adopt.
+#[test]
+fn header_only_changelog_is_not_adopted() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+    write(
+        &root.join("packages/lat_mid/CHANGELOG.md"),
+        "# lat_mid changelog\n",
+    );
+    add_fragment(root, "lat_mid", "Fixed", "a bug");
+
+    let output = trellis(root)
+        .args(["version", "apply", "--json"])
+        .output()
+        .unwrap();
+    let payload: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let adopted = payload["adopted"].as_array().unwrap();
+    assert!(
+        !adopted
+            .iter()
+            .any(|f| f.as_str().unwrap().contains("lat_mid")),
+        "{adopted:?}"
+    );
+}
+
+/// With no parseable `## ` heading there is nothing to date the history by, so
+/// it is filed under the version the package is being released *from*.
+#[test]
+fn changelog_without_a_parseable_heading_is_dated_by_current_version() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+    write(
+        &root.join("packages/lat_mid/CHANGELOG.md"),
+        "# lat_mid changelog\n\nSee the git log for changes before 0.5.0.\n",
+    );
+    add_fragment(root, "lat_mid", "Fixed", "a bug");
+
+    trellis(root).args(["version", "apply"]).assert().success();
+
+    let adopted = fs::read_to_string(root.join(".changes/lat_mid/v0.5.0.md")).unwrap();
+    assert_eq!(adopted, "See the git log for changes before 0.5.0.\n");
+    let changelog = fs::read_to_string(root.join("packages/lat_mid/CHANGELOG.md")).unwrap();
+    assert!(changelog.contains("## v0.5.1 - 2026-07-11"), "{changelog}");
+    assert!(changelog.contains("See the git log"), "{changelog}");
+}
+
+/// The ripple makes adoption matter for packages that never had a fragment of
+/// their own — before this, releasing lat_core would wipe lat_cli's history.
+#[test]
+fn rippled_packages_keep_their_changelog_history() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+    add_fragment(root, "lat_core", "Added", "grow more vines");
+
+    trellis(root).args(["version", "apply"]).assert().success();
+
+    let changelog = fs::read_to_string(root.join("packages/lat_cli/CHANGELOG.md")).unwrap();
+    assert!(changelog.contains("## v0.3.2 - 2026-07-11"), "{changelog}");
+    assert!(
+        changelog.contains("## [0.3.1]"),
+        "history kept:\n{changelog}"
+    );
 }
 
 #[test]
@@ -441,6 +761,9 @@ fn custom_minijinja_templates_shape_the_output() {
                 "version-format = \"## {{{{ tag }}}} ({{{{ date }}}})\"\n",
                 "kind-format = \"**{{{{ kind | upper }}}}**\"\n",
                 "change-format = \"* {{{{ body }}}}\"\n",
+                // Ripple entries need a kind too; point them at the only one.
+                "dependency-kind = \"Tweaked\"\n",
+                "dependency-body = \"bumped {{{{ dependency }}}} to {{{{ dependency_version }}}}\"\n",
                 "kinds = [{{ label = \"Tweaked\", bump = \"patch\" }}]\n",
             ),
             config = config
@@ -455,4 +778,9 @@ fn custom_minijinja_templates_shape_the_output() {
     assert!(changelog.contains("## lat_core-v1.2.1 (2026-07-11)"));
     assert!(changelog.contains("**TWEAKED**"));
     assert!(changelog.contains("* polished the finish"));
+
+    // Generated ripple entries go through the same templates.
+    let mid = fs::read_to_string(root.join("packages/lat_mid/CHANGELOG.md")).unwrap();
+    assert!(mid.contains("**TWEAKED**"), "{mid}");
+    assert!(mid.contains("* bumped lat_core to 1.2.1"), "{mid}");
 }

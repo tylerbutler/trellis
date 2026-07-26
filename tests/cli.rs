@@ -53,8 +53,9 @@ fn list_json_includes_graph_facts() {
         .output()
         .unwrap();
     assert!(output.status.success());
-    let items: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    let items = items.as_array().unwrap();
+    let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(document["schema"], "trellis.list/1");
+    let items = document["packages"].as_array().unwrap();
     assert_eq!(items.len(), 4);
     let mid = items.iter().find(|i| i["name"] == "lat_mid").unwrap();
     assert_eq!(mid["version"], "0.5.0");
@@ -389,6 +390,52 @@ fn doctor_fix_seeds_missing_changelog() {
     assert_eq!(changelog, "# a changelog\n");
 
     // A second run is clean: nothing left to fix.
+    trellis(root)
+        .arg("doctor")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("ok: 1 member(s), 0 warning(s)"));
+}
+
+/// A CHANGELOG.md that trellis never batched would be regenerated away on the
+/// next release, so doctor surfaces it and `--fix` captures it up front.
+#[test]
+fn doctor_fix_adopts_unbatched_changelog_history() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    write(
+        &root.join("gleam.toml"),
+        "[tools.trellis]\nmembers = [\"packages/*\"]\n",
+    );
+    write(
+        &root.join("packages/a/gleam.toml"),
+        "name = \"a\"\nversion = \"1.0.0\"\n",
+    );
+    write(
+        &root.join("packages/a/CHANGELOG.md"),
+        "# a changelog\n\n## [1.0.0] - 2020-01-01\n\n- the beginning\n",
+    );
+
+    trellis(root)
+        .arg("doctor")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "package `a` has changelog history that trellis has not batched yet",
+        ));
+
+    trellis(root)
+        .args(["doctor", "--fix"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "fixed: adopt existing changelog history for `a`",
+        ));
+
+    // Captured verbatim, minus the header line the engine regenerates.
+    let adopted = fs::read_to_string(root.join(".changes/a/v1.0.0.md")).unwrap();
+    assert_eq!(adopted, "## [1.0.0] - 2020-01-01\n\n- the beginning\n");
+
     trellis(root)
         .arg("doctor")
         .assert()

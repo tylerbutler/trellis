@@ -1,0 +1,3 @@
+kind: Fixed
+body: '`version apply` no longer deletes a package''s pre-existing changelog. Because `CHANGELOG.md` is regenerated from the sections under `.changes/<package>/`, a package that already had a changelog when it adopted trellis lost all of it on its first release. That history is now captured verbatim as a single section on the first release, dated by the newest version its headings mention. `trellis doctor` reports the pending capture and `doctor --fix` performs it up front, so the restructuring can land in its own diff.'
+time: 2026-07-25T09:00:01.000000-07:00

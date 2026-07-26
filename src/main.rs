@@ -5,6 +5,7 @@ mod config;
 mod git;
 mod gleam;
 mod hex;
+mod json;
 mod lockfile;
 mod rewrite;
 mod runner;
@@ -83,6 +84,7 @@ enum Command {
     Info {
         #[arg(add = completion::packages())]
         package: String,
+        /// Emit JSON instead of the text summary
         #[arg(long)]
         json: bool,
     },
@@ -260,6 +262,7 @@ enum ChangelogCommand {
         /// Head ref of the change range
         #[arg(long, default_value = "HEAD")]
         head: String,
+        /// Emit JSON, including a Markdown `preview` for a PR comment
         #[arg(long)]
         json: bool,
     },
@@ -269,11 +272,13 @@ enum ChangelogCommand {
 enum VersionCommand {
     /// Dry-run: show what `version apply` would bump
     Plan {
+        /// Emit JSON instead of text
         #[arg(long)]
         json: bool,
     },
     /// Bump versions, render changelogs, patch manifest.toml locked versions
     Apply {
+        /// Emit JSON listing every bump and patched lockfile
         #[arg(long)]
         json: bool,
     },
@@ -296,6 +301,7 @@ enum ReleaseCommand {
 enum TagCommand {
     /// List releasable packages whose current version has no tag yet
     Plan {
+        /// Emit JSON instead of text
         #[arg(long)]
         json: bool,
     },
@@ -337,6 +343,7 @@ enum CiCommand {
     /// Resolve a pushed tag (e.g. $GITHUB_REF_NAME) to its package name
     TagPackage {
         tag: String,
+        /// Emit JSON with the resolved package, version, and tag kind
         #[arg(long)]
         json: bool,
     },

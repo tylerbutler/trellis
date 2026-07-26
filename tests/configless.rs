@@ -84,8 +84,8 @@ fn configless_single_package_repo_has_the_root_as_member() {
 
     let output = trellis(root).args(["list", "--json"]).output().unwrap();
     assert!(output.status.success());
-    let items: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    let items = items.as_array().unwrap();
+    let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let items = document["packages"].as_array().unwrap();
     assert_eq!(items.len(), 1);
     assert_eq!(items[0]["name"], "solo");
     assert_eq!(items[0]["path"], ".");

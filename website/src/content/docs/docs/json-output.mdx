@@ -1,0 +1,148 @@
+---
+title: JSON output contract
+description: What trellis promises about its --json payloads — the schema field, what a stable shape permits, and where the guarantee stops.
+---
+
+import Callout from "../../../components/Callout.astro";
+
+Nine trellis commands emit JSON for machine consumption, and workflows are
+built on them. This page states what those shapes promise, so you can wire one
+into CI and know what would break it.
+
+Every JSON *document* trellis emits carries a `schema` field naming the payload
+and its major version:
+
+```json
+{
+  "schema": "trellis.list/1",
+  "packages": [
+    {
+      "name": "lat_core",
+      "version": "1.2.0",
+      "path": "packages/lat_core",
+      "releasable": true,
+      "dependencies": [],
+      "dependents": ["lat_mid", "lat_cli"]
+    }
+  ]
+}
+```
+
+(Trimmed to one package; `packages` holds one entry per selected member, in
+topological order.)
+
+Assert on it. An identifier you don't recognize is a version you don't support,
+and that is a condition your workflow can detect and report — rather than one
+it discovers by producing wrong results.
+
+## What "stable" permits
+
+For a payload with a `schema` identifier:
+
+| Change | Allowed? |
+| --- | --- |
+| Adding a field | **Yes** — without bumping the identifier. Ignore fields you don't know. |
+| Adding an element to an existing array | **Yes**, subject to the command's documented selection rules. |
+| Renaming a field | No — bumps the major (`trellis.list/1` → `/2`). |
+| Removing a field | No — bumps the major. |
+| Changing a field's type | No — bumps the major. |
+| Changing a documented enum's values (`kind`, `action`, `tag-kind`) | No — bumps the major. |
+
+Two things are explicitly **not** part of the contract:
+
+- **Key order.** Parse as JSON; don't pattern-match the serialized text.
+- **Whitespace.** Some commands pretty-print and some emit a single line,
+  because `ci` output is meant to survive being pasted into a shell variable.
+  That split may change.
+
+<Callout>
+  **Human-readable output is not covered.** Text output is written for a person
+  at a terminal, is already TTY-dependent, and changes freely. If you are
+  parsing it, you are on your own — the `--json` form exists so you don't have
+  to.
+</Callout>
+
+## The payloads
+
+| Command | Schema and top-level keys |
+| --- | --- |
+| `list --json` | `trellis.list/1`<br />`{schema, packages[]}` |
+| `info <pkg> --json` | `trellis.info/1`<br />`{schema, name, version, path, releasable, dependencies[], dependents[]}` |
+| `graph --format json` | `trellis.graph/1`<br />`{schema, nodes[], edges[]}` |
+| `changelog check --json` | `trellis.changelog-check/1`<br />`{schema, has-entries, needs-entry, invalid-fragments[], packages[], preview}` |
+| `version plan --json` | `trellis.version-plan/1`<br />`{schema, bumped[]}` |
+| `version apply --json` | `trellis.version-apply/1`<br />`{schema, bumped[], lockfiles[], adopted[]}` |
+| `tag plan --json` | `trellis.tag-plan/1`<br />`{schema, tags[]}` |
+| `ci tag-package --json` | `trellis.ci-tag-package/1`<br />`{schema, name, path, version, tag-kind, tag-version \| tag-series}` |
+
+A `packages[]` entry in `list` and the top level of `info` are the same shape,
+so a consumer can handle one package the same way whichever command produced
+it. `version plan` and `version apply` likewise share the `bumped[]` entry
+shape (`name`, `current`, `next`, `fragments`, `updated-dependencies[]`).
+
+`updated-dependencies[]` is empty unless the package bumped, wholly or partly,
+because a [workspace dependency bumped](/docs/changelog/#dependents-bump-too)
+in the same plan; `fragments` is `0` when that was the only reason. `adopted[]`
+names the version sections captured from
+[pre-existing changelogs](/docs/changelog/#adopting-an-existing-changelog).
+
+### Conditional fields
+
+`ci tag-package` resolves either an immutable per-version tag or a moving
+series tag, and reports whichever applies:
+
+```json
+{"schema":"trellis.ci-tag-package/1","name":"lat_cli","path":"packages/lat_cli","version":"0.3.1","tag-kind":"exact","tag-version":"0.3.1"}
+{"schema":"trellis.ci-tag-package/1","name":"lat_cli","path":"packages/lat_cli","version":"0.3.1","tag-kind":"series","tag-series":"0.3"}
+```
+
+Branch on `tag-kind`: `exact` carries `tag-version`, `series` carries
+`tag-series`, and the other key is absent rather than null. A series tag names
+no version, which is why it cannot trigger a publish.
+
+### `preview` is a field, not a text
+
+`changelog check --json` includes `preview`, Markdown intended for a PR sticky
+comment. The field is contractual — always present, always a string. **Its
+prose is not**, and will change without a schema bump. Render it; don't parse
+it.
+
+## The two exceptions
+
+`trellis ci matrix` and `trellis ci outputs` carry **no `schema` field**. Their
+shapes are dictated by GitHub Actions rather than by trellis, so what they
+promise is what GitHub accepts.
+
+`ci matrix` emits exactly one key:
+
+```json
+{"include":[{"name":"lat_core","path":"packages/lat_core","version":"1.2.0"},{"name":"lat_mid","path":"packages/lat_mid","version":"0.5.0"},{"name":"lat_cli","path":"packages/lat_cli","version":"0.3.1"},{"name":"package_a","path":"examples/package-a","version":"0.0.0"}]}
+```
+
+<Callout>
+  A `schema` sibling here would be a bug, not an improvement. GitHub feeds this
+  object straight to `strategy.matrix` via `fromJSON()`, where **every
+  top-level key other than `include` becomes another matrix axis** — so adding
+  one would silently multiply the number of jobs.
+</Callout>
+
+`ci outputs` is not a JSON document at all. It emits `key=value` lines for
+`$GITHUB_OUTPUT`, where each value happens to be a JSON array:
+
+```
+projects=["lat_core","lat_mid","lat_cli","package_a"]
+releasable=["lat_core","lat_mid","lat_cli"]
+version-files=["packages/lat_core/gleam.toml","packages/lat_mid/gleam.toml","packages/lat_cli/gleam.toml"]
+tags=["lat_core-v1.2.0","lat_mid-v0.5.0","lat_cli-v0.3.1"]
+series-tags=[]
+```
+
+The contract is the set of output names above and each value's element type —
+all five are arrays of strings. See [CI recipes](/docs/ci/) for how they are
+consumed.
+
+## How this is enforced
+
+Every payload on this page is defined once, as a serializable type, in
+`src/json.rs`, and snapshotted in `tests/json_contract.rs`. A change to a
+stable shape fails trellis's own CI rather than yours.
