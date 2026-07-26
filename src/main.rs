@@ -9,6 +9,7 @@ mod json;
 mod lockfile;
 mod rewrite;
 mod runner;
+mod term;
 mod tools;
 mod update_check;
 mod workspace;
@@ -20,6 +21,7 @@ use commands::graph::GraphFormat;
 use commands::run::Target;
 use std::path::PathBuf;
 use std::process::ExitCode;
+use term::{ColorChoice, Verbosity};
 use workspace::Workspace;
 
 /// Crate version, with `git describe` output appended for builds that aren't
@@ -54,6 +56,26 @@ struct Cli {
         value_hint = clap::ValueHint::DirPath
     )]
     directory: Option<PathBuf>,
+
+    /// When to color output. `auto` follows the terminal, `NO_COLOR`, and
+    /// `CLICOLOR=0`; the other two override that detection.
+    #[arg(long, global = true, value_name = "WHEN", default_value = "auto")]
+    color: ColorChoice,
+
+    /// Suppress the per-package output stream and the summary table
+    #[arg(short, long, global = true, conflicts_with = "verbose")]
+    quiet: bool,
+
+    /// Trace every command trellis shells out to, on stderr
+    #[arg(short, long, global = true)]
+    verbose: bool,
+
+    /// Don't check whether a newer trellis release is available
+    ///
+    /// The check is also skipped in CI, when not attached to a terminal, and
+    /// when `TRELLIS_NO_UPDATE_CHECK` or `DO_NOT_TRACK` is set.
+    #[arg(long, global = true)]
+    no_update_check: bool,
 
     #[command(subcommand)]
     command: Command,
@@ -121,6 +143,10 @@ enum Command {
         /// Maximum concurrent packages (default: CPU count)
         #[arg(short, long, value_name = "N")]
         jobs: Option<usize>,
+        /// Emit the `trellis.run/1` payload instead of the summary table;
+        /// package output moves to stderr
+        #[arg(long)]
+        json: bool,
     },
     /// Run an arbitrary command in each member directory
     Exec {
@@ -139,6 +165,10 @@ enum Command {
         /// Maximum concurrent packages (default: CPU count)
         #[arg(short, long, value_name = "N")]
         jobs: Option<usize>,
+        /// Emit the `trellis.exec/1` payload instead of the summary table;
+        /// package output moves to stderr
+        #[arg(long)]
+        json: bool,
         /// The command to run (after `--`)
         #[arg(last = true, required = true)]
         command: Vec<String>,
@@ -363,20 +393,32 @@ fn main() -> ExitCode {
         .complete();
 
     let cli = Cli::parse();
+    // Before anything prints, so every writer sees the same resolved settings.
+    term::init(
+        cli.color,
+        match (cli.quiet, cli.verbose) {
+            (true, _) => Verbosity::Quiet,
+            (_, true) => Verbosity::Verbose,
+            _ => Verbosity::Normal,
+        },
+    );
     // Machine-consumed commands never get the interactive update notice, and it
     // only prints when the command itself succeeded, so it never clutters error
     // output or corrupts structured stdout.
-    let notify_update = !matches!(
-        cli.command,
-        Command::MarkdownHelp
-            | Command::Man { .. }
-            | Command::Completions { .. }
-            | Command::Ci { .. }
-            | Command::Doctor {
-                format: DoctorFormat::Json | DoctorFormat::Github,
-                ..
-            }
-    );
+    let notify_update = !cli.no_update_check
+        && !matches!(
+            cli.command,
+            Command::MarkdownHelp
+                | Command::Man { .. }
+                | Command::Completions { .. }
+                | Command::Ci { .. }
+                | Command::Doctor {
+                    format: DoctorFormat::Json | DoctorFormat::Github,
+                    ..
+                }
+                | Command::Run { json: true, .. }
+                | Command::Exec { json: true, .. }
+        );
     let result = dispatch(cli);
     if notify_update && result.is_ok() {
         update_check::notify();
@@ -471,6 +513,7 @@ fn dispatch(cli: Cli) -> Result<bool> {
             serial,
             keep_going,
             jobs,
+            json,
         } => commands::run::run(
             &workspace,
             &commands::run::TaskOptions {
@@ -484,6 +527,7 @@ fn dispatch(cli: Cli) -> Result<bool> {
                 serial,
                 keep_going,
                 jobs,
+                json,
             },
         ),
         Command::Exec {
@@ -492,6 +536,7 @@ fn dispatch(cli: Cli) -> Result<bool> {
             serial,
             keep_going,
             jobs,
+            json,
             command,
         } => commands::exec::run(
             &workspace,
@@ -502,6 +547,7 @@ fn dispatch(cli: Cli) -> Result<bool> {
                 serial,
                 keep_going,
                 jobs,
+                json,
             },
         ),
         Command::Changelog { command } => match command {

@@ -4,7 +4,7 @@
 .SH NAME
 trellis\-tag\-create \- Create missing tags in topological order
 .SH SYNOPSIS
-\fBtrellis tag create\fR [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-\-push\fR] [\fB\-\-github\-release\fR] [\fB\-h\fR|\fB\-\-help\fR] 
+\fBtrellis tag create\fR [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-\-push\fR] [\fB\-\-color\fR] [\fB\-\-github\-release\fR] [\fB\-q\fR|\fB\-\-quiet\fR] [\fB\-v\fR|\fB\-\-verbose\fR] [\fB\-\-no\-update\-check\fR] [\fB\-h\fR|\fB\-\-help\fR] 
 .SH DESCRIPTION
 Create missing tags in topological order
 .SH OPTIONS
@@ -15,8 +15,34 @@ Run as if started in this directory
 \fB\-\-push\fR
 Push each created tag to origin
 .TP
+\fB\-\-color\fR \fI<WHEN>\fR [default: auto]
+When to color output. `auto` follows the terminal, `NO_COLOR`, and `CLICOLOR=0`; the other two override that detection
+.br
+
+.br
+\fIPossible values:\fR
+.RS 14
+.IP \(bu 2
+auto
+.IP \(bu 2
+always
+.IP \(bu 2
+never
+.RE
+.TP
 \fB\-\-github\-release\fR
 Also create a GitHub Release per tag, with the matching CHANGELOG section as the body (implies \-\-push; requires the gh CLI)
 .TP
+\fB\-q\fR, \fB\-\-quiet\fR
+Suppress the per\-package output stream and the summary table
+.TP
+\fB\-v\fR, \fB\-\-verbose\fR
+Trace every command trellis shells out to, on stderr
+.TP
+\fB\-\-no\-update\-check\fR
+Don\*(Aqt check whether a newer trellis release is available
+
+The check is also skipped in CI, when not attached to a terminal, and when `TRELLIS_NO_UPDATE_CHECK` or `DO_NOT_TRACK` is set.
+.TP
 \fB\-h\fR, \fB\-\-help\fR
-Print help
+Print help (see a summary with \*(Aq\-h\*(Aq)

@@ -1,0 +1,29 @@
+---
+source: tests/json_contract.rs
+expression: payload
+---
+{
+  "ok": true,
+  "results": [
+    {
+      "duration-ms": "[ms]",
+      "package": "lat_core",
+      "path": "packages/lat_core",
+      "status": "success"
+    },
+    {
+      "duration-ms": "[ms]",
+      "package": "lat_mid",
+      "path": "packages/lat_mid",
+      "status": "success"
+    },
+    {
+      "duration-ms": "[ms]",
+      "package": "lat_cli",
+      "path": "packages/lat_cli",
+      "status": "success"
+    }
+  ],
+  "schema": "trellis.run/1",
+  "task": "hello"
+}
