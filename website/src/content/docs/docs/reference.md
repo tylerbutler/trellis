@@ -33,6 +33,7 @@ description: Every trellis command, flag, and argument — generated from the CL
 * [`trellis ci matrix`↴](#trellis-ci-matrix)
 * [`trellis ci outputs`↴](#trellis-ci-outputs)
 * [`trellis ci tag-package`↴](#trellis-ci-tag-package)
+* [`trellis completions`↴](#trellis-completions)
 
 ## `trellis`
 
@@ -56,6 +57,7 @@ A workspace CLI for Gleam monorepos: task fan-out, introspection, and release or
 * `lockfile` — Lockfile maintenance
 * `doctor` — Validate workspace invariants; non-zero exit on any error
 * `ci` — Structured output for CI
+* `completions` — Print the shell snippet that enables tab-completion
 
 ###### **Options:**
 
@@ -427,3 +429,21 @@ Resolve a pushed tag (e.g. $GITHUB_REF_NAME) to its package name
 ###### **Options:**
 
 * `--json` — Emit JSON with the resolved package, version, and tag kind
+
+
+
+## `trellis completions`
+
+Print the shell snippet that enables tab-completion
+
+The snippet asks trellis for candidates on each tab-press, so completions offer real package and task names from the surrounding workspace and can never drift from the flags you have. Evaluate it on shell startup rather than saving it to a completions directory — it talks to trellis over an interface that changes between releases, so an `eval` stays in sync where a saved copy goes stale. For zsh, in ~/.zshrc after compinit:
+
+eval "$(trellis completions zsh)"
+
+**Usage:** `trellis completions <SHELL>`
+
+###### **Arguments:**
+
+* `<SHELL>` — Shell to emit a registration snippet for
+
+  Possible values: `bash`, `elvish`, `fish`, `powershell`, `zsh`

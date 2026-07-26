@@ -1,0 +1,26 @@
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
+.TH trellis-ci 1 "" trellis "Trellis Manual"
+.SH NAME
+trellis\-ci \- Structured output for CI
+.SH SYNOPSIS
+\fBtrellis ci\fR [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-h\fR|\fB\-\-help\fR] <\fIsubcommands\fR>
+.SH DESCRIPTION
+Structured output for CI
+.SH OPTIONS
+.TP
+\fB\-C\fR, \fB\-\-directory\fR \fI<DIR>\fR
+Run as if started in this directory
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Print help
+.SH SUBCOMMANDS
+.TP
+trellis\-ci\-matrix(1)
+Emit a GitHub Actions strategy matrix: {"include":[{name,path,version},…]}
+.TP
+trellis\-ci\-outputs(1)
+Emit workspace facts as key=value lines for $GITHUB_OUTPUT
+.TP
+trellis\-ci\-tag\-package(1)
+Resolve a pushed tag (e.g. $GITHUB_REF_NAME) to its package name

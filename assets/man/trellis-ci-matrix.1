@@ -1,0 +1,22 @@
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
+.TH trellis-ci-matrix 1 "" trellis "Trellis Manual"
+.SH NAME
+trellis\-ci\-matrix \- Emit a GitHub Actions strategy matrix: {"include":[{name,path,version},…]}
+.SH SYNOPSIS
+\fBtrellis ci matrix\fR [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-\-since\fR] [\fB\-\-releasable\fR] [\fB\-h\fR|\fB\-\-help\fR] 
+.SH DESCRIPTION
+Emit a GitHub Actions strategy matrix: {"include":[{name,path,version},…]}
+.SH OPTIONS
+.TP
+\fB\-C\fR, \fB\-\-directory\fR \fI<DIR>\fR
+Run as if started in this directory
+.TP
+\fB\-\-since\fR \fI<REF>\fR
+Only members affected by changes since this git ref (dependents included)
+.TP
+\fB\-\-releasable\fR
+Only members that participate in releases
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Print help

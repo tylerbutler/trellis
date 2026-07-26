@@ -1,0 +1,28 @@
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
+.TH trellis-publish 1 "" trellis "Trellis Manual"
+.SH NAME
+trellis\-publish \- Publish packages to Hex, in dependency order, with path deps rewritten
+.SH SYNOPSIS
+\fBtrellis publish\fR [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-\-tag\fR] [\fB\-\-all\-untagged\fR] [\fB\-\-dry\-run\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fIPACKAGE\fR] 
+.SH DESCRIPTION
+Publish packages to Hex, in dependency order, with path deps rewritten
+.SH OPTIONS
+.TP
+\fB\-C\fR, \fB\-\-directory\fR \fI<DIR>\fR
+Run as if started in this directory
+.TP
+\fB\-\-tag\fR \fI<TAG>\fR
+Resolve a pushed tag (e.g. lat_core\-v1.2.0) to its package
+.TP
+\fB\-\-all\-untagged\fR
+Every releasable package whose version isn\*(Aqt on Hex yet
+.TP
+\fB\-\-dry\-run\fR
+Show what would be published (and rewritten) without doing it
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Print help
+.TP
+[\fIPACKAGE\fR]
+A single package to publish

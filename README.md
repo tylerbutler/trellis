@@ -76,6 +76,22 @@ Prebuilt archives for every target are on the
 specific version in CI by replacing `latest/download` with
 `download/v0.1.0` in the installer URL.
 
+### Shell completions
+
+Add one line to your shell's startup file — `bash`, `zsh`, `fish`,
+`powershell`, and `elvish` are supported:
+
+```sh
+eval "$(trellis completions zsh)"
+```
+
+Completions are computed by the binary as you type, so they offer real package
+names, task names, and changelog kinds from the workspace you're in. Evaluate
+the snippet on startup rather than saving it to a file: it talks to `trellis`
+over an interface that can change between releases. See
+[installation](https://trellis.tylerbutler.com/docs/installation) for the other
+shells and for man pages, which ship in the release archives under `man/`.
+
 ### Update checks
 
 Interactive commands print a one-line notice to stderr when a newer trellis
@@ -393,6 +409,10 @@ affected packages, dependents included. `outputs` emits workspace facts as
 Standard Rust project: `cargo test` runs unit tests plus an end-to-end suite
 against the fixture workspace in `tests/fixtures/`. `cargo fmt` and
 `cargo clippy --all-targets` are enforced in CI.
+
+`assets/man/` and `website/src/content/docs/docs/reference.md` are generated
+from the clap definitions — regenerate both with `just docs` after changing any
+command, flag, or help string. `cargo test` fails if they're stale.
 
 ## Releasing trellis
 

@@ -1,0 +1,25 @@
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
+.TH trellis-changelog-new 1 "" trellis "Trellis Manual"
+.SH NAME
+trellis\-changelog\-new \- Add an unreleased changelog fragment
+.SH SYNOPSIS
+\fBtrellis changelog new\fR [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-\-package\fR] <\fB\-\-kind\fR> <\fB\-\-body\fR> [\fB\-h\fR|\fB\-\-help\fR] 
+.SH DESCRIPTION
+Add an unreleased changelog fragment
+.SH OPTIONS
+.TP
+\fB\-C\fR, \fB\-\-directory\fR \fI<DIR>\fR
+Run as if started in this directory
+.TP
+\fB\-\-package\fR \fI<PACKAGE>\fR
+The package the change belongs to (optional when the workspace has exactly one releasable package)
+.TP
+\fB\-\-kind\fR \fI<KIND>\fR
+Change kind (see [tools.trellis.changelog] kinds; defaults include Added, Fixed, Breaking, …)
+.TP
+\fB\-\-body\fR \fI<BODY>\fR
+The changelog entry text
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Print help

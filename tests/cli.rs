@@ -620,6 +620,156 @@ fn markdown_reference_page_is_up_to_date() {
     );
 }
 
+// ---- man pages -------------------------------------------------------
+
+fn file_names(dir: &Path) -> Vec<String> {
+    let mut names: Vec<String> = fs::read_dir(dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    names
+}
+
+#[test]
+fn man_pages_are_up_to_date() {
+    let generated = tempfile::tempdir().unwrap();
+    Command::cargo_bin("trellis")
+        .unwrap()
+        .arg("man")
+        .arg("--out")
+        .arg(generated.path())
+        .assert()
+        .success();
+
+    let committed = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/man");
+    // Compare the file set first: a removed subcommand leaves a stale page that
+    // matching contents alone would never catch.
+    assert_eq!(
+        file_names(generated.path()),
+        file_names(&committed),
+        "man page set is stale — regenerate with `just docs`"
+    );
+    for name in file_names(generated.path()) {
+        assert_eq!(
+            fs::read_to_string(generated.path().join(&name)).unwrap(),
+            fs::read_to_string(committed.join(&name)).unwrap(),
+            "assets/man/{name} is stale — regenerate with `just docs`"
+        );
+    }
+}
+
+#[test]
+fn man_pages_carry_no_version() {
+    // The pages are committed, so a version string in them would go stale on
+    // every release — and since CI runs this suite on the release PR that bumps
+    // Cargo.toml, that PR would fail every time.
+    let page =
+        fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/man/trellis.1"))
+            .unwrap();
+    assert!(
+        !page.contains(env!("CARGO_PKG_VERSION")),
+        "man pages must not embed the crate version"
+    );
+    // All five .TH fields present and aligned; an empty date would otherwise
+    // collapse and shift source/manual one field left.
+    assert!(
+        page.contains(r#".TH trellis 1 "" trellis "Trellis Manual""#),
+        "unexpected .TH line in assets/man/trellis.1"
+    );
+}
+
+// ---- completions -----------------------------------------------------
+
+#[test]
+fn completions_emit_a_registration_snippet_per_shell() {
+    for (shell, needle) in [
+        ("bash", "complete -o nospace"),
+        ("zsh", "#compdef trellis"),
+        ("fish", "complete"),
+        ("elvish", "edit:completion:arg-completer[trellis]"),
+        ("powershell", "Register-ArgumentCompleter"),
+    ] {
+        Command::cargo_bin("trellis")
+            .unwrap()
+            .args(["completions", shell])
+            .assert()
+            .success()
+            .stdout(predicate::str::contains(needle))
+            // Every snippet hands the shell name back through $COMPLETE; the
+            // spelling differs (`COMPLETE=zsh` vs PowerShell's `$env:COMPLETE`).
+            .stdout(predicate::str::contains("COMPLETE"))
+            // The snippet must invoke `trellis` from $PATH. Left to default,
+            // clap_complete bakes in argv[0] — i.e. this checkout's
+            // target/debug path — which would break on any other machine.
+            .stdout(predicate::str::contains("target/debug").not());
+    }
+}
+
+/// Drive the completion engine the way a shell would: `COMPLETE=<shell>` names
+/// the shell, `_CLAP_COMPLETE_INDEX` is the cursor position, and the words
+/// after `--` are the command line being completed.
+fn complete(dir: &Path, index: usize, words: &[&str]) -> String {
+    let output = trellis(dir)
+        .env("COMPLETE", "bash")
+        .env("_CLAP_COMPLETE_INDEX", index.to_string())
+        .env("_CLAP_IFS", "\n")
+        .arg("--")
+        .args(words)
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    String::from_utf8(output.stdout).unwrap()
+}
+
+#[test]
+fn completion_offers_subcommands_and_hides_internal_ones() {
+    let out = complete(&fixture("basic"), 1, &["trellis", ""]);
+    assert!(out.contains("doctor"), "{out}");
+    assert!(out.contains("completions"), "{out}");
+    // The hidden maintainer commands must stay out of a user's shell.
+    assert!(!out.contains("markdown-help"), "{out}");
+    assert!(!out.contains("man\n"), "{out}");
+}
+
+#[test]
+fn completion_offers_workspace_package_names() {
+    let out = complete(&fixture("basic"), 2, &["trellis", "info", ""]);
+    for package in ["lat_core", "lat_mid", "lat_cli", "package_a"] {
+        assert!(out.contains(package), "missing {package} in: {out}");
+    }
+    // Prefix filtering is the engine's job, but verify it reaches our candidates.
+    let filtered = complete(&fixture("basic"), 2, &["trellis", "info", "lat_"]);
+    assert!(filtered.contains("lat_core"), "{filtered}");
+    assert!(!filtered.contains("package_a"), "{filtered}");
+}
+
+#[test]
+fn completion_offers_releasable_packages_only_where_it_should() {
+    // `package_a` is excluded from releases by the fixture's `@release` config.
+    let out = complete(&fixture("basic"), 2, &["trellis", "publish", ""]);
+    assert!(out.contains("lat_core"), "{out}");
+    assert!(!out.contains("package_a"), "{out}");
+}
+
+#[test]
+fn completion_offers_builtin_and_configured_tasks() {
+    let out = complete(&fixture("basic"), 2, &["trellis", "run", ""]);
+    assert!(out.contains("build"), "{out}");
+    // `hello` comes from the fixture's [tools.trellis.tasks].
+    assert!(out.contains("hello"), "{out}");
+}
+
+#[test]
+fn completion_outside_a_workspace_degrades_quietly() {
+    // Completion fires wherever the cursor is. Failing to load a workspace must
+    // yield no candidates rather than an error, or the shell becomes unusable.
+    let dir = tempfile::tempdir().unwrap();
+    let out = complete(dir.path(), 2, &["trellis", "info", ""]);
+    assert!(!out.contains("lat_core"), "{out}");
+    assert!(out.contains("--json"), "flags should still complete: {out}");
+}
+
 // ---- --since ---------------------------------------------------------
 
 #[test]

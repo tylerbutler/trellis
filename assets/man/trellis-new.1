@@ -1,0 +1,25 @@
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
+.TH trellis-new 1 "" trellis "Trellis Manual"
+.SH NAME
+trellis\-new \- Scaffold a new workspace member
+.SH SYNOPSIS
+\fBtrellis new\fR [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-\-template\fR] [\fB\-\-path\fR] [\fB\-h\fR|\fB\-\-help\fR] <\fINAME\fR> 
+.SH DESCRIPTION
+Scaffold a new workspace member
+.SH OPTIONS
+.TP
+\fB\-C\fR, \fB\-\-directory\fR \fI<DIR>\fR
+Run as if started in this directory
+.TP
+\fB\-\-template\fR \fI<TEMPLATE>\fR [default: lib]
+Template to scaffold from
+.TP
+\fB\-\-path\fR \fI<PATH>\fR
+Parent directory relative to the workspace root (derived from existing members when omitted)
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Print help
+.TP
+<\fINAME\fR>
+Package name (lowercase letters, digits, and _)

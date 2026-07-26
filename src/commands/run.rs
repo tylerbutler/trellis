@@ -26,7 +26,8 @@ pub struct TaskOptions {
     pub jobs: Option<usize>,
 }
 
-const BUILTIN_TASKS: &[&str] = &["build", "test", "check", "format", "docs", "deps", "clean"];
+pub(crate) const BUILTIN_TASKS: &[&str] =
+    &["build", "test", "check", "format", "docs", "deps", "clean"];
 
 pub fn run(workspace: &Workspace, options: &TaskOptions) -> Result<bool> {
     let mut selected = workspace.select(&SelectionFilter {

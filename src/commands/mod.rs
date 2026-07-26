@@ -2,6 +2,7 @@ pub mod changelog;
 pub mod ci;
 pub mod doctor;
 pub mod exec;
+pub mod generate;
 pub mod graph;
 pub mod info;
 pub mod list;

@@ -1,0 +1,20 @@
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
+.TH trellis-lockfile 1 "" trellis "Trellis Manual"
+.SH NAME
+trellis\-lockfile \- Lockfile maintenance
+.SH SYNOPSIS
+\fBtrellis lockfile\fR [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-h\fR|\fB\-\-help\fR] <\fIsubcommands\fR>
+.SH DESCRIPTION
+Lockfile maintenance
+.SH OPTIONS
+.TP
+\fB\-C\fR, \fB\-\-directory\fR \fI<DIR>\fR
+Run as if started in this directory
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Print help
+.SH SUBCOMMANDS
+.TP
+trellis\-lockfile\-refresh(1)
+Run `gleam deps download`, scoped to one package (with retry/backoff)

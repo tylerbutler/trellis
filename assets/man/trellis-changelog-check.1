@@ -1,0 +1,25 @@
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
+.TH trellis-changelog-check 1 "" trellis "Trellis Manual"
+.SH NAME
+trellis\-changelog\-check \- Verify changed packages have changelog fragments; non\-zero exit if not
+.SH SYNOPSIS
+\fBtrellis changelog check\fR <\fB\-\-base\fR> [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-\-head\fR] [\fB\-\-json\fR] [\fB\-h\fR|\fB\-\-help\fR] 
+.SH DESCRIPTION
+Verify changed packages have changelog fragments; non\-zero exit if not
+.SH OPTIONS
+.TP
+\fB\-\-base\fR \fI<BASE>\fR
+Base ref of the change range
+.TP
+\fB\-C\fR, \fB\-\-directory\fR \fI<DIR>\fR
+Run as if started in this directory
+.TP
+\fB\-\-head\fR \fI<HEAD>\fR [default: HEAD]
+Head ref of the change range
+.TP
+\fB\-\-json\fR
+Emit JSON, including a Markdown `preview` for a PR comment
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Print help
