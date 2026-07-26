@@ -1,10 +1,6 @@
 kind: Fixed
-body: '`-q/--quiet` only suppressed the per-package output stream and the summary
-  table from `run`/`exec`; every other command''s narration — `doctor`''s checked/warning/error
-  lines and summary, `init`''s progress and the `doctor` run it finishes with,
-  `list`/`graph --format text`/`info`''s text-mode report, `tag`/`version`/`publish`/`lockfile`/`new`/`changelog`/`release
-  pr`''s progress lines — printed regardless. `-q` now suppresses normal-path
-  narration everywhere; `--json`/`--format json|github`/`--format dot|mermaid`
-  payloads, `man`/`completions`/`markdown-help` output, fatal errors, and exit
-  codes are all still unaffected.'
+body: '`-q/--quiet` suppresses normal-path narration — progress lines, summaries,
+  confirmations — across every command, not just `run`/`exec`. `--json`/`--format
+  json|github`/`--format dot|mermaid` payloads, `man`/`completions`/`markdown-help`
+  output, fatal errors, and exit codes are unaffected.'
 time: 2026-07-26T09:30:00.000000-07:00

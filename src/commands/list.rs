@@ -1,5 +1,5 @@
-//! `trellis list` — members in topological order. This alone replaces the
-//! hand-maintained, hand-ordered package list in a justfile.
+//! `trellis list` — workspace members in topological order (dependencies
+//! first).
 
 use crate::json::ListDocument;
 use crate::workspace::{SelectionFilter, Workspace};

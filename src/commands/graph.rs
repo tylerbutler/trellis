@@ -1,5 +1,5 @@
-//! `trellis graph` — render the computed dependency graph. The mermaid output
-//! keeps docs diagrams generated instead of hand-drawn.
+//! `trellis graph` — render the computed dependency graph as text, Graphviz
+//! dot, Mermaid, or JSON.
 
 use crate::json::GraphDocument;
 use crate::workspace::Workspace;
