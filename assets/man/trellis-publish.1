@@ -4,7 +4,7 @@
 .SH NAME
 trellis\-publish \- Publish packages to Hex, in dependency order, with path deps rewritten
 .SH SYNOPSIS
-\fBtrellis publish\fR [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-\-tag\fR] [\fB\-\-all\-untagged\fR] [\fB\-\-dry\-run\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fIPACKAGE\fR] 
+\fBtrellis publish\fR [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-\-tag\fR] [\fB\-\-all\-untagged\fR] [\fB\-\-color\fR] [\fB\-\-dry\-run\fR] [\fB\-q\fR|\fB\-\-quiet\fR] [\fB\-v\fR|\fB\-\-verbose\fR] [\fB\-\-no\-update\-check\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fIPACKAGE\fR] 
 .SH DESCRIPTION
 Publish packages to Hex, in dependency order, with path deps rewritten
 .SH OPTIONS
@@ -18,11 +18,37 @@ Resolve a pushed tag (e.g. lat_core\-v1.2.0) to its package
 \fB\-\-all\-untagged\fR
 Every releasable package whose version isn\*(Aqt on Hex yet
 .TP
+\fB\-\-color\fR \fI<WHEN>\fR [default: auto]
+When to color output. `auto` follows the terminal, `NO_COLOR`, and `CLICOLOR=0`; the other two override that detection
+.br
+
+.br
+\fIPossible values:\fR
+.RS 14
+.IP \(bu 2
+auto
+.IP \(bu 2
+always
+.IP \(bu 2
+never
+.RE
+.TP
 \fB\-\-dry\-run\fR
 Show what would be published (and rewritten) without doing it
 .TP
+\fB\-q\fR, \fB\-\-quiet\fR
+Suppress the per\-package output stream and the summary table
+.TP
+\fB\-v\fR, \fB\-\-verbose\fR
+Trace every command trellis shells out to, on stderr
+.TP
+\fB\-\-no\-update\-check\fR
+Don\*(Aqt check whether a newer trellis release is available
+
+The check is also skipped in CI, when not attached to a terminal, and when `TRELLIS_NO_UPDATE_CHECK` or `DO_NOT_TRACK` is set.
+.TP
 \fB\-h\fR, \fB\-\-help\fR
-Print help
+Print help (see a summary with \*(Aq\-h\*(Aq)
 .TP
 [\fIPACKAGE\fR]
 A single package to publish

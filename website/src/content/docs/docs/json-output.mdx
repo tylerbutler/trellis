@@ -69,6 +69,8 @@ Two things are explicitly **not** part of the contract:
 | `list --json` | `trellis.list/1`<br />`{schema, packages[]}` |
 | `info <pkg> --json` | `trellis.info/1`<br />`{schema, name, version, path, releasable, dependencies[], dependents[]}` |
 | `graph --format json` | `trellis.graph/1`<br />`{schema, nodes[], edges[]}` |
+| `run <task> --json` | `trellis.run/1`<br />`{schema, ok, task, target?, results[]}` |
+| `exec -- <cmd> --json` | `trellis.exec/1`<br />`{schema, ok, command[], results[]}` |
 | `changelog check --json` | `trellis.changelog-check/1`<br />`{schema, has-entries, needs-entry, invalid-fragments[], packages[], preview}` |
 | `version plan --json` | `trellis.version-plan/1`<br />`{schema, bumped[], fragments-retained}` |
 | `version apply --json` | `trellis.version-apply/1`<br />`{schema, bumped[], lockfiles[], adopted[], fragments-retained}` |
@@ -93,6 +95,25 @@ release were left unreleased, and a later version will render them again. It is
 false for every ordinary release and for a `--pre none` promotion. A workflow
 that gates on "are there unreleased changes left" needs it to tell a cut release
 candidate from an incomplete release.
+
+`run` and `exec` share the `results[]` entry shape — `package`, `path`,
+`status` (`success`, `failed`, or `skipped`), and `duration-ms`. `status` is
+`skipped` for a package that never ran because scheduling stopped at an earlier
+failure; that is not a pass, and it still fails the command. A failed entry also
+carries `exit-code` and the `command` that produced it. Because a job runs
+several commands when a custom task sets `needs-deps`, those two describe the
+one that *failed*, not the whole job.
+
+`duration-ms` is wall-clock and differs on every run: it is contractual as a
+field, not as a value.
+
+<Callout>
+  **`--json` moves package output to stderr.** `run` and `exec` normally stream
+  each package's output to stdout behind a `pkg ▏` prefix. Under `--json` that
+  stream moves to stderr, so a long run stays observable while stdout carries
+  nothing but the payload. Progress rows and the summary table are suppressed
+  entirely. `-q` suppresses the stream as well.
+</Callout>
 
 ### Conditional fields
 

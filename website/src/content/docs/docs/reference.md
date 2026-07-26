@@ -62,6 +62,17 @@ A workspace CLI for Gleam monorepos: task fan-out, introspection, and release or
 ###### **Options:**
 
 * `-C`, `--directory <DIR>` — Run as if started in this directory
+* `--color <WHEN>` — When to color output. `auto` follows the terminal, `NO_COLOR`, and `CLICOLOR=0`; the other two override that detection
+
+  Default value: `auto`
+
+  Possible values: `auto`, `always`, `never`
+
+* `-q`, `--quiet` — Suppress the per-package output stream and the summary table
+* `-v`, `--verbose` — Trace every command trellis shells out to, on stderr
+* `--no-update-check` — Don't check whether a newer trellis release is available
+
+   The check is also skipped in CI, when not attached to a terminal, and when `TRELLIS_NO_UPDATE_CHECK` or `DO_NOT_TRACK` is set.
 
 
 
@@ -137,6 +148,7 @@ Run a task across members, graph-parallel by default
 * `--serial` — Run one package at a time, in dependency order
 * `--keep-going` — Keep scheduling packages after a failure
 * `-j`, `--jobs <N>` — Maximum concurrent packages (default: CPU count)
+* `--json` — Emit the `trellis.run/1` payload instead of the summary table; package output moves to stderr
 
 
 
@@ -157,6 +169,7 @@ Run an arbitrary command in each member directory
 * `--serial` — Run one package at a time, in dependency order
 * `--keep-going` — Keep scheduling packages after a failure
 * `-j`, `--jobs <N>` — Maximum concurrent packages (default: CPU count)
+* `--json` — Emit the `trellis.exec/1` payload instead of the summary table; package output moves to stderr
 
 
 

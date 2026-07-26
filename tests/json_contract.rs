@@ -336,3 +336,30 @@ fn doctor_json_contract_with_findings() {
     let payload = json_output(root, &["doctor", "--format", "json"], false);
     insta::assert_json_snapshot!(payload);
 }
+
+// ---- run / exec ----------------------------------------------------------
+
+/// `duration-ms` is contractual as a field, not as a value — it is wall-clock
+/// and differs on every run. Pin its presence and type, not its number.
+const DURATION: &str = "[ms]";
+
+#[test]
+fn run_json_contract() {
+    let payload = json_output(&fixture("basic"), &["run", "hello", "--json"], true);
+    for result in payload["results"].as_array().unwrap() {
+        assert!(result["duration-ms"].is_u64());
+    }
+    insta::assert_json_snapshot!(payload, { r#".results[]["duration-ms"]"# => DURATION });
+}
+
+/// The failing shape is the one a workflow reads: it carries the exit code and
+/// the command, and pins that a skipped package reports neither.
+#[test]
+fn exec_json_contract_with_a_failure() {
+    let payload = json_output(
+        &fixture("basic"),
+        &["exec", "--serial", "--json", "--", "sh", "-c", "exit 3"],
+        false,
+    );
+    insta::assert_json_snapshot!(payload, { r#".results[]["duration-ms"]"# => DURATION });
+}

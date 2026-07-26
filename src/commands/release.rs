@@ -48,6 +48,7 @@ pub fn pr(workspace: &Workspace, options: &PrOptions) -> Result<bool> {
         }
         build_release_commit_and_pr(&workspace, options, &plan)
     })();
+    crate::term::trace_command("git", &["checkout", &original_branch], root);
     let _ = Command::new("git")
         .args(["checkout", &original_branch])
         .current_dir(root)
@@ -176,6 +177,7 @@ fn gh_stdout(cwd: &Path, args: &[&str]) -> Result<String> {
 }
 
 fn run_tool(cwd: &Path, program: &str, args: &[&str]) -> Result<String> {
+    crate::term::trace_command(program, args, cwd);
     let output = Command::new(program)
         .args(args)
         .current_dir(cwd)

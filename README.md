@@ -100,7 +100,7 @@ capped at a short timeout, and silent on any error — so it never slows a
 command or changes its exit status. It runs only when stderr is a terminal, so
 scripts and structured output are never touched. It is additionally skipped in
 CI and when `DO_NOT_TRACK` or `TRELLIS_NO_UPDATE_CHECK` is set in the
-environment.
+environment, and `--no-update-check` suppresses it for a single invocation.
 
 ## Configuration
 
@@ -169,6 +169,29 @@ walking up to the first `gleam.toml` with a `[tools.trellis]` table, like
 `[tools.trellis]` table anywhere, the git repository root is the workspace
 root and members are auto-discovered.
 
+### Global flags
+
+```
+-C, --directory <DIR>    Run as if started in this directory
+    --color <WHEN>       auto (default), always, or never
+-q, --quiet              Drop the per-package stream and the summary table
+-v, --verbose            Trace every command trellis shells out to, on stderr
+    --no-update-check    Skip the release check for this invocation
+```
+
+These accept placement anywhere, before or after the subcommand.
+
+`--color auto` follows the terminal and respects `NO_COLOR` (at any value) and
+`CLICOLOR=0`; `always` and `never` override that detection in either direction,
+so `--color always` survives a pipe. Live progress rows stay tied to terminal
+detection either way — forcing color into a pipe does not start drawing
+spinners into it.
+
+`-q` and `-v` are mutually exclusive. `-q` changes nothing about exit codes:
+errors still go to stderr and a failing task still fails the command. `-v`
+writes a `+ ` trace to stderr for each `gleam`, `git`, and `gh` invocation,
+naming the directory it ran in.
+
 ### Introspection
 
 ```
@@ -199,8 +222,9 @@ Full details: [docs/json-output](https://trellis.tylerbutler.com/docs/json-outpu
 ```
 trellis run <task> [pkgs...] [--since <ref>] [--with-dependents]
                    [--target erlang|javascript|all] [--strict] [--check]
-                   [--serial] [--keep-going] [--jobs N]
-trellis exec [pkgs...] [--since <ref>] [--serial] [--keep-going] -- <command...>
+                   [--serial] [--keep-going] [--jobs N] [--json]
+trellis exec [pkgs...] [--since <ref>] [--serial] [--keep-going] [--json]
+             -- <command...>
 ```
 
 Scheduling is graph-parallel by default: a package runs as soon as its
@@ -211,6 +235,16 @@ package names use stable, hash-derived colors. Pipes and CI receive plain text
 without terminal control sequences.
 `--target all` runs the task once per compile target. `--serial` runs one
 package at a time in dependency order.
+
+`--json` reports per-package results — status, exit code, duration, and the
+command that failed — so a workflow can record what passed without parsing
+output written for a person. Package output moves to stderr so stdout carries
+nothing but the payload, and the summary table is replaced by it. This is what
+makes "only test what a PR touched" reportable as well as doable:
+
+```
+trellis run test --since origin/main --json | jq -r '.results[] | select(.status != "success") | .package'
+```
 
 Built-in tasks map 1:1 onto gleam verbs: `build`, `test`, `check`, `format`
 (`--check` variant), `docs`, `deps`, `clean`. A `[tools.trellis.tasks]` entry with the same
