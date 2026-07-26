@@ -295,8 +295,10 @@ fn ci_tag_package_json_contract_for_a_series_tag() {
 
 // ---- doctor --------------------------------------------------------------
 
+/// The passing shape: `ok` is true because warnings are advisory, so this also
+/// pins that a warning does not fail the run.
 #[test]
-fn doctor_json_contract_on_a_healthy_workspace() {
+fn doctor_json_contract_when_passing() {
     insta::assert_json_snapshot!(json_output(
         &fixture("basic"),
         &["doctor", "--format", "json"],

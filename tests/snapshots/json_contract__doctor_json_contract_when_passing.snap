@@ -1,6 +1,6 @@
 ---
 source: tests/json_contract.rs
-expression: payload
+expression: "json_output(&fixture(\"basic\"), &[\"doctor\", \"--format\", \"json\"], true)"
 ---
 {
   "applied": [],
@@ -8,25 +8,10 @@ expression: payload
   "configless": false,
   "findings": [
     {
-      "check": "exclusion-glob",
-      "file": "gleam.toml",
-      "fixable": false,
-      "message": "`build` exclusion glob `nope/*` matches no member (typo?)",
-      "severity": "error"
-    },
-    {
-      "check": "lockfile-drift",
-      "file": "packages/lat_mid/manifest.toml",
-      "fixable": true,
-      "message": "packages/lat_mid/manifest.toml locks `lat_core` at 1.1.0 but its gleam.toml says 1.2.0 (run the version-apply lockfile patch)",
-      "package": "lat_mid",
-      "severity": "error"
-    },
-    {
-      "check": "changelog-missing",
+      "check": "changelog-adoption",
       "file": "packages/lat_core/CHANGELOG.md",
       "fixable": true,
-      "message": "releasable package `lat_core` has no CHANGELOG.md",
+      "message": "package `lat_core` has changelog history that trellis has not batched yet; it will be adopted on the next release",
       "package": "lat_core",
       "severity": "warning"
     },
@@ -45,27 +30,13 @@ expression: payload
       "message": "package `lat_cli` has changelog history that trellis has not batched yet; it will be adopted on the next release",
       "package": "lat_cli",
       "severity": "warning"
-    },
-    {
-      "check": "changelog-fragment",
-      "file": ".changes/unreleased/ghost-1.toml",
-      "fixable": false,
-      "message": "fragment `ghost-1.toml`: project `ghost` is not a workspace member",
-      "package": "ghost",
-      "severity": "error"
     }
   ],
   "fixes": [
     {
-      "description": "patch locked versions in packages/lat_mid/manifest.toml",
-      "file": "packages/lat_mid/manifest.toml",
-      "kind": "patch-lockfile",
-      "package": "lat_mid"
-    },
-    {
-      "description": "seed CHANGELOG.md for `lat_core`",
+      "description": "adopt existing changelog history for `lat_core`",
       "file": "packages/lat_core/CHANGELOG.md",
-      "kind": "seed-changelog",
+      "kind": "adopt-changelog",
       "package": "lat_core"
     },
     {
@@ -82,6 +53,6 @@ expression: payload
     }
   ],
   "members": 4,
-  "ok": false,
+  "ok": true,
   "schema": "trellis.doctor/1"
 }

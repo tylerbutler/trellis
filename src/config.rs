@@ -233,7 +233,7 @@ pub struct ChangelogConfig {
     #[serde(default = "default_header_format")]
     pub header_format: String,
     /// Template for a version heading. Context: `name`, `version`, `date`,
-    /// `tag`.
+    /// `tag`, `series`.
     #[serde(default = "default_version_format")]
     pub version_format: String,
     /// Template for a kind heading within a version. Context: `kind`, `name`,
@@ -244,6 +244,15 @@ pub struct ChangelogConfig {
     /// `version`.
     #[serde(default = "default_change_format")]
     pub change_format: String,
+    /// Kind used for the entries generated when a workspace dependency bumps.
+    /// Must name one of `kinds`; that kind's `bump` is what a package bumps by
+    /// when a dependency bump is the only reason it is being released.
+    #[serde(default = "default_dependency_kind")]
+    pub dependency_kind: String,
+    /// Template for the *body* of one such entry — it still goes through
+    /// `change-format`. Context: `dependency`, `dependency_version`, `project`.
+    #[serde(default = "default_dependency_body")]
+    pub dependency_body: String,
 }
 
 impl Default for ChangelogConfig {
@@ -255,6 +264,8 @@ impl Default for ChangelogConfig {
             version_format: default_version_format(),
             kind_format: default_kind_format(),
             change_format: default_change_format(),
+            dependency_kind: default_dependency_kind(),
+            dependency_body: default_dependency_body(),
         }
     }
 }
@@ -289,6 +300,7 @@ fn default_kinds() -> Vec<KindConfig> {
         ("Fixed", Bump::Patch),
         ("Performance", Bump::Patch),
         ("Security", Bump::Patch),
+        ("Dependencies", Bump::Patch),
     ]
     .into_iter()
     .map(|(label, bump)| KindConfig {
@@ -312,6 +324,14 @@ fn default_kind_format() -> String {
 
 fn default_change_format() -> String {
     "- {{ body }}".to_string()
+}
+
+fn default_dependency_kind() -> String {
+    "Dependencies".to_string()
+}
+
+fn default_dependency_body() -> String {
+    "Updated {{ dependency }} to {{ dependency_version }}".to_string()
 }
 
 impl ConfigFile {
@@ -392,6 +412,20 @@ impl ConfigFile {
                 self.publish.series_tag_format
             );
         }
+        let dependency_kind = &self.changelog.dependency_kind;
+        if !self
+            .changelog
+            .kinds
+            .iter()
+            .any(|kind| &kind.label == dependency_kind)
+        {
+            bail!(
+                "`dependency-kind` `{dependency_kind}` is not one of `kinds`; add it, e.g. \
+                 `{{ label = \"{dependency_kind}\", bump = \"patch\" }}`, or point \
+                 `dependency-kind` at an existing kind ({})",
+                crate::changelog::kind_labels(&self.changelog.kinds)
+            );
+        }
         Ok(())
     }
 
@@ -448,6 +482,7 @@ mod tests {
             [tools.trellis.changelog]
             dir = "changes"
             version-format = "## {{ name }} {{ version }} ({{ date }})"
+            dependency-kind = "Docs"
             kinds = [
                 { label = "Boom", bump = "major" },
                 { label = "Docs", bump = "patch" },
@@ -465,6 +500,7 @@ mod tests {
         assert_eq!(config.changelog.dir, "changes");
         assert_eq!(config.changelog.kinds.len(), 2);
         assert_eq!(config.changelog.kinds[0].bump, Bump::Major);
+        assert_eq!(config.changelog.dependency_kind, "Docs");
     }
 
     #[test]
@@ -490,6 +526,59 @@ mod tests {
         assert_eq!(
             config.changelog.version_format,
             "## v{{ version }} - {{ date }}"
+        );
+        // Ripple entries need a kind of their own, so the defaults ship one.
+        assert_eq!(config.changelog.dependency_kind, "Dependencies");
+        assert_eq!(
+            config.changelog.dependency_body,
+            "Updated {{ dependency }} to {{ dependency_version }}"
+        );
+        assert!(
+            config
+                .changelog
+                .kinds
+                .iter()
+                .any(|k| k.label == "Dependencies" && k.bump == Bump::Patch)
+        );
+    }
+
+    #[test]
+    fn dependency_kind_must_name_a_configured_kind() {
+        let err = ConfigFile::from_gleam_toml(
+            r###"
+            [tools.trellis.changelog]
+            kinds = [{ label = "Docs", bump = "patch" }]
+        "###,
+        )
+        .unwrap_err();
+        let message = format!("{err:#}");
+        // The error names the kind, the fix, and what is currently available.
+        assert!(
+            message.contains("`dependency-kind` `Dependencies`"),
+            "{message}"
+        );
+        assert!(
+            message.contains(r#"{ label = "Dependencies", bump = "patch" }"#),
+            "{message}"
+        );
+        assert!(message.contains("Docs"), "{message}");
+    }
+
+    #[test]
+    fn dependency_kind_may_point_at_an_existing_kind() {
+        let config = ConfigFile::from_gleam_toml(
+            r###"
+            [tools.trellis.changelog]
+            dependency-kind = "Docs"
+            dependency-body = "{{ dependency }} is now {{ dependency_version }}"
+            kinds = [{ label = "Docs", bump = "patch" }]
+        "###,
+        )
+        .unwrap();
+        assert_eq!(config.changelog.dependency_kind, "Docs");
+        assert_eq!(
+            config.changelog.dependency_body,
+            "{{ dependency }} is now {{ dependency_version }}"
         );
     }
 

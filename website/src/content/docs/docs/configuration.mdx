@@ -92,6 +92,8 @@ their roots.
 | `publish.retry` | no | Backoff for Hex rate limits: `{ attempts, initial-delay, multiplier }`. |
 | `changelog.kinds` | no | Change kinds and the version bump each implies. The largest bump among a package's unreleased fragments wins. |
 | `changelog.*-format` | no | Minijinja templates for rendered changelog sections: `version-format`, `kind-format`, `change-format`. |
+| `changelog.dependency-kind` | no | Kind used for the entries generated when a workspace dependency bumps. Must name one of `kinds`. |
+| `changelog.dependency-body` | no | Minijinja template for one such entry's body. Context: `dependency`, `dependency_version`, `project`. |
 
 ## Package exclusions
 
@@ -226,12 +228,26 @@ kinds = [
   { label = "Breaking", bump = "major" },
   { label = "Added", bump = "minor" },
   { label = "Fixed", bump = "patch" },
+  { label = "Dependencies", bump = "patch" },
 ]
+
+# When a package bumps, its workspace dependents bump too and get a generated
+# entry saying why. Those entries are ordinary entries of one configured kind.
+dependency-kind = "Dependencies"                                          # default
+dependency-body = "Updated {{ dependency }} to {{ dependency_version }}"  # default
 ```
+
+`dependency-kind` must name one of `kinds`; that kind's bump is what a package
+bumps by when a dependency bump is the only reason it is being released. If
+you replace the default `kinds` list, include a kind for it or point
+`dependency-kind` at one of yours — trellis refuses to load otherwise rather
+than drop the entries silently.
 
 Each package's `CHANGELOG.md` is a generated file: the source of truth is the
 version sections stored under `.changes/<package>/`, and `version apply`
-reassembles the changelog from them, newest first.
+reassembles the changelog from them, newest first. A package that already had
+a changelog before adopting trellis keeps it — see
+[adopting an existing changelog](/docs/changelog/#adopting-an-existing-changelog).
 
 ## Verifying it
 

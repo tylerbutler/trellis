@@ -20,7 +20,9 @@ pub struct Fragment {
     pub project: String,
     pub kind: String,
     pub body: String,
-    pub path: PathBuf,
+    /// `None` for a fragment trellis generated rather than read from disk, so
+    /// `consume_fragments` can never mistake one for a file to delete.
+    pub path: Option<PathBuf>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -161,7 +163,7 @@ pub fn load_fragments(workspace: &Workspace) -> Result<Fragments> {
             project: raw.project,
             kind: raw.kind,
             body: raw.body.trim().to_string(),
-            path,
+            path: Some(path),
         });
     }
     Ok(result)
@@ -173,6 +175,33 @@ pub fn kind_labels(kinds: &[KindConfig]) -> String {
         .map(|k| k.label.as_str())
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+/// The entry recording that a workspace dependency bumped in this release.
+///
+/// A ripple is modelled as an ordinary fragment so the rest of the engine
+/// needs no special case: `next_version` folds the `dependency-kind` bump into
+/// the same max-bump rule, and `render_section` files it under that kind's
+/// heading alongside any hand-written entries. It is never written to disk —
+/// the body embeds the dependency's new version, which is only settled once
+/// the whole plan is computed.
+pub fn dependency_fragment(
+    config: &ChangelogConfig,
+    project: &str,
+    dependency: &str,
+    dependency_version: &str,
+) -> Result<Fragment> {
+    let body = render(
+        &config.dependency_body,
+        "dependency-body",
+        minijinja::context! { dependency, dependency_version, project },
+    )?;
+    Ok(Fragment {
+        project: project.to_string(),
+        kind: config.dependency_kind.clone(),
+        body: body.trim().to_string(),
+        path: None,
+    })
 }
 
 /// Write a new fragment file, picking an unused `<project>-<n>.toml` name.
@@ -282,13 +311,99 @@ pub fn render_section(
     Ok(out)
 }
 
+// ---- adoption ----------------------------------------------------------------
+
+/// A package's pre-trellis CHANGELOG.md body, captured as one version section.
+///
+/// CHANGELOG.md is a generated file: it is rebuilt from `<dir>/<project>/v*.md`
+/// alone. Without this, the first release of a package that already had a
+/// changelog would silently delete all of its history. Capturing the body
+/// verbatim keeps it byte-for-byte and needs no heading parsing — it simply
+/// sorts below every section trellis goes on to write.
+#[derive(Debug)]
+pub struct Adoption {
+    pub version: semver::Version,
+    pub path: PathBuf,
+    pub contents: String,
+}
+
+/// The history to adopt for `project`, if any. `None` once trellis has batched
+/// a version for it: from then on CHANGELOG.md is fully generated, so leftover
+/// content is drift rather than history.
+pub fn plan_adoption(
+    workspace: &Workspace,
+    project: &str,
+    current: &str,
+) -> Result<Option<Adoption>> {
+    let idx = workspace
+        .member_index(project)
+        .with_context(|| format!("unknown package `{project}`"))?;
+    let dir = versions_dir(workspace, project);
+    let already_batched = std::fs::read_dir(&dir).is_ok_and(|entries| {
+        entries
+            .filter_map(|entry| entry.ok())
+            .any(|entry| entry.path().extension().is_some_and(|ext| ext == "md"))
+    });
+    if already_batched {
+        return Ok(None);
+    }
+
+    let path = workspace.members[idx].path.join("CHANGELOG.md");
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return Ok(None);
+    };
+    let body = strip_header(&text);
+    if body.is_empty() {
+        return Ok(None); // a header-only stub carries no history
+    }
+
+    let version = match latest_changelog_version(&text) {
+        Some(version) => version,
+        None => semver::Version::parse(current).with_context(|| {
+            format!("cannot date `{project}`'s changelog history: `{current}` is not valid semver")
+        })?,
+    };
+    Ok(Some(Adoption {
+        path: dir.join(format!("v{version}.md")),
+        version,
+        contents: format!("{body}\n"),
+    }))
+}
+
+/// Everything after a leading `# ` header line and the blank lines under it.
+fn strip_header(text: &str) -> &str {
+    let rest = match text.strip_prefix("# ") {
+        Some(after) => after.split_once('\n').map(|(_, rest)| rest).unwrap_or(""),
+        None => text,
+    };
+    rest.trim()
+}
+
+/// Newest semver mentioned in a `## ...` heading, tolerating the common
+/// changie/keep-a-changelog shapes: `## 1.2.3`, `## [1.2.3]`, `## v1.2.3`,
+/// `## name-v1.2.3 - 2026-01-01`.
+pub fn latest_changelog_version(text: &str) -> Option<semver::Version> {
+    text.lines()
+        .filter_map(|line| line.strip_prefix("## "))
+        .filter_map(|heading| {
+            let token = heading.split_whitespace().next()?;
+            let token = token.trim_matches(['[', ']']);
+            let token = token.rsplit_once("-v").map(|(_, v)| v).unwrap_or(token);
+            let token = token.strip_prefix('v').unwrap_or(token);
+            semver::Version::parse(token).ok()
+        })
+        .max()
+}
+
 // ---- batch + merge -----------------------------------------------------------
 
-/// Render a package's complete CHANGELOG.md with an optional pending section.
+/// Render a package's complete CHANGELOG.md with an optional pending section
+/// and an optional block of adopted pre-trellis history.
 pub fn render_merged_changelog(
     workspace: &Workspace,
     project: &str,
     pending: Option<(&semver::Version, &str)>,
+    adopted: Option<&Adoption>,
 ) -> Result<String> {
     workspace
         .member_index(project)
@@ -316,6 +431,9 @@ pub fn render_merged_changelog(
                 .with_context(|| format!("failed to read {}", path.display()))?;
             sections.push((version, text));
         }
+    }
+    if let Some(adoption) = adopted {
+        sections.push((adoption.version.clone(), adoption.contents.clone()));
     }
     if let Some((version, section)) = pending {
         sections.retain(|(existing, _)| existing != version);
@@ -365,10 +483,15 @@ pub fn write_batch(
     std::fs::write(&path, changelog).with_context(|| format!("failed to write {}", path.display()))
 }
 
+/// Delete the fragment files a release consumed. Generated fragments have no
+/// file behind them and are skipped.
 pub fn consume_fragments(fragments: &[&Fragment]) -> Result<()> {
     for fragment in fragments {
-        std::fs::remove_file(&fragment.path)
-            .with_context(|| format!("failed to remove {}", fragment.path.display()))?;
+        let Some(path) = &fragment.path else {
+            continue;
+        };
+        std::fs::remove_file(path)
+            .with_context(|| format!("failed to remove {}", path.display()))?;
     }
     Ok(())
 }
@@ -427,7 +550,7 @@ mod tests {
             project: project.to_string(),
             kind: kind.to_string(),
             body: body.to_string(),
-            path: PathBuf::from("unused"),
+            path: Some(PathBuf::from("unused")),
         }
     }
 
@@ -489,6 +612,78 @@ mod tests {
         let add = fragment("p", "Added", "x");
         let err = render_section(&config, "p", "0.2.0", "t", "d", &[&add]).unwrap_err();
         assert!(format!("{err:#}").contains("version-format"));
+    }
+
+    #[test]
+    fn dependency_fragment_uses_the_configured_kind_and_body() {
+        let config = ChangelogConfig::default();
+        let generated = dependency_fragment(&config, "lat_mid", "lat_core", "1.3.0").unwrap();
+        assert_eq!(generated.project, "lat_mid");
+        assert_eq!(generated.kind, "Dependencies");
+        assert_eq!(generated.body, "Updated lat_core to 1.3.0");
+        assert!(generated.path.is_none(), "generated fragments have no file");
+    }
+
+    #[test]
+    fn dependency_body_template_gets_full_context() {
+        let config = ChangelogConfig {
+            dependency_body: "{{ project }} now needs {{ dependency }} {{ dependency_version }}"
+                .to_string(),
+            ..Default::default()
+        };
+        let generated = dependency_fragment(&config, "lat_mid", "lat_core", "1.3.0").unwrap();
+        assert_eq!(generated.body, "lat_mid now needs lat_core 1.3.0");
+    }
+
+    /// A pure ripple bumps by whatever `dependency-kind` is configured to bump,
+    /// and a package's own larger bump still wins.
+    #[test]
+    fn generated_fragments_participate_in_the_max_bump_rule() {
+        let config = ChangelogConfig::default();
+        let generated = dependency_fragment(&config, "lat_mid", "lat_core", "1.3.0").unwrap();
+        let added = fragment("lat_mid", "Added", "a feature");
+        let next = |frags: Vec<&Fragment>| {
+            next_version("0.5.0", &frags, &config.kinds)
+                .unwrap()
+                .to_string()
+        };
+        assert_eq!(next(vec![&generated]), "0.5.1");
+        assert_eq!(next(vec![&generated, &added]), "0.6.0");
+    }
+
+    #[test]
+    fn consume_fragments_skips_generated_ones() {
+        let config = ChangelogConfig::default();
+        let generated = dependency_fragment(&config, "lat_mid", "lat_core", "1.3.0").unwrap();
+        // `unused` does not exist; removing it would error if it were attempted.
+        consume_fragments(&[&generated]).unwrap();
+    }
+
+    #[test]
+    fn parses_common_changelog_headings() {
+        let text =
+            "# Changelog\n\n## lattice_core-v1.2.0 - 2026-01-05\n\n## [1.1.0]\n\n## v1.0.0\n";
+        assert_eq!(
+            latest_changelog_version(text),
+            Some(semver::Version::new(1, 2, 0))
+        );
+    }
+
+    #[test]
+    fn ignores_non_version_headings() {
+        assert_eq!(latest_changelog_version("## Unreleased\n## Notes\n"), None);
+    }
+
+    #[test]
+    fn strip_header_keeps_the_body_verbatim() {
+        assert_eq!(
+            strip_header("# lat_core changelog\n\n## v1.0.0\n\n- a thing\n"),
+            "## v1.0.0\n\n- a thing"
+        );
+        // A header-only stub has no history behind it.
+        assert_eq!(strip_header("# lat_core changelog\n"), "");
+        // A changelog that never had a header is all body.
+        assert_eq!(strip_header("## v1.0.0\n"), "## v1.0.0");
     }
 
     #[test]

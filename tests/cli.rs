@@ -397,6 +397,52 @@ fn doctor_fix_seeds_missing_changelog() {
         .stdout(predicate::str::contains("ok: 1 member(s), 0 warning(s)"));
 }
 
+/// A CHANGELOG.md that trellis never batched would be regenerated away on the
+/// next release, so doctor surfaces it and `--fix` captures it up front.
+#[test]
+fn doctor_fix_adopts_unbatched_changelog_history() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    write(
+        &root.join("gleam.toml"),
+        "[tools.trellis]\nmembers = [\"packages/*\"]\n",
+    );
+    write(
+        &root.join("packages/a/gleam.toml"),
+        "name = \"a\"\nversion = \"1.0.0\"\n",
+    );
+    write(
+        &root.join("packages/a/CHANGELOG.md"),
+        "# a changelog\n\n## [1.0.0] - 2020-01-01\n\n- the beginning\n",
+    );
+
+    trellis(root)
+        .arg("doctor")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "package `a` has changelog history that trellis has not batched yet",
+        ));
+
+    trellis(root)
+        .args(["doctor", "--fix"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "fixed: adopt existing changelog history for `a`",
+        ));
+
+    // Captured verbatim, minus the header line the engine regenerates.
+    let adopted = fs::read_to_string(root.join(".changes/a/v1.0.0.md")).unwrap();
+    assert_eq!(adopted, "## [1.0.0] - 2020-01-01\n\n- the beginning\n");
+
+    trellis(root)
+        .arg("doctor")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("ok: 1 member(s), 0 warning(s)"));
+}
+
 #[test]
 fn doctor_fix_patches_stale_lockfile() {
     let dir = tempfile::tempdir().unwrap();
@@ -521,11 +567,26 @@ fn doctor_github_format_emits_annotations_and_nothing_else() {
     }
 }
 
-/// A healthy run has nothing to annotate, so it must say nothing at all — a
-/// summary line would show up as an unexplained log entry on every green PR.
+/// A run with nothing to annotate must say nothing at all — a summary line
+/// would show up as an unexplained log entry on every green PR.
+///
+/// Built here rather than taken from a fixture: the `basic` fixture carries
+/// unbatched changelog history, so it legitimately warns.
 #[test]
-fn doctor_github_format_is_silent_when_healthy() {
-    trellis(&fixture("basic"))
+fn doctor_github_format_is_silent_when_there_is_nothing_to_report() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    write(
+        &root.join("gleam.toml"),
+        "[tools.trellis]\nmembers = [\"packages/*\"]\n\
+         exclude = { \"@release\" = [\"packages/a\"] }\n",
+    );
+    write(
+        &root.join("packages/a/gleam.toml"),
+        "name = \"a\"\nversion = \"1.0.0\"\n",
+    );
+
+    trellis(root)
         .args(["doctor", "--format", "github"])
         .assert()
         .success()
