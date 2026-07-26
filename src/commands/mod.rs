@@ -5,6 +5,7 @@ pub mod exec;
 pub mod generate;
 pub mod graph;
 pub mod info;
+pub mod init;
 pub mod list;
 pub mod lockfile;
 pub mod new;

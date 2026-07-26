@@ -19,6 +19,7 @@ description: Every trellis command, flag, and argument — generated from the CL
 * [`trellis version`↴](#trellis-version)
 * [`trellis version plan`↴](#trellis-version-plan)
 * [`trellis version apply`↴](#trellis-version-apply)
+* [`trellis init`↴](#trellis-init)
 * [`trellis new`↴](#trellis-new)
 * [`trellis release`↴](#trellis-release)
 * [`trellis release pr`↴](#trellis-release-pr)
@@ -50,6 +51,7 @@ A workspace CLI for Gleam monorepos: task fan-out, introspection, and release or
 * `exec` — Run an arbitrary command in each member directory
 * `changelog` — Changelog fragment management (see [tools.trellis.changelog])
 * `version` — Plan and apply version bumps from unreleased changelog fragments
+* `init` — Bootstrap a workspace: write a [tools.trellis] table at the repo root
 * `new` — Scaffold a new workspace member
 * `release` — Release orchestration
 * `tag` — Compare package versions against git tags; create what's missing
@@ -237,6 +239,16 @@ Bump versions, render changelogs, patch manifest.toml locked versions
 ###### **Options:**
 
 * `--json` — Emit JSON listing every bump and patched lockfile
+
+
+
+## `trellis init`
+
+Bootstrap a workspace: write a [tools.trellis] table at the repo root
+
+Everything trellis can derive it derives, so the table this writes is nearly empty by design — its presence is what marks the workspace root. Members stay auto-discovered from git; the comments it leaves point at what can be configured. Refuses if the repository is already a trellis workspace, and finishes by running `doctor`.
+
+**Usage:** `trellis init`
 
 
 

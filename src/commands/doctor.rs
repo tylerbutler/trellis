@@ -31,6 +31,7 @@ impl DoctorFormat {
     }
 }
 
+#[derive(Default)]
 pub struct DoctorOptions {
     /// Apply the fixable findings, then re-report what remains.
     pub fix: bool,

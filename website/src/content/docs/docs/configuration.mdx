@@ -45,6 +45,39 @@ Each member is a directory with its own `gleam.toml`. Path dependencies
 between members define the graph; cycles and path deps that escape the
 workspace are rejected with a clear error.
 
+## Bootstrapping with `trellis init`
+
+`trellis init` writes the table for you, at the repository root — creating a
+config-only `gleam.toml` if the root is not itself a package, and adding to the
+existing manifest if it is.
+
+```console
+$ trellis init
+created /repo/gleam.toml
+members are auto-discovered; found 2:
+  packages/a
+  packages/b
+```
+
+What it writes is nearly empty, and that is the point. The table's *presence*
+is what marks the workspace root; everything else trellis can derive, it
+derives, so `members` is not written. In its place are comments pointing at
+what *can* be configured — which is the question a reference page answers
+badly.
+
+`init` reports the members it discovered so you can see whether they need
+narrowing, refuses to run if the repository is already a trellis workspace (or
+if a member manifest carries the table, which would hijack root discovery), and
+finishes by running [`doctor`](#verifying-it).
+
+<Callout>
+
+You do not need `init` to start using trellis — configless mode already works.
+Reach for it when you want to configure something, or to make the workspace
+root explicit rather than inferred.
+
+</Callout>
+
 ## Member discovery
 
 `members` accepts paths relative to the workspace root. An entry containing

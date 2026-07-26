@@ -1,0 +1,18 @@
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
+.TH trellis-init 1 "" trellis "Trellis Manual"
+.SH NAME
+trellis\-init \- Bootstrap a workspace: write a [tools.trellis] table at the repo root
+.SH SYNOPSIS
+\fBtrellis init\fR [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-h\fR|\fB\-\-help\fR] 
+.SH DESCRIPTION
+Bootstrap a workspace: write a [tools.trellis] table at the repo root
+.PP
+Everything trellis can derive it derives, so the table this writes is nearly empty by design — its presence is what marks the workspace root. Members stay auto\-discovered from git; the comments it leaves point at what can be configured. Refuses if the repository is already a trellis workspace, and finishes by running `doctor`.
+.SH OPTIONS
+.TP
+\fB\-C\fR, \fB\-\-directory\fR \fI<DIR>\fR
+Run as if started in this directory
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Print help (see a summary with \*(Aq\-h\*(Aq)
