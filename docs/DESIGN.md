@@ -260,6 +260,25 @@ trellis version apply                             # batch + merge + lockfile pat
   `post-batch-command`, but implemented as tested code with a TOML parser instead
   of `sed`, and still zero Hex network calls (that constraint is load-bearing:
   `gleam update` per package trips Hex rate limits on shared runners).
+- **A bump ripples to the reverse-dependency closure.** A path dep carries no
+  version in the repo; it becomes a Hex requirement only at publish time,
+  derived from the dependency's version *then* (§5, publish). So a dependent
+  left unbumped would let one published version resolve two different ways
+  depending on when it was fetched. Dependents bump by the `dependency-kind`
+  bump (patch by default) and get a generated entry of that kind; a package's
+  own larger bump still wins. The sweep is one forward pass over the
+  topologically ordered member list, so transitivity is free and a ripple
+  naturally stops at an `@release`-excluded member rather than skipping it.
+  The generated entries are ordinary `Fragment` values that never touch disk —
+  modelling them as fragments means `next_version` and `render_section` need no
+  special case at all.
+- **CHANGELOG.md is generated, so adoption has to be explicit.** Reassembling
+  from `.changes/<package>/` alone would delete the history of any package that
+  had a changelog before trellis. On a package's first release the body below
+  the header is captured verbatim as one section, dated by the newest version
+  its headings mention. Verbatim and once-only: no heading parsing to get wrong,
+  and afterwards the file is fully generated. `doctor` surfaces the pending
+  capture (check 6) so it never lands unannounced mid-release.
 
 ### Release & publish
 

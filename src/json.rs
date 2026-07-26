@@ -188,6 +188,15 @@ impl ChangelogCheckDocument<'_> {
     pub const SCHEMA: &'static str = "trellis.changelog-check/1";
 }
 
+/// A workspace dependency that bumped in the same plan. Its dependents bump
+/// with it, so a published version and the requirement it carries stay in step.
+#[derive(Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct UpdatedDependency<'a> {
+    pub name: &'a str,
+    pub version: &'a str,
+}
+
 /// One planned or applied version bump. Shared by `version plan` and
 /// `version apply` so the two never drift.
 #[derive(Serialize)]
@@ -196,7 +205,12 @@ pub struct Bump<'a> {
     pub name: &'a str,
     pub current: &'a str,
     pub next: &'a str,
+    /// Fragments the package owns on disk. Zero for a package bumping only
+    /// because a dependency did.
     pub fragments: usize,
+    /// Empty unless this bump was caused, wholly or partly, by a workspace
+    /// dependency bumping in the same plan.
+    pub updated_dependencies: Vec<UpdatedDependency<'a>>,
 }
 
 /// `trellis version plan --json`.
@@ -212,13 +226,15 @@ impl VersionPlanDocument<'_> {
 }
 
 /// `trellis version apply --json`. `bumped` repeats `version plan`'s shape;
-/// `lockfiles` names the manifests that were rewritten.
+/// `lockfiles` names the manifests that were rewritten; `adopted` names the
+/// version sections captured from pre-existing CHANGELOG.md files.
 #[derive(Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct VersionApplyDocument<'a> {
     pub schema: &'static str,
     pub bumped: Vec<Bump<'a>>,
     pub lockfiles: Vec<&'a str>,
+    pub adopted: Vec<&'a str>,
 }
 
 impl VersionApplyDocument<'_> {
