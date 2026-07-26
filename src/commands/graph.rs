@@ -1,9 +1,9 @@
 //! `trellis graph` — render the computed dependency graph. The mermaid output
 //! keeps docs diagrams generated instead of hand-drawn.
 
+use crate::json::GraphDocument;
 use crate::workspace::Workspace;
 use anyhow::Result;
-use serde_json::json;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub enum GraphFormat {
@@ -66,31 +66,8 @@ pub fn run(workspace: &Workspace, format: GraphFormat) -> Result<()> {
             }
         }
         GraphFormat::Json => {
-            let nodes: Vec<_> = workspace
-                .members
-                .iter()
-                .map(|member| {
-                    json!({
-                        "name": member.name,
-                        "version": member.version(),
-                        "path": member.rel_path,
-                        "releasable": member.releasable,
-                    })
-                })
-                .collect();
-            let mut edges = Vec::new();
-            for (idx, member) in workspace.members.iter().enumerate() {
-                for &dep in workspace.deps_of(idx) {
-                    edges.push(json!({
-                        "from": member.name,
-                        "to": workspace.members[dep].name,
-                    }));
-                }
-            }
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&json!({ "nodes": nodes, "edges": edges }))?
-            );
+            let document = GraphDocument::new(workspace);
+            println!("{}", serde_json::to_string_pretty(&document)?);
         }
     }
     Ok(())

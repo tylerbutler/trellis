@@ -1,0 +1,55 @@
+---
+source: tests/json_contract.rs
+expression: "json_output(&fixture(\"basic\"), &[\"list\", \"--json\"], true)"
+---
+{
+  "packages": [
+    {
+      "dependencies": [],
+      "dependents": [
+        "lat_mid",
+        "lat_cli"
+      ],
+      "name": "lat_core",
+      "path": "packages/lat_core",
+      "releasable": true,
+      "version": "1.2.0"
+    },
+    {
+      "dependencies": [
+        "lat_core"
+      ],
+      "dependents": [
+        "lat_cli"
+      ],
+      "name": "lat_mid",
+      "path": "packages/lat_mid",
+      "releasable": true,
+      "version": "0.5.0"
+    },
+    {
+      "dependencies": [
+        "lat_core",
+        "lat_mid"
+      ],
+      "dependents": [
+        "package_a"
+      ],
+      "name": "lat_cli",
+      "path": "packages/lat_cli",
+      "releasable": true,
+      "version": "0.3.1"
+    },
+    {
+      "dependencies": [
+        "lat_cli"
+      ],
+      "dependents": [],
+      "name": "package_a",
+      "path": "examples/package-a",
+      "releasable": false,
+      "version": "0.0.0"
+    }
+  ],
+  "schema": "trellis.list/1"
+}

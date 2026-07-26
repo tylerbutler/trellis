@@ -1,0 +1,3 @@
+kind: Breaking
+body: 'Three `--json` payloads that were bare arrays are now objects, so they can carry the new `schema` field: `list --json` wraps its array under `packages`, `version plan --json` under `bumped` (matching `version apply`), and `tag plan --json` under `tags`. A consumer doing `trellis list --json | jq ".[].name"` becomes `jq ".packages[].name"`. Every other payload is unchanged apart from the added `schema` key; `ci matrix` and `ci outputs` are untouched.'
+time: 2026-07-25T09:00:00.000000-07:00

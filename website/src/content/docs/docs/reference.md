@@ -107,7 +107,7 @@ Show details for one package
 
 ###### **Options:**
 
-* `--json`
+* `--json` — Emit JSON instead of the text summary
 
 
 
@@ -197,7 +197,7 @@ Verify changed packages have changelog fragments; non-zero exit if not
 * `--head <HEAD>` — Head ref of the change range
 
   Default value: `HEAD`
-* `--json`
+* `--json` — Emit JSON, including a Markdown `preview` for a PR comment
 
 
 
@@ -222,7 +222,7 @@ Dry-run: show what `version apply` would bump
 
 ###### **Options:**
 
-* `--json`
+* `--json` — Emit JSON instead of text
 
 
 
@@ -234,7 +234,7 @@ Bump versions, render changelogs, patch manifest.toml locked versions
 
 ###### **Options:**
 
-* `--json`
+* `--json` — Emit JSON listing every bump and patched lockfile
 
 
 
@@ -307,7 +307,7 @@ List releasable packages whose current version has no tag yet
 
 ###### **Options:**
 
-* `--json`
+* `--json` — Emit JSON instead of text
 
 
 
@@ -426,4 +426,4 @@ Resolve a pushed tag (e.g. $GITHUB_REF_NAME) to its package name
 
 ###### **Options:**
 
-* `--json`
+* `--json` — Emit JSON with the resolved package, version, and tag kind

@@ -1,0 +1,25 @@
+---
+source: tests/json_contract.rs
+expression: payload
+---
+{
+  "has-entries": true,
+  "invalid-fragments": [],
+  "needs-entry": true,
+  "packages": [
+    {
+      "changed": true,
+      "fragments": 1,
+      "has-entry": true,
+      "name": "lat_core"
+    },
+    {
+      "changed": true,
+      "fragments": 0,
+      "has-entry": false,
+      "name": "lat_mid"
+    }
+  ],
+  "preview": "[markdown]",
+  "schema": "trellis.changelog-check/1"
+}
