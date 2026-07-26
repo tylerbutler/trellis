@@ -1,0 +1,23 @@
+---
+source: tests/json_contract.rs
+expression: "json_output(root, &[\"tag\", \"plan\", \"--json\"], true)"
+---
+{
+  "schema": "trellis.tag-plan/1",
+  "tags": [
+    {
+      "action": "create",
+      "kind": "exact",
+      "name": "lat_mid",
+      "tag": "lat_mid-v0.5.0",
+      "version": "0.5.0"
+    },
+    {
+      "action": "create",
+      "kind": "exact",
+      "name": "lat_cli",
+      "tag": "lat_cli-v0.3.1",
+      "version": "0.3.1"
+    }
+  ]
+}

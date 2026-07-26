@@ -47,6 +47,7 @@ ureq = { version = "3.3.0", features = ["json"] }
 
 [dev-dependencies]
 assert_cmd = "2.2.2"
+insta = { version = "1.48.0", features = ["json", "redactions"] }
 predicates = "3.1.4"
 tempfile = "3.27.0"
 

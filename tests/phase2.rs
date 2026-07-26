@@ -269,17 +269,20 @@ fn version_plan_bumps_by_the_largest_kind() {
     // ripples by a patch. Entries stay in topological order.
     assert_eq!(
         plan,
-        serde_json::json!([
-            {"name": "lat_core", "current": "1.2.0", "next": "1.3.0", "fragments": 2,
-             "updated-dependencies": []},
-            {"name": "lat_mid", "current": "0.5.0", "next": "1.0.0", "fragments": 1,
-             "updated-dependencies": [{"name": "lat_core", "version": "1.3.0"}]},
-            {"name": "lat_cli", "current": "0.3.1", "next": "0.3.2", "fragments": 0,
-             "updated-dependencies": [
-                 {"name": "lat_core", "version": "1.3.0"},
-                 {"name": "lat_mid", "version": "1.0.0"},
-             ]},
-        ])
+        serde_json::json!({
+            "schema": "trellis.version-plan/1",
+            "bumped": [
+                {"name": "lat_core", "current": "1.2.0", "next": "1.3.0", "fragments": 2,
+                 "updated-dependencies": []},
+                {"name": "lat_mid", "current": "0.5.0", "next": "1.0.0", "fragments": 1,
+                 "updated-dependencies": [{"name": "lat_core", "version": "1.3.0"}]},
+                {"name": "lat_cli", "current": "0.3.1", "next": "0.3.2", "fragments": 0,
+                 "updated-dependencies": [
+                     {"name": "lat_core", "version": "1.3.0"},
+                     {"name": "lat_mid", "version": "1.0.0"},
+                 ]},
+            ],
+        })
     );
 }
 
@@ -298,13 +301,14 @@ fn own_fragment_bump_wins_over_ripple() {
         .output()
         .unwrap();
     let plan: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(plan[0]["name"], "lat_core");
-    assert_eq!(plan[0]["next"], "2.0.0");
+    let bumped = &plan["bumped"];
+    assert_eq!(bumped[0]["name"], "lat_core");
+    assert_eq!(bumped[0]["next"], "2.0.0");
     // Minor from its own fragment, not the 0.5.1 a bare ripple would give.
-    assert_eq!(plan[1]["name"], "lat_mid");
-    assert_eq!(plan[1]["next"], "0.6.0");
-    assert_eq!(plan[2]["name"], "lat_cli");
-    assert_eq!(plan[2]["next"], "0.3.2");
+    assert_eq!(bumped[1]["name"], "lat_mid");
+    assert_eq!(bumped[1]["next"], "0.6.0");
+    assert_eq!(bumped[2]["name"], "lat_cli");
+    assert_eq!(bumped[2]["next"], "0.3.2");
 }
 
 /// `examples/package-a` is `@release`-excluded, so it never bumps even though
@@ -321,7 +325,7 @@ fn ripple_skips_unreleasable_members() {
         .output()
         .unwrap();
     let plan: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    let names: Vec<&str> = plan
+    let names: Vec<&str> = plan["bumped"]
         .as_array()
         .unwrap()
         .iter()
@@ -344,7 +348,7 @@ fn ripple_reaches_dev_dependents() {
         .output()
         .unwrap();
     let plan: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    let cli = plan.as_array().unwrap().last().unwrap();
+    let cli = plan["bumped"].as_array().unwrap().last().unwrap();
     assert_eq!(cli["name"], "lat_cli");
     assert_eq!(
         cli["updated-dependencies"],

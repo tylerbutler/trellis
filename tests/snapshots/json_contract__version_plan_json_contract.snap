@@ -1,0 +1,44 @@
+---
+source: tests/json_contract.rs
+expression: "json_output(root, &[\"version\", \"plan\", \"--json\"], true)"
+---
+{
+  "bumped": [
+    {
+      "current": "1.2.0",
+      "fragments": 1,
+      "name": "lat_core",
+      "next": "1.3.0",
+      "updated-dependencies": []
+    },
+    {
+      "current": "0.5.0",
+      "fragments": 1,
+      "name": "lat_mid",
+      "next": "1.0.0",
+      "updated-dependencies": [
+        {
+          "name": "lat_core",
+          "version": "1.3.0"
+        }
+      ]
+    },
+    {
+      "current": "0.3.1",
+      "fragments": 0,
+      "name": "lat_cli",
+      "next": "0.3.2",
+      "updated-dependencies": [
+        {
+          "name": "lat_core",
+          "version": "1.3.0"
+        },
+        {
+          "name": "lat_mid",
+          "version": "1.0.0"
+        }
+      ]
+    }
+  ],
+  "schema": "trellis.version-plan/1"
+}

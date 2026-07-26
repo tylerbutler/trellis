@@ -60,6 +60,7 @@ comment:
 
 ```json
 {
+  "schema": "trellis.changelog-check/1",
   "has-entries": true,
   "needs-entry": true,
   "invalid-fragments": [],
@@ -70,6 +71,11 @@ comment:
   "preview": "| package | status |\n| --- | --- |\n…"
 }
 ```
+
+The `schema` field is there so a workflow can assert on the shape it expects;
+the [JSON output contract](/docs/json-output/) covers what it promises. Note
+that `preview` is guaranteed to be present and a string, but its Markdown is
+prose — render it rather than parsing it.
 
 ## Planning a release
 

@@ -7,16 +7,19 @@
 //! series releases. Only the immutable ones can carry a GitHub Release — a
 //! release bound to a moving tag would silently retarget.
 
+use crate::json::TagPlanDocument;
 use crate::tools;
 use crate::workspace::Workspace;
 use anyhow::{Context, Result, bail};
-use serde_json::json;
+use serde::Serialize;
 use std::collections::HashSet;
 use std::path::Path;
 use std::process::Command;
 
-/// Which tag lifecycle a planned tag belongs to.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Which tag lifecycle a planned tag belongs to. The serialized names are wire
+/// format — see `crate::json`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum TagKind {
     /// An immutable `tag-format` tag naming one version.
     Exact,
@@ -24,17 +27,10 @@ pub enum TagKind {
     Series,
 }
 
-impl TagKind {
-    fn key(self) -> &'static str {
-        match self {
-            TagKind::Exact => "exact",
-            TagKind::Series => "series",
-        }
-    }
-}
-
 /// The work `tag create` would do for a planned tag, from local state alone.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// The serialized names are wire format — see `crate::json`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum TagAction {
     /// The tag does not exist locally.
     Create,
@@ -42,16 +38,6 @@ pub enum TagAction {
     Move,
     /// The tag already points where it should; only the remote may need work.
     UpToDate,
-}
-
-impl TagAction {
-    fn key(self) -> &'static str {
-        match self {
-            TagAction::Create => "create",
-            TagAction::Move => "move",
-            TagAction::UpToDate => "up-to-date",
-        }
-    }
 }
 
 #[derive(Debug)]
@@ -133,20 +119,23 @@ pub fn plan(workspace: &Workspace, json: bool) -> Result<()> {
         .filter(|planned| planned.action != TagAction::UpToDate)
         .collect();
     if json {
-        let items: Vec<_> = pending
-            .iter()
-            .map(|planned| {
-                let member = &workspace.members[planned.member];
-                json!({
-                    "name": member.name,
-                    "version": member.version(),
-                    "tag": planned.tag,
-                    "kind": planned.kind.key(),
-                    "action": planned.action.key(),
+        let document = TagPlanDocument {
+            schema: TagPlanDocument::SCHEMA,
+            tags: pending
+                .iter()
+                .map(|planned| {
+                    let member = &workspace.members[planned.member];
+                    crate::json::PlannedTag {
+                        name: &member.name,
+                        version: member.version(),
+                        tag: &planned.tag,
+                        kind: planned.kind,
+                        action: planned.action,
+                    }
                 })
-            })
-            .collect();
-        println!("{}", serde_json::to_string_pretty(&items)?);
+                .collect(),
+        };
+        println!("{}", serde_json::to_string_pretty(&document)?);
     } else if pending.is_empty() {
         println!("every releasable package version is already tagged");
     } else {

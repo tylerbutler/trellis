@@ -43,7 +43,8 @@ a time:
 
 Commands that feed automation emit structured JSON (`--json`,
 `trellis ci`), so any single piece slots into whatever tooling already
-surrounds it.
+surrounds it — under a [versioned contract](/docs/json-output/) you can
+assert on.
 
 ## Getting started
 
@@ -65,4 +66,5 @@ surrounds it.
 | [Changelog & versioning](/docs/changelog/) | TOML change fragments, PR enforcement, planning and applying version bumps. |
 | [Publishing](/docs/publishing/) | Release PRs, per-package tags, publishing to Hex in dependency order with path deps rewritten. |
 | [CI recipes](/docs/ci/) | GitHub Actions shapes: affected-only matrices, PR gates, and the release pipeline. |
+| [JSON output contract](/docs/json-output/) | What the `--json` payloads promise: the `schema` field, what a stable shape permits, and where the guarantee stops. |
 | [CLI reference](/docs/reference/) | Every command, flag, and argument, generated from the CLI itself. |

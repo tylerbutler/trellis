@@ -1,0 +1,28 @@
+---
+source: tests/json_contract.rs
+expression: matrix
+---
+{
+  "include": [
+    {
+      "name": "lat_core",
+      "path": "packages/lat_core",
+      "version": "1.2.0"
+    },
+    {
+      "name": "lat_mid",
+      "path": "packages/lat_mid",
+      "version": "0.5.0"
+    },
+    {
+      "name": "lat_cli",
+      "path": "packages/lat_cli",
+      "version": "0.3.1"
+    },
+    {
+      "name": "package_a",
+      "path": "examples/package-a",
+      "version": "0.0.0"
+    }
+  ]
+}

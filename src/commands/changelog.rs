@@ -2,9 +2,9 @@
 //! writes a fragment; `check` decides which changed packages still need one.
 
 use crate::changelog;
+use crate::json::{ChangelogCheckDocument, ChangelogPackage};
 use crate::workspace::Workspace;
 use anyhow::{Context, Result, bail};
-use serde_json::json;
 
 // ---- new ---------------------------------------------------------------
 
@@ -101,19 +101,23 @@ pub fn check(workspace: &Workspace, options: &CheckOptions) -> Result<bool> {
     let ok = needs_entry.is_empty() && fragments.problems.is_empty();
 
     if options.json {
-        let payload = json!({
-            "has-entries": !fragments.fragments.is_empty(),
-            "needs-entry": !needs_entry.is_empty(),
-            "invalid-fragments": fragments.problems,
-            "packages": statuses.iter().map(|status| json!({
-                "name": status.name,
-                "changed": true,
-                "has-entry": status.fragments > 0,
-                "fragments": status.fragments,
-            })).collect::<Vec<_>>(),
-            "preview": preview(&statuses, &fragments.problems),
-        });
-        println!("{}", serde_json::to_string_pretty(&payload)?);
+        let document = ChangelogCheckDocument {
+            schema: ChangelogCheckDocument::SCHEMA,
+            has_entries: !fragments.fragments.is_empty(),
+            needs_entry: !needs_entry.is_empty(),
+            invalid_fragments: &fragments.problems,
+            packages: statuses
+                .iter()
+                .map(|status| ChangelogPackage {
+                    name: &status.name,
+                    changed: true,
+                    has_entry: status.fragments > 0,
+                    fragments: status.fragments,
+                })
+                .collect(),
+            preview: preview(&statuses, &fragments.problems),
+        };
+        println!("{}", serde_json::to_string_pretty(&document)?);
     } else {
         if statuses.is_empty() {
             println!(
