@@ -12,6 +12,7 @@ pub struct ExecOptions {
     pub serial: bool,
     pub keep_going: bool,
     pub jobs: Option<usize>,
+    pub json: bool,
 }
 
 pub fn run(workspace: &Workspace, options: &ExecOptions) -> Result<bool> {
@@ -53,7 +54,21 @@ pub fn run(workspace: &Workspace, options: &ExecOptions) -> Result<bool> {
         &RunOptions {
             parallelism,
             keep_going: options.keep_going,
+            json: options.json,
         },
     )?;
-    Ok(runner::all_succeeded(&results))
+    let ok = runner::all_succeeded(&results);
+    if options.json {
+        let document = crate::json::ExecDocument {
+            schema: crate::json::ExecDocument::SCHEMA,
+            ok,
+            command: &options.command,
+            results: results
+                .iter()
+                .map(|result| crate::json::TaskResult::new(workspace, result))
+                .collect(),
+        };
+        println!("{}", serde_json::to_string_pretty(&document)?);
+    }
+    Ok(ok)
 }

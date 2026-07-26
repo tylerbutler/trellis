@@ -235,6 +235,217 @@ fn exec_keep_going_runs_everything_despite_failures() {
         .stdout(predicate::str::contains("FAILED").count(4));
 }
 
+// ---- run / exec --json -----------------------------------------------
+
+#[test]
+fn run_json_reports_one_record_per_package() {
+    let output = trellis(&fixture("basic"))
+        .args(["run", "hello", "--json"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(document["schema"], "trellis.run/1");
+    assert_eq!(document["ok"], true);
+    assert_eq!(document["task"], "hello");
+    // `--target` was not given, so the field is absent rather than null.
+    assert!(document.get("target").is_none());
+    let results = document["results"].as_array().unwrap();
+    // package_a is excluded from `hello` by the fixture's [tools.trellis.exclude].
+    assert_eq!(results.len(), 3);
+    let core = results.iter().find(|r| r["package"] == "lat_core").unwrap();
+    assert_eq!(core["path"], "packages/lat_core");
+    assert_eq!(core["status"], "success");
+    assert!(core["duration-ms"].is_u64());
+    // Nothing failed, so neither failure field is present.
+    assert!(core.get("exit-code").is_none());
+    assert!(core.get("command").is_none());
+}
+
+#[test]
+fn run_json_carries_the_target_flag_as_given() {
+    let output = trellis(&fixture("basic"))
+        .env("TRELLIS_GLEAM_BIN", "echo")
+        .args(["run", "docs", "--target", "all", "--json"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(document["target"], "all");
+}
+
+#[test]
+fn exec_json_records_the_exit_code_of_the_failing_command() {
+    let output = trellis(&fixture("basic"))
+        .args(["exec", "lat_core", "--json", "--", "sh", "-c", "exit 3"])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(document["schema"], "trellis.exec/1");
+    assert_eq!(document["ok"], false);
+    // argv, not a re-splittable string.
+    assert_eq!(
+        document["command"],
+        serde_json::json!(["sh", "-c", "exit 3"])
+    );
+    let results = document["results"].as_array().unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0]["status"], "failed");
+    assert_eq!(results[0]["exit-code"], 3);
+    // `sh -c` is unwrapped back to the script, matching what the summary table
+    // and the `$ ...` echo have always shown.
+    assert_eq!(results[0]["command"], "exit 3");
+}
+
+#[test]
+fn exec_json_distinguishes_skipped_from_failed() {
+    // lat_core fails first, so the other three never run. Skipped is not a
+    // pass: it carries no exit code and still fails the command.
+    let output = trellis(&fixture("basic"))
+        .args(["exec", "--serial", "--json", "--", "sh", "-c", "exit 1"])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let results = document["results"].as_array().unwrap();
+    let statuses: Vec<&str> = results
+        .iter()
+        .map(|r| r["status"].as_str().unwrap())
+        .collect();
+    assert_eq!(statuses, ["failed", "skipped", "skipped", "skipped"]);
+    let skipped = results.iter().find(|r| r["status"] == "skipped").unwrap();
+    assert!(skipped.get("exit-code").is_none());
+    assert!(skipped.get("command").is_none());
+}
+
+#[test]
+fn json_keeps_stdout_clean_and_moves_package_output_to_stderr() {
+    let output = trellis(&fixture("basic"))
+        .args(["run", "hello", "--json"])
+        .output()
+        .unwrap();
+    // The whole of stdout parses, so no stray progress or summary line leaked
+    // into it — that is the property a consumer depends on.
+    serde_json::from_slice::<serde_json::Value>(&output.stdout).unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("hello-from-task"),
+        "package output should stay observable on stderr:\n{stderr}"
+    );
+    assert!(stderr.contains('▏'), "expected the pkg ▏ prefix:\n{stderr}");
+}
+
+#[test]
+fn json_emits_a_document_even_when_nothing_is_selected() {
+    // The "no packages selected" notice would otherwise be the one thing on
+    // stdout that is not JSON.
+    let output = trellis(&fixture("basic"))
+        .args(["run", "hello", "package_a", "--json"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(document["ok"], true);
+    assert_eq!(document["results"], serde_json::json!([]));
+}
+
+// ---- global flags ----------------------------------------------------
+
+#[test]
+fn quiet_suppresses_the_package_stream_and_the_summary() {
+    trellis(&fixture("basic"))
+        .args(["run", "hello", "--quiet"])
+        .assert()
+        .success()
+        .stdout("");
+}
+
+#[test]
+fn quiet_leaves_the_exit_code_and_errors_alone() {
+    trellis(&fixture("basic"))
+        .args(["-q", "exec", "lat_core", "--", "sh", "-c", "exit 3"])
+        .assert()
+        .failure()
+        .stdout("");
+}
+
+#[test]
+fn color_always_survives_a_pipe() {
+    // Nothing here is a terminal, so auto-detection would say no; the flag is
+    // the user overriding that.
+    trellis(&fixture("basic"))
+        .args(["run", "hello", "--color", "always"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\x1b["));
+}
+
+#[test]
+fn color_flag_beats_no_color_in_the_environment() {
+    trellis(&fixture("basic"))
+        .env("NO_COLOR", "1")
+        .args(["run", "hello", "--color", "always"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\x1b["));
+
+    trellis(&fixture("basic"))
+        .env_remove("NO_COLOR")
+        .args(["run", "hello", "--color", "never"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\x1b[").not());
+}
+
+#[test]
+fn verbose_traces_shelled_out_commands_to_stderr() {
+    let output = trellis(&fixture("basic"))
+        .args(["-v", "run", "hello", "lat_core"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("+ sh -c"),
+        "expected a `+ ` command trace:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("packages/lat_core"),
+        "the trace should say where the command ran:\n{stderr}"
+    );
+}
+
+#[test]
+fn command_traces_stay_off_unless_asked_for() {
+    let output = trellis(&fixture("basic"))
+        .args(["run", "hello", "lat_core"])
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!stderr.contains("+ sh -c"), "unexpected trace:\n{stderr}");
+}
+
+#[test]
+fn global_flags_are_accepted_after_the_subcommand() {
+    // `global = true` is what makes this work; without it these would only
+    // parse before the subcommand, which is not where anyone types them.
+    trellis(&fixture("basic"))
+        .args(["list", "--quiet", "--color", "never", "--no-update-check"])
+        .assert()
+        .success()
+        .stdout("lat_core\nlat_mid\nlat_cli\npackage_a\n");
+}
+
+#[test]
+fn quiet_and_verbose_are_mutually_exclusive() {
+    trellis(&fixture("basic"))
+        .args(["-q", "-v", "list"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("cannot be used with"));
+}
+
 // ---- doctor ----------------------------------------------------------
 
 #[test]

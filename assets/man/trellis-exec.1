@@ -4,7 +4,7 @@
 .SH NAME
 trellis\-exec \- Run an arbitrary command in each member directory
 .SH SYNOPSIS
-\fBtrellis exec\fR [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-\-since\fR] [\fB\-\-serial\fR] [\fB\-\-keep\-going\fR] [\fB\-j\fR|\fB\-\-jobs\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fIPACKAGES\fR] <\fICOMMAND\fR> 
+\fBtrellis exec\fR [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-\-since\fR] [\fB\-\-color\fR] [\fB\-\-serial\fR] [\fB\-\-keep\-going\fR] [\fB\-q\fR|\fB\-\-quiet\fR] [\fB\-j\fR|\fB\-\-jobs\fR] [\fB\-v\fR|\fB\-\-verbose\fR] [\fB\-\-json\fR] [\fB\-\-no\-update\-check\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fIPACKAGES\fR] <\fICOMMAND\fR> 
 .SH DESCRIPTION
 Run an arbitrary command in each member directory
 .SH OPTIONS
@@ -15,17 +15,46 @@ Run as if started in this directory
 \fB\-\-since\fR \fI<REF>\fR
 Only members owning files changed since this git ref
 .TP
+\fB\-\-color\fR \fI<WHEN>\fR [default: auto]
+When to color output. `auto` follows the terminal, `NO_COLOR`, and `CLICOLOR=0`; the other two override that detection
+.br
+
+.br
+\fIPossible values:\fR
+.RS 14
+.IP \(bu 2
+auto
+.IP \(bu 2
+always
+.IP \(bu 2
+never
+.RE
+.TP
 \fB\-\-serial\fR
 Run one package at a time, in dependency order
 .TP
 \fB\-\-keep\-going\fR
 Keep scheduling packages after a failure
 .TP
+\fB\-q\fR, \fB\-\-quiet\fR
+Suppress the per\-package output stream and the summary table
+.TP
 \fB\-j\fR, \fB\-\-jobs\fR \fI<N>\fR
 Maximum concurrent packages (default: CPU count)
 .TP
+\fB\-v\fR, \fB\-\-verbose\fR
+Trace every command trellis shells out to, on stderr
+.TP
+\fB\-\-json\fR
+Emit the `trellis.exec/1` payload instead of the summary table; package output moves to stderr
+.TP
+\fB\-\-no\-update\-check\fR
+Don\*(Aqt check whether a newer trellis release is available
+
+The check is also skipped in CI, when not attached to a terminal, and when `TRELLIS_NO_UPDATE_CHECK` or `DO_NOT_TRACK` is set.
+.TP
 \fB\-h\fR, \fB\-\-help\fR
-Print help
+Print help (see a summary with \*(Aq\-h\*(Aq)
 .TP
 [\fIPACKAGES\fR]
 Packages to run in; all members when omitted

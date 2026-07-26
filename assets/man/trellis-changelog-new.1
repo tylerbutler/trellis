@@ -4,7 +4,7 @@
 .SH NAME
 trellis\-changelog\-new \- Add an unreleased changelog fragment
 .SH SYNOPSIS
-\fBtrellis changelog new\fR [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-\-package\fR] <\fB\-\-kind\fR> <\fB\-\-body\fR> [\fB\-h\fR|\fB\-\-help\fR] 
+\fBtrellis changelog new\fR [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-\-package\fR] [\fB\-\-color\fR] <\fB\-\-kind\fR> <\fB\-\-body\fR> [\fB\-q\fR|\fB\-\-quiet\fR] [\fB\-v\fR|\fB\-\-verbose\fR] [\fB\-\-no\-update\-check\fR] [\fB\-h\fR|\fB\-\-help\fR] 
 .SH DESCRIPTION
 Add an unreleased changelog fragment
 .SH OPTIONS
@@ -15,11 +15,37 @@ Run as if started in this directory
 \fB\-\-package\fR \fI<PACKAGE>\fR
 The package the change belongs to (optional when the workspace has exactly one releasable package)
 .TP
+\fB\-\-color\fR \fI<WHEN>\fR [default: auto]
+When to color output. `auto` follows the terminal, `NO_COLOR`, and `CLICOLOR=0`; the other two override that detection
+.br
+
+.br
+\fIPossible values:\fR
+.RS 14
+.IP \(bu 2
+auto
+.IP \(bu 2
+always
+.IP \(bu 2
+never
+.RE
+.TP
 \fB\-\-kind\fR \fI<KIND>\fR
 Change kind (see [tools.trellis.changelog] kinds; defaults include Added, Fixed, Breaking, …)
 .TP
 \fB\-\-body\fR \fI<BODY>\fR
 The changelog entry text
 .TP
+\fB\-q\fR, \fB\-\-quiet\fR
+Suppress the per\-package output stream and the summary table
+.TP
+\fB\-v\fR, \fB\-\-verbose\fR
+Trace every command trellis shells out to, on stderr
+.TP
+\fB\-\-no\-update\-check\fR
+Don\*(Aqt check whether a newer trellis release is available
+
+The check is also skipped in CI, when not attached to a terminal, and when `TRELLIS_NO_UPDATE_CHECK` or `DO_NOT_TRACK` is set.
+.TP
 \fB\-h\fR, \fB\-\-help\fR
-Print help
+Print help (see a summary with \*(Aq\-h\*(Aq)

@@ -235,8 +235,10 @@ fn create_exact_tag(
         } else {
             let notes = release_notes(workspace, planned.member);
             let gh = tools::gh_bin();
+            let args = ["release", "create", tag, "--title", tag, "--notes", &notes];
+            crate::term::trace_command(&gh, &args, &workspace.root);
             let output = Command::new(&gh)
-                .args(["release", "create", tag, "--title", tag, "--notes", &notes])
+                .args(args)
                 .current_dir(&workspace.root)
                 .output()
                 .with_context(|| format!("failed to run `{gh}` — is the GitHub CLI installed?"))?;
@@ -311,8 +313,10 @@ fn commit_of(root: &Path, revision: &str) -> Result<Option<String>> {
 }
 
 fn rev_parse(root: &Path, reference: &str, subject: &str) -> Result<Option<String>> {
+    let args = ["rev-parse", "--verify", "--quiet", reference];
+    crate::term::trace_command("git", &args, root);
     let output = Command::new("git")
-        .args(["rev-parse", "--verify", "--quiet", reference])
+        .args(args)
         .current_dir(root)
         .output()
         .context("failed to run git")?;
@@ -331,8 +335,10 @@ fn rev_parse(root: &Path, reference: &str, subject: &str) -> Result<Option<Strin
 
 fn remote_tag_oid(root: &Path, tag: &str) -> Result<Option<String>> {
     let reference = format!("refs/tags/{tag}");
+    let args = ["ls-remote", "--exit-code", "--tags", "origin", &reference];
+    crate::term::trace_command("git", &args, root);
     let output = Command::new("git")
-        .args(["ls-remote", "--exit-code", "--tags", "origin", &reference])
+        .args(args)
         .current_dir(root)
         .output()
         .context("failed to run git")?;
@@ -354,8 +360,10 @@ fn remote_tag_oid(root: &Path, tag: &str) -> Result<Option<String>> {
 
 fn github_release_exists(root: &Path, tag: &str) -> Result<bool> {
     let gh = tools::gh_bin();
+    let args = ["release", "view", tag, "--json", "tagName"];
+    crate::term::trace_command(&gh, &args, root);
     let output = Command::new(&gh)
-        .args(["release", "view", tag, "--json", "tagName"])
+        .args(args)
         .current_dir(root)
         .output()
         .with_context(|| format!("failed to run `{gh}` — is the GitHub CLI installed?"))?;
@@ -537,6 +545,7 @@ fn is_series(token: &str) -> bool {
 }
 
 fn git_stdout(cwd: &Path, args: &[&str]) -> Result<String> {
+    crate::term::trace_command("git", args, cwd);
     let output = Command::new("git")
         .args(args)
         .current_dir(cwd)
