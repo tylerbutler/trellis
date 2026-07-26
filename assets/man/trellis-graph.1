@@ -1,0 +1,31 @@
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
+.TH trellis-graph 1 "" trellis "Trellis Manual"
+.SH NAME
+trellis\-graph \- Render the dependency graph
+.SH SYNOPSIS
+\fBtrellis graph\fR [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-\-format\fR] [\fB\-h\fR|\fB\-\-help\fR] 
+.SH DESCRIPTION
+Render the dependency graph
+.SH OPTIONS
+.TP
+\fB\-C\fR, \fB\-\-directory\fR \fI<DIR>\fR
+Run as if started in this directory
+.TP
+\fB\-\-format\fR \fI<FORMAT>\fR [default: text]
+
+.br
+\fIPossible values:\fR
+.RS 14
+.IP \(bu 2
+text
+.IP \(bu 2
+dot
+.IP \(bu 2
+mermaid
+.IP \(bu 2
+json
+.RE
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Print help

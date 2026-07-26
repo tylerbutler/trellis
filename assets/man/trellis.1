@@ -1,0 +1,65 @@
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
+.TH trellis 1 "" trellis "Trellis Manual"
+.SH NAME
+trellis \- A workspace CLI for Gleam monorepos: task fan\-out, introspection, and release orchestration derived entirely from gleam.toml
+.SH SYNOPSIS
+\fBtrellis\fR [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] <\fIsubcommands\fR>
+.SH DESCRIPTION
+A workspace CLI for Gleam monorepos: task fan\-out, introspection, and release orchestration derived entirely from gleam.toml
+.SH OPTIONS
+.TP
+\fB\-C\fR, \fB\-\-directory\fR \fI<DIR>\fR
+Run as if started in this directory
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Print help
+.TP
+\fB\-V\fR, \fB\-\-version\fR
+Print version
+.SH SUBCOMMANDS
+.TP
+trellis\-list(1)
+List members in topological order (dependencies first)
+.TP
+trellis\-graph(1)
+Render the dependency graph
+.TP
+trellis\-info(1)
+Show details for one package
+.TP
+trellis\-run(1)
+Run a task across members, graph\-parallel by default
+.TP
+trellis\-exec(1)
+Run an arbitrary command in each member directory
+.TP
+trellis\-changelog(1)
+Changelog fragment management (see [tools.trellis.changelog])
+.TP
+trellis\-version(1)
+Plan and apply version bumps from unreleased changelog fragments
+.TP
+trellis\-new(1)
+Scaffold a new workspace member
+.TP
+trellis\-release(1)
+Release orchestration
+.TP
+trellis\-tag(1)
+Compare package versions against git tags; create what\*(Aqs missing
+.TP
+trellis\-publish(1)
+Publish packages to Hex, in dependency order, with path deps rewritten
+.TP
+trellis\-lockfile(1)
+Lockfile maintenance
+.TP
+trellis\-doctor(1)
+Validate workspace invariants; non\-zero exit on any error
+.TP
+trellis\-ci(1)
+Structured output for CI
+.TP
+trellis\-completions(1)
+Print the shell snippet that enables tab\-completion

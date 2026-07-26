@@ -1,0 +1,22 @@
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
+.TH trellis-ci-tag-package 1 "" trellis "Trellis Manual"
+.SH NAME
+trellis\-ci\-tag\-package \- Resolve a pushed tag (e.g. $GITHUB_REF_NAME) to its package name
+.SH SYNOPSIS
+\fBtrellis ci tag\-package\fR [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-\-json\fR] [\fB\-h\fR|\fB\-\-help\fR] <\fITAG\fR> 
+.SH DESCRIPTION
+Resolve a pushed tag (e.g. $GITHUB_REF_NAME) to its package name
+.SH OPTIONS
+.TP
+\fB\-C\fR, \fB\-\-directory\fR \fI<DIR>\fR
+Run as if started in this directory
+.TP
+\fB\-\-json\fR
+Emit JSON with the resolved package, version, and tag kind
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Print help
+.TP
+<\fITAG\fR>
+

@@ -1,0 +1,5 @@
+# Man pages are generated from the clap definition by `just docs` and committed
+# so the release archives can ship them. Marking them generated keeps 27 files
+# of ROFF out of PR diffs and out of language statistics.
+assets/man/** linguist-generated=true
+assets/man/** -diff

@@ -1,0 +1,39 @@
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
+.TH trellis-completions 1 "" trellis "Trellis Manual"
+.SH NAME
+trellis\-completions \- Print the shell snippet that enables tab\-completion
+.SH SYNOPSIS
+\fBtrellis completions\fR [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-h\fR|\fB\-\-help\fR] <\fISHELL\fR> 
+.SH DESCRIPTION
+Print the shell snippet that enables tab\-completion
+.PP
+The snippet asks trellis for candidates on each tab\-press, so completions offer real package and task names from the surrounding workspace and can never drift from the flags you have. Evaluate it on shell startup rather than saving it to a completions directory — it talks to trellis over an interface that changes between releases, so an `eval` stays in sync where a saved copy goes stale. For zsh, in ~/.zshrc after compinit:
+.PP
+eval "$(trellis completions zsh)"
+.SH OPTIONS
+.TP
+\fB\-C\fR, \fB\-\-directory\fR \fI<DIR>\fR
+Run as if started in this directory
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Print help (see a summary with \*(Aq\-h\*(Aq)
+.TP
+<\fISHELL\fR>
+Shell to emit a registration snippet for
+.br
+
+.br
+\fIPossible values:\fR
+.RS 14
+.IP \(bu 2
+bash
+.IP \(bu 2
+elvish
+.IP \(bu 2
+fish
+.IP \(bu 2
+powershell
+.IP \(bu 2
+zsh
+.RE

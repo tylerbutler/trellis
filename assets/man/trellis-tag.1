@@ -1,0 +1,23 @@
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
+.TH trellis-tag 1 "" trellis "Trellis Manual"
+.SH NAME
+trellis\-tag \- Compare package versions against git tags; create what\*(Aqs missing
+.SH SYNOPSIS
+\fBtrellis tag\fR [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-h\fR|\fB\-\-help\fR] <\fIsubcommands\fR>
+.SH DESCRIPTION
+Compare package versions against git tags; create what\*(Aqs missing
+.SH OPTIONS
+.TP
+\fB\-C\fR, \fB\-\-directory\fR \fI<DIR>\fR
+Run as if started in this directory
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Print help
+.SH SUBCOMMANDS
+.TP
+trellis\-tag\-plan(1)
+List releasable packages whose current version has no tag yet
+.TP
+trellis\-tag\-create(1)
+Create missing tags in topological order

@@ -1,0 +1,34 @@
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
+.TH trellis-exec 1 "" trellis "Trellis Manual"
+.SH NAME
+trellis\-exec \- Run an arbitrary command in each member directory
+.SH SYNOPSIS
+\fBtrellis exec\fR [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-\-since\fR] [\fB\-\-serial\fR] [\fB\-\-keep\-going\fR] [\fB\-j\fR|\fB\-\-jobs\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fIPACKAGES\fR] <\fICOMMAND\fR> 
+.SH DESCRIPTION
+Run an arbitrary command in each member directory
+.SH OPTIONS
+.TP
+\fB\-C\fR, \fB\-\-directory\fR \fI<DIR>\fR
+Run as if started in this directory
+.TP
+\fB\-\-since\fR \fI<REF>\fR
+Only members owning files changed since this git ref
+.TP
+\fB\-\-serial\fR
+Run one package at a time, in dependency order
+.TP
+\fB\-\-keep\-going\fR
+Keep scheduling packages after a failure
+.TP
+\fB\-j\fR, \fB\-\-jobs\fR \fI<N>\fR
+Maximum concurrent packages (default: CPU count)
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Print help
+.TP
+[\fIPACKAGES\fR]
+Packages to run in; all members when omitted
+.TP
+<\fICOMMAND\fR>
+The command to run (after `\-\-`)

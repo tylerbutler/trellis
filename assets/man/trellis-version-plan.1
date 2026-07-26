@@ -1,0 +1,19 @@
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
+.TH trellis-version-plan 1 "" trellis "Trellis Manual"
+.SH NAME
+trellis\-version\-plan \- Dry\-run: show what `version apply` would bump
+.SH SYNOPSIS
+\fBtrellis version plan\fR [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-\-json\fR] [\fB\-h\fR|\fB\-\-help\fR] 
+.SH DESCRIPTION
+Dry\-run: show what `version apply` would bump
+.SH OPTIONS
+.TP
+\fB\-C\fR, \fB\-\-directory\fR \fI<DIR>\fR
+Run as if started in this directory
+.TP
+\fB\-\-json\fR
+Emit JSON instead of text
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Print help

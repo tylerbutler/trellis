@@ -55,6 +55,55 @@ cargo install trellis-gleam
 cargo install --git https://github.com/tylerbutler/trellis
 ```
 
+## Shell completions
+
+Completions are computed by the binary as you type rather than baked into a
+static script, so they never drift from the flags you actually have — and they
+offer real values: package names, task names, and changelog kinds read from the
+workspace you're standing in.
+
+Add one line to your shell's startup file:
+
+```sh
+# ~/.bashrc
+eval "$(trellis completions bash)"
+
+# ~/.zshrc — after compinit
+eval "$(trellis completions zsh)"
+
+# ~/.config/fish/config.fish
+trellis completions fish | source
+
+# ~/.elvish/rc.elv
+eval (trellis completions elvish | slurp)
+
+# $PROFILE (PowerShell)
+trellis completions powershell | Out-String | Invoke-Expression
+```
+
+Evaluate the snippet on startup rather than saving it into a completions
+directory. It talks to `trellis` over an interface that can change between
+releases, so an `eval` is always in sync with the binary you have, while a saved
+copy silently goes stale after an upgrade.
+
+One limitation worth knowing: completing after `-C` uses the directory you're
+standing in, not the one you passed. The completion engine sees only the word
+under the cursor, not the rest of the command line.
+
+## Man pages
+
+`trellis.1` and a page per subcommand ship inside the release archives under
+`man/`. Neither the shell installer nor the Homebrew formula installs them
+automatically, so point `man` at the extracted archive or install them yourself:
+
+```sh
+sudo install -Dm644 man/*.1 -t /usr/local/share/man/man1/
+man trellis
+man trellis-run
+```
+
+Everything in those pages is also on the [CLI reference](/docs/reference) page.
+
 ## Pinning a version in CI
 
 The installer URLs above resolve `latest`. To pin a specific version, replace
