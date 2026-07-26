@@ -16,14 +16,14 @@ pub fn run(workspace: &Workspace, name: &str, json: bool) -> Result<()> {
     }
 
     let member = &workspace.members[idx];
-    println!("name:       {}", member.name);
-    println!("version:    {}", member.version());
-    println!("path:       {}", member.rel_path);
-    println!("releasable: {}", member.releasable);
+    crate::status!("name:       {}", member.name);
+    crate::status!("version:    {}", member.version());
+    crate::status!("path:       {}", member.rel_path);
+    crate::status!("releasable: {}", member.releasable);
     // Only the tags this member's mode actually produces — a series-only
     // package has no per-version tag to report.
     if member.tag_mode.includes_exact() {
-        println!(
+        crate::status!(
             "tag:        {}",
             workspace.config.format_tag(&member.name, member.version())
         );
@@ -33,7 +33,7 @@ pub fn run(workspace: &Workspace, name: &str, json: bool) -> Result<()> {
             .config
             .format_series_tag(&member.name, member.version())
     {
-        println!("series tag: {tag}");
+        crate::status!("series tag: {tag}");
     }
     let format_names = |indices: &[usize]| -> String {
         if indices.is_empty() {
@@ -46,11 +46,11 @@ pub fn run(workspace: &Workspace, name: &str, json: bool) -> Result<()> {
                 .join(", ")
         }
     };
-    println!(
+    crate::status!(
         "workspace deps:       {}",
         format_names(workspace.deps_of(idx))
     );
-    println!(
+    crate::status!(
         "workspace dependents: {}",
         format_names(workspace.dependents_of(idx))
     );
@@ -61,7 +61,7 @@ pub fn run(workspace: &Workspace, name: &str, json: bool) -> Result<()> {
         .filter(|dep| matches!(dep.requirement, Requirement::Hex(_)))
         .map(|dep| dep.name.clone())
         .collect();
-    println!(
+    crate::status!(
         "hex deps:             {}",
         if hex_deps.is_empty() {
             "(none)".to_string()

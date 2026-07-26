@@ -470,7 +470,27 @@ in a log:
 ### Scaffolding
 
 ```
+trellis init
 trellis new <name> [--template lib] [--path <dir>]
+```
+
+`init` bootstraps the workspace itself: it writes a `[tools.trellis]` table
+into the repository root's `gleam.toml`, creating a config-only manifest if the
+root isn't a package, and finishes by running `doctor`.
+
+The table it writes is nearly empty by design. Its *presence* is what marks the
+workspace root; members stay auto-discovered, so `members` is derivable and
+therefore not written. What it leaves instead are comments pointing at what can
+be configured — the part a reference page answers badly. `init` reports the
+members it discovered so you can see whether they need narrowing, and refuses
+if the repository is already a trellis workspace.
+
+```console
+$ trellis init
+created /repo/gleam.toml
+members are auto-discovered; found 2:
+  packages/a
+  packages/b
 ```
 
 Creates the member directory (derived from where existing members live, e.g.

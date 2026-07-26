@@ -370,6 +370,43 @@ fn quiet_leaves_the_exit_code_and_errors_alone() {
         .stdout("");
 }
 
+/// `-q` is not scoped to `run`/`exec` — it drops every command's normal-path
+/// narration. `doctor`'s checked/warning/summary lines are as much "progress
+/// chatter" as `run`'s per-package stream, and the exit code still carries
+/// the verdict.
+#[test]
+fn quiet_suppresses_doctor_text_output_but_keeps_the_exit_code() {
+    trellis(&fixture("basic"))
+        .args(["doctor", "--quiet"])
+        .assert()
+        .success()
+        .stdout("");
+}
+
+#[test]
+fn quiet_leaves_doctor_json_and_github_formats_alone() {
+    trellis(&fixture("basic"))
+        .args(["doctor", "--quiet", "--format", "json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"schema\""));
+
+    trellis(&fixture("basic"))
+        .args(["list", "--quiet", "--json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"schema\""));
+}
+
+#[test]
+fn quiet_suppresses_lists_text_output() {
+    trellis(&fixture("basic"))
+        .args(["list", "--quiet"])
+        .assert()
+        .success()
+        .stdout("");
+}
+
 #[test]
 fn color_always_survives_a_pipe() {
     // Nothing here is a terminal, so auto-detection would say no; the flag is
@@ -431,7 +468,7 @@ fn global_flags_are_accepted_after_the_subcommand() {
     // `global = true` is what makes this work; without it these would only
     // parse before the subcommand, which is not where anyone types them.
     trellis(&fixture("basic"))
-        .args(["list", "--quiet", "--color", "never", "--no-update-check"])
+        .args(["list", "--verbose", "--color", "never", "--no-update-check"])
         .assert()
         .success()
         .stdout("lat_core\nlat_mid\nlat_cli\npackage_a\n");

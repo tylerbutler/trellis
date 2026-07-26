@@ -43,7 +43,7 @@ pub fn pr(workspace: &Workspace, options: &PrOptions) -> Result<bool> {
         // `version` commands, where it can be previewed by `plan` first.
         let plan = version::compute_plan(&workspace, &Overrides::default())?;
         if plan.is_empty() {
-            println!("no unreleased changes; nothing to release");
+            crate::status!("no unreleased changes; nothing to release");
             return Ok(true);
         }
         build_release_commit_and_pr(&workspace, options, &plan)
@@ -113,7 +113,7 @@ fn build_release_commit_and_pr(
                 root,
                 &["pr", "edit", &number, "--title", &title, "--body", &body],
             )?;
-            println!("updated release PR #{number}: {title}");
+            crate::status!("updated release PR #{number}: {title}");
         }
         None => {
             let url = gh_stdout(
@@ -131,7 +131,7 @@ fn build_release_commit_and_pr(
                     &body,
                 ],
             )?;
-            println!("created release PR: {}", url.trim());
+            crate::status!("created release PR: {}", url.trim());
         }
     }
     Ok(true)

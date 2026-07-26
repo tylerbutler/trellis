@@ -138,9 +138,9 @@ pub fn run(workspace: &Workspace, options: &NewOptions) -> Result<()> {
     )?;
     write(&dir.join("README.md"), &format!("# {name}\n"))?;
 
-    println!("created {rel_path}/ (gleam.toml, src, test, CHANGELOG.md, README.md)");
+    crate::status!("created {rel_path}/ (gleam.toml, src, test, CHANGELOG.md, README.md)");
     if let Some(sibling) = sibling {
-        println!("metadata copied from {}", sibling.rel_path);
+        crate::status!("metadata copied from {}", sibling.rel_path);
     }
     // Nothing to register anywhere else: membership, the graph, and the
     // changelog engine are all derived from what was just written.

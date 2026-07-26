@@ -28,7 +28,7 @@ never
 .RE
 .TP
 \fB\-q\fR, \fB\-\-quiet\fR
-Suppress the per\-package output stream and the summary table
+Suppress normal\-path output; JSON/report payloads and errors still print
 .TP
 \fB\-v\fR, \fB\-\-verbose\fR
 Trace every command trellis shells out to, on stderr
@@ -65,6 +65,9 @@ Changelog fragment management (see [tools.trellis.changelog])
 .TP
 trellis\-version(1)
 Plan and apply version bumps from unreleased changelog fragments
+.TP
+trellis\-init(1)
+Bootstrap a workspace: write a [tools.trellis] table at the repo root
 .TP
 trellis\-new(1)
 Scaffold a new workspace member

@@ -62,7 +62,7 @@ struct Cli {
     #[arg(long, global = true, value_name = "WHEN", default_value = "auto")]
     color: ColorChoice,
 
-    /// Suppress the per-package output stream and the summary table
+    /// Suppress normal-path output; JSON/report payloads and errors still print
     #[arg(short, long, global = true, conflicts_with = "verbose")]
     quiet: bool,
 
@@ -183,6 +183,14 @@ enum Command {
         #[command(subcommand)]
         command: VersionCommand,
     },
+    /// Bootstrap a workspace: write a [tools.trellis] table at the repo root
+    ///
+    /// Everything trellis can derive it derives, so the table this writes is
+    /// nearly empty by design — its presence is what marks the workspace root.
+    /// Members stay auto-discovered from git; the comments it leaves point at
+    /// what can be configured. Refuses if the repository is already a trellis
+    /// workspace, and finishes by running `doctor`.
+    Init,
     /// Scaffold a new workspace member
     New {
         /// Package name (lowercase letters, digits, and _)
@@ -487,6 +495,9 @@ fn dispatch(cli: Cli) -> Result<bool> {
             commands::generate::man_pages(out)?;
             return Ok(true);
         }
+        // `init` creates the workspace root, so it cannot be found by loading
+        // one — it finds the repository root itself.
+        Command::Init => return commands::init::run(&start),
         _ => {}
     }
 
@@ -669,6 +680,7 @@ fn dispatch(cli: Cli) -> Result<bool> {
             }
         },
         Command::Doctor { .. }
+        | Command::Init
         | Command::MarkdownHelp
         | Command::Completions { .. }
         | Command::Man { .. } => unreachable!("handled above"),
