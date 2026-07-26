@@ -70,8 +70,8 @@ Two things are explicitly **not** part of the contract:
 | `info <pkg> --json` | `trellis.info/1`<br />`{schema, name, version, path, releasable, dependencies[], dependents[]}` |
 | `graph --format json` | `trellis.graph/1`<br />`{schema, nodes[], edges[]}` |
 | `changelog check --json` | `trellis.changelog-check/1`<br />`{schema, has-entries, needs-entry, invalid-fragments[], packages[], preview}` |
-| `version plan --json` | `trellis.version-plan/1`<br />`{schema, bumped[]}` |
-| `version apply --json` | `trellis.version-apply/1`<br />`{schema, bumped[], lockfiles[], adopted[]}` |
+| `version plan --json` | `trellis.version-plan/1`<br />`{schema, bumped[], fragments-retained}` |
+| `version apply --json` | `trellis.version-apply/1`<br />`{schema, bumped[], lockfiles[], adopted[], fragments-retained}` |
 | `tag plan --json` | `trellis.tag-plan/1`<br />`{schema, tags[]}` |
 | `ci tag-package --json` | `trellis.ci-tag-package/1`<br />`{schema, name, path, version, tag-kind, tag-version \| tag-series}` |
 | `doctor --format json` | `trellis.doctor/1`<br />`{schema, ok, members, configless, auto-members, findings[], fixes[], applied[]}` |
@@ -86,6 +86,13 @@ because a [workspace dependency bumped](/docs/changelog/#dependents-bump-too)
 in the same plan; `fragments` is `0` when that was the only reason. `adopted[]`
 names the version sections captured from
 [pre-existing changelogs](/docs/changelog/#adopting-an-existing-changelog).
+
+`fragments-retained` is true only under
+[`--pre <label>`](/docs/changelog/#prereleases): the fragments behind the
+release were left unreleased, and a later version will render them again. It is
+false for every ordinary release and for a `--pre none` promotion. A workflow
+that gates on "are there unreleased changes left" needs it to tell a cut release
+candidate from an incomplete release.
 
 ### Conditional fields
 

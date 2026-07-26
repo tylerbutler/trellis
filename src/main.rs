@@ -277,16 +277,48 @@ enum ChangelogCommand {
 enum VersionCommand {
     /// Dry-run: show what `version apply` would bump
     Plan {
+        #[command(flatten)]
+        overrides: VersionOverrideArgs,
         /// Emit JSON instead of text
         #[arg(long)]
         json: bool,
     },
     /// Bump versions, render changelogs, patch manifest.toml locked versions
     Apply {
+        #[command(flatten)]
+        overrides: VersionOverrideArgs,
         /// Emit JSON listing every bump and patched lockfile
         #[arg(long)]
         json: bool,
     },
+}
+
+/// Overrides for the version a plan would otherwise derive from fragment kinds.
+///
+/// Flattened into both `plan` and `apply` so an override is visible in the
+/// dry-run before it is applied — the two must accept exactly the same flags or
+/// `plan` stops being a preview of `apply`.
+#[derive(clap::Args)]
+struct VersionOverrideArgs {
+    /// Override the derived bump level, workspace-wide (`--bump major`) or for
+    /// one package (`--bump lat_core=major`). Repeatable.
+    #[arg(long, value_name = "LEVEL|PKG=LEVEL", add = completion::bump_levels())]
+    bump: Vec<String>,
+    /// Pin a package's next version exactly (`--set lat_core=1.0.0`).
+    /// Repeatable.
+    #[arg(long, value_name = "PKG=VERSION")]
+    set: Vec<String>,
+    /// Cut a prerelease: `--pre rc` gives 1.0.0-rc.1, and again 1.0.0-rc.2.
+    /// Fragments stay unreleased until the final version. `--pre none` promotes
+    /// the current prerelease to its final version and consumes them.
+    #[arg(long, value_name = "LABEL")]
+    pre: Option<String>,
+}
+
+impl VersionOverrideArgs {
+    fn parse(&self) -> Result<commands::version_override::Overrides> {
+        commands::version_override::Overrides::parse(&self.bump, &self.set, self.pre.as_deref())
+    }
 }
 
 #[derive(Subcommand)]
@@ -519,11 +551,13 @@ fn dispatch(cli: Cli) -> Result<bool> {
             ),
         },
         Command::Version { command } => match command {
-            VersionCommand::Plan { json } => {
-                commands::version::plan(&workspace, json)?;
+            VersionCommand::Plan { overrides, json } => {
+                commands::version::plan(&workspace, &overrides.parse()?, json)?;
                 Ok(true)
             }
-            VersionCommand::Apply { json } => commands::version::apply(&workspace, json),
+            VersionCommand::Apply { overrides, json } => {
+                commands::version::apply(&workspace, &overrides.parse()?, json)
+            }
         },
         Command::New {
             name,
