@@ -99,7 +99,7 @@ pub fn run(workspace: &Workspace, options: &PublishOptions) -> Result<bool> {
             hex.published_versions(&name)
         })?;
         if published.iter().any(|v| v == &version) {
-            println!("[{name}] {version} is already on Hex; skipping");
+            crate::status!("[{name}] {version} is already on Hex; skipping");
             continue;
         }
 
@@ -117,15 +117,15 @@ pub fn run(workspace: &Workspace, options: &PublishOptions) -> Result<bool> {
         .with_context(|| format!("cannot prepare `{name}` for publishing"))?;
 
         if options.dry_run {
-            println!("[{name}] would publish {version}");
+            crate::status!("[{name}] would publish {version}");
             for rewrite in &rewrites {
-                println!("[{name}]   {} -> \"{}\"", rewrite.name, rewrite.requirement);
+                crate::status!("[{name}]   {} -> \"{}\"", rewrite.name, rewrite.requirement);
             }
             continue;
         }
 
         // 2. Validate against the *original* manifest (path deps intact).
-        println!("[{name}] validating {version}");
+        crate::status!("[{name}] validating {version}");
         gleam_step(workspace, idx, &["format", "--check"])?;
         // Build and test resolve deps, which touches Hex — retry those.
         tools::with_retry(retry, &format!("gleam build for {name}"), || {
@@ -144,9 +144,10 @@ pub fn run(workspace: &Workspace, options: &PublishOptions) -> Result<bool> {
         std::fs::write(&manifest_path, &rewritten)
             .with_context(|| format!("failed to write {}", manifest_path.display()))?;
         for rewrite in &rewrites {
-            println!(
+            crate::status!(
                 "[{name}] rewrote {} -> \"{}\"",
-                rewrite.name, rewrite.requirement
+                rewrite.name,
+                rewrite.requirement
             );
         }
         let result = tools::with_retry(retry, &format!("gleam publish for {name}"), || {
@@ -154,7 +155,7 @@ pub fn run(workspace: &Workspace, options: &PublishOptions) -> Result<bool> {
         });
         drop(guard); // restore gleam.toml before deciding success
         result?;
-        println!("[{name}] published {version}");
+        crate::status!("[{name}] published {version}");
     }
     Ok(true)
 }
@@ -182,7 +183,7 @@ impl Drop for RestoreGuard {
 fn gleam_step(workspace: &Workspace, idx: usize, args: &[&str]) -> Result<()> {
     let member = &workspace.members[idx];
     let gleam = tools::gleam_bin();
-    println!("[{}] $ gleam {}", member.name, args.join(" "));
+    crate::status!("[{}] $ gleam {}", member.name, args.join(" "));
     let status = Command::new(&gleam)
         .args(args)
         .current_dir(&member.path)

@@ -156,6 +156,77 @@ changelog from them.
 
 </Callout>
 
+## Overriding the derived version
+
+The fragment kinds do not always determine the version you want: a breaking
+change filed as `Fixed` and already merged, a package that should jump straight
+to `1.0.0` from `0.9.3` (a *minor* under the pre-1.0 rule), or a one-off number
+matching something upstream.
+
+Three flags override the derivation. `plan` and `apply` accept them
+identically, so an override is previewable before it is applied.
+
+```console
+$ trellis version plan --bump major              # the whole plan
+$ trellis version plan --bump lat_core=major     # one package
+$ trellis version plan --set lat_core=1.0.0      # an exact version
+```
+
+Precedence runs `--set` → per-package `--bump` → workspace-wide `--bump` →
+the derived level. Naming a package in both `--bump` and `--set`, naming one
+that is not a releasable member, or pinning a version that is not ahead of the
+current one are all errors raised before anything is written.
+
+## Prereleases
+
+`--pre <label>` cuts a release candidate. Repeating it advances the counter
+within the same base version rather than deriving a fresh bump from the same
+fragments:
+
+```console
+$ trellis version apply --set lat_core=1.0.0 --pre rc
+bumped lat_core: 0.9.3 -> 1.0.0-rc.1
+kept fragments unreleased for the final version
+
+$ trellis version apply --pre rc
+bumped lat_core: 1.0.0-rc.1 -> 1.0.0-rc.2
+
+$ trellis version apply --pre none
+bumped lat_core: 1.0.0-rc.2 -> 1.0.0
+```
+
+<Callout>
+
+**Fragments survive a prerelease.** The candidate renders its changelog section,
+but the fragments behind it stay in `.changes/unreleased/`: they are still
+unreleased as far as `1.0.0` is concerned, and retiring them at `rc.1` would
+leave the final release with nothing to say.
+
+The consequence is that an entry appears twice in `CHANGELOG.md` — once under
+the RC that shipped it, once under the final version. `version --json` reports
+[`fragments-retained`](/docs/json-output/) so a workflow can tell a cut RC from
+a completed release.
+
+</Callout>
+
+A prerelease labels the whole plan, [rippled dependents](#dependents-bump-too)
+included, so the workspace moves as one coherent candidate. A package that only
+gained fragments *after* the RC was cut still bumps normally under `--pre none`,
+so a late arrival never blocks the promotion.
+
+Once a package sits at a prerelease, a plain `version apply` is an error rather
+than a silent bump to the next release — leaving a cycle has to be deliberate:
+
+```console
+$ trellis version plan
+error: `lat_core` is at prerelease 1.0.0-rc.2; pass --pre <label> for another
+prerelease or --pre none to promote it
+```
+
+A prerelease belongs to no release series, so it moves no
+[series tag](/docs/publishing/); exact tags apply as usual, and Hex accepts
+prerelease versions.
+
 ## Adopting an existing changelog
 
 Because `CHANGELOG.md` is regenerated from `.changes/<package>/`, a package

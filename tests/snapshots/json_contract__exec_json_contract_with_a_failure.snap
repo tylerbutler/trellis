@@ -1,0 +1,41 @@
+---
+source: tests/json_contract.rs
+expression: payload
+---
+{
+  "command": [
+    "sh",
+    "-c",
+    "exit 3"
+  ],
+  "ok": false,
+  "results": [
+    {
+      "command": "exit 3",
+      "duration-ms": "[ms]",
+      "exit-code": 3,
+      "package": "lat_core",
+      "path": "packages/lat_core",
+      "status": "failed"
+    },
+    {
+      "duration-ms": "[ms]",
+      "package": "lat_mid",
+      "path": "packages/lat_mid",
+      "status": "skipped"
+    },
+    {
+      "duration-ms": "[ms]",
+      "package": "lat_cli",
+      "path": "packages/lat_cli",
+      "status": "skipped"
+    },
+    {
+      "duration-ms": "[ms]",
+      "package": "package_a",
+      "path": "examples/package-a",
+      "status": "skipped"
+    }
+  ],
+  "schema": "trellis.exec/1"
+}

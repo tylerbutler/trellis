@@ -19,6 +19,7 @@ description: Every trellis command, flag, and argument — generated from the CL
 * [`trellis version`↴](#trellis-version)
 * [`trellis version plan`↴](#trellis-version-plan)
 * [`trellis version apply`↴](#trellis-version-apply)
+* [`trellis init`↴](#trellis-init)
 * [`trellis new`↴](#trellis-new)
 * [`trellis release`↴](#trellis-release)
 * [`trellis release pr`↴](#trellis-release-pr)
@@ -50,6 +51,7 @@ A workspace CLI for Gleam monorepos: task fan-out, introspection, and release or
 * `exec` — Run an arbitrary command in each member directory
 * `changelog` — Changelog fragment management (see [tools.trellis.changelog])
 * `version` — Plan and apply version bumps from unreleased changelog fragments
+* `init` — Bootstrap a workspace: write a [tools.trellis] table at the repo root
 * `new` — Scaffold a new workspace member
 * `release` — Release orchestration
 * `tag` — Compare package versions against git tags; create what's missing
@@ -62,6 +64,17 @@ A workspace CLI for Gleam monorepos: task fan-out, introspection, and release or
 ###### **Options:**
 
 * `-C`, `--directory <DIR>` — Run as if started in this directory
+* `--color <WHEN>` — When to color output. `auto` follows the terminal, `NO_COLOR`, and `CLICOLOR=0`; the other two override that detection
+
+  Default value: `auto`
+
+  Possible values: `auto`, `always`, `never`
+
+* `-q`, `--quiet` — Suppress normal-path output; JSON/report payloads and errors still print
+* `-v`, `--verbose` — Trace every command trellis shells out to, on stderr
+* `--no-update-check` — Don't check whether a newer trellis release is available
+
+   The check is also skipped in CI, when not attached to a terminal, and when `TRELLIS_NO_UPDATE_CHECK` or `DO_NOT_TRACK` is set.
 
 
 
@@ -137,6 +150,7 @@ Run a task across members, graph-parallel by default
 * `--serial` — Run one package at a time, in dependency order
 * `--keep-going` — Keep scheduling packages after a failure
 * `-j`, `--jobs <N>` — Maximum concurrent packages (default: CPU count)
+* `--json` — Emit the `trellis.run/1` payload instead of the summary table; package output moves to stderr
 
 
 
@@ -157,6 +171,7 @@ Run an arbitrary command in each member directory
 * `--serial` — Run one package at a time, in dependency order
 * `--keep-going` — Keep scheduling packages after a failure
 * `-j`, `--jobs <N>` — Maximum concurrent packages (default: CPU count)
+* `--json` — Emit the `trellis.exec/1` payload instead of the summary table; package output moves to stderr
 
 
 
@@ -224,6 +239,9 @@ Dry-run: show what `version apply` would bump
 
 ###### **Options:**
 
+* `--bump <LEVEL|PKG=LEVEL>` — Override the derived bump level, workspace-wide (`--bump major`) or for one package (`--bump lat_core=major`). Repeatable
+* `--set <PKG=VERSION>` — Pin a package's next version exactly (`--set lat_core=1.0.0`). Repeatable
+* `--pre <LABEL>` — Cut a prerelease: `--pre rc` gives 1.0.0-rc.1, and again 1.0.0-rc.2. Fragments stay unreleased until the final version. `--pre none` promotes the current prerelease to its final version and consumes them
 * `--json` — Emit JSON instead of text
 
 
@@ -236,7 +254,20 @@ Bump versions, render changelogs, patch manifest.toml locked versions
 
 ###### **Options:**
 
+* `--bump <LEVEL|PKG=LEVEL>` — Override the derived bump level, workspace-wide (`--bump major`) or for one package (`--bump lat_core=major`). Repeatable
+* `--set <PKG=VERSION>` — Pin a package's next version exactly (`--set lat_core=1.0.0`). Repeatable
+* `--pre <LABEL>` — Cut a prerelease: `--pre rc` gives 1.0.0-rc.1, and again 1.0.0-rc.2. Fragments stay unreleased until the final version. `--pre none` promotes the current prerelease to its final version and consumes them
 * `--json` — Emit JSON listing every bump and patched lockfile
+
+
+
+## `trellis init`
+
+Bootstrap a workspace: write a [tools.trellis] table at the repo root
+
+Everything trellis can derive it derives, so the table this writes is nearly empty by design — its presence is what marks the workspace root. Members stay auto-discovered from git; the comments it leaves point at what can be configured. Refuses if the repository is already a trellis workspace, and finishes by running `doctor`.
+
+**Usage:** `trellis init`
 
 
 

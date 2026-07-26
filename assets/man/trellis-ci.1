@@ -4,7 +4,7 @@
 .SH NAME
 trellis\-ci \- Structured output for CI
 .SH SYNOPSIS
-\fBtrellis ci\fR [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-h\fR|\fB\-\-help\fR] <\fIsubcommands\fR>
+\fBtrellis ci\fR [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-\-color\fR] [\fB\-q\fR|\fB\-\-quiet\fR] [\fB\-v\fR|\fB\-\-verbose\fR] [\fB\-\-no\-update\-check\fR] [\fB\-h\fR|\fB\-\-help\fR] <\fIsubcommands\fR>
 .SH DESCRIPTION
 Structured output for CI
 .SH OPTIONS
@@ -12,8 +12,34 @@ Structured output for CI
 \fB\-C\fR, \fB\-\-directory\fR \fI<DIR>\fR
 Run as if started in this directory
 .TP
+\fB\-\-color\fR \fI<WHEN>\fR [default: auto]
+When to color output. `auto` follows the terminal, `NO_COLOR`, and `CLICOLOR=0`; the other two override that detection
+.br
+
+.br
+\fIPossible values:\fR
+.RS 14
+.IP \(bu 2
+auto
+.IP \(bu 2
+always
+.IP \(bu 2
+never
+.RE
+.TP
+\fB\-q\fR, \fB\-\-quiet\fR
+Suppress normal\-path output; JSON/report payloads and errors still print
+.TP
+\fB\-v\fR, \fB\-\-verbose\fR
+Trace every command trellis shells out to, on stderr
+.TP
+\fB\-\-no\-update\-check\fR
+Don\*(Aqt check whether a newer trellis release is available
+
+The check is also skipped in CI, when not attached to a terminal, and when `TRELLIS_NO_UPDATE_CHECK` or `DO_NOT_TRACK` is set.
+.TP
 \fB\-h\fR, \fB\-\-help\fR
-Print help
+Print help (see a summary with \*(Aq\-h\*(Aq)
 .SH SUBCOMMANDS
 .TP
 trellis\-ci\-matrix(1)

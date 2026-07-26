@@ -144,6 +144,7 @@ pub fn identity_fallback_args(cwd: &Path) -> Vec<String> {
 }
 
 fn git_stdout(cwd: &Path, args: &[&str]) -> Result<String> {
+    crate::term::trace_command("git", args, cwd);
     let output = Command::new("git")
         .args(args)
         .current_dir(cwd)

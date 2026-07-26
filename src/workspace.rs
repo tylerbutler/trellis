@@ -767,6 +767,22 @@ fn discover_member_dirs(root: &Path, diagnostics: &mut Diagnostics) -> Vec<PathB
     dirs.into_iter().collect()
 }
 
+/// Auto-discovered member paths relative to `root`, forward-slashed.
+///
+/// The same discovery a configured workspace performs when `members` is
+/// omitted, so `trellis init` reports exactly the list the config it writes
+/// will produce, rather than a second approximation of it. Discovery problems
+/// are dropped: `init` has no report to put them in, and the `doctor` run it
+/// finishes with raises them properly.
+pub fn discovered_member_paths(root: &Path) -> Vec<String> {
+    let mut diagnostics = Diagnostics::default();
+    discover_member_dirs(root, &mut diagnostics)
+        .iter()
+        .filter(|dir| dir.as_path() != root)
+        .map(|dir| rel_path_string(root, dir))
+        .collect()
+}
+
 /// The member's tag mode: `default`, unless exactly one override claims it.
 /// Two overrides claiming the same member is ambiguous — there is no sensible
 /// precedence between `series` and `both` — so it is reported rather than

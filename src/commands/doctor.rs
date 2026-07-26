@@ -33,6 +33,7 @@ impl DoctorFormat {
     }
 }
 
+#[derive(Default)]
 pub struct DoctorOptions {
     /// Apply the fixable findings, then re-report what remains.
     pub fix: bool,
@@ -209,9 +210,9 @@ pub fn run(root: &Path, options: &DoctorOptions) -> Result<bool> {
             "gleam on PATH matches the .tool-versions pin (advisory)",
         ];
         for check in checked {
-            println!("checked: {check}");
+            crate::status!("checked: {check}");
         }
-        println!();
+        crate::status!();
     }
 
     let mut report = inspect(root)?;
@@ -222,7 +223,7 @@ pub fn run(root: &Path, options: &DoctorOptions) -> Result<bool> {
         if text {
             print_findings(&report);
             for fix in &report.fixes {
-                println!("would fix: {}", fix.describe());
+                crate::status!("would fix: {}", fix.describe());
             }
         }
         return finish(&report, &[], options.format);
@@ -235,11 +236,11 @@ pub fn run(root: &Path, options: &DoctorOptions) -> Result<bool> {
         for fix in &report.fixes {
             fix.apply()?;
             if text {
-                println!("fixed: {}", fix.describe());
+                crate::status!("fixed: {}", fix.describe());
             }
         }
         if text {
-            println!();
+            crate::status!();
         }
         // Moved out before the re-inspect, which by design no longer reports
         // them — this is the only remaining record of what was written.
@@ -250,7 +251,7 @@ pub fn run(root: &Path, options: &DoctorOptions) -> Result<bool> {
     if text {
         print_findings(&report);
         if !options.fix && !report.fixes.is_empty() {
-            println!(
+            crate::status!(
                 "note: {} finding(s) are auto-fixable; rerun with --fix",
                 report.fixes.len()
             );
@@ -263,22 +264,22 @@ fn print_findings(report: &Report) {
     // Auto-discovery leaves no file saying "this is the workspace", so doctor
     // states the inference instead of leaving it invisible.
     if report.configless {
-        println!(
+        crate::status!(
             "note: no [tools.trellis] configuration found; workspace root inferred from git, \
              {} member(s) auto-discovered",
             report.members
         );
     } else if report.auto_members {
-        println!(
+        crate::status!(
             "note: `members` is not configured; {} member(s) auto-discovered from git",
             report.members
         );
     }
     for warning in report.of_severity(Severity::Warning) {
-        println!("warning: {}", warning.message);
+        crate::status!("warning: {}", warning.message);
     }
     for error in report.of_severity(Severity::Error) {
-        println!("error: {}", error.message);
+        crate::status!("error: {}", error.message);
     }
 }
 
@@ -309,9 +310,9 @@ fn finish(report: &Report, applied: &[Fix], format: DoctorFormat) -> Result<bool
 fn print_summary(report: &Report, ok: bool) {
     let warnings = report.count(Severity::Warning);
     if ok {
-        println!("ok: {} member(s), {warnings} warning(s)", report.members);
+        crate::status!("ok: {} member(s), {warnings} warning(s)", report.members);
     } else {
-        println!(
+        crate::status!(
             "FAILED: {} error(s), {warnings} warning(s)",
             report.count(Severity::Error)
         );
@@ -442,10 +443,9 @@ fn check_tool_versions(workspace: &Workspace, report: &mut Report) {
     }) else {
         return;
     };
-    let Ok(output) = std::process::Command::new(crate::tools::gleam_bin())
-        .arg("--version")
-        .output()
-    else {
+    let gleam = crate::tools::gleam_bin();
+    crate::term::trace_command(&gleam, &["--version"], &workspace.root);
+    let Ok(output) = std::process::Command::new(&gleam).arg("--version").output() else {
         report.push(
             Finding::warning(
                 Check::Toolchain,

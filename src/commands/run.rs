@@ -24,6 +24,18 @@ pub struct TaskOptions {
     pub serial: bool,
     pub keep_going: bool,
     pub jobs: Option<usize>,
+    pub json: bool,
+}
+
+impl Target {
+    /// The flag value as the user gave it, for the JSON payload.
+    fn as_str(self) -> &'static str {
+        match self {
+            Target::Erlang => "erlang",
+            Target::Javascript => "javascript",
+            Target::All => "all",
+        }
+    }
 }
 
 pub(crate) const BUILTIN_TASKS: &[&str] =
@@ -61,9 +73,24 @@ pub fn run(workspace: &Workspace, options: &TaskOptions) -> Result<bool> {
         &RunOptions {
             parallelism: effective_jobs(options),
             keep_going: options.keep_going,
+            json: options.json,
         },
     )?;
-    Ok(runner::all_succeeded(&results))
+    let ok = runner::all_succeeded(&results);
+    if options.json {
+        let document = crate::json::RunDocument {
+            schema: crate::json::RunDocument::SCHEMA,
+            ok,
+            task: &options.task,
+            target: options.target.map(Target::as_str),
+            results: results
+                .iter()
+                .map(|result| crate::json::TaskResult::new(workspace, result))
+                .collect(),
+        };
+        println!("{}", serde_json::to_string_pretty(&document)?);
+    }
+    Ok(ok)
 }
 
 fn effective_jobs(options: &TaskOptions) -> usize {

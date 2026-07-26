@@ -5,6 +5,7 @@
 //! CHANGELOG.md — all with zero Hex network calls.
 
 use crate::changelog;
+use crate::commands::version_override::Overrides;
 use crate::json::{Bump, UpdatedDependency, VersionApplyDocument, VersionPlanDocument};
 use crate::lockfile;
 use crate::workspace::Workspace;
@@ -25,6 +26,9 @@ pub struct PlanEntry {
     /// The changelog entries `updated_deps` renders as. Held alongside rather
     /// than derived on demand so `apply` renders exactly what `plan` reported.
     pub generated: Vec<changelog::Fragment>,
+    /// Whether `current` was itself a prerelease, so `--pre none` can tell a
+    /// promotion from a package that merely joined the plan late.
+    was_prerelease: bool,
 }
 
 #[derive(Debug)]
@@ -47,7 +51,7 @@ pub struct UpdatedDep {
 /// by the time it reaches a member, every dependency's final version is settled.
 /// Unreleasable members are never recorded, so a ripple stops at one rather than
 /// skipping over it to its dependents.
-pub fn compute_plan(workspace: &Workspace) -> Result<Vec<PlanEntry>> {
+pub fn compute_plan(workspace: &Workspace, overrides: &Overrides) -> Result<Vec<PlanEntry>> {
     let fragments = changelog::load_fragments(workspace)?;
     if !fragments.problems.is_empty() {
         bail!(
@@ -55,6 +59,9 @@ pub fn compute_plan(workspace: &Workspace) -> Result<Vec<PlanEntry>> {
             fragments.problem_messages().join("\n  - ")
         );
     }
+    // Before anything is computed, so a typo'd package name fails immediately
+    // rather than being silently ignored.
+    validate_named_packages(workspace, overrides)?;
 
     let config = &workspace.config.changelog;
     let mut plan = Vec::new();
@@ -94,8 +101,11 @@ pub fn compute_plan(workspace: &Workspace) -> Result<Vec<PlanEntry>> {
         }
         let all: Vec<&changelog::Fragment> =
             owned.iter().copied().chain(generated.iter()).collect();
-        let next = changelog::next_version(member.version(), &all, &config.kinds)
+        let derived = changelog::derive_bump(&all, &config.kinds)
             .with_context(|| format!("cannot compute next version for `{}`", member.name))?;
+        let current = semver::Version::parse(member.version())
+            .with_context(|| format!("`{}` has an invalid version", member.name))?;
+        let next = overrides.resolve(&member.name, &current, derived)?;
         bumped.insert(&member.name, next.to_string());
         plan.push(PlanEntry {
             name: member.name.clone(),
@@ -104,29 +114,55 @@ pub fn compute_plan(workspace: &Workspace) -> Result<Vec<PlanEntry>> {
             fragments: owned.len(),
             updated_deps,
             generated,
+            was_prerelease: !current.pre.is_empty(),
         });
+    }
+    if overrides.promoting() && !plan.iter().any(|entry| entry.was_prerelease) {
+        bail!("--pre none promotes a prerelease, but no package in the plan is at one");
     }
     Ok(plan)
 }
 
-pub fn plan(workspace: &Workspace, json: bool) -> Result<()> {
-    let plan = compute_plan(workspace)?;
+/// A `--bump pkg=` or `--set pkg=` naming something that is not a releasable
+/// member is a typo, not a no-op.
+fn validate_named_packages(workspace: &Workspace, overrides: &Overrides) -> Result<()> {
+    for name in overrides.named_packages() {
+        match workspace.member_index(name) {
+            None => bail!("--bump/--set names unknown package `{name}`"),
+            Some(idx) if !workspace.members[idx].releasable => {
+                bail!("--bump/--set names `{name}`, which is excluded from releases");
+            }
+            Some(_) => {}
+        }
+    }
+    Ok(())
+}
+
+pub fn plan(workspace: &Workspace, overrides: &Overrides, json: bool) -> Result<()> {
+    let plan = compute_plan(workspace, overrides)?;
     if json {
         let document = VersionPlanDocument {
             schema: VersionPlanDocument::SCHEMA,
             bumped: bumps(&plan),
+            fragments_retained: overrides.retains_fragments(),
         };
         println!("{}", serde_json::to_string_pretty(&document)?);
     } else if plan.is_empty() {
-        println!("no unreleased changes; nothing to bump");
+        crate::status!("no unreleased changes; nothing to bump");
     } else {
         for entry in &plan {
-            println!(
+            crate::status!(
                 "{}: {} -> {} ({})",
                 entry.name,
                 entry.current,
                 entry.next,
                 entry.why()
+            );
+        }
+        if overrides.retains_fragments() {
+            crate::status!(
+                "note: prerelease — fragments stay unreleased and will be released again \
+                 by the final version"
             );
         }
     }
@@ -175,8 +211,8 @@ fn bumps(plan: &[PlanEntry]) -> Vec<Bump<'_>> {
 
 /// The release step: preflight every pending package and lockfile, write all
 /// version bumps, then batch fragments and rebuild each CHANGELOG.md.
-pub fn apply(workspace: &Workspace, json: bool) -> Result<bool> {
-    let plan = compute_plan(workspace)?;
+pub fn apply(workspace: &Workspace, overrides: &Overrides, json: bool) -> Result<bool> {
+    let plan = compute_plan(workspace, overrides)?;
     if plan.is_empty() {
         if json {
             let document = VersionApplyDocument {
@@ -184,10 +220,11 @@ pub fn apply(workspace: &Workspace, json: bool) -> Result<bool> {
                 bumped: Vec::new(),
                 lockfiles: Vec::new(),
                 adopted: Vec::new(),
+                fragments_retained: false,
             };
             println!("{}", serde_json::to_string_pretty(&document)?);
         } else {
-            println!("no unreleased changes; nothing to apply");
+            crate::status!("no unreleased changes; nothing to apply");
         }
         return Ok(true);
     }
@@ -319,11 +356,16 @@ pub fn apply(workspace: &Workspace, json: bool) -> Result<bool> {
         )
         .with_context(|| format!("failed to write changelog for `{}`", prepared.name))?;
     }
-    for prepared in &prepared_versions {
-        let member_fragments: Vec<&changelog::Fragment> =
-            fragments.for_project(&prepared.name).collect();
-        changelog::consume_fragments(&member_fragments)
-            .with_context(|| format!("failed to consume fragments for `{}`", prepared.name))?;
+    // A prerelease renders its section but leaves the fragments in place: they
+    // are still unreleased as far as the final version is concerned, and
+    // retiring them at rc.1 would leave the eventual 1.0.0 with nothing to say.
+    if !overrides.retains_fragments() {
+        for prepared in &prepared_versions {
+            let member_fragments: Vec<&changelog::Fragment> =
+                fragments.for_project(&prepared.name).collect();
+            changelog::consume_fragments(&member_fragments)
+                .with_context(|| format!("failed to consume fragments for `{}`", prepared.name))?;
+        }
     }
 
     let patched_files: Vec<&str> = prepared_lockfiles
@@ -337,17 +379,21 @@ pub fn apply(workspace: &Workspace, json: bool) -> Result<bool> {
             bumped: bumps(&plan),
             lockfiles: patched_files,
             adopted: adopted_files.iter().map(String::as_str).collect(),
+            fragments_retained: overrides.retains_fragments(),
         };
         println!("{}", serde_json::to_string_pretty(&document)?);
     } else {
         for entry in &plan {
-            println!("bumped {}: {} -> {}", entry.name, entry.current, entry.next);
+            crate::status!("bumped {}: {} -> {}", entry.name, entry.current, entry.next);
         }
         for file in &patched_files {
-            println!("patched {file}");
+            crate::status!("patched {file}");
         }
         for file in &adopted_files {
-            println!("adopted existing changelog history as {file}");
+            crate::status!("adopted existing changelog history as {file}");
+        }
+        if overrides.retains_fragments() {
+            crate::status!("kept fragments unreleased for the final version");
         }
     }
     Ok(true)

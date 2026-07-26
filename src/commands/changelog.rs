@@ -53,7 +53,7 @@ pub fn new_fragment(
     }
 
     let path = changelog::write_fragment(workspace, project, kind, body.trim())?;
-    println!(
+    crate::status!(
         "created {}",
         path.strip_prefix(&workspace.root)
             .unwrap_or(&path)
@@ -123,9 +123,10 @@ pub fn check(workspace: &Workspace, options: &CheckOptions) -> Result<bool> {
         println!("{}", serde_json::to_string_pretty(&document)?);
     } else {
         if statuses.is_empty() {
-            println!(
+            crate::status!(
                 "no releasable packages changed between {} and {}",
-                options.base, options.head
+                options.base,
+                options.head
             );
         }
         for status in &statuses {
@@ -134,10 +135,10 @@ pub fn check(workspace: &Workspace, options: &CheckOptions) -> Result<bool> {
             } else {
                 "needs a changelog entry".to_string()
             };
-            println!("{}: {state}", status.name);
+            crate::status!("{}: {state}", status.name);
         }
         for problem in &invalid {
-            println!("invalid: {problem}");
+            crate::status!("invalid: {problem}");
         }
     }
     Ok(ok)

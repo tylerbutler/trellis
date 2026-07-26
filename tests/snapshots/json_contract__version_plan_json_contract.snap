@@ -40,5 +40,6 @@ expression: "json_output(root, &[\"version\", \"plan\", \"--json\"], true)"
       ]
     }
   ],
+  "fragments-retained": false,
   "schema": "trellis.version-plan/1"
 }

@@ -247,6 +247,97 @@ impl DoctorDocument<'_> {
     pub const SCHEMA: &'static str = "trellis.doctor/1";
 }
 
+/// How one package's job ended.
+///
+/// `skipped` means scheduling stopped at an earlier failure and this package
+/// never ran — it is not a pass, and [`crate::runner::all_succeeded`] counts it
+/// against the exit code.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum TaskStatus {
+    Success,
+    Failed,
+    Skipped,
+}
+
+/// One package's outcome, shared by [`RunDocument`] and [`ExecDocument`].
+///
+/// A job runs several commands when a custom task sets `needs-deps`, so
+/// `exit-code` and `command` describe the one that *failed* rather than a
+/// single command per package.
+#[derive(Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct TaskResult<'a> {
+    pub package: &'a str,
+    pub path: &'a str,
+    pub status: TaskStatus,
+    /// Absent — not null — when the job succeeded, was skipped, or the process
+    /// left no code of its own (killed by a signal, or never started).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exit_code: Option<i32>,
+    pub duration_ms: u64,
+    /// The command that failed, as it was run. Absent unless `status` is
+    /// `failed`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub command: Option<&'a str>,
+}
+
+impl<'a> TaskResult<'a> {
+    pub fn new(workspace: &'a Workspace, result: &'a crate::runner::JobResult) -> Self {
+        let member = &workspace.members[result.member];
+        Self {
+            package: &member.name,
+            path: &member.rel_path,
+            status: match result.status {
+                crate::runner::JobStatus::Success => TaskStatus::Success,
+                crate::runner::JobStatus::Failed(_) => TaskStatus::Failed,
+                crate::runner::JobStatus::Skipped => TaskStatus::Skipped,
+            },
+            exit_code: result.exit_code,
+            // Saturating rather than wrapping: a run long enough to overflow a
+            // u64 of milliseconds is not one anybody is reading a payload for.
+            duration_ms: u64::try_from(result.duration.as_millis()).unwrap_or(u64::MAX),
+            command: result.failed_command.as_deref(),
+        }
+    }
+}
+
+/// `trellis run <task> --json`.
+#[derive(Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct RunDocument<'a> {
+    pub schema: &'static str,
+    /// Mirrors the exit code: false unless every package succeeded.
+    pub ok: bool,
+    pub task: &'a str,
+    /// The `--target` value as given, including `all`. Absent when the flag was
+    /// omitted and each package built for its own default target.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target: Option<&'static str>,
+    pub results: Vec<TaskResult<'a>>,
+}
+
+impl RunDocument<'_> {
+    pub const SCHEMA: &'static str = "trellis.run/1";
+}
+
+/// `trellis exec -- <command...> --json`.
+#[derive(Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct ExecDocument<'a> {
+    pub schema: &'static str,
+    /// Mirrors the exit code: false unless every package succeeded.
+    pub ok: bool,
+    /// The command as invoked, one element per argv entry, so a consumer never
+    /// has to re-split a quoted string.
+    pub command: &'a [String],
+    pub results: Vec<TaskResult<'a>>,
+}
+
+impl ExecDocument<'_> {
+    pub const SCHEMA: &'static str = "trellis.exec/1";
+}
+
 /// A workspace member, as `list` and `info` report it.
 #[derive(Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -444,6 +535,10 @@ pub struct Bump<'a> {
 pub struct VersionPlanDocument<'a> {
     pub schema: &'static str,
     pub bumped: Vec<Bump<'a>>,
+    /// True under `--pre <label>`: the fragments behind this release stay
+    /// unreleased, and the final version will render them again. False for
+    /// every ordinary release and for a `--pre none` promotion.
+    pub fragments_retained: bool,
 }
 
 impl VersionPlanDocument<'_> {
@@ -460,6 +555,11 @@ pub struct VersionApplyDocument<'a> {
     pub bumped: Vec<Bump<'a>>,
     pub lockfiles: Vec<&'a str>,
     pub adopted: Vec<&'a str>,
+    /// True under `--pre <label>`: the fragments behind this release were left
+    /// in place, so a follow-up release will render them again. A workflow that
+    /// gates on "are there unreleased changes" needs this to tell a cut RC from
+    /// an incomplete release.
+    pub fragments_retained: bool,
 }
 
 impl VersionApplyDocument<'_> {
