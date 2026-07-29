@@ -192,6 +192,24 @@ errors still go to stderr and a failing task still fails the command. `-v`
 writes a `+ ` trace to stderr for each `gleam`, `git`, and `gh` invocation,
 naming the directory it ran in.
 
+### Exit codes
+
+Every command uses the same four codes. `1` and `3` are the split that matters
+in CI: a step that should fail the build on findings still has to report a
+broken environment differently.
+
+| Code | Meaning | Examples |
+| --- | --- | --- |
+| `0` | Success, no findings | `doctor` found nothing; every task passed |
+| `1` | Ran correctly, found problems | `doctor` findings, missing changelog fragments, a failed task |
+| `2` | Usage error | Unknown flag, missing argument, bad subcommand |
+| `3` | Trellis itself could not run | Unparseable config, not a git repository, missing `gleam`/`gh`, Hex unreachable after retries |
+
+A failed task exits `1`, not the child's exit code — trellis reports its own
+outcome, and propagating the child's would collide with `2` and `3`. See
+[Compatibility](https://trellis.tylerbutler.com/docs/compatibility/) for what
+else the version number promises.
+
 ### Introspection
 
 ```

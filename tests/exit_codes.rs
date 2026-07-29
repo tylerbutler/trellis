@@ -1,0 +1,136 @@
+//! The exit-code contract, asserted directly rather than incidentally.
+//!
+//! CI branches on these, and the distinction that matters is 1 vs 3: a step
+//! that should fail the build on findings still needs to report "trellis could
+//! not run at all" differently. Every code in the documented table gets a case
+//! here so a change to the mapping breaks a test instead of a workflow.
+//!
+//! | code | meaning                                                        |
+//! |------|----------------------------------------------------------------|
+//! | 0    | success, no findings                                           |
+//! | 1    | ran correctly, found problems                                  |
+//! | 2    | usage error (clap's default)                                   |
+//! | 3    | internal/environment error — bad config, no git repo, no tool  |
+
+use assert_cmd::Command;
+use predicates::prelude::*;
+use std::fs;
+use std::path::{Path, PathBuf};
+
+fn fixture(name: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures")
+        .join(name)
+}
+
+fn trellis(dir: &Path) -> Command {
+    let mut cmd = Command::cargo_bin("trellis").unwrap();
+    cmd.current_dir(dir);
+    cmd
+}
+
+fn write(path: &Path, content: &str) {
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(path, content).unwrap();
+}
+
+/// A workspace whose only problem is an unfixable one, so `doctor` reports a
+/// finding rather than failing to load.
+fn workspace_with_findings(root: &Path) {
+    write(
+        &root.join("gleam.toml"),
+        "[tools.trellis]\nmembers = [\"packages/*\"]\n",
+    );
+    write(
+        &root.join("packages/a/gleam.toml"),
+        "name = \"a\"\nversion = \"1.0.0\"\n[dependencies]\nout = { path = \"../../../elsewhere\" }\n",
+    );
+}
+
+// ---- 0: success -------------------------------------------------------
+
+#[test]
+fn success_exits_zero() {
+    trellis(&fixture("basic")).arg("list").assert().code(0);
+}
+
+// ---- 1: the command ran and found problems ----------------------------
+
+#[test]
+fn doctor_findings_exit_one() {
+    let dir = tempfile::tempdir().unwrap();
+    workspace_with_findings(dir.path());
+
+    trellis(dir.path())
+        .arg("doctor")
+        .assert()
+        .code(1)
+        .stdout(predicate::str::contains("points outside the workspace"));
+}
+
+#[test]
+fn a_failed_task_exits_one_and_does_not_propagate_the_child_code() {
+    // The child exits 3 — trellis reports its own outcome, not the child's,
+    // so 3 must not leak out and masquerade as an internal error.
+    trellis(&fixture("basic"))
+        .args(["exec", "lat_core", "--", "sh", "-c", "exit 3"])
+        .assert()
+        .code(1)
+        .stdout(predicate::str::contains("FAILED"));
+}
+
+// ---- 2: usage --------------------------------------------------------
+
+#[test]
+fn usage_error_exits_two() {
+    trellis(&fixture("basic"))
+        .arg("--no-such-flag")
+        .assert()
+        .code(2);
+}
+
+// ---- 3: trellis itself could not run ---------------------------------
+
+#[test]
+fn unparseable_root_manifest_exits_three() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    write(&root.join("gleam.toml"), "name = \"broken\nversion=\n");
+    write(
+        &root.join("packages/a/gleam.toml"),
+        "name = \"a\"\nversion = \"1.0.0\"\n",
+    );
+
+    trellis(root).arg("list").assert().code(3);
+}
+
+#[test]
+fn outside_a_git_repository_exits_three() {
+    let dir = tempfile::tempdir().unwrap();
+    write(
+        &dir.path().join("packages/a/gleam.toml"),
+        "name = \"a\"\nversion = \"1.0.0\"\n",
+    );
+
+    trellis(dir.path())
+        .arg("list")
+        .assert()
+        .code(3)
+        .stderr(predicate::str::contains("not inside a git repository"));
+}
+
+#[test]
+fn a_members_glob_matching_nothing_exits_three() {
+    // Bad configuration, not a finding: the workspace model never loaded.
+    let dir = tempfile::tempdir().unwrap();
+    write(
+        &dir.path().join("gleam.toml"),
+        "[tools.trellis]\nmembers = [\"pkgs/*\"]\n",
+    );
+
+    trellis(dir.path())
+        .arg("list")
+        .assert()
+        .code(3)
+        .stderr(predicate::str::contains("matches no packages"));
+}
