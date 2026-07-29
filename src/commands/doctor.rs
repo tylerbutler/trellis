@@ -204,7 +204,7 @@ pub fn run(root: &Path, options: &DoctorOptions) -> Result<bool> {
             "tag format produces a unique tag per releasable package",
             "manifest.toml locked versions match workspace-internal gleam.toml versions",
             "each releasable package's version is not behind its CHANGELOG",
-            "unreleased changelog fragments parse and reference valid packages and kinds",
+            "unreleased changelog fragments parse and reference valid packages, kinds, and categories",
             "[tools.trellis] carries no unrecognized or deprecated keys",
             "packages agree on the external dependencies they share",
             "gleam on PATH matches the .tool-versions pin (advisory)",

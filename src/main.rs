@@ -293,6 +293,10 @@ enum ChangelogCommand {
         /// Fixed, Breaking, …)
         #[arg(long, add = completion::changelog_kinds())]
         kind: String,
+        /// Change category, grouping entries above the kind headings (see
+        /// [tools.trellis.changelog] categories; none are configured by default)
+        #[arg(long, add = completion::changelog_categories())]
+        category: Option<String>,
         /// The changelog entry text
         #[arg(long)]
         body: String,
@@ -597,9 +601,16 @@ fn dispatch(cli: Cli) -> Result<bool> {
             ChangelogCommand::New {
                 package,
                 kind,
+                category,
                 body,
             } => {
-                commands::changelog::new_fragment(&workspace, package.as_deref(), &kind, &body)?;
+                commands::changelog::new_fragment(
+                    &workspace,
+                    package.as_deref(),
+                    &kind,
+                    category.as_deref(),
+                    &body,
+                )?;
                 Ok(true)
             }
             ChangelogCommand::Check { base, head, json } => commands::changelog::check(

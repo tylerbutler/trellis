@@ -19,6 +19,10 @@ use std::path::PathBuf;
 pub struct Fragment {
     pub package: String,
     pub kind: String,
+    /// The optional second grouping axis. `None` files the entry under the
+    /// configured `uncategorized_label`, which is where every fragment written
+    /// before categories existed lands.
+    pub category: Option<String>,
     pub body: String,
     /// `None` for a fragment trellis generated rather than read from disk, so
     /// `consume_fragments` can never mistake one for a file to delete.
@@ -34,6 +38,12 @@ struct RawFragment {
     #[serde(alias = "project")]
     package: String,
     kind: String,
+    /// Optional, so fragments predating categories still parse. Note the
+    /// reverse does not hold: this struct denies unknown fields, so a fragment
+    /// carrying a category fails to parse under a trellis older than the one
+    /// that introduced it.
+    #[serde(default)]
+    category: Option<String>,
     body: String,
 }
 
@@ -107,6 +117,7 @@ pub fn load_fragments(workspace: &Workspace) -> Result<Fragments> {
     paths.sort(); // deterministic order across filesystems
 
     let kinds = &workspace.config.changelog.kinds;
+    let categories = &workspace.config.changelog.categories;
     for path in paths {
         let display = path
             .file_name()
@@ -157,6 +168,25 @@ pub fn load_fragments(workspace: &Workspace) -> Result<Fragments> {
             )));
             continue;
         }
+        if let Some(category) = &raw.category
+            && !categories.iter().any(|c| c == category)
+        {
+            // With no `categories` configured there is no list to print, and
+            // "not one of" would read as though the label were merely
+            // misspelled. Name the key that turns the axis on instead.
+            result.problems.push(blame(if categories.is_empty() {
+                format!(
+                    "fragment `{display}`: category `{category}` is set, but no `categories` \
+                     are configured; add them under [tools.trellis.changelog]"
+                )
+            } else {
+                format!(
+                    "fragment `{display}`: category `{category}` is not one of {}",
+                    category_labels(categories)
+                )
+            }));
+            continue;
+        }
         if raw.body.trim().is_empty() {
             result
                 .problems
@@ -166,6 +196,7 @@ pub fn load_fragments(workspace: &Workspace) -> Result<Fragments> {
         result.fragments.push(Fragment {
             package: raw.package,
             kind: raw.kind,
+            category: raw.category,
             body: raw.body.trim().to_string(),
             path: Some(path),
         });
@@ -179,6 +210,10 @@ pub fn kind_labels(kinds: &[KindConfig]) -> String {
         .map(|k| k.label.as_str())
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+pub fn category_labels(categories: &[String]) -> String {
+    categories.join(", ")
 }
 
 /// The entry recording that a workspace dependency bumped in this release.
@@ -205,6 +240,10 @@ pub fn dependency_fragment(
     Ok(Fragment {
         package: package.to_string(),
         kind: config.dependency_kind.clone(),
+        // A ripple belongs to no one part of the package — it happened to the
+        // whole of it — so it files under `uncategorized_label` alongside any
+        // other entry that named no category.
+        category: None,
         body: body.trim().to_string(),
         path: None,
     })
@@ -215,6 +254,7 @@ pub fn write_fragment(
     workspace: &Workspace,
     package: &str,
     kind: &str,
+    category: Option<&str>,
     body: &str,
 ) -> Result<PathBuf> {
     let dir = unreleased_dir(workspace);
@@ -222,6 +262,11 @@ pub fn write_fragment(
     let mut doc = toml_edit::DocumentMut::new();
     doc["package"] = toml_edit::value(package);
     doc["kind"] = toml_edit::value(kind);
+    // Omitted entirely when absent, so a workspace not using categories writes
+    // exactly the file it always did.
+    if let Some(category) = category {
+        doc["category"] = toml_edit::value(category);
+    }
     doc["body"] = toml_edit::value(body);
     for n in 1u32.. {
         let path = dir.join(format!("{package}-{n}.toml"));
@@ -279,8 +324,9 @@ fn render(template: &str, what: &str, context: minijinja::Value) -> Result<Strin
         .with_context(|| format!("failed to render {what} template"))
 }
 
-/// Render one version section: the version heading, then each kind (in
-/// configured order) with its entries.
+/// Render one version section: the version heading, then the entries grouped
+/// by kind in configured order — or, when categories are configured, by
+/// category first and kind within each.
 pub fn render_section(
     config: &ChangelogConfig,
     name: &str,
@@ -297,6 +343,72 @@ pub fn render_section(
         minijinja::context! { name, version, date, tag, series },
     )?;
     out.push('\n');
+
+    if !config.categories_enabled() {
+        // The pre-categories path, kept exactly as it was: a workspace that
+        // configures no categories renders byte-for-byte what it used to.
+        render_kinds(config, &mut out, name, version, fragments, None)?;
+        return Ok(out);
+    }
+
+    for category in &config.categories {
+        let entries: Vec<&Fragment> = fragments
+            .iter()
+            .copied()
+            .filter(|f| f.category.as_deref() == Some(category.as_str()))
+            .collect();
+        if entries.is_empty() {
+            continue; // same skip-empty rule kinds follow
+        }
+        render_category_heading(config, &mut out, category, name, version)?;
+        render_kinds(config, &mut out, name, version, &entries, Some(category))?;
+    }
+
+    // Everything that named no category, including the generated ripple
+    // entries, trails the named ones under one shared heading.
+    let uncategorized: Vec<&Fragment> = fragments
+        .iter()
+        .copied()
+        .filter(|f| f.category.is_none())
+        .collect();
+    if !uncategorized.is_empty() {
+        let label = &config.uncategorized_label;
+        render_category_heading(config, &mut out, label, name, version)?;
+        render_kinds(config, &mut out, name, version, &uncategorized, Some(label))?;
+    }
+    Ok(out)
+}
+
+/// One category heading. The uncategorized block goes through here too, so a
+/// custom `category_format` shapes every heading in the section alike.
+fn render_category_heading(
+    config: &ChangelogConfig,
+    out: &mut String,
+    category: &str,
+    name: &str,
+    version: &str,
+) -> Result<()> {
+    out.push('\n');
+    out.push_str(&render(
+        &config.category_format,
+        "category_format",
+        minijinja::context! { category, name, version },
+    )?);
+    out.push('\n');
+    Ok(())
+}
+
+/// The kind headings and entries for one group of fragments. Opens each kind
+/// with a blank line, which is also what separates it from a category heading
+/// above — so the two compose without either knowing about the other.
+fn render_kinds(
+    config: &ChangelogConfig,
+    out: &mut String,
+    name: &str,
+    version: &str,
+    fragments: &[&Fragment],
+    category: Option<&str>,
+) -> Result<()> {
     for kind in &config.kinds {
         let entries: Vec<&&Fragment> = fragments.iter().filter(|f| f.kind == kind.label).collect();
         if entries.is_empty() {
@@ -304,9 +416,9 @@ pub fn render_section(
         }
         out.push('\n');
         out.push_str(&render(
-            &config.kind_format,
+            config.kind_format(),
             "kind_format",
-            minijinja::context! { kind => kind.label, name, version },
+            minijinja::context! { kind => kind.label, category, name, version },
         )?);
         out.push('\n');
         out.push('\n');
@@ -314,12 +426,18 @@ pub fn render_section(
             out.push_str(&render(
                 &config.change_format,
                 "change_format",
-                minijinja::context! { body => fragment.body, kind => fragment.kind, name, version },
+                minijinja::context! {
+                    body => fragment.body,
+                    kind => fragment.kind,
+                    category,
+                    name,
+                    version,
+                },
             )?);
             out.push('\n');
         }
     }
-    Ok(out)
+    Ok(())
 }
 
 // ---- adoption ----------------------------------------------------------------
@@ -560,8 +678,16 @@ mod tests {
         Fragment {
             package: package.to_string(),
             kind: kind.to_string(),
+            category: None,
             body: body.to_string(),
             path: Some(PathBuf::from("unused")),
+        }
+    }
+
+    fn categorized(package: &str, kind: &str, category: &str, body: &str) -> Fragment {
+        Fragment {
+            category: Some(category.to_string()),
+            ..fragment(package, kind, body)
         }
     }
 
@@ -621,11 +747,189 @@ mod tests {
         );
     }
 
+    /// A configured category becomes a heading above the kinds, which drop a
+    /// level to sit under it. Categories render in configured order — not the
+    /// order the fragments happen to arrive in — exactly as kinds do.
+    #[test]
+    fn categories_group_above_kinds_in_configured_order() {
+        let config = ChangelogConfig {
+            categories: vec!["build".to_string(), "publish".to_string()],
+            ..Default::default()
+        };
+        let publish = categorized("lat_cli", "Added", "publish", "--dry-run");
+        let build_add = categorized("lat_cli", "Added", "build", "--watch");
+        let build_fix = categorized("lat_cli", "Fixed", "build", "stop rebuilding deps");
+        let section = render_section(
+            &config,
+            "lat_cli",
+            "1.3.0",
+            "lat_cli-v1.3.0",
+            "2026-07-11",
+            &[&publish, &build_add, &build_fix],
+        )
+        .unwrap();
+        assert_eq!(
+            section,
+            "## v1.3.0 - 2026-07-11\n\
+             \n### build\n\
+             \n#### Added\n\n- --watch\n\
+             \n#### Fixed\n\n- stop rebuilding deps\n\
+             \n### publish\n\
+             \n#### Added\n\n- --dry-run\n"
+        );
+    }
+
+    /// Entries naming no category trail the named ones under one heading —
+    /// including the generated ripple entries, which belong to no one part of
+    /// a package.
+    #[test]
+    fn uncategorized_entries_render_last_under_their_label() {
+        let config = ChangelogConfig {
+            categories: vec!["build".to_string()],
+            ..Default::default()
+        };
+        let loose = fragment("lat_cli", "Fixed", "a general fix");
+        let build = categorized("lat_cli", "Added", "build", "--watch");
+        let section = render_section(
+            &config,
+            "lat_cli",
+            "1.3.0",
+            "lat_cli-v1.3.0",
+            "2026-07-11",
+            &[&loose, &build],
+        )
+        .unwrap();
+        assert_eq!(
+            section,
+            "## v1.3.0 - 2026-07-11\n\
+             \n### build\n\
+             \n#### Added\n\n- --watch\n\
+             \n### Other\n\
+             \n#### Fixed\n\n- a general fix\n"
+        );
+    }
+
+    /// A category with nothing in it is skipped, the same way an empty kind is
+    /// — configuring the axis does not commit a package to filling every
+    /// heading in every release.
+    #[test]
+    fn empty_categories_are_skipped() {
+        let config = ChangelogConfig {
+            categories: vec!["build".to_string(), "publish".to_string()],
+            ..Default::default()
+        };
+        let build = categorized("lat_cli", "Added", "build", "--watch");
+        let section = render_section(
+            &config,
+            "lat_cli",
+            "1.3.0",
+            "lat_cli-v1.3.0",
+            "2026-07-11",
+            &[&build],
+        )
+        .unwrap();
+        assert_eq!(
+            section,
+            "## v1.3.0 - 2026-07-11\n\n### build\n\n#### Added\n\n- --watch\n"
+        );
+        // No stray `Other` heading when nothing is uncategorized, either.
+        assert!(!section.contains("Other"));
+    }
+
+    /// The uncategorized block is a category like any other as far as the
+    /// templates are concerned, and both headings can see the category name.
+    #[test]
+    fn custom_category_templates_get_full_context() {
+        let config = ChangelogConfig {
+            categories: vec!["build".to_string()],
+            category_format: "### `{{ category }}` in {{ name }}".to_string(),
+            kind_format_override: Some("**{{ kind }}** ({{ category }})".to_string()),
+            change_format: "* {{ body }} [{{ category }}]".to_string(),
+            uncategorized_label: "Everything else".to_string(),
+            ..Default::default()
+        };
+        let build = categorized("lat_cli", "Added", "build", "--watch");
+        let loose = fragment("lat_cli", "Added", "something general");
+        let section = render_section(
+            &config,
+            "lat_cli",
+            "1.3.0",
+            "lat_cli-v1.3.0",
+            "2026-07-11",
+            &[&build, &loose],
+        )
+        .unwrap();
+        assert!(section.contains("### `build` in lat_cli"), "{section}");
+        assert!(section.contains("**Added** (build)"), "{section}");
+        assert!(section.contains("* --watch [build]"), "{section}");
+        assert!(
+            section.contains("### `Everything else` in lat_cli"),
+            "{section}"
+        );
+        assert!(section.contains("* something general [Everything else]"));
+    }
+
+    /// The whole compatibility contract in one assertion: a fragment may carry
+    /// a category, but with the axis switched off it changes nothing about
+    /// what gets rendered.
+    #[test]
+    fn a_category_renders_nothing_when_no_categories_are_configured() {
+        let config = ChangelogConfig::default();
+        let build = categorized("lat_cli", "Added", "build", "--watch");
+        let section = render_section(
+            &config,
+            "lat_cli",
+            "1.3.0",
+            "lat_cli-v1.3.0",
+            "2026-07-11",
+            &[&build],
+        )
+        .unwrap();
+        assert_eq!(
+            section,
+            "## v1.3.0 - 2026-07-11\n\n### Added\n\n- --watch\n"
+        );
+    }
+
+    /// The version heading must stay the only `## ` line in a section.
+    /// `commands::tag::changelog_section` extracts release notes by scanning
+    /// for `## ` and stopping at the next one, so a category heading at that
+    /// level would truncate every set of release notes to nothing.
+    #[test]
+    fn categories_leave_the_version_heading_the_only_h2() {
+        let config = ChangelogConfig {
+            categories: vec!["build".to_string()],
+            ..Default::default()
+        };
+        let build = categorized("lat_cli", "Added", "build", "--watch");
+        let loose = fragment("lat_cli", "Fixed", "a general fix");
+        let section = render_section(
+            &config,
+            "lat_cli",
+            "1.3.0",
+            "lat_cli-v1.3.0",
+            "2026-07-11",
+            &[&build, &loose],
+        )
+        .unwrap();
+        let h2s: Vec<&str> = section
+            .lines()
+            .filter(|line| line.starts_with("## "))
+            .collect();
+        assert_eq!(h2s, ["## v1.3.0 - 2026-07-11"]);
+
+        // And the extractor really does recover the whole categorized body.
+        let notes = crate::commands::tag::changelog_section(&section, "1.3.0").unwrap();
+        assert!(notes.contains("### build"), "{notes}");
+        assert!(notes.contains("#### Added"), "{notes}");
+        assert!(notes.contains("- a general fix"), "{notes}");
+    }
+
     #[test]
     fn custom_templates_get_full_context() {
         let config = ChangelogConfig {
             version_format: "## {{ tag }} ({{ date }})".to_string(),
-            kind_format: "**{{ kind | upper }}**".to_string(),
+            kind_format_override: Some("**{{ kind | upper }}**".to_string()),
             change_format: "* {{ body }} [{{ kind }}]".to_string(),
             ..Default::default()
         };

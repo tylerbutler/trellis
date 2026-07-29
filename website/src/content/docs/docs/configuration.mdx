@@ -124,7 +124,9 @@ their roots.
 | `publish.tag_mode_overrides` | no | Per-package tag modes: a map of mode name to member-path globs. A package matching globs under two modes is an error. |
 | `publish.retry` | no | Backoff for Hex rate limits: `{ attempts, initial_delay, multiplier }`. |
 | `changelog.kinds` | no | Change kinds and the version bump each implies. The largest bump among a package's unreleased fragments wins. |
-| `changelog.*-format` | no | Minijinja templates for rendered changelog sections: `version_format`, `kind_format`, `change_format`. |
+| `changelog.categories` | no | A second grouping axis, rendered above the kind headings. Carries no version bump. Empty by default, which switches the axis off. |
+| `changelog.uncategorized_label` | no | Heading for entries naming no category, rendered last. Default: `Other`. Read only when `categories` is set. |
+| `changelog.*-format` | no | Minijinja templates for rendered changelog sections: `version_format`, `category_format`, `kind_format`, `change_format`. |
 | `changelog.dependency_kind` | no | Kind used for the entries generated when a workspace dependency bumps. Must name one of `kinds`. |
 | `changelog.dependency_body` | no | Minijinja template for one such entry's body. Context: `dependency`, `dependency_version`, `package` (also as `project`, deprecated). |
 | `doctor.shared_dependencies` | no | How `doctor` treats packages disagreeing on a shared external dependency: `warn` (default), `error`, or `off`. |
@@ -275,6 +277,69 @@ bumps by when a dependency bump is the only reason it is being released. If
 you replace the default `kinds` list, include a kind for it or point
 `dependency_kind` at one of yours — trellis refuses to load otherwise rather
 than drop the entries silently.
+
+### Categories
+
+A kind says how big a change is. For a package made of several distinct parts —
+the subcommands of a CLI, say — readers also want to know *which part* changed,
+and that question has nothing to do with the version bump. `categories` is a
+second vocabulary for exactly that, grouping entries one level **above** the
+kind headings:
+
+```toml wrap
+[tools.trellis.changelog]
+categories = ["build", "publish", "doctor"]
+category_format = "### {{ category }}"   # default
+uncategorized_label = "Other"            # default
+```
+
+```markdown wrap
+## v1.3.0 - 2026-07-11
+
+### build
+
+#### Added
+
+- A `--watch` flag
+
+### publish
+
+#### Fixed
+
+- Retry on a 429 from Hex
+
+### Other
+
+#### Dependencies
+
+- Updated lat_core to 1.3.0
+```
+
+A fragment opts in by naming one:
+
+```toml title=".changes/unreleased/lat_cli-1.toml"
+package = "lat_cli"
+kind = "Added"
+category = "build"
+body = "A `--watch` flag"
+```
+
+The details worth knowing:
+
+- **Categories are opt-in and off by default.** With none configured, rendered
+  output is byte-for-byte what it was before categories existed.
+- **A category must be one of `categories`**, exactly as a kind must be one of
+  `kinds`. An unknown one is an invalid fragment: `doctor` reports it and
+  `version` refuses, rather than quietly rendering the entry nowhere.
+- **The category stays optional** on each fragment. Entries naming none — along
+  with the generated dependency entries, which belong to no single part of a
+  package — render last under `uncategorized_label`.
+- **Kind headings drop to `####`** while the axis is on, since categories now
+  occupy `###`. Setting `kind_format` yourself overrides that; trellis never
+  rewrites a template you wrote down. Keep both below `##`, which the release
+  notes extractor reads as the start of a version section.
+- **Empty categories are skipped**, so a release touching one area shows one
+  heading.
 
 Each package's `CHANGELOG.md` is a generated file: the source of truth is the
 version sections stored under `.changes/<package>/`, and `version apply`
