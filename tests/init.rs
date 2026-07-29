@@ -62,7 +62,7 @@ fn init_writes_a_table_that_declares_nothing_derivable() {
         .stdout(predicate::str::contains("packages/b"))
         // It finishes by running doctor, per the issue.
         .stdout(predicate::str::contains("checked:"))
-        .stdout(predicate::str::contains("ok: 2 member(s)"));
+        .stdout(predicate::str::contains("ok: 2 package(s)"));
 
     let config = root_config(root);
     assert!(config.contains("[tools.trellis]"), "{config}");

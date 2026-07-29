@@ -3,6 +3,12 @@ source: tests/json_contract.rs
 expression: "serde_json::Value::Object(pairs.into_iter().map(|(key, value)|\n(key.to_string(), value)).collect())"
 ---
 {
+  "packages": [
+    "lat_core",
+    "lat_mid",
+    "lat_cli",
+    "package_a"
+  ],
   "projects": [
     "lat_core",
     "lat_mid",
