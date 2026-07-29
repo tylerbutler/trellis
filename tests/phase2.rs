@@ -64,6 +64,36 @@ fn add_fragment(root: &Path, project: &str, kind: &str, body: &str) {
 
 // ---- changelog new ---------------------------------------------------------
 
+/// `project` was the pre-1.0 spelling of a fragment's `package` key, inherited
+/// from changie. Fragments written by an older trellis sit in `.changes/` of
+/// real workspaces, so both spellings must parse until 1.0 removes the alias.
+/// (`add_fragment` above still writes `project`, which exercises the alias
+/// across the rest of this suite.)
+#[test]
+fn fragments_parse_under_either_package_spelling() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+
+    let dir = root.join(".changes/unreleased");
+    fs::create_dir_all(&dir).unwrap();
+    write(
+        &dir.join("old-spelling.toml"),
+        "project = \"lat_core\"\nkind = \"Added\"\nbody = \"written by an older trellis\"\n",
+    );
+    write(
+        &dir.join("new-spelling.toml"),
+        "package = \"lat_core\"\nkind = \"Added\"\nbody = \"written by this one\"\n",
+    );
+
+    trellis(root)
+        .args(["version", "plan"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("lat_core"))
+        .stdout(predicate::str::contains("2 fragment(s)"));
+}
+
 #[test]
 fn new_fragment_writes_toml_and_validates_inputs() {
     let tmp = tempfile::tempdir().unwrap();
@@ -89,7 +119,7 @@ fn new_fragment_writes_toml_and_validates_inputs() {
     let fragment = fs::read_to_string(root.join(".changes/unreleased/lat_core-1.toml")).unwrap();
     assert_eq!(
         fragment,
-        "project = \"lat_core\"\nkind = \"Added\"\nbody = \"grow more vines\"\n"
+        "package = \"lat_core\"\nkind = \"Added\"\nbody = \"grow more vines\"\n"
     );
 
     // A second fragment gets the next free name.

@@ -2,18 +2,18 @@
 .el .ds Aq '
 .TH trellis-exec 1 "" trellis "Trellis Manual"
 .SH NAME
-trellis\-exec \- Run an arbitrary command in each member directory
+trellis\-exec \- Run an arbitrary command in each package directory
 .SH SYNOPSIS
 \fBtrellis exec\fR [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-\-since\fR] [\fB\-\-color\fR] [\fB\-\-serial\fR] [\fB\-\-keep\-going\fR] [\fB\-q\fR|\fB\-\-quiet\fR] [\fB\-j\fR|\fB\-\-jobs\fR] [\fB\-v\fR|\fB\-\-verbose\fR] [\fB\-\-json\fR] [\fB\-\-no\-update\-check\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fIPACKAGES\fR] <\fICOMMAND\fR> 
 .SH DESCRIPTION
-Run an arbitrary command in each member directory
+Run an arbitrary command in each package directory
 .SH OPTIONS
 .TP
 \fB\-C\fR, \fB\-\-directory\fR \fI<DIR>\fR
 Run as if started in this directory
 .TP
 \fB\-\-since\fR \fI<REF>\fR
-Only members owning files changed since this git ref
+Only packages owning files changed since this git ref
 .TP
 \fB\-\-color\fR \fI<WHEN>\fR [default: auto]
 When to color output. `auto` follows the terminal, `NO_COLOR`, and `CLICOLOR=0`; the other two override that detection
@@ -57,7 +57,7 @@ The check is also skipped in CI, when not attached to a terminal, and when `TREL
 Print help (see a summary with \*(Aq\-h\*(Aq)
 .TP
 [\fIPACKAGES\fR]
-Packages to run in; all members when omitted
+Packages to run in; all workspace packages when omitted
 .TP
 <\fICOMMAND\fR>
 The command to run (after `\-\-`)

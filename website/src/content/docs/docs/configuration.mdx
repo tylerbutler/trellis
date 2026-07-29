@@ -41,9 +41,10 @@ series_tag_format = "{name}-v{series}"
 tag_mode = "exact"
 ```
 
-Each member is a directory with its own `gleam.toml`. Path dependencies
-between members define the graph; cycles and path deps that escape the
-workspace are rejected with a clear error.
+A **member** is a directory with its own `gleam.toml`: one Gleam package, plus
+its membership in the workspace. Path dependencies between packages define the
+graph; cycles and path deps that escape the workspace are rejected with a clear
+error.
 
 ## Bootstrapping with `trellis init`
 
@@ -60,10 +61,9 @@ members are auto-discovered; found 2:
 ```
 
 What it writes is nearly empty, and that is the point. The table's *presence*
-is what marks the workspace root; everything else trellis can derive, it
-derives, so `members` is not written. In its place are comments pointing at
-what *can* be configured — which is the question a reference page answers
-badly.
+is what marks the workspace root; everything else trellis derives, so
+`members` is not written. In its place are comments pointing at the keys you
+might want.
 
 `init` reports the members it discovered so you can see whether they need
 narrowing, refuses to run if the repository is already a trellis workspace (or
@@ -97,8 +97,8 @@ Wildcard traversal follows symlinks but does not enter `.git`. Only matching
 directories that contain a `gleam.toml` become members. Literal entries bypass
 ignore status and are resolved directly, even when Git ignores the path.
 
-`[tools.trellis.exclude]` is a separate post-discovery filter. It can remove
-members from task or release package sets, but it never prunes traversal.
+`[tools.trellis.exclude]` is a separate post-discovery filter. It can drop
+packages from task or release sets, but it never prunes traversal.
 
 <Callout>
 
@@ -118,22 +118,21 @@ their roots.
 | `exclude.@release` | no | The shared package set omitted from changelog, versioning, tagging, publishing, and release CI. The `@` prefix is reserved for special keys like this one, so it can never collide with a task name — task names may not start with `@`. |
 | `exclude.@members` | no | Directories removed from workspace membership entirely — never parsed, graphed, or touched by any command. Useful for committed test fixtures that auto-discovery would otherwise sweep in; also filters explicit `members` globs. |
 | `tasks.<name>` | no | Custom tasks for `trellis run`. A task with a built-in's name (`build`, `test`, …) overrides it. `needs_deps = true` downloads dependencies first. |
-| `publish.tag_format` | no | Template for per-member git tags. Default: `{name}-v{version}`. |
+| `publish.tag_format` | no | Template for per-package git tags. Default: `{name}-v{version}`. |
 | `publish.series_tag_format` | no | Template for the moving series tag, substituting `{name}` and `{series}`. Omit `{name}` for one repository-wide tag. Default: `{name}-v{series}`. |
 | `publish.tag_mode` | no | Which tags a release creates: `exact` (default), `series`, or `both`. |
-| `publish.tag_mode_overrides` | no | Per-package tag modes: a map of mode name to member-path globs. A member matching globs under two modes is an error. |
+| `publish.tag_mode_overrides` | no | Per-package tag modes: a map of mode name to member-path globs. A package matching globs under two modes is an error. |
 | `publish.retry` | no | Backoff for Hex rate limits: `{ attempts, initial_delay, multiplier }`. |
 | `changelog.kinds` | no | Change kinds and the version bump each implies. The largest bump among a package's unreleased fragments wins. |
 | `changelog.*-format` | no | Minijinja templates for rendered changelog sections: `version_format`, `kind_format`, `change_format`. |
 | `changelog.dependency_kind` | no | Kind used for the entries generated when a workspace dependency bumps. Must name one of `kinds`. |
-| `changelog.dependency_body` | no | Minijinja template for one such entry's body. Context: `dependency`, `dependency_version`, `project`. |
-| `doctor.shared_dependencies` | no | How `doctor` treats members disagreeing on a shared external dependency: `warn` (default), `error`, or `off`. |
+| `changelog.dependency_body` | no | Minijinja template for one such entry's body. Context: `dependency`, `dependency_version`, `package` (also as `project`, deprecated). |
+| `doctor.shared_dependencies` | no | How `doctor` treats packages disagreeing on a shared external dependency: `warn` (default), `error`, or `off`. |
 
 ## Package exclusions
 
-Trellis 0.2.0 added task-scoped package exclusions. Add a key for any built-in
-or custom `trellis run` task whose package set differs from the full
-workspace:
+Add a key under `exclude` for any built-in or custom `trellis run` task whose
+package set differs from the full workspace:
 
 ```toml title="gleam.toml" wrap
 [tools.trellis]
@@ -157,12 +156,12 @@ through `--since`.
 
 | Key | What it excludes |
 | --- | --- |
-| `docs` | Matching members from `trellis run docs`. Built-in tasks can be filtered without overriding their commands. |
-| Any custom task name | Matching members from that `trellis run <name>` invocation. |
-| `@release` | Matching members from changelog, version, tag, publish, and release CI operations. Explicit changelog creation and publishing are rejected. |
+| `docs` | Matching packages from `trellis run docs`. Built-in tasks can be filtered without overriding their commands. |
+| Any custom task name | Matching packages from that `trellis run <name>` invocation. |
+| `@release` | Matching packages from changelog, version, tag, publish, and release CI operations. Explicit changelog creation and publishing are rejected. |
 | `@members` | Matching directories from workspace membership itself — they are invisible to every command, as if they held no `gleam.toml` at all. |
 
-Release-excluded members remain in the dependency graph and still participate
+Release-excluded packages remain in the dependency graph and still participate
 in `list`, `graph`, `exec`, and every task that does not exclude them. `info`
 and JSON output expose `releasable: false`; `list --releasable` returns only
 the release set:
@@ -185,10 +184,10 @@ will never exist on Hex.
 
 ## Series tags
 
-Trellis 0.7.0 added a second tag lifecycle. Alongside the immutable
-`{name}-v{version}` tag a release creates, a package can move a **series tag**
-that always points at the newest release in its series — so consumers pin
-`lat_cli-v0.0` once instead of chasing `0.0.1`, `0.0.2`, `0.0.3`.
+A package has a second tag lifecycle available. Alongside the immutable
+`{name}-v{version}` tag a release creates, it can move a **series tag** that
+always points at the newest release in its series — so consumers pin
+`lat_cli-v0.4` once instead of chasing `0.4.1`, `0.4.2`, `0.4.3`.
 
 The series is derived from the version, never configured. While the major is
 0, every minor bump is a breaking change, so the series is `major.minor`;
@@ -196,10 +195,10 @@ afterward it is the major alone:
 
 | Version | Series tag |
 | --- | --- |
-| `0.0.1`, `0.0.2`, `0.0.3` | `lat_cli-v0.0` |
-| `0.1.0`, `0.1.4` | `lat_cli-v0.1` |
+| `0.4.1`, `0.4.2`, `0.4.3` | `lat_cli-v0.4` |
+| `0.5.0`, `0.5.4` | `lat_cli-v0.5` |
 | `1.2.1`, `1.9.0` | `lat_cli-v1` |
-| `0.0.1-rc.1` | none — a prerelease belongs to no series and moves no tag |
+| `0.4.3-rc.1` | none — a prerelease belongs to no series and moves no tag |
 
 `tag_mode` picks the lifecycle for the workspace, and `tag_mode_overrides`
 picks it per package, as globs matched against member paths:
@@ -214,27 +213,27 @@ Releasing `lat_cli` twice then leaves the exact tags where they were and the
 series tag on the newest release:
 
 ```console
-$ trellis tag create --push        # releasing 0.0.1
-tagged lat_cli-v0.0.1
-pushed lat_cli-v0.0.1
-tagged lat_cli-v0.0
-pushed lat_cli-v0.0
+$ trellis tag create --push        # releasing 0.4.2
+tagged lat_cli-v0.4.2
+pushed lat_cli-v0.4.2
+tagged lat_cli-v0.4
+pushed lat_cli-v0.4
 
-$ trellis tag create --push        # releasing 0.0.2
-tagged lat_cli-v0.0.2
-pushed lat_cli-v0.0.2
-moved lat_cli-v0.0
-force-pushed lat_cli-v0.0
+$ trellis tag create --push        # releasing 0.4.3
+tagged lat_cli-v0.4.3
+pushed lat_cli-v0.4.3
+moved lat_cli-v0.4
+force-pushed lat_cli-v0.4
 ```
 
 Setting `series_tag_format = "v{series}"` drops `{name}` and gives the whole
-repository one shared series tag — exactly right for a single-package repo.
-With more than one package it is still allowed, but it costs something: the
-tag no longer identifies a package, so `trellis ci tag-package` cannot resolve
-it. That is true of every such tag regardless of how the packages are
-versioned — there is no `{name}` to tell them apart — so `doctor` warns as
-soon as a second package moves one, rather than waiting for two packages to
-land in the same series.
+repository one shared series tag, which is exactly right for a single-package
+repo. With more than one package it is still allowed, but it costs something:
+the tag no longer identifies a package, so `trellis ci tag-package` cannot
+resolve it. That holds for every such tag regardless of how the packages are
+versioned, since there is no `{name}` to tell them apart. `doctor` therefore
+warns as soon as a second package moves one, rather than waiting for two
+packages to land in the same series.
 
 <Callout>
 
@@ -285,22 +284,20 @@ a changelog before adopting trellis keeps it — see
 
 ## Shared dependency agreement
 
-Nothing outside trellis notices when members drift apart on an external
+Nothing outside trellis notices when packages drift apart on an external
 dependency they share — `lat_core` requiring `gleam_stdlib >= 0.44.0` while
-`lat_cli` requires `>= 0.60.0`. This is the purest case of *verify anything
-that must be duplicated*, and every input is already in the workspace model, so
-`doctor` checks it:
+`lat_cli` requires `>= 0.60.0`. `doctor` catches it:
 
 ```console
 $ trellis doctor
-warning: members disagree on `gleam_stdlib`: `>= 0.44.0` (lat_core) vs
+warning: packages disagree on `gleam_stdlib`: `>= 0.44.0` (lat_core) vs
 `>= 0.60.0` (lat_cli). Requirements are compared as written, so whitespace
 counts
 ```
 
 Requirements are compared **as written**, never parsed as ranges: trellis
-stores them verbatim, and `>= 1.0` and `>=1.0` therefore read as divergent.
-Path dependencies are out of scope — they carry no requirement to agree on, and
+stores them verbatim, so `>= 1.0` and `>=1.0` read as divergent. Path
+dependencies are out of scope. They carry no requirement to agree on, and
 lockfile drift already covers them.
 
 Divergence is sometimes deliberate, so this warns rather than failing by
@@ -317,7 +314,7 @@ judgment call, not a mechanical remedy.
 ## Deprecated and unrecognized keys
 
 Every key above is snake_case, matching `gleam.toml`'s own settings and Gleam
-itself. Through v0.7.0 they were kebab-case, and the old spellings still work —
+itself. Through v0.7.0 they were kebab-case. The old spellings still work, and
 `doctor` reports each one so a workspace can migrate at its own pace:
 
 ```console
@@ -348,5 +345,5 @@ take keys you choose, hyphens and all, and are never reported.
 Run `trellis doctor` after any config change. It validates that member globs
 resolve, the graph is acyclic, task exclusion globs match members, release
 boundaries are safe, the tag format produces unique tags, locked versions
-match, members agree on their shared dependencies, and `[tools.trellis]`
+match, packages agree on their shared dependencies, and `[tools.trellis]`
 carries no unrecognized or deprecated keys — exiting non-zero on any error.

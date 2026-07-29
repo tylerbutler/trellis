@@ -1,7 +1,7 @@
 //! The native changelog engine (changie subsumed — design §7, revised).
 //!
 //! Layout, under `[tools.trellis.changelog] dir` (default `.changes/`):
-//!   unreleased/*.toml        one fragment per change: project, kind, body
+//!   unreleased/*.toml        one fragment per change: package, kind, body
 //!   <package>/v<X.Y.Z>.md    batched version sections, rendered once
 //! Each package's CHANGELOG.md is assembled from its header plus its version
 //! sections, newest first. All formats are minijinja templates, so the
@@ -17,7 +17,7 @@ use std::path::PathBuf;
 
 #[derive(Debug, Clone)]
 pub struct Fragment {
-    pub project: String,
+    pub package: String,
     pub kind: String,
     pub body: String,
     /// `None` for a fragment trellis generated rather than read from disk, so
@@ -28,7 +28,11 @@ pub struct Fragment {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawFragment {
-    project: String,
+    /// The package the change belongs to. `project` is the original spelling,
+    /// inherited from changie; it still parses so fragments written by an
+    /// older trellis keep working. Removed at 1.0.
+    #[serde(alias = "project")]
+    package: String,
     kind: String,
     body: String,
 }
@@ -40,9 +44,9 @@ struct RawFragment {
 pub struct FragmentProblem {
     pub message: String,
     pub path: PathBuf,
-    /// The `project` the fragment claimed, when it parsed far enough to have
+    /// The `package` the fragment claimed, when it parsed far enough to have
     /// one.
-    pub project: Option<String>,
+    pub package: Option<String>,
 }
 
 /// All unreleased fragments plus every problem found while reading them.
@@ -56,12 +60,12 @@ pub struct Fragments {
 }
 
 impl Fragments {
-    pub fn for_project<'a>(&'a self, project: &'a str) -> impl Iterator<Item = &'a Fragment> {
-        self.fragments.iter().filter(move |f| f.project == project)
+    pub fn for_package<'a>(&'a self, package: &'a str) -> impl Iterator<Item = &'a Fragment> {
+        self.fragments.iter().filter(move |f| f.package == package)
     }
 
-    pub fn count_for(&self, project: &str) -> usize {
-        self.for_project(project).count()
+    pub fn count_for(&self, package: &str) -> usize {
+        self.for_package(package).count()
     }
 
     /// Problem messages alone, for the callers that only render prose.
@@ -80,11 +84,11 @@ pub fn unreleased_dir(workspace: &Workspace) -> PathBuf {
         .join("unreleased")
 }
 
-fn versions_dir(workspace: &Workspace, project: &str) -> PathBuf {
+fn versions_dir(workspace: &Workspace, package: &str) -> PathBuf {
     workspace
         .root
         .join(&workspace.config.changelog.dir)
-        .join(project)
+        .join(package)
 }
 
 /// Read and validate every unreleased fragment: it must parse, name a
@@ -117,30 +121,30 @@ pub fn load_fragments(workspace: &Workspace) -> Result<Fragments> {
                 result.problems.push(FragmentProblem {
                     message: format!("fragment `{display}`: {err}"),
                     path,
-                    project: None,
+                    package: None,
                 });
                 continue;
             }
         };
-        // Past the parse, every problem names the same file and project.
+        // Past the parse, every problem names the same file and package.
         let blame = |message: String| FragmentProblem {
             message,
             path: path.clone(),
-            project: Some(raw.project.clone()),
+            package: Some(raw.package.clone()),
         };
-        match workspace.member_index(&raw.project) {
+        match workspace.member_index(&raw.package) {
             Some(idx) if workspace.members[idx].releasable => {}
             Some(_) => {
                 result.problems.push(blame(format!(
-                    "fragment `{display}`: project `{}` is excluded from release by `@release`",
-                    raw.project
+                    "fragment `{display}`: package `{}` is excluded from release by `@release`",
+                    raw.package
                 )));
                 continue;
             }
             None => {
                 result.problems.push(blame(format!(
-                    "fragment `{display}`: project `{}` is not a workspace member",
-                    raw.project
+                    "fragment `{display}`: package `{}` is not a workspace member",
+                    raw.package
                 )));
                 continue;
             }
@@ -160,7 +164,7 @@ pub fn load_fragments(workspace: &Workspace) -> Result<Fragments> {
             continue;
         }
         result.fragments.push(Fragment {
-            project: raw.project,
+            package: raw.package,
             kind: raw.kind,
             body: raw.body.trim().to_string(),
             path: Some(path),
@@ -187,38 +191,40 @@ pub fn kind_labels(kinds: &[KindConfig]) -> String {
 /// the whole plan is computed.
 pub fn dependency_fragment(
     config: &ChangelogConfig,
-    project: &str,
+    package: &str,
     dependency: &str,
     dependency_version: &str,
 ) -> Result<Fragment> {
     let body = render(
         &config.dependency_body,
         "dependency_body",
-        minijinja::context! { dependency, dependency_version, project },
+        // `project` is the pre-1.0 spelling of `package`, kept so existing
+        // `dependency_body` templates keep rendering. Removed at 1.0.
+        minijinja::context! { dependency, dependency_version, package, project => package },
     )?;
     Ok(Fragment {
-        project: project.to_string(),
+        package: package.to_string(),
         kind: config.dependency_kind.clone(),
         body: body.trim().to_string(),
         path: None,
     })
 }
 
-/// Write a new fragment file, picking an unused `<project>-<n>.toml` name.
+/// Write a new fragment file, picking an unused `<package>-<n>.toml` name.
 pub fn write_fragment(
     workspace: &Workspace,
-    project: &str,
+    package: &str,
     kind: &str,
     body: &str,
 ) -> Result<PathBuf> {
     let dir = unreleased_dir(workspace);
     std::fs::create_dir_all(&dir).with_context(|| format!("failed to create {}", dir.display()))?;
     let mut doc = toml_edit::DocumentMut::new();
-    doc["project"] = toml_edit::value(project);
+    doc["package"] = toml_edit::value(package);
     doc["kind"] = toml_edit::value(kind);
     doc["body"] = toml_edit::value(body);
     for n in 1u32.. {
-        let path = dir.join(format!("{project}-{n}.toml"));
+        let path = dir.join(format!("{package}-{n}.toml"));
         if !path.exists() {
             std::fs::write(&path, doc.to_string())
                 .with_context(|| format!("failed to write {}", path.display()))?;
@@ -320,7 +326,7 @@ pub fn render_section(
 
 /// A package's pre-trellis CHANGELOG.md body, captured as one version section.
 ///
-/// CHANGELOG.md is a generated file: it is rebuilt from `<dir>/<project>/v*.md`
+/// CHANGELOG.md is a generated file: it is rebuilt from `<dir>/<package>/v*.md`
 /// alone. Without this, the first release of a package that already had a
 /// changelog would silently delete all of its history. Capturing the body
 /// verbatim keeps it byte-for-byte and needs no heading parsing — it simply
@@ -332,18 +338,18 @@ pub struct Adoption {
     pub contents: String,
 }
 
-/// The history to adopt for `project`, if any. `None` once trellis has batched
+/// The history to adopt for `package`, if any. `None` once trellis has batched
 /// a version for it: from then on CHANGELOG.md is fully generated, so leftover
 /// content is drift rather than history.
 pub fn plan_adoption(
     workspace: &Workspace,
-    project: &str,
+    package: &str,
     current: &str,
 ) -> Result<Option<Adoption>> {
     let idx = workspace
-        .member_index(project)
-        .with_context(|| format!("unknown package `{project}`"))?;
-    let dir = versions_dir(workspace, project);
+        .member_index(package)
+        .with_context(|| format!("unknown package `{package}`"))?;
+    let dir = versions_dir(workspace, package);
     let already_batched = std::fs::read_dir(&dir).is_ok_and(|entries| {
         entries
             .filter_map(|entry| entry.ok())
@@ -365,7 +371,7 @@ pub fn plan_adoption(
     let version = match latest_changelog_version(&text) {
         Some(version) => version,
         None => semver::Version::parse(current).with_context(|| {
-            format!("cannot date `{project}`'s changelog history: `{current}` is not valid semver")
+            format!("cannot date `{package}`'s changelog history: `{current}` is not valid semver")
         })?,
     };
     Ok(Some(Adoption {
@@ -406,15 +412,15 @@ pub fn latest_changelog_version(text: &str) -> Option<semver::Version> {
 /// and an optional block of adopted pre-trellis history.
 pub fn render_merged_changelog(
     workspace: &Workspace,
-    project: &str,
+    package: &str,
     pending: Option<(&semver::Version, &str)>,
     adopted: Option<&Adoption>,
 ) -> Result<String> {
     workspace
-        .member_index(project)
-        .with_context(|| format!("unknown package `{project}`"))?;
+        .member_index(package)
+        .with_context(|| format!("unknown package `{package}`"))?;
     let config = &workspace.config.changelog;
-    let dir = versions_dir(workspace, project);
+    let dir = versions_dir(workspace, package);
 
     let mut sections: Vec<(semver::Version, String)> = Vec::new();
     if let Ok(entries) = std::fs::read_dir(&dir) {
@@ -446,7 +452,7 @@ pub fn render_merged_changelog(
     }
     sections.sort_by(|a, b| b.0.cmp(&a.0));
 
-    let header = render_header(config, project)?;
+    let header = render_header(config, package)?;
     let mut out = header.trim_end().to_string();
     out.push('\n');
     for (_, section) in &sections {
@@ -471,15 +477,15 @@ pub fn render_header(config: &ChangelogConfig, name: &str) -> Result<String> {
 /// Write a pre-rendered version section and complete package changelog.
 pub fn write_batch(
     workspace: &Workspace,
-    project: &str,
+    package: &str,
     version: &semver::Version,
     section: &str,
     changelog: &str,
 ) -> Result<()> {
     let idx = workspace
-        .member_index(project)
-        .with_context(|| format!("unknown package `{project}`"))?;
-    let dir = versions_dir(workspace, project);
+        .member_index(package)
+        .with_context(|| format!("unknown package `{package}`"))?;
+    let dir = versions_dir(workspace, package);
     std::fs::create_dir_all(&dir).with_context(|| format!("failed to create {}", dir.display()))?;
     let section_path = dir.join(format!("v{version}.md"));
     std::fs::write(&section_path, section)
@@ -550,9 +556,9 @@ mod tests {
     use super::*;
     use crate::config::ChangelogConfig;
 
-    fn fragment(project: &str, kind: &str, body: &str) -> Fragment {
+    fn fragment(package: &str, kind: &str, body: &str) -> Fragment {
         Fragment {
-            project: project.to_string(),
+            package: package.to_string(),
             kind: kind.to_string(),
             body: body.to_string(),
             path: Some(PathBuf::from("unused")),
@@ -646,7 +652,7 @@ mod tests {
     fn dependency_fragment_uses_the_configured_kind_and_body() {
         let config = ChangelogConfig::default();
         let generated = dependency_fragment(&config, "lat_mid", "lat_core", "1.3.0").unwrap();
-        assert_eq!(generated.project, "lat_mid");
+        assert_eq!(generated.package, "lat_mid");
         assert_eq!(generated.kind, "Dependencies");
         assert_eq!(generated.body, "Updated lat_core to 1.3.0");
         assert!(generated.path.is_none(), "generated fragments have no file");
@@ -655,7 +661,7 @@ mod tests {
     #[test]
     fn dependency_body_template_gets_full_context() {
         let config = ChangelogConfig {
-            dependency_body: "{{ project }} now needs {{ dependency }} {{ dependency_version }}"
+            dependency_body: "{{ package }} now needs {{ dependency }} {{ dependency_version }}"
                 .to_string(),
             ..Default::default()
         };

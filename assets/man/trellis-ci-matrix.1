@@ -13,7 +13,7 @@ Emit a GitHub Actions strategy matrix: {"include":[{name,path,version},…]}
 Run as if started in this directory
 .TP
 \fB\-\-since\fR \fI<REF>\fR
-Only members affected by changes since this git ref (dependents included)
+Only packages affected by changes since this git ref (dependents included)
 .TP
 \fB\-\-color\fR \fI<WHEN>\fR [default: auto]
 When to color output. `auto` follows the terminal, `NO_COLOR`, and `CLICOLOR=0`; the other two override that detection
@@ -31,7 +31,7 @@ never
 .RE
 .TP
 \fB\-\-releasable\fR
-Only members that participate in releases
+Only packages that participate in releases
 .TP
 \fB\-q\fR, \fB\-\-quiet\fR
 Suppress normal\-path output; JSON/report payloads and errors still print

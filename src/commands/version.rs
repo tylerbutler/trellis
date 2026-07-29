@@ -95,7 +95,7 @@ pub fn compute_plan(workspace: &Workspace, overrides: &Overrides) -> Result<Vec<
             })
             .collect();
 
-        let owned: Vec<&changelog::Fragment> = fragments.for_project(&member.name).collect();
+        let owned: Vec<&changelog::Fragment> = fragments.for_package(&member.name).collect();
         if owned.is_empty() && generated.is_empty() {
             continue;
         }
@@ -238,7 +238,7 @@ pub fn apply(workspace: &Workspace, overrides: &Overrides, json: bool) -> Result
             .expect("plan entries come from members");
         let member = &workspace.members[idx];
         let member_fragments: Vec<&changelog::Fragment> =
-            fragments.for_project(&entry.name).collect();
+            fragments.for_package(&entry.name).collect();
         // Generated ripple entries render alongside the real ones, but are
         // deliberately absent from what `consume_fragments` is later given.
         let rendered: Vec<&changelog::Fragment> = member_fragments
@@ -362,7 +362,7 @@ pub fn apply(workspace: &Workspace, overrides: &Overrides, json: bool) -> Result
     if !overrides.retains_fragments() {
         for prepared in &prepared_versions {
             let member_fragments: Vec<&changelog::Fragment> =
-                fragments.for_project(&prepared.name).collect();
+                fragments.for_package(&prepared.name).collect();
             changelog::consume_fragments(&member_fragments)
                 .with_context(|| format!("failed to consume fragments for `{}`", prepared.name))?;
         }

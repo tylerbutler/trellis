@@ -1,11 +1,11 @@
 ---
 title: Task running
-description: trellis run fans a task out across workspace members, graph-parallel by default, with streamed output and a failure summary.
+description: trellis run fans a task out across workspace packages, graph-parallel by default, with streamed output and a failure summary.
 ---
 
 import Callout from "../../../components/Callout.astro";
 
-`trellis run` fans a task out across workspace members; `trellis exec` does
+`trellis run` fans a task out across workspace packages; `trellis exec` does
 the same for an arbitrary command. Both work from anywhere inside the
 workspace and replace the hand-written `for pkg in …` bash loops that
 multi-package Gleam repos otherwise accumulate.
@@ -49,7 +49,7 @@ command = "gleam run -m glinter"
 needs_deps = true            # run `gleam deps download` first if not cached
 ```
 
-Any built-in or custom task can omit members through a same-named key under
+Any built-in or custom task can omit packages through a same-named key under
 `exclude` — see
 [package exclusions](/docs/configuration/#package-exclusions).
 
@@ -93,7 +93,7 @@ trellis run test --since origin/main --with-dependents
 
 ## Arbitrary commands
 
-`trellis exec` runs any command in each member directory, with the same
+`trellis exec` runs any command in each package directory, with the same
 selection and scheduling flags:
 
 ```sh
