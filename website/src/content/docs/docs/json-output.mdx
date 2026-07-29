@@ -181,6 +181,7 @@ person and will be reworded without a schema bump. Branch on `check`:
 | `package-version` | a package's version is not valid semver |
 | `changelog-fragment` | an unreleased fragment does not parse, or names an unknown project or kind |
 | `toolchain` | the gleam on PATH disagrees with the `.tool-versions` pin |
+| `shared-dependency` | members require different versions of the same external dependency |
 
 These values are a documented enum, so the table above is the contract: a new
 `check` may appear without a bump — handle an unrecognized one by reporting it

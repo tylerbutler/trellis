@@ -127,6 +127,7 @@ their roots.
 | `changelog.*-format` | no | Minijinja templates for rendered changelog sections: `version-format`, `kind-format`, `change-format`. |
 | `changelog.dependency-kind` | no | Kind used for the entries generated when a workspace dependency bumps. Must name one of `kinds`. |
 | `changelog.dependency-body` | no | Minijinja template for one such entry's body. Context: `dependency`, `dependency_version`, `project`. |
+| `doctor.shared-dependencies` | no | How `doctor` treats members disagreeing on a shared external dependency: `warn` (default), `error`, or `off`. |
 
 ## Package exclusions
 
@@ -282,9 +283,69 @@ reassembles the changelog from them, newest first. A package that already had
 a changelog before adopting trellis keeps it — see
 [adopting an existing changelog](/docs/changelog/#adopting-an-existing-changelog).
 
+## Shared dependency agreement
+
+Nothing outside trellis notices when members drift apart on an external
+dependency they share — `lat_core` requiring `gleam_stdlib >= 0.44.0` while
+`lat_cli` requires `>= 0.60.0`. This is the purest case of *verify anything
+that must be duplicated*, and every input is already in the workspace model, so
+`doctor` checks it:
+
+```console
+$ trellis doctor
+warning: members disagree on `gleam_stdlib`: `>= 0.44.0` (lat_core) vs
+`>= 0.60.0` (lat_cli). Requirements are compared as written, so whitespace
+counts
+```
+
+Requirements are compared **as written**, never parsed as ranges: trellis
+stores them verbatim, and `>= 1.0` and `>=1.0` therefore read as divergent.
+Path dependencies are out of scope — they carry no requirement to agree on, and
+lockfile drift already covers them.
+
+Divergence is sometimes deliberate, so this warns rather than failing by
+default:
+
+```toml
+[tools.trellis.doctor]
+shared-dependencies = "error"   # warn (default), error, or off
+```
+
+There is no `doctor --fix` for it: unifying to the highest requirement is a
+judgment call, not a mechanical remedy.
+
+## Unrecognized keys
+
+Every key above is kebab-case, which makes an underscore the plausible slip:
+
+```toml
+[tools.trellis.publish]
+tag_format = "{name}-v{version}"   # underscore — silently did nothing
+```
+
+That used to be ignored in silence, leaving the workspace on the default tag
+scheme with no signal. A key whose kebab-cased form is a real one is now an
+error naming what you meant, and it fails *every* command rather than only
+`doctor` — producing the wrong tags is exactly the drift this tool exists to
+catch:
+
+```console
+$ trellis doctor
+error: [tools.trellis] has no `publish.tag_format`; did you mean
+`publish.tag-format`? (trellis config keys are kebab-case)
+```
+
+Any other unrecognized key is a warning instead. It may belong to a newer
+trellis, and erroring would make the workspace unloadable under a pinned older
+one — a bad failure for a tool CI pins.
+
+The free-form tables — `exclude`, `tasks`, and `publish.tag-mode-overrides` —
+take keys you choose, underscores and all, and are never reported.
+
 ## Verifying it
 
 Run `trellis doctor` after any config change. It validates that member globs
 resolve, the graph is acyclic, task exclusion globs match members, release
-boundaries are safe, the tag format produces unique tags, and locked versions
-match — exiting non-zero on any error.
+boundaries are safe, the tag format produces unique tags, locked versions
+match, members agree on their shared dependencies, and `[tools.trellis]`
+carries no unrecognized keys — exiting non-zero on any error.

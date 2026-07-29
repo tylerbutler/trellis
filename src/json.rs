@@ -72,6 +72,8 @@ pub enum Check {
     ChangelogFragment,
     /// The gleam on PATH disagrees with the `.tool-versions` pin.
     Toolchain,
+    /// Members require different versions of the same external dependency.
+    SharedDependency,
 }
 
 impl Check {
@@ -96,6 +98,7 @@ impl Check {
             Check::PackageVersion => "package-version",
             Check::ChangelogFragment => "changelog-fragment",
             Check::Toolchain => "toolchain",
+            Check::SharedDependency => "shared-dependency",
         }
     }
 
@@ -118,6 +121,7 @@ impl Check {
         Check::PackageVersion,
         Check::ChangelogFragment,
         Check::Toolchain,
+        Check::SharedDependency,
     ];
 }
 
