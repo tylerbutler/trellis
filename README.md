@@ -194,9 +194,8 @@ naming the directory it ran in.
 
 ### Exit codes
 
-Every command uses the same four codes. `1` and `3` are the split that matters
-in CI: a step that should fail the build on findings still has to report a
-broken environment differently.
+Every command uses the same four codes. Branch on `1` versus `3` to tell a
+workspace that has problems from a broken environment.
 
 | Code | Meaning | Examples |
 | --- | --- | --- |
@@ -205,8 +204,7 @@ broken environment differently.
 | `2` | Usage error | Unknown flag, missing argument, bad subcommand |
 | `3` | Trellis itself could not run | Unparseable config, not a git repository, missing `gleam`/`gh`, Hex unreachable after retries |
 
-A failed task exits `1`, not the child's exit code — trellis reports its own
-outcome, and propagating the child's would collide with `2` and `3`. See
+A failed task exits `1`; trellis does not propagate the child's exit code. See
 [Compatibility](https://trellis.tylerbutler.com/docs/compatibility/) for what
 else the version number promises.
 

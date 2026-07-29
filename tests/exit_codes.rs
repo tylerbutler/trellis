@@ -1,9 +1,5 @@
-//! The exit-code contract, asserted directly rather than incidentally.
-//!
-//! CI branches on these, and the distinction that matters is 1 vs 3: a step
-//! that should fail the build on findings still needs to report "trellis could
-//! not run at all" differently. Every code in the documented table gets a case
-//! here so a change to the mapping breaks a test instead of a workflow.
+//! The exit-code contract. CI workflows branch on these, so every code gets a
+//! case here and a change to the mapping breaks a test.
 //!
 //! | code | meaning                                                        |
 //! |------|----------------------------------------------------------------|

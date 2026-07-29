@@ -25,9 +25,8 @@ use term::{ColorChoice, Verbosity};
 use workspace::Workspace;
 
 /// Trellis itself could not run: unparseable config, not a git repository, a
-/// missing `gleam`/`gh`, Hex unreachable after retries. Distinct from 1 (the
-/// command ran and found problems) so a CI step can tell a workspace with
-/// findings from a broken environment. 2 belongs to clap, for usage errors.
+/// missing `gleam`/`gh`, Hex unreachable after retries. Distinct from 1, which
+/// means the command ran and found problems.
 const EXIT_INTERNAL_ERROR: u8 = 3;
 
 /// Crate version, with `git describe` output appended for builds that aren't
@@ -473,10 +472,9 @@ fn main() -> ExitCode {
     if notify_update && result.is_ok() {
         update_check::notify();
     }
-    // The exit-code contract (see docs/compatibility): 0 success, 1 the command
-    // ran and found problems, 2 usage (clap's own), 3 trellis could not run.
-    // 1 and 3 are the load-bearing split — a CI step that fails the build on
-    // findings still has to report a broken environment differently.
+    // The exit-code contract: 0 success, 1 the command ran and found problems,
+    // 2 usage (clap's own), 3 trellis could not run. See the Compatibility page
+    // in website/src/content/docs/docs/.
     match result {
         Ok(true) => ExitCode::SUCCESS,
         Ok(false) => ExitCode::FAILURE,

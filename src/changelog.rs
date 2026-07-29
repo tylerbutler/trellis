@@ -20,8 +20,7 @@ pub struct Fragment {
     pub package: String,
     pub kind: String,
     /// The optional second grouping axis. `None` files the entry under the
-    /// configured `uncategorized_label`, which is where every fragment written
-    /// before categories existed lands.
+    /// configured `uncategorized_label`.
     pub category: Option<String>,
     pub body: String,
     /// `None` for a fragment trellis generated rather than read from disk, so
@@ -38,10 +37,9 @@ struct RawFragment {
     #[serde(alias = "project")]
     package: String,
     kind: String,
-    /// Optional, so fragments predating categories still parse. Note the
-    /// reverse does not hold: this struct denies unknown fields, so a fragment
-    /// carrying a category fails to parse under a trellis older than the one
-    /// that introduced it.
+    /// Optional: a fragment need not name a category. This struct denies
+    /// unknown fields, so a fragment carrying one will not parse under a
+    /// trellis older than 0.8.
     #[serde(default)]
     category: Option<String>,
     body: String,
@@ -240,9 +238,8 @@ pub fn dependency_fragment(
     Ok(Fragment {
         package: package.to_string(),
         kind: config.dependency_kind.clone(),
-        // A ripple belongs to no one part of the package — it happened to the
-        // whole of it — so it files under `uncategorized_label` alongside any
-        // other entry that named no category.
+        // A ripple belongs to no one part of the package, so it files under
+        // `uncategorized_label` with any other entry that named no category.
         category: None,
         body: body.trim().to_string(),
         path: None,
@@ -262,8 +259,6 @@ pub fn write_fragment(
     let mut doc = toml_edit::DocumentMut::new();
     doc["package"] = toml_edit::value(package);
     doc["kind"] = toml_edit::value(kind);
-    // Omitted entirely when absent, so a workspace not using categories writes
-    // exactly the file it always did.
     if let Some(category) = category {
         doc["category"] = toml_edit::value(category);
     }
@@ -345,8 +340,7 @@ pub fn render_section(
     out.push('\n');
 
     if !config.categories_enabled() {
-        // The pre-categories path, kept exactly as it was: a workspace that
-        // configures no categories renders byte-for-byte what it used to.
+        // Axis off: kind headings sit directly under the version heading.
         render_kinds(config, &mut out, name, version, fragments, None)?;
         return Ok(out);
     }
@@ -399,8 +393,7 @@ fn render_category_heading(
 }
 
 /// The kind headings and entries for one group of fragments. Opens each kind
-/// with a blank line, which is also what separates it from a category heading
-/// above — so the two compose without either knowing about the other.
+/// with a blank line, which also separates it from a category heading above.
 fn render_kinds(
     config: &ChangelogConfig,
     out: &mut String,

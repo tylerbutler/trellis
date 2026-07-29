@@ -2,11 +2,8 @@
 name = "trellis-gleam"
 version = "0.7.0"
 edition = "2024"
-# The floor edition 2024 already implies. Declared so a `cargo install` on an
-# older toolchain reports the version it needs instead of failing somewhere in
-# the middle of a dependency build. Trellis ships prebuilt binaries and is
-# bin-only, so nothing can depend on it in Cargo — this is an error message,
-# not a compatibility promise. An MSRV bump is a minor version.
+# MSRV: the floor edition 2024 implies. Declared so a `cargo install` on an
+# older toolchain reports the version it needs rather than failing mid-build.
 rust-version = "1.85"
 description = "A workspace CLI for Gleam monorepos: task fan-out, introspection, and release orchestration derived entirely from gleam.toml"
 license = "MIT"

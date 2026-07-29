@@ -186,8 +186,8 @@ fn new_fragment_writes_toml_and_validates_inputs() {
         .assert()
         .failure()
         .stderr(predicate::str::contains("--package is required"));
-    // The fixture configures no categories, so the useful thing to say is
-    // which key turns the axis on.
+    // The fixture configures no categories, so the error names the key that
+    // turns the axis on.
     trellis(root)
         .args([
             "changelog",
@@ -246,8 +246,7 @@ fn new_fragment_records_a_category_and_validates_it() {
         "package = \"lat_core\"\nkind = \"Added\"\ncategory = \"build\"\nbody = \"grow more vines\"\n"
     );
 
-    // The category stays optional even once configured — it groups, it does
-    // not classify exhaustively.
+    // The category stays optional even once categories are configured.
     trellis(root)
         .args([
             "changelog",

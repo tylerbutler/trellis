@@ -101,9 +101,8 @@ pub fn changelog_kinds() -> ArgValueCandidates {
     })
 }
 
-/// Change categories from `[tools.trellis.changelog]`. Empty both outside a
-/// workspace and inside one that configures none — the axis is opt-in, and an
-/// empty candidate list is the honest answer for a workspace not using it.
+/// Change categories from `[tools.trellis.changelog]`. Empty outside a
+/// workspace, and inside one that configures none.
 pub fn changelog_categories() -> ArgValueCandidates {
     ArgValueCandidates::new(|| {
         let Some(workspace) = workspace() else {

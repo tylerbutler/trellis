@@ -53,9 +53,8 @@ pub fn new_fragment(
     if let Some(category) = category
         && !categories.iter().any(|c| c == category)
     {
-        // Mirrors `load_fragments`: with none configured, the useful thing to
-        // say is which key turns the axis on, not that a list of nothing
-        // failed to match.
+        // Mirrors `load_fragments`: with none configured, name the key that
+        // turns the axis on rather than matching against an empty list.
         if categories.is_empty() {
             bail!(
                 "no `categories` are configured; add them under \

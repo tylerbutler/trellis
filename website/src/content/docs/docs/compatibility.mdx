@@ -10,11 +10,9 @@ can bind a workflow to, and what may change under you.
 
 ## Exit codes
 
-Every command uses the same four codes. The distinction that matters is **1 vs
-3**: a CI step that should fail the build when a workspace has problems still
-needs to report "trellis could not run at all" differently — a missing `gh`, an
-unparseable config, or Hex being unreachable is not the same event as a
-workspace with findings.
+Every command uses the same four codes. Branch on **1 versus 3** to tell a
+workspace that has problems from an environment where trellis could not run at
+all — a missing `gh`, an unparseable config, or Hex being unreachable.
 
 | Code | Meaning | Examples |
 | --- | --- | --- |
@@ -23,9 +21,8 @@ workspace with findings.
 | `2` | Usage error | Unknown flag, missing argument, bad subcommand |
 | `3` | Trellis itself could not run | Unparseable config, not a git repository, missing `gleam`/`gh`, Hex unreachable after retries |
 
-A failed task exits `1`, not the child's own exit code. If `gleam test` exits
-`3`, trellis still exits `1` — trellis reports its own outcome, and propagating
-the child's code would collide with the meanings above.
+A failed task exits `1`; trellis does not propagate the child's own exit code.
+If `gleam test` exits `3`, trellis still exits `1`.
 
 ```yaml
 - name: Check the workspace
@@ -55,28 +52,21 @@ against:
 
 **Not covered.** These change freely in any release.
 
-- **Human-readable output.** Text is written for a person at a terminal, is
-  already TTY-dependent, and is not a parsing target. The `--json` form exists
-  so you don't have to.
+- **Human-readable output.** Terminal text is TTY-dependent and not a parsing
+  target — parse the `--json` form instead.
 - **Anything inside `src/`.** Trellis is a binary, not a library.
 
 <Callout>
   **Trellis publishes no Rust API.** The crate is bin-only — there is no
-  `lib.rs`, and nothing in `src/` is reachable by a dependent crate. Adding a
-  library target later would *widen* what 1.0 promised, so it is a deliberate
-  decision rather than an incidental refactor.
+  `lib.rs`, and nothing in `src/` is reachable by a dependent crate.
 </Callout>
 
 ## Minimum supported Rust version
 
-Trellis's MSRV is **1.85**, the floor its Rust edition implies, declared as
-`rust-version` in `Cargo.toml`.
+Trellis's MSRV is **1.85**, declared as `rust-version` in `Cargo.toml`. An MSRV
+bump is a minor version.
 
-This matters only if you build from source. The [installation
+This matters only if you build from source, where `cargo install` on an older
+toolchain reports the version it needs. The [installation
 methods](/docs/installation/) that most people use — the installer scripts and
 the Homebrew tap — ship prebuilt binaries and need no Rust toolchain at all.
-The declaration exists so that `cargo install` on an older toolchain tells you
-which version it needs, instead of failing partway through a dependency build.
-
-An MSRV bump is a minor version. Because trellis is bin-only, no other crate's
-build can break when it moves.
