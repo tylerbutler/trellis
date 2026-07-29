@@ -2,8 +2,10 @@
 import "@fontsource-variable/archivo/wdth.css";
 import "@fontsource-variable/martian-mono";
 import "../styles/global.css";
+import { Script as Tinylytics } from "astro-tinylytics";
 import AnnouncementBar from "../components/AnnouncementBar.astro";
 import AnnounceDismissScript from "../components/AnnounceDismissScript.astro";
+import { TINYLYTICS_EMBED_CODE } from "../lib/analytics";
 
 interface Props {
   title: string;
@@ -32,6 +34,7 @@ const github = "https://github.com/tylerbutler/trellis";
     <meta property="og:image" content={new URL("/og.png", Astro.site)} />
     <meta name="twitter:card" content="summary_large_image" />
     <AnnounceDismissScript />
+    {TINYLYTICS_EMBED_CODE && <Tinylytics embedCode={TINYLYTICS_EMBED_CODE} hits />}
   </head>
   <body>
     <a class="skip-link" href="#main">Skip to content</a>

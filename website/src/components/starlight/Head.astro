@@ -3,8 +3,11 @@
 // an override — it has to run before first paint, which the `head` config
 // array can't express (it has no access to the derived version).
 import Default from "@astrojs/starlight/components/Head.astro";
+import { Script as Tinylytics } from "astro-tinylytics";
 import AnnounceDismissScript from "../AnnounceDismissScript.astro";
+import { TINYLYTICS_EMBED_CODE } from "../../lib/analytics";
 ---
 
 <Default />
 <AnnounceDismissScript />
+{TINYLYTICS_EMBED_CODE && <Tinylytics embedCode={TINYLYTICS_EMBED_CODE} hits />}
