@@ -87,7 +87,7 @@ each covering only the packages whose
 
 Both `ci matrix` and `ci outputs` are shaped by GitHub rather than by trellis,
 which is why neither carries the `schema` field every other payload does — see
-the [JSON output contract](/docs/json-output/) for what each one promises.
+[JSON output](/docs/json-output/) for what each one promises.
 
 ## PR gates
 
@@ -136,7 +136,7 @@ finding:
 - run: jq -r '.findings[] | select(.fixable) | .message' doctor.json
 ```
 
-The [payload is contractual](/docs/json-output/); the `message` prose is not.
+The [payload is stable](/docs/json-output/); the `message` prose is not.
 
 ## The release pipeline
 
