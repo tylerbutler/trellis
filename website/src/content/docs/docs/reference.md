@@ -198,6 +198,7 @@ Add an unreleased changelog fragment
 
 * `--package <PACKAGE>` — The package the change belongs to (optional when the workspace has exactly one releasable package)
 * `--kind <KIND>` — Change kind (see [tools.trellis.changelog] kinds; defaults include Added, Fixed, Breaking, …)
+* `--category <CATEGORY>` — Change category, grouping entries above the kind headings (see [tools.trellis.changelog] categories; none are configured by default)
 * `--body <BODY>` — The changelog entry text
 
 

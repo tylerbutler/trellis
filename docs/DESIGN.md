@@ -169,7 +169,20 @@ kinds = [
   { label = "Fixed", bump = "patch" },
   { label = "Performance", bump = "patch" },
   { label = "Security", bump = "patch" },
+  { label = "Dependencies", bump = "patch" },
 ]
+# The kind given to the entries generated when a workspace dependency bumps,
+# and the template for one such entry's body. The kind must name one of `kinds`.
+dependency_kind = "Dependencies"
+dependency_body = "Updated {{ dependency }} to {{ dependency_version }}"
+# A second grouping axis, rendered above `kinds` and carrying no bump — the
+# sections of a package, such as the subcommands of a CLI. Empty (the default)
+# switches it off, and rendering is then exactly what it was before categories
+# existed. With it on, kind headings drop to `####` unless `kind_format` says
+# otherwise, and entries naming no category trail under `uncategorized_label`.
+categories = []
+category_format = "### {{ category }}"
+uncategorized_label = "Other"
 ```
 
 Wildcard discovery honors repository `.gitignore` files at every level and
@@ -242,15 +255,16 @@ trellis version apply                             # batch + merge + lockfile pat
 ```
 
 - The engine is native (§7). Fragments are TOML files in
-  `.changes/unreleased/` (`project`, `kind`, `body`); `changelog new` writes
-  one non-interactively. There is no per-package changelog wiring to
-  generate or keep in sync — the lattice failure mode of "forgotten config
-  block means a package cannot be released" has no equivalent, because there
-  is no config block.
+  `.changes/unreleased/` (`package`, `kind`, `body`, and an optional
+  `category`; `project` is the pre-0.8 spelling of `package`, still accepted
+  as an alias); `changelog new` writes one non-interactively. There is no
+  per-package changelog wiring to generate or keep in sync — the lattice
+  failure mode of "forgotten config block means a package cannot be released"
+  has no equivalent, because there is no config block.
 - `changelog check` replaces the changie-check glue: map the base..head diff to
   packages, decide which need fragments, emit JSON (`has_entries`, `needs_entry`,
   `preview`, per-package detail) for the PR workflow's sticky comment. Invalid
-  fragments (unknown package or kind, empty body) fail the check.
+  fragments (unknown package, kind, or category, empty body) fail the check.
 - `version apply` is the release step: per pending package, compute the next
   version from the fragments' kinds (largest bump wins), render the version
   section (minijinja), store it under `.changes/<package>/`, reassemble the
@@ -436,11 +450,17 @@ editor; and every consuming workspace had to install a second binary in CI.
 Since trellis was pre-release, the native engine slotted in behind the same
 `trellis changelog`/`version` commands with no compatibility burden:
 
-- Fragments are TOML (`project`, `kind`, `body`) in `.changes/unreleased/` —
+- Fragments are TOML (`package`, `kind`, `body`) in `.changes/unreleased/` —
   consistent with everything else trellis reads, and validated by `doctor`
   on every PR (an invalid fragment can't hide until release time).
 - Version bumps derive from the kinds' configured `bump` (largest wins);
   `gleam.toml` is bumped with toml_edit, not regex.
+- `kinds` answers "how big is this change", which is the axis a version bump
+  needs. `categories` is the orthogonal one — "which part of the package
+  changed" — deliberately kept separate rather than overloading kinds with
+  scopes: it carries no bump, so it can group above kinds without touching
+  version derivation at all. Off by default; a workspace that wants one
+  flat list per version simply never configures it.
 - Rendered version sections live under `.changes/<package>/`; each package's
   CHANGELOG.md is a generated file reassembled from them, newest first.
 - All formats are minijinja templates with a small context, so rendering

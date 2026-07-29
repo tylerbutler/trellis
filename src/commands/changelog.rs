@@ -14,6 +14,7 @@ pub fn new_fragment(
     workspace: &Workspace,
     package: Option<&str>,
     kind: &str,
+    category: Option<&str>,
     body: &str,
 ) -> Result<()> {
     let releasable: Vec<&str> = workspace
@@ -48,11 +49,29 @@ pub fn new_fragment(
             changelog::kind_labels(kinds)
         );
     }
+    let categories = &workspace.config.changelog.categories;
+    if let Some(category) = category
+        && !categories.iter().any(|c| c == category)
+    {
+        // Mirrors `load_fragments`: with none configured, the useful thing to
+        // say is which key turns the axis on, not that a list of nothing
+        // failed to match.
+        if categories.is_empty() {
+            bail!(
+                "no `categories` are configured; add them under \
+                 [tools.trellis.changelog] to group entries by category"
+            );
+        }
+        bail!(
+            "unknown category `{category}`; configured categories: {}",
+            changelog::category_labels(categories)
+        );
+    }
     if body.trim().is_empty() {
         bail!("--body must not be empty");
     }
 
-    let path = changelog::write_fragment(workspace, project, kind, body.trim())?;
+    let path = changelog::write_fragment(workspace, project, kind, category, body.trim())?;
     crate::status!(
         "created {}",
         path.strip_prefix(&workspace.root)

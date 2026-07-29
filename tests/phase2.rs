@@ -186,6 +186,176 @@ fn new_fragment_writes_toml_and_validates_inputs() {
         .assert()
         .failure()
         .stderr(predicate::str::contains("--package is required"));
+    // The fixture configures no categories, so the useful thing to say is
+    // which key turns the axis on.
+    trellis(root)
+        .args([
+            "changelog",
+            "new",
+            "--package",
+            "lat_core",
+            "--kind",
+            "Added",
+            "--category",
+            "build",
+            "--body",
+            "x",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("no `categories` are configured"));
+}
+
+// ---- categories -------------------------------------------------------------
+
+/// The fixture plus a `categories` list, which is all it takes to switch the
+/// second grouping axis on.
+fn with_categories(root: &Path) {
+    let config = fs::read_to_string(root.join("gleam.toml")).unwrap();
+    write(
+        &root.join("gleam.toml"),
+        &format!("{config}\n[tools.trellis.changelog]\ncategories = [\"build\", \"publish\"]\n"),
+    );
+}
+
+#[test]
+fn new_fragment_records_a_category_and_validates_it() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+    with_categories(root);
+
+    trellis(root)
+        .args([
+            "changelog",
+            "new",
+            "--package",
+            "lat_core",
+            "--kind",
+            "Added",
+            "--category",
+            "build",
+            "--body",
+            "grow more vines",
+        ])
+        .assert()
+        .success();
+    let fragment = fs::read_to_string(root.join(".changes/unreleased/lat_core-1.toml")).unwrap();
+    assert_eq!(
+        fragment,
+        "package = \"lat_core\"\nkind = \"Added\"\ncategory = \"build\"\nbody = \"grow more vines\"\n"
+    );
+
+    // The category stays optional even once configured — it groups, it does
+    // not classify exhaustively.
+    trellis(root)
+        .args([
+            "changelog",
+            "new",
+            "--package",
+            "lat_core",
+            "--kind",
+            "Fixed",
+            "--body",
+            "x",
+        ])
+        .assert()
+        .success();
+    let fragment = fs::read_to_string(root.join(".changes/unreleased/lat_core-2.toml")).unwrap();
+    assert_eq!(
+        fragment,
+        "package = \"lat_core\"\nkind = \"Fixed\"\nbody = \"x\"\n"
+    );
+
+    trellis(root)
+        .args([
+            "changelog",
+            "new",
+            "--package",
+            "lat_core",
+            "--kind",
+            "Added",
+            "--category",
+            "Invented",
+            "--body",
+            "x",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("unknown category `Invented`"))
+        .stderr(predicate::str::contains("build, publish"));
+}
+
+/// An unknown category is a fragment problem like an unknown kind: `doctor`
+/// names the file, and `version` refuses outright rather than dropping the
+/// entry on the floor at release time.
+#[test]
+fn an_unknown_category_is_reported_by_doctor_and_fatal_to_version() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+    with_categories(root);
+    write(
+        &root.join(".changes/unreleased/lat_core-1.toml"),
+        "package = \"lat_core\"\nkind = \"Added\"\ncategory = \"nope\"\nbody = \"x\"\n",
+    );
+
+    trellis(root)
+        .arg("doctor")
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("category `nope` is not one of"))
+        .stdout(predicate::str::contains("lat_core-1.toml"));
+    trellis(root)
+        .args(["version", "plan"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("category `nope`"));
+}
+
+#[test]
+fn version_apply_groups_a_section_by_category_then_kind() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+    with_categories(root);
+    write(
+        &root.join(".changes/unreleased/lat_core-1.toml"),
+        "package = \"lat_core\"\nkind = \"Added\"\ncategory = \"publish\"\nbody = \"--dry-run\"\n",
+    );
+    write(
+        &root.join(".changes/unreleased/lat_core-2.toml"),
+        "package = \"lat_core\"\nkind = \"Added\"\ncategory = \"build\"\nbody = \"--watch\"\n",
+    );
+    // No category: lands under the trailing `Other` heading.
+    add_fragment(root, "lat_core", "Fixed", "a general fix");
+
+    trellis(root).args(["version", "apply"]).assert().success();
+
+    let section = fs::read_to_string(root.join(".changes/lat_core/v1.3.0.md")).unwrap();
+    assert_eq!(
+        section,
+        "## v1.3.0 - 2026-07-11\n\
+         \n### build\n\
+         \n#### Added\n\n- --watch\n\
+         \n### publish\n\
+         \n#### Added\n\n- --dry-run\n\
+         \n### Other\n\
+         \n#### Fixed\n\n- a general fix\n"
+    );
+
+    // Generated ripple entries carry no category, so lat_mid's whole section
+    // is the `Other` block.
+    let mid = fs::read_to_string(root.join(".changes/lat_mid/v0.5.1.md")).unwrap();
+    assert_eq!(
+        mid,
+        "## v0.5.1 - 2026-07-11\n\
+         \n### Other\n\
+         \n#### Dependencies\n\n- Updated lat_core to 1.3.0\n"
+    );
+
+    // Nothing about the extra level disturbs the rest of the pipeline.
+    trellis(root).arg("doctor").assert().success();
 }
 
 // ---- changelog check ---------------------------------------------------------
