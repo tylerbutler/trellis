@@ -29,8 +29,8 @@ const CHECK_TIMEOUT: Duration = Duration::from_millis(800);
 
 /// Decide whether an interactive update notice should even be attempted, given
 /// the terminal state and an environment lookup. Pure so it can be tested
-/// without touching the real environment. `DO_NOT_TRACK` is intentionally not
-/// checked here — the crate honors it internally and returns no update.
+/// without touching the real environment. `DO_NOT_TRACK` is not checked here —
+/// the crate honors it internally and returns no update.
 fn notice_enabled(stderr_is_terminal: bool, env: impl Fn(&str) -> Option<String>) -> bool {
     if !stderr_is_terminal {
         return false;

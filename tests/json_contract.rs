@@ -209,9 +209,9 @@ fn tag_plan_json_contract() {
 #[test]
 fn ci_matrix_contract() {
     let matrix = json_output(&fixture("basic"), &["ci", "matrix"], true);
-    // `ci matrix` carries no `schema` key on purpose: GitHub Actions treats
-    // every top-level key beside `include` as another matrix axis, so adding
-    // one would multiply the job matrix.
+    // `ci matrix` carries no `schema` key: GitHub Actions treats every
+    // top-level key beside `include` as another matrix axis, so adding one
+    // would multiply the job matrix.
     assert!(
         matrix.get("schema").is_none(),
         "ci matrix must stay a bare GitHub matrix object"
@@ -238,9 +238,12 @@ fn ci_outputs_contract() {
         })
         .collect();
     let keys: Vec<&str> = pairs.iter().map(|(key, _)| *key).collect();
+    // `projects` is the deprecated alias of `packages`, emitted with an
+    // identical value until 1.0 so existing workflows keep resolving.
     assert_eq!(
         keys,
         [
+            "packages",
             "projects",
             "releasable",
             "version_files",
@@ -248,6 +251,8 @@ fn ci_outputs_contract() {
             "series_tags"
         ]
     );
+    let by_key: std::collections::HashMap<_, _> = pairs.iter().cloned().collect();
+    assert_eq!(by_key["packages"], by_key["projects"]);
     insta::assert_json_snapshot!(serde_json::Value::Object(
         pairs
             .into_iter()
@@ -307,9 +312,9 @@ fn doctor_json_contract_when_passing() {
 }
 
 /// The interesting payload is the failing one: it is what a PR workflow reads.
-/// The fixture is broken four ways on purpose, to pin an error with a file and
-/// no package, a fixable error, a fixable warning, and a finding attributed to
-/// a file outside any member.
+/// The fixture is broken four ways, to pin an error with a file and no package,
+/// a fixable error, a fixable warning, and a finding attributed to a file
+/// outside any member.
 #[test]
 fn doctor_json_contract_with_findings() {
     let tmp = tempfile::tempdir().unwrap();

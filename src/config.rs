@@ -88,7 +88,7 @@ pub enum Strictness {
 pub struct DoctorConfig {
     /// Whether members disagreeing on a shared external dependency's
     /// requirement is a warning (the default), an error, or unchecked.
-    /// Divergence is sometimes deliberate, so this does not fail CI by default.
+    /// Divergence is sometimes intended, so this does not fail CI by default.
     #[serde(default)]
     pub shared_dependencies: Strictness,
 }
@@ -363,6 +363,15 @@ pub struct ChangelogConfig {
     /// order kinds appear in rendered changelog sections.
     #[serde(default = "default_kinds")]
     pub kinds: Vec<KindConfig>,
+    /// An optional second grouping axis, rendered *above* `kinds` — sections
+    /// for the CLI commands or subsystems a package is made of. Unlike a kind,
+    /// a category implies no version bump; it only groups.
+    ///
+    /// The order here is the render order. Entries naming no category render
+    /// last, under `uncategorized_label`. Empty (the default) switches the
+    /// axis off entirely.
+    #[serde(default)]
+    pub categories: Vec<String>,
     /// Template for the first line of a package's CHANGELOG.md.
     /// Context: `name`.
     #[serde(default = "default_header_format", alias = "header-format")]
@@ -371,12 +380,26 @@ pub struct ChangelogConfig {
     /// `tag`, `series`.
     #[serde(default = "default_version_format", alias = "version-format")]
     pub version_format: String,
-    /// Template for a kind heading within a version. Context: `kind`, `name`,
-    /// `version`.
-    #[serde(default = "default_kind_format", alias = "kind-format")]
-    pub kind_format: String,
-    /// Template for one change entry. Context: `body`, `kind`, `name`,
-    /// `version`.
+    /// Template for a category heading within a version. Context: `category`,
+    /// `name`, `version`. Also renders the `uncategorized_label` block, so a
+    /// custom template shapes every category heading alike.
+    #[serde(default = "default_category_format")]
+    pub category_format: String,
+    /// Heading text for entries naming no category. Read only when
+    /// `categories` is non-empty.
+    #[serde(default = "default_uncategorized_label")]
+    pub uncategorized_label: String,
+    /// Template for a kind heading within a version. Context: `kind`,
+    /// `category`, `name`, `version`.
+    ///
+    /// `None` means "unset", which is not the same as the default: kinds sit
+    /// at `###` normally, but one level deeper once categories occupy that
+    /// level. Read it through [`ChangelogConfig::kind_format`], never
+    /// directly.
+    #[serde(default, rename = "kind_format", alias = "kind-format")]
+    pub kind_format_override: Option<String>,
+    /// Template for one change entry. Context: `body`, `kind`, `category`,
+    /// `name`, `version`.
     #[serde(default = "default_change_format", alias = "change-format")]
     pub change_format: String,
     /// Kind used for the entries generated when a workspace dependency bumps.
@@ -395,12 +418,37 @@ impl Default for ChangelogConfig {
         Self {
             dir: default_changelog_dir(),
             kinds: default_kinds(),
+            categories: Vec::new(),
             header_format: default_header_format(),
             version_format: default_version_format(),
-            kind_format: default_kind_format(),
+            category_format: default_category_format(),
+            uncategorized_label: default_uncategorized_label(),
+            kind_format_override: None,
             change_format: default_change_format(),
             dependency_kind: default_dependency_kind(),
             dependency_body: default_dependency_body(),
+        }
+    }
+}
+
+impl ChangelogConfig {
+    /// Whether the category axis is on. One predicate drives both the extra
+    /// grouping level and the kind heading depth, so the two cannot disagree.
+    ///
+    /// Config-wide rather than per-section: a release carrying no categorized
+    /// entry still renders the `uncategorized_label` wrapper, so heading depth
+    /// never flips between adjacent versions of a generated file.
+    pub fn categories_enabled(&self) -> bool {
+        !self.categories.is_empty()
+    }
+
+    /// The kind heading template. An explicit `kind_format` always wins;
+    /// otherwise kinds sit at `###`, or at `####` once categories hold `###`.
+    pub fn kind_format(&self) -> &str {
+        match &self.kind_format_override {
+            Some(explicit) => explicit,
+            None if self.categories_enabled() => NESTED_KIND_FORMAT,
+            None => DEFAULT_KIND_FORMAT,
         }
     }
 }
@@ -453,8 +501,19 @@ fn default_version_format() -> String {
     "## v{{ version }} - {{ date }}".to_string()
 }
 
-fn default_kind_format() -> String {
-    "### {{ kind }}".to_string()
+/// Kind headings sit directly under the version heading…
+const DEFAULT_KIND_FORMAT: &str = "### {{ kind }}";
+/// …unless categories hold that level, in which case kinds drop one deeper.
+/// A `##` heading here would be read as a version by the release-notes
+/// extractor in `commands::tag`, so neither level may use one.
+const NESTED_KIND_FORMAT: &str = "#### {{ kind }}";
+
+fn default_category_format() -> String {
+    "### {{ category }}".to_string()
+}
+
+fn default_uncategorized_label() -> String {
+    "Other".to_string()
 }
 
 fn default_change_format() -> String {
@@ -564,6 +623,16 @@ impl ConfigFile {
                 crate::changelog::kind_labels(&self.changelog.kinds)
             );
         }
+        // Both blocks render through `category_format`, so a collision would
+        // emit the same heading twice in one section.
+        let label = &self.changelog.uncategorized_label;
+        if self.changelog.categories.iter().any(|c| c == label) {
+            bail!(
+                "`uncategorized_label` `{label}` is also one of `categories`; \
+                 entries with and without a category would render under the \
+                 same heading. Rename one of them."
+            );
+        }
         Ok(())
     }
 
@@ -625,6 +694,8 @@ mod tests {
                 { label = "Boom", bump = "major" },
                 { label = "Docs", bump = "patch" },
             ]
+            categories = ["build", "publish"]
+            uncategorized_label = "Everything else"
         "###;
         let config = ConfigFile::from_gleam_toml(text).unwrap();
         assert_eq!(config.members.as_deref().unwrap().len(), 2);
@@ -639,8 +710,68 @@ mod tests {
         assert_eq!(config.changelog.kinds.len(), 2);
         assert_eq!(config.changelog.kinds[0].bump, Bump::Major);
         assert_eq!(config.changelog.dependency_kind, "Docs");
+        assert_eq!(config.changelog.categories, ["build", "publish"]);
+        assert_eq!(config.changelog.uncategorized_label, "Everything else");
         assert!(config.deprecated_keys.is_empty());
         assert!(config.unknown_keys.is_empty());
+    }
+
+    /// Categories are a plain string array, not a table, so `walk_schema_keys`
+    /// never descends into the labels — a category named after a hyphenated
+    /// CLI command is the user's business, not a deprecated key.
+    #[test]
+    fn hyphens_in_category_labels_are_not_deprecations() {
+        let config = ConfigFile::from_gleam_toml(
+            "[tools.trellis.changelog]\ncategories = [\"markdown-help\", \"no-color\"]\n",
+        )
+        .unwrap();
+        assert_eq!(config.changelog.categories, ["markdown-help", "no-color"]);
+        assert!(config.deprecated_keys.is_empty());
+        assert!(config.unknown_keys.is_empty());
+    }
+
+    /// Kinds normally head a section at `###`; with categories holding that
+    /// level they drop to `####`, unless the config says otherwise.
+    #[test]
+    fn kind_headings_demote_only_when_categories_are_in_play() {
+        let parse = |table: &str| {
+            ConfigFile::from_gleam_toml(&format!("[tools.trellis.changelog]\n{table}"))
+                .unwrap()
+                .changelog
+        };
+        assert_eq!(parse("").kind_format(), "### {{ kind }}");
+        assert_eq!(
+            parse("categories = [\"build\"]\n").kind_format(),
+            "#### {{ kind }}"
+        );
+        // An explicit `kind_format` wins either way.
+        assert_eq!(
+            parse("kind_format = \"**{{ kind }}**\"\n").kind_format(),
+            "**{{ kind }}**"
+        );
+        assert_eq!(
+            parse("categories = [\"build\"]\nkind_format = \"**{{ kind }}**\"\n").kind_format(),
+            "**{{ kind }}**"
+        );
+    }
+
+    #[test]
+    fn uncategorized_label_may_not_collide_with_a_category() {
+        let err = ConfigFile::from_gleam_toml(
+            "[tools.trellis.changelog]\ncategories = [\"build\", \"Other\"]\n",
+        )
+        .unwrap_err();
+        let message = format!("{err:#}");
+        assert!(
+            message.contains("`uncategorized_label` `Other`"),
+            "{message}"
+        );
+
+        // Renaming either side settles it.
+        ConfigFile::from_gleam_toml(
+            "[tools.trellis.changelog]\ncategories = [\"build\", \"Other\"]\nuncategorized_label = \"Misc\"\n",
+        )
+        .unwrap();
     }
 
     /// Every key released through v0.7.0 was kebab-case, so the old spelling
@@ -685,7 +816,7 @@ mod tests {
         assert_eq!(config.publish.retry.initial_delay, "10ms");
         assert_eq!(config.changelog.header_format, "# {{ name }}");
         assert_eq!(config.changelog.version_format, "## {{ version }}");
-        assert_eq!(config.changelog.kind_format, "### {{ kind }}");
+        assert_eq!(config.changelog.kind_format(), "### {{ kind }}");
         assert_eq!(config.changelog.change_format, "* {{ body }}");
         // Nothing was dropped, and every old spelling is reported once.
         assert!(config.unknown_keys.is_empty());

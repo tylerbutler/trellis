@@ -46,7 +46,7 @@ Print version
 .SH SUBCOMMANDS
 .TP
 trellis\-list(1)
-List members in topological order (dependencies first)
+List packages in topological order (dependencies first)
 .TP
 trellis\-graph(1)
 Render the dependency graph
@@ -55,10 +55,10 @@ trellis\-info(1)
 Show details for one package
 .TP
 trellis\-run(1)
-Run a task across members, graph\-parallel by default
+Run a task across packages, graph\-parallel by default
 .TP
 trellis\-exec(1)
-Run an arbitrary command in each member directory
+Run an arbitrary command in each package directory
 .TP
 trellis\-changelog(1)
 Changelog fragment management (see [tools.trellis.changelog])
@@ -70,7 +70,7 @@ trellis\-init(1)
 Bootstrap a workspace: write a [tools.trellis] table at the repo root
 .TP
 trellis\-new(1)
-Scaffold a new workspace member
+Scaffold a new package in the workspace
 .TP
 trellis\-release(1)
 Release orchestration

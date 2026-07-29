@@ -35,10 +35,10 @@ clean:
 
 # Regenerate every checked-in generated artifact (CLI reference, man pages)
 #
-# Completion scripts are deliberately not generated here: they're produced at
-# runtime by `trellis completions <shell>`, and clap_complete warns against
-# saving them to disk (the shim talks to the binary over an interface that
-# changes between releases).
+# Completion scripts are not generated here: they're produced at runtime by
+# `trellis completions <shell>`, and clap_complete warns against saving them to
+# disk (the shim talks to the binary over an interface that changes between
+# releases).
 docs:
     cargo run --quiet -- markdown-help > website/src/content/docs/docs/reference.md
     # Rebuilt from scratch so a removed subcommand can't leave a stale page behind.

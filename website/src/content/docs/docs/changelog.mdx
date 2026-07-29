@@ -10,9 +10,8 @@ file to keep in sync with the workspace. Changes are recorded as small TOML
 fragments; version bumps and changelog sections are derived from them.
 
 The fragment-per-change workflow is modeled on
-[changie](https://changie.dev/)'s project mode: trellis originally wrapped
-changie directly, then reimplemented the same fragment-based approach
-natively so managed workspaces don't need a second binary in CI.
+[changie](https://changie.dev/)'s project mode, reimplemented natively so a
+managed workspace needs no second binary in CI.
 
 ```txt wrap
 trellis changelog new [--package <pkg>] --kind <kind> --body <text>
@@ -27,10 +26,18 @@ A fragment is one file in `.changes/unreleased/` with three keys — the package
 it belongs to, a configured change kind, and the entry text:
 
 ```toml title=".changes/unreleased/lat_core-1.toml"
-project = "lat_core"
+package = "lat_core"
 kind = "Added"
 body = "Add graph-parallel task scheduling"
 ```
+
+<Callout>
+
+`package` was spelled `project` through v0.7.0, inherited from changie. Both
+spellings parse, so fragments already sitting in `.changes/unreleased/` keep
+working — but `changelog new` writes `package`, and the alias goes away at 1.0.
+
+</Callout>
 
 `changelog new` writes one non-interactively — `--kind` and `--body` are
 explicit flags, which suits CI and agents as well as shells (`--package` can
@@ -44,18 +51,28 @@ created .changes/unreleased/lat_core-1.toml
 
 <Callout>
 
-Invalid fragments — unknown package or kind, empty body, unparseable TOML —
-are hard errors for `check`, `plan`, and `apply`, and `doctor` flags them on
-every PR. Silently dropping a change is exactly the drift trellis exists to
-prevent.
+Invalid fragments — unknown package, kind, or category, empty body,
+unparseable TOML — are hard errors for `check`, `plan`, and `apply`, and
+`doctor` flags them on every PR. Silently dropping a change is exactly the
+drift trellis exists to prevent.
 
 </Callout>
+
+A fragment takes one more optional key, `category`, when the workspace
+configures [categories](/docs/configuration/#categories) — a second grouping
+axis that carries no version bump and sections the changelog by which part of
+a package changed:
+
+```console
+$ trellis changelog new --package lat_cli --kind Added --category build \
+    --body "A --watch flag"
+```
 
 ## Enforcing entries on PRs
 
 `changelog check` maps a `base...head` diff to packages and fails (non-zero
 exit) if a changed releasable package has no unreleased fragment. `--json`
-emits a payload — including a markdown `preview` — ready for a PR sticky
+emits a payload (including a markdown `preview`) ready for a PR sticky
 comment:
 
 ```json
@@ -73,7 +90,7 @@ comment:
 ```
 
 The `schema` field is there so a workflow can assert on the shape it expects;
-the [JSON output contract](/docs/json-output/) covers what it promises. Note
+the [JSON output](/docs/json-output/) page covers what it promises. Note
 that `preview` is guaranteed to be present and a string, but its Markdown is
 prose — render it rather than parsing it.
 
@@ -128,7 +145,9 @@ Each rippled package gets a generated changelog entry, rendered like any other:
 The entries are generated at plan time and never written to
 `.changes/unreleased/` — the body embeds the dependency's new version, which is
 only settled once the whole plan is computed. Hand-written entries of the same
-kind share the heading rather than producing a second section.
+kind share the heading rather than producing a second section. A ripple entry
+names no category, so in a workspace using them it files under
+`uncategorized_label`.
 
 ## Applying it
 
@@ -141,12 +160,11 @@ package, it:
    first.
 3. Bumps the version in `gleam.toml` with a surgical TOML edit — no regex,
    formatting preserved.
-4. Patches every member's `manifest.toml` so locked workspace-internal
+4. Patches every package's `manifest.toml` so locked workspace-internal
    dependencies match the new versions.
 
-The whole operation makes **zero Hex network calls** — that constraint is
-load-bearing, because running `gleam update` per package trips Hex rate
-limits on shared CI runners.
+The whole operation makes **zero Hex network calls**, so a release never trips
+Hex rate limits on a shared CI runner the way `gleam update` per package does.
 
 <Callout>
 
@@ -160,21 +178,21 @@ changelog from them.
 
 The fragment kinds do not always determine the version you want: a breaking
 change filed as `Fixed` and already merged, a package that should jump straight
-to `1.0.0` from `0.9.3` (a *minor* under the pre-1.0 rule), or a one-off number
+to `1.0.0` from `0.4.3` (a *minor* under the pre-1.0 rule), or a one-off number
 matching something upstream.
 
 Three flags override the derivation. `plan` and `apply` accept them
 identically, so an override is previewable before it is applied.
 
 ```console
-$ trellis version plan --bump major              # the whole plan
-$ trellis version plan --bump lat_core=major     # one package
-$ trellis version plan --set lat_core=1.0.0      # an exact version
+$ trellis version plan --bump major             # the whole plan
+$ trellis version plan --bump lat_cli=major     # one package
+$ trellis version plan --set lat_cli=1.0.0      # an exact version
 ```
 
 Precedence runs `--set` → per-package `--bump` → workspace-wide `--bump` →
 the derived level. Naming a package in both `--bump` and `--set`, naming one
-that is not a releasable member, or pinning a version that is not ahead of the
+that is not a releasable package, or pinning a version that is not ahead of the
 current one are all errors raised before anything is written.
 
 ## Prereleases
@@ -184,15 +202,15 @@ within the same base version rather than deriving a fresh bump from the same
 fragments:
 
 ```console
-$ trellis version apply --set lat_core=1.0.0 --pre rc
-bumped lat_core: 0.9.3 -> 1.0.0-rc.1
+$ trellis version apply --set lat_cli=1.0.0 --pre rc
+bumped lat_cli: 0.4.3 -> 1.0.0-rc.1
 kept fragments unreleased for the final version
 
 $ trellis version apply --pre rc
-bumped lat_core: 1.0.0-rc.1 -> 1.0.0-rc.2
+bumped lat_cli: 1.0.0-rc.1 -> 1.0.0-rc.2
 
 $ trellis version apply --pre none
-bumped lat_core: 1.0.0-rc.2 -> 1.0.0
+bumped lat_cli: 1.0.0-rc.2 -> 1.0.0
 ```
 
 <Callout>
@@ -215,11 +233,11 @@ gained fragments *after* the RC was cut still bumps normally under `--pre none`,
 so a late arrival never blocks the promotion.
 
 Once a package sits at a prerelease, a plain `version apply` is an error rather
-than a silent bump to the next release — leaving a cycle has to be deliberate:
+than a silent bump to the next release — leaving a cycle has to be explicit:
 
 ```console
 $ trellis version plan
-error: `lat_core` is at prerelease 1.0.0-rc.2; pass --pre <label> for another
+error: `lat_cli` is at prerelease 1.0.0-rc.2; pass --pre <label> for another
 prerelease or --pre none to promote it
 ```
 

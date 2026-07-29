@@ -44,15 +44,15 @@ A workspace CLI for Gleam monorepos: task fan-out, introspection, and release or
 
 ###### **Subcommands:**
 
-* `list` — List members in topological order (dependencies first)
+* `list` — List packages in topological order (dependencies first)
 * `graph` — Render the dependency graph
 * `info` — Show details for one package
-* `run` — Run a task across members, graph-parallel by default
-* `exec` — Run an arbitrary command in each member directory
+* `run` — Run a task across packages, graph-parallel by default
+* `exec` — Run an arbitrary command in each package directory
 * `changelog` — Changelog fragment management (see [tools.trellis.changelog])
 * `version` — Plan and apply version bumps from unreleased changelog fragments
 * `init` — Bootstrap a workspace: write a [tools.trellis] table at the repo root
-* `new` — Scaffold a new workspace member
+* `new` — Scaffold a new package in the workspace
 * `release` — Release orchestration
 * `tag` — Compare package versions against git tags; create what's missing
 * `publish` — Publish packages to Hex, in dependency order, with path deps rewritten
@@ -80,16 +80,16 @@ A workspace CLI for Gleam monorepos: task fan-out, introspection, and release or
 
 ## `trellis list`
 
-List members in topological order (dependencies first)
+List packages in topological order (dependencies first)
 
 **Usage:** `trellis list [OPTIONS]`
 
 ###### **Options:**
 
 * `--json` — Emit JSON instead of names
-* `--since <REF>` — Only members owning files changed since this git ref
+* `--since <REF>` — Only packages owning files changed since this git ref
 * `--with-dependents` — Add the reverse-dependency closure of the selection
-* `--releasable` — Only members that participate in releases (excludes `@release` matches)
+* `--releasable` — Only packages that participate in releases (excludes `@release` matches)
 
 
 
@@ -128,18 +128,18 @@ Show details for one package
 
 ## `trellis run`
 
-Run a task across members, graph-parallel by default
+Run a task across packages, graph-parallel by default
 
 **Usage:** `trellis run [OPTIONS] <TASK> [PACKAGES]...`
 
 ###### **Arguments:**
 
 * `<TASK>` — Built-in (build, test, check, format, docs, deps, clean) or a [tools.trellis.tasks] entry
-* `<PACKAGES>` — Packages to run in; all members when omitted
+* `<PACKAGES>` — Packages to run in; all workspace packages when omitted
 
 ###### **Options:**
 
-* `--since <REF>` — Only members owning files changed since this git ref
+* `--since <REF>` — Only packages owning files changed since this git ref
 * `--with-dependents` — Add the reverse-dependency closure of the selection
 * `--target <TARGET>` — Gleam compile target; `all` runs the task once per target
 
@@ -156,18 +156,18 @@ Run a task across members, graph-parallel by default
 
 ## `trellis exec`
 
-Run an arbitrary command in each member directory
+Run an arbitrary command in each package directory
 
 **Usage:** `trellis exec [OPTIONS] [PACKAGES]... -- <COMMAND>...`
 
 ###### **Arguments:**
 
-* `<PACKAGES>` — Packages to run in; all members when omitted
+* `<PACKAGES>` — Packages to run in; all workspace packages when omitted
 * `<COMMAND>` — The command to run (after `--`)
 
 ###### **Options:**
 
-* `--since <REF>` — Only members owning files changed since this git ref
+* `--since <REF>` — Only packages owning files changed since this git ref
 * `--serial` — Run one package at a time, in dependency order
 * `--keep-going` — Keep scheduling packages after a failure
 * `-j`, `--jobs <N>` — Maximum concurrent packages (default: CPU count)
@@ -198,6 +198,7 @@ Add an unreleased changelog fragment
 
 * `--package <PACKAGE>` — The package the change belongs to (optional when the workspace has exactly one releasable package)
 * `--kind <KIND>` — Change kind (see [tools.trellis.changelog] kinds; defaults include Added, Fixed, Breaking, …)
+* `--category <CATEGORY>` — Change category, grouping entries above the kind headings (see [tools.trellis.changelog] categories; none are configured by default)
 * `--body <BODY>` — The changelog entry text
 
 
@@ -273,7 +274,7 @@ Everything trellis can derive it derives, so the table this writes is nearly emp
 
 ## `trellis new`
 
-Scaffold a new workspace member
+Scaffold a new package in the workspace
 
 **Usage:** `trellis new [OPTIONS] <NAME>`
 
@@ -395,7 +396,7 @@ Run `gleam deps download`, scoped to one package (with retry/backoff)
 
 ###### **Options:**
 
-* `--package <PACKAGE>` — Refresh only this package instead of every member
+* `--package <PACKAGE>` — Refresh only this package instead of the whole workspace
 
 
 
@@ -445,8 +446,8 @@ Emit a GitHub Actions strategy matrix: {"include":[{name,path,version},…]}
 
 ###### **Options:**
 
-* `--since <REF>` — Only members affected by changes since this git ref (dependents included)
-* `--releasable` — Only members that participate in releases
+* `--since <REF>` — Only packages affected by changes since this git ref (dependents included)
+* `--releasable` — Only packages that participate in releases
 
 
 

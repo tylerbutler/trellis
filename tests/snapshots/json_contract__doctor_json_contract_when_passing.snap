@@ -52,7 +52,7 @@ expression: "json_output(&fixture(\"basic\"), &[\"doctor\", \"--format\", \"json
       "package": "lat_cli"
     }
   ],
-  "members": 4,
   "ok": true,
+  "packages": 4,
   "schema": "trellis.doctor/1"
 }

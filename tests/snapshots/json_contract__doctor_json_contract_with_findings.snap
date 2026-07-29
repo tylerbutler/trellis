@@ -50,7 +50,7 @@ expression: payload
       "check": "changelog_fragment",
       "file": ".changes/unreleased/ghost-1.toml",
       "fixable": false,
-      "message": "fragment `ghost-1.toml`: project `ghost` is not a workspace member",
+      "message": "fragment `ghost-1.toml`: package `ghost` is not a workspace member",
       "package": "ghost",
       "severity": "error"
     }
@@ -81,7 +81,7 @@ expression: payload
       "package": "lat_cli"
     }
   ],
-  "members": 4,
   "ok": false,
+  "packages": 4,
   "schema": "trellis.doctor/1"
 }

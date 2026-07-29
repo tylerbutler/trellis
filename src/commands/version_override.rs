@@ -411,7 +411,7 @@ mod tests {
     }
 
     #[test]
-    fn a_prerelease_must_be_resolved_deliberately() {
+    fn a_prerelease_must_be_resolved_explicitly() {
         // Without this, a plain `version apply` on 1.0.0-rc.1 would compute
         // 1.1.0 and lose the cycle silently.
         let o = overrides(&[], &[], None);

@@ -2,6 +2,9 @@
 name = "trellis-gleam"
 version = "0.7.0"
 edition = "2024"
+# MSRV: the floor edition 2024 implies. Declared so a `cargo install` on an
+# older toolchain reports the version it needs rather than failing mid-build.
+rust-version = "1.85"
 description = "A workspace CLI for Gleam monorepos: task fan-out, introspection, and release orchestration derived entirely from gleam.toml"
 license = "MIT"
 homepage = "https://github.com/tylerbutler/trellis"

@@ -192,6 +192,22 @@ errors still go to stderr and a failing task still fails the command. `-v`
 writes a `+ ` trace to stderr for each `gleam`, `git`, and `gh` invocation,
 naming the directory it ran in.
 
+### Exit codes
+
+Every command uses the same four codes. Branch on `1` versus `3` to tell a
+workspace that has problems from a broken environment.
+
+| Code | Meaning | Examples |
+| --- | --- | --- |
+| `0` | Success, no findings | `doctor` found nothing; every task passed |
+| `1` | Ran correctly, found problems | `doctor` findings, missing changelog fragments, a failed task |
+| `2` | Usage error | Unknown flag, missing argument, bad subcommand |
+| `3` | Trellis itself could not run | Unparseable config, not a git repository, missing `gleam`/`gh`, Hex unreachable after retries |
+
+A failed task exits `1`; trellis does not propagate the child's exit code. See
+[Compatibility](https://trellis.tylerbutler.com/docs/compatibility/) for what
+else the version number promises.
+
 ### Introspection
 
 ```
@@ -348,7 +364,7 @@ never blocks the promotion.
 
 Once a package is at a prerelease, a plain `version apply` is an error rather
 than a silent bump to the next release — resolving the cycle has to be
-deliberate. A prerelease belongs to no series, so it moves no
+explicit. A prerelease belongs to no series, so it moves no
 [series tag](#release--publish); exact tags apply as usual, and Hex accepts
 prerelease versions.
 
@@ -469,7 +485,7 @@ under a pinned older one.
 non-path dependencies they share — `lat_core` requiring `gleam_stdlib >=
 0.44.0` while `lat_cli` requires `>= 0.60.0`. Requirements are compared as
 written, never parsed as ranges, so whitespace counts. Divergence is sometimes
-deliberate, so it warns by default:
+intended, so it warns by default:
 
 ```toml
 [tools.trellis.doctor]

@@ -24,6 +24,11 @@ use std::process::ExitCode;
 use term::{ColorChoice, Verbosity};
 use workspace::Workspace;
 
+/// Trellis itself could not run: unparseable config, not a git repository, a
+/// missing `gleam`/`gh`, Hex unreachable after retries. Distinct from 1, which
+/// means the command ran and found problems.
+const EXIT_INTERNAL_ERROR: u8 = 3;
+
 /// Crate version, with `git describe` output appended for builds that aren't
 /// a clean release tag. "VERGEN_IDEMPOTENT_OUTPUT" is the placeholder build.rs
 /// emits when git metadata is unavailable (e.g. a crates.io tarball).
@@ -83,18 +88,18 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// List members in topological order (dependencies first)
+    /// List packages in topological order (dependencies first)
     List {
         /// Emit JSON instead of names
         #[arg(long)]
         json: bool,
-        /// Only members owning files changed since this git ref
+        /// Only packages owning files changed since this git ref
         #[arg(long, value_name = "REF")]
         since: Option<String>,
         /// Add the reverse-dependency closure of the selection
         #[arg(long)]
         with_dependents: bool,
-        /// Only members that participate in releases (excludes `@release` matches)
+        /// Only packages that participate in releases (excludes `@release` matches)
         #[arg(long)]
         releasable: bool,
     },
@@ -111,15 +116,15 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// Run a task across members, graph-parallel by default
+    /// Run a task across packages, graph-parallel by default
     Run {
         /// Built-in (build, test, check, format, docs, deps, clean) or a [tools.trellis.tasks] entry
         #[arg(add = completion::tasks())]
         task: String,
-        /// Packages to run in; all members when omitted
+        /// Packages to run in; all workspace packages when omitted
         #[arg(add = completion::packages())]
         packages: Vec<String>,
-        /// Only members owning files changed since this git ref
+        /// Only packages owning files changed since this git ref
         #[arg(long, value_name = "REF")]
         since: Option<String>,
         /// Add the reverse-dependency closure of the selection
@@ -148,12 +153,12 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// Run an arbitrary command in each member directory
+    /// Run an arbitrary command in each package directory
     Exec {
-        /// Packages to run in; all members when omitted
+        /// Packages to run in; all workspace packages when omitted
         #[arg(add = completion::packages())]
         packages: Vec<String>,
-        /// Only members owning files changed since this git ref
+        /// Only packages owning files changed since this git ref
         #[arg(long, value_name = "REF")]
         since: Option<String>,
         /// Run one package at a time, in dependency order
@@ -191,7 +196,7 @@ enum Command {
     /// what can be configured. Refuses if the repository is already a trellis
     /// workspace, and finishes by running `doctor`.
     Init,
-    /// Scaffold a new workspace member
+    /// Scaffold a new package in the workspace
     New {
         /// Package name (lowercase letters, digits, and _)
         name: String,
@@ -293,6 +298,10 @@ enum ChangelogCommand {
         /// Fixed, Breaking, …)
         #[arg(long, add = completion::changelog_kinds())]
         kind: String,
+        /// Change category, grouping entries above the kind headings (see
+        /// [tools.trellis.changelog] categories; none are configured by default)
+        #[arg(long, add = completion::changelog_categories())]
+        category: Option<String>,
         /// The changelog entry text
         #[arg(long)]
         body: String,
@@ -396,7 +405,7 @@ enum TagCommand {
 enum LockfileCommand {
     /// Run `gleam deps download`, scoped to one package (with retry/backoff)
     Refresh {
-        /// Refresh only this package instead of every member
+        /// Refresh only this package instead of the whole workspace
         #[arg(long, add = completion::packages())]
         package: Option<String>,
     },
@@ -406,10 +415,10 @@ enum LockfileCommand {
 enum CiCommand {
     /// Emit a GitHub Actions strategy matrix: {"include":[{name,path,version},…]}
     Matrix {
-        /// Only members affected by changes since this git ref (dependents included)
+        /// Only packages affected by changes since this git ref (dependents included)
         #[arg(long, value_name = "REF")]
         since: Option<String>,
-        /// Only members that participate in releases
+        /// Only packages that participate in releases
         #[arg(long)]
         releasable: bool,
     },
@@ -463,12 +472,15 @@ fn main() -> ExitCode {
     if notify_update && result.is_ok() {
         update_check::notify();
     }
+    // The exit-code contract: 0 success, 1 the command ran and found problems,
+    // 2 usage (clap's own), 3 trellis could not run. See the Compatibility page
+    // in website/src/content/docs/docs/.
     match result {
         Ok(true) => ExitCode::SUCCESS,
         Ok(false) => ExitCode::FAILURE,
         Err(err) => {
             eprintln!("error: {err:#}");
-            ExitCode::FAILURE
+            ExitCode::from(EXIT_INTERNAL_ERROR)
         }
     }
 }
@@ -597,9 +609,16 @@ fn dispatch(cli: Cli) -> Result<bool> {
             ChangelogCommand::New {
                 package,
                 kind,
+                category,
                 body,
             } => {
-                commands::changelog::new_fragment(&workspace, package.as_deref(), &kind, &body)?;
+                commands::changelog::new_fragment(
+                    &workspace,
+                    package.as_deref(),
+                    &kind,
+                    category.as_deref(),
+                    &body,
+                )?;
                 Ok(true)
             }
             ChangelogCommand::Check { base, head, json } => commands::changelog::check(

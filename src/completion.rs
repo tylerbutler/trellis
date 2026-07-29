@@ -17,9 +17,9 @@ use clap_complete::engine::{ArgValueCandidates, CompletionCandidate};
 /// error, never a panic, since a completer that fails loudly makes the shell
 /// unusable.
 ///
-/// The global `-C/--directory` flag is deliberately not consulted: the
-/// completion engine hands custom completers only the partial word being
-/// completed, so the process's cwd is the only context available.
+/// The global `-C/--directory` flag is not consulted: the completion engine
+/// hands custom completers only the partial word being completed, so the
+/// process's cwd is the only context available.
 fn workspace() -> Option<Workspace> {
     Workspace::load(&std::env::current_dir().ok()?).ok()
 }
@@ -97,6 +97,23 @@ pub fn changelog_kinds() -> ArgValueCandidates {
             .kinds
             .iter()
             .map(|kind| candidate(&kind.label, format!("{:?} bump", kind.bump)))
+            .collect()
+    })
+}
+
+/// Change categories from `[tools.trellis.changelog]`. Empty outside a
+/// workspace, and inside one that configures none.
+pub fn changelog_categories() -> ArgValueCandidates {
+    ArgValueCandidates::new(|| {
+        let Some(workspace) = workspace() else {
+            return Vec::new();
+        };
+        workspace
+            .config
+            .changelog
+            .categories
+            .iter()
+            .map(|category| candidate(category, String::new()))
             .collect()
     })
 }

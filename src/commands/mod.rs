@@ -20,8 +20,8 @@ pub mod version_override;
 /// clap definition, so the website's CLI reference can never drift from the
 /// actual flags. `trellis markdown-help` prints exactly this; a test asserts
 /// the checked-in page (`website/src/content/docs/docs/reference.md`) matches
-/// it byte-for-byte. It's a plain `.md` (not `.mdx`) on purpose: some help
-/// strings contain `{`/`}`, which MDX would try to evaluate.
+/// it byte-for-byte. It's a plain `.md`, not `.mdx`: some help strings contain
+/// `{`/`}`, which MDX would try to evaluate.
 pub fn markdown_help() -> String {
     let body = clap_markdown::help_markdown_custom::<crate::Cli>(
         &clap_markdown::MarkdownOptions::new().show_footer(false),

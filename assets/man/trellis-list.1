@@ -2,11 +2,11 @@
 .el .ds Aq '
 .TH trellis-list 1 "" trellis "Trellis Manual"
 .SH NAME
-trellis\-list \- List members in topological order (dependencies first)
+trellis\-list \- List packages in topological order (dependencies first)
 .SH SYNOPSIS
 \fBtrellis list\fR [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-\-json\fR] [\fB\-\-color\fR] [\fB\-\-since\fR] [\fB\-q\fR|\fB\-\-quiet\fR] [\fB\-\-with\-dependents\fR] [\fB\-\-releasable\fR] [\fB\-v\fR|\fB\-\-verbose\fR] [\fB\-\-no\-update\-check\fR] [\fB\-h\fR|\fB\-\-help\fR] 
 .SH DESCRIPTION
-List members in topological order (dependencies first)
+List packages in topological order (dependencies first)
 .SH OPTIONS
 .TP
 \fB\-C\fR, \fB\-\-directory\fR \fI<DIR>\fR
@@ -31,7 +31,7 @@ never
 .RE
 .TP
 \fB\-\-since\fR \fI<REF>\fR
-Only members owning files changed since this git ref
+Only packages owning files changed since this git ref
 .TP
 \fB\-q\fR, \fB\-\-quiet\fR
 Suppress normal\-path output; JSON/report payloads and errors still print
@@ -40,7 +40,7 @@ Suppress normal\-path output; JSON/report payloads and errors still print
 Add the reverse\-dependency closure of the selection
 .TP
 \fB\-\-releasable\fR
-Only members that participate in releases (excludes `@release` matches)
+Only packages that participate in releases (excludes `@release` matches)
 .TP
 \fB\-v\fR, \fB\-\-verbose\fR
 Trace every command trellis shells out to, on stderr

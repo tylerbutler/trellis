@@ -2,18 +2,18 @@
 .el .ds Aq '
 .TH trellis-run 1 "" trellis "Trellis Manual"
 .SH NAME
-trellis\-run \- Run a task across members, graph\-parallel by default
+trellis\-run \- Run a task across packages, graph\-parallel by default
 .SH SYNOPSIS
 \fBtrellis run\fR [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-\-since\fR] [\fB\-\-color\fR] [\fB\-\-with\-dependents\fR] [\fB\-q\fR|\fB\-\-quiet\fR] [\fB\-\-target\fR] [\fB\-\-strict\fR] [\fB\-v\fR|\fB\-\-verbose\fR] [\fB\-\-check\fR] [\fB\-\-no\-update\-check\fR] [\fB\-\-serial\fR] [\fB\-\-keep\-going\fR] [\fB\-j\fR|\fB\-\-jobs\fR] [\fB\-\-json\fR] [\fB\-h\fR|\fB\-\-help\fR] <\fITASK\fR> [\fIPACKAGES\fR] 
 .SH DESCRIPTION
-Run a task across members, graph\-parallel by default
+Run a task across packages, graph\-parallel by default
 .SH OPTIONS
 .TP
 \fB\-C\fR, \fB\-\-directory\fR \fI<DIR>\fR
 Run as if started in this directory
 .TP
 \fB\-\-since\fR \fI<REF>\fR
-Only members owning files changed since this git ref
+Only packages owning files changed since this git ref
 .TP
 \fB\-\-color\fR \fI<WHEN>\fR [default: auto]
 When to color output. `auto` follows the terminal, `NO_COLOR`, and `CLICOLOR=0`; the other two override that detection
@@ -84,4 +84,4 @@ Print help (see a summary with \*(Aq\-h\*(Aq)
 Built\-in (build, test, check, format, docs, deps, clean) or a [tools.trellis.tasks] entry
 .TP
 [\fIPACKAGES\fR]
-Packages to run in; all members when omitted
+Packages to run in; all workspace packages when omitted
