@@ -58,8 +58,44 @@ dependencies). The design principle of this tool is therefore:
   wrap and generate for it rather than reimplement it. See §7.
   *(Revised pre-release: trellis now IS the changelog engine — §7 explains
   why the wrap was retired before it shipped.)*
-- **Not a general task runner.** `just` remains fine for repo chores unrelated to
-  the workspace (the justfile shrinks; it doesn't have to die).
+- **Not a general task runner.** Trellis fans a task out across members; it does
+  not own a repo's chores. `just` remains fine for everything unrelated to the
+  workspace (the justfile shrinks; it doesn't have to die). Whether tasks can
+  depend on *each other* is a separate question, and an open one — see
+  "Deferred" below.
+- **GitHub is the only forge trellis integrates with.** This is a statement of
+  what 1.0 supports, not a closed door. `release pr`, `tag create
+  --github-release`, `ci matrix`, and `ci outputs` shell out to `gh`; the
+  workspace, graph, version, and publish layers are forge-agnostic and never
+  touch one. The dependency is confined to release orchestration — a single
+  resolver and a handful of call sites — so another forge is a tractable
+  addition rather than a rewrite. No such support is promised at 1.0.
+
+### Deferred — decided *not yet*, not *no*
+
+These are open questions rather than rejected ones. They are listed so that 1.0
+users can tell the difference: the non-goals above are answers, and these are
+not yet answered. Each would be additive if it lands, so deferring costs nothing
+but the ambiguity this list removes.
+
+- **Fixed/linked version groups.** Packages that version together — one shared
+  version for the workspace, or for a named subset. Every version is currently
+  computed independently from that package's own fragments. Ripple bumping
+  (§5) already covers the *correctness* problem this would also solve: a
+  dependent left unbumped resolving two different ways on Hex. What remains is
+  the presentation property, and it has to answer for per-package changelogs
+  and `{name}-v{version}` tag formats before it can ship. `fixed = [...]` would
+  be additive configuration whenever it is decided.
+- **Watch mode.** `trellis run test --watch`. Not covered by "not a build
+  system" — that non-goal is about caching, and watching is scheduling.
+  External watchers (`watchexec -- trellis run test`) compose with trellis
+  today; whether trellis should grow its own is undecided.
+- **Task dependency graphs.** `needs = ["build"]` — one task requiring another
+  to run first. Note that the existing `needs_deps` is not a precedent for it:
+  `needs_deps` is a precondition of the workspace model (dependencies have to
+  be on disk before any task can run in that package), not an edge between two
+  tasks. The line between task fan-out and task running is exactly what is
+  undecided here.
 
 ## 3. Design overview
 
