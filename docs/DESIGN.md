@@ -20,7 +20,7 @@ duplicated config. This repo is the reference example of what that costs.
 | `.github/workflows/publish.yml:83-92` | `replace-path-deps` name→`gleam.toml` map — a hand-written mirror of the path-dependency graph | Must be updated whenever any package gains a path dep; nothing verifies it |
 | `.github/workflows/release.yml:38-62` | 25 lines of inline `sed`/`grep` that patch `manifest.toml` locked versions after version bumps (to avoid `gleam update` tripping Hex rate limits) | Untestable regex logic living inside YAML |
 | `.github/workflows/publish.yml:41-65` | Inline retry-with-backoff shell function for Hex rate limits, plus comments encoding *which* gleam commands are safe to run | Institutional knowledge stored in workflow comments |
-| `tylerbutler/actions/read-gleam-workspace` | External action that parses `workspace.toml` into projects / version-files / tag→path outputs | Workspace semantics live in a second repo, pinned by SHA in four workflows |
+| `tylerbutler/actions/read-gleam-workspace` | External action that parses `workspace.toml` into projects / version_files / tag→path outputs | Workspace semantics live in a second repo, pinned by SHA in four workflows |
 | `DEV.md`, `justfile` header comment | Dependency order documented as prose | Already stale relative to the real graph |
 | `examples/` | Special-cased by hand in `format`, `lint`, and its own recipes | Every new "non-package project" needs bespoke recipe edits |
 
@@ -130,35 +130,35 @@ exclude = { docs = ["examples/*"], "@release" = ["examples/*"] }
 # check, format, docs, deps, clean) need no declaration.
 [tools.trellis.tasks.lint]
 command = "gleam run -m glinter"
-needs-deps = true            # run `gleam deps download` first if not cached
+needs_deps = true            # run `gleam deps download` first if not cached
 
 [tools.trellis.publish]
-tag-format = "{name}-v{version}"          # lattice_core-v1.1.0
+tag_format = "{name}-v{version}"          # lattice_core-v1.1.0
 # The moving series tag, re-pointed at each release in the series. {series} is
 # derived from the version — `0.Y` while the major is 0, `X` after — and never
 # configured. Omit {name} for one repository-wide tag.
-series-tag-format = "{name}-v{series}"    # lattice_core-v1, lattice_cli-v0.4
+series_tag_format = "{name}-v{series}"    # lattice_core-v1, lattice_cli-v0.4
 # Which tags a release creates: exact (default), series, or both. The
 # overrides map picks it per member, as globs matched against member paths.
-tag-mode = "exact"
-tag-mode-overrides = { both = ["packages/lattice_cli"] }
+tag_mode = "exact"
+tag_mode_overrides = { both = ["packages/lattice_cli"] }
 # How a path dep is rewritten to a Hex requirement at publish time, from the
 # dependency's current version X.Y.Z:
 #   minor  → ">= X.Y.Z and < (X+1).0.0"   (default)
 #   patch  → ">= X.Y.Z and < X.(Y+1).0"
 #   exact  → "== X.Y.Z"
-path-dep-requirement = "minor"
-retry = { attempts = 5, initial-delay = "30s", multiplier = 2 }
+path_dep_requirement = "minor"
+retry = { attempts = 5, initial_delay = "30s", multiplier = 2 }
 
 [tools.trellis.changelog]
 # Native engine (§7): fragments in <dir>/unreleased/, version sections in
 # <dir>/<package>/, per-package CHANGELOG.md assembled from them. All
 # format values are minijinja templates. Everything below is the default.
 dir = ".changes"
-header-format = "# {{ name }} changelog"
-version-format = "## v{{ version }} - {{ date }}"
-kind-format = "### {{ kind }}"
-change-format = "- {{ body }}"
+header_format = "# {{ name }} changelog"
+version_format = "## v{{ version }} - {{ date }}"
+kind_format = "### {{ kind }}"
+change_format = "- {{ body }}"
 kinds = [
   { label = "Initial Release", bump = "major" },
   { label = "Breaking", bump = "major" },
@@ -248,7 +248,7 @@ trellis version apply                             # batch + merge + lockfile pat
   block means a package cannot be released" has no equivalent, because there
   is no config block.
 - `changelog check` replaces the changie-check glue: map the base..head diff to
-  packages, decide which need fragments, emit JSON (`has-entries`, `needs-entry`,
+  packages, decide which need fragments, emit JSON (`has_entries`, `needs_entry`,
   `preview`, per-package detail) for the PR workflow's sticky comment. Invalid
   fragments (unknown package or kind, empty body) fail the check.
 - `version apply` is the release step: per pending package, compute the next
@@ -264,7 +264,7 @@ trellis version apply                             # batch + merge + lockfile pat
   version in the repo; it becomes a Hex requirement only at publish time,
   derived from the dependency's version *then* (§5, publish). So a dependent
   left unbumped would let one published version resolve two different ways
-  depending on when it was fetched. Dependents bump by the `dependency-kind`
+  depending on when it was fetched. Dependents bump by the `dependency_kind`
   bump (patch by default) and get a generated entry of that kind; a package's
   own larger bump still wins. The sweep is one forward pass over the
   topologically ordered member list, so transitivity is free and a ripple
@@ -304,8 +304,8 @@ trellis lockfile refresh [--package <pkg>]
   names no particular version: it never carries a GitHub Release (which would
   silently retarget), `publish --tag` refuses it (`ci tag-package` still
   resolves it, so CI can route on it), and a `series`-only workspace releases
-  through `--all-untagged` rather than a tag-push trigger. `tag-mode` sets the
-  lifecycle for the workspace; `tag-mode-overrides` sets it per member.
+  through `--all-untagged` rather than a tag-push trigger. `tag_mode` sets the
+  lifecycle for the workspace; `tag_mode_overrides` sets it per member.
 - `publish` performs, per package:
   1. **Idempotency check** — query Hex once; skip if this exact version is already
      published (makes re-runs of a partially failed release safe).
@@ -315,7 +315,7 @@ trellis lockfile refresh [--package <pkg>]
      library function).
   3. **Rewrite path deps** — for each workspace-internal path dep, substitute the
      Hex requirement derived from that dep's *current* `gleam.toml` version per
-     `path-dep-requirement`. The rewrite map is computed from the graph — the
+     `path_dep_requirement`. The rewrite map is computed from the graph — the
      hand-maintained `replace-path-deps` list in publish.yml disappears.
   4. **Publish** — `gleam publish --yes`, with retry/backoff.
   5. **Restore** — put the original `gleam.toml` back (rewrite happens in a temp
@@ -333,7 +333,7 @@ trellis lockfile refresh [--package <pkg>]
 
 ```
 trellis ci matrix [--since <ref>] [--json]   # {"include":[{"name","path","version"},…]}
-trellis ci outputs                            # projects/version-files/etc. as GHA outputs
+trellis ci outputs                            # projects/version_files/etc. as GHA outputs
 ```
 
 Emits the exact structures workflows consume, replacing every
@@ -361,7 +361,7 @@ Checks, each of which is an unenforced invariant in lattice today:
    no releasable member path-depends on a release-excluded member — a published
    package cannot require a project that will never exist on Hex.
 7. Tag-format collisions (two members whose names would produce ambiguous tags),
-   for series tags as well as exact ones — except a `series-tag-format` without
+   for series tags as well as exact ones — except a `series_tag_format` without
    `{name}`, which warns instead once the workspace has more than one series
    member, since sharing one repository-wide tag is the point and costs only
    the ability to resolve it back to a single package. That warning keys on the

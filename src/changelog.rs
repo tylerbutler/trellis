@@ -180,7 +180,7 @@ pub fn kind_labels(kinds: &[KindConfig]) -> String {
 /// The entry recording that a workspace dependency bumped in this release.
 ///
 /// A ripple is modelled as an ordinary fragment so the rest of the engine
-/// needs no special case: `next_version` folds the `dependency-kind` bump into
+/// needs no special case: `next_version` folds the `dependency_kind` bump into
 /// the same max-bump rule, and `render_section` files it under that kind's
 /// heading alongside any hand-written entries. It is never written to disk —
 /// the body embeds the dependency's new version, which is only settled once
@@ -193,7 +193,7 @@ pub fn dependency_fragment(
 ) -> Result<Fragment> {
     let body = render(
         &config.dependency_body,
-        "dependency-body",
+        "dependency_body",
         minijinja::context! { dependency, dependency_version, project },
     )?;
     Ok(Fragment {
@@ -287,7 +287,7 @@ pub fn render_section(
     let series = crate::config::series_of(version).unwrap_or_default();
     let mut out = render(
         &config.version_format,
-        "version-format",
+        "version_format",
         minijinja::context! { name, version, date, tag, series },
     )?;
     out.push('\n');
@@ -299,7 +299,7 @@ pub fn render_section(
         out.push('\n');
         out.push_str(&render(
             &config.kind_format,
-            "kind-format",
+            "kind_format",
             minijinja::context! { kind => kind.label, name, version },
         )?);
         out.push('\n');
@@ -307,7 +307,7 @@ pub fn render_section(
         for fragment in entries {
             out.push_str(&render(
                 &config.change_format,
-                "change-format",
+                "change_format",
                 minijinja::context! { body => fragment.body, kind => fragment.kind, name, version },
             )?);
             out.push('\n');
@@ -463,7 +463,7 @@ pub fn render_merged_changelog(
 pub fn render_header(config: &ChangelogConfig, name: &str) -> Result<String> {
     render(
         &config.header_format,
-        "header-format",
+        "header_format",
         minijinja::context! { name },
     )
 }
@@ -639,7 +639,7 @@ mod tests {
         };
         let add = fragment("p", "Added", "x");
         let err = render_section(&config, "p", "0.2.0", "t", "d", &[&add]).unwrap_err();
-        assert!(format!("{err:#}").contains("version-format"));
+        assert!(format!("{err:#}").contains("version_format"));
     }
 
     #[test]
@@ -663,7 +663,7 @@ mod tests {
         assert_eq!(generated.body, "lat_mid now needs lat_core 1.3.0");
     }
 
-    /// A pure ripple bumps by whatever `dependency-kind` is configured to bump,
+    /// A pure ripple bumps by whatever `dependency_kind` is configured to bump,
     /// and a package's own larger bump still wins.
     #[test]
     fn generated_fragments_participate_in_the_max_bump_rule() {

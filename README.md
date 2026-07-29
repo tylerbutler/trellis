@@ -131,16 +131,16 @@ exclude = { docs = ["examples/*"], "@release" = ["examples/*"] }
 # format, docs, deps, clean) need no declaration.
 [tools.trellis.tasks.lint]
 command = "gleam run -m glinter"
-needs-deps = true            # run `gleam deps download` first if not cached
+needs_deps = true            # run `gleam deps download` first if not cached
 
 [tools.trellis.publish]
-tag-format = "{name}-v{version}"
+tag_format = "{name}-v{version}"
 # A moving tag per release series, for consumers who pin a series instead of
 # chasing patch tags. {series} is derived from the version: `0.Y` while the
-# major is 0, `X` after. `tag-mode` is exact (default), series, or both.
-series-tag-format = "{name}-v{series}"
-tag-mode = "exact"
-tag-mode-overrides = { both = ["packages/lat_cli"] }
+# major is 0, `X` after. `tag_mode` is exact (default), series, or both.
+series_tag_format = "{name}-v{series}"
+tag_mode = "exact"
+tag_mode_overrides = { both = ["packages/lat_cli"] }
 ```
 
 Each member is a directory with a `gleam.toml`. Path dependencies between
@@ -338,7 +338,7 @@ still unreleased as far as `1.0.0` is concerned, and retiring them at `rc.1`
 would leave the final release with nothing to say. `--pre none` promotes the
 candidate to its final version and consumes them. This means an entry appears
 twice in `CHANGELOG.md`: once under the RC that shipped it, once under the
-final. `version --json` reports `fragments-retained` so a workflow can tell the
+final. `version --json` reports `fragments_retained` so a workflow can tell the
 two cases apart.
 
 A prerelease labels the whole plan, rippled dependents included, so the
@@ -365,9 +365,9 @@ small context (`name`, `version`, `date`, `tag`, `kind`, `body` as applicable):
 
 ```toml
 [tools.trellis.changelog]
-version-format = "## v{{ version }} - {{ date }}"     # default
-kind-format = "### {{ kind }}"                         # default
-change-format = "- {{ body }}"                         # default
+version_format = "## v{{ version }} - {{ date }}"     # default
+kind_format = "### {{ kind }}"                         # default
+change_format = "- {{ body }}"                         # default
 kinds = [
   { label = "Breaking", bump = "major" },
   { label = "Added", bump = "minor" },
@@ -375,11 +375,11 @@ kinds = [
 ]
 
 # Generated ripple entries are ordinary entries of one configured kind, so
-# they sort and render like any other. `dependency-kind` must name one of
+# they sort and render like any other. `dependency_kind` must name one of
 # `kinds`; its bump is what a package bumps by when a dependency bump is the
 # only reason it is being released.
-dependency-kind = "Dependencies"                                  # default
-dependency-body = "Updated {{ dependency }} to {{ dependency_version }}"  # default
+dependency_kind = "Dependencies"                                  # default
+dependency_body = "Updated {{ dependency }} to {{ dependency_version }}"  # default
 ```
 
 Note that each package's CHANGELOG.md is a generated file: the source of
@@ -412,7 +412,7 @@ tree; a no-op when there are no fragments.
 creating GitHub Releases (via the `gh` CLI) with the matching CHANGELOG
 section as the body.
 
-A package tags in one of two lifecycles, per `tag-mode`. Exact tags
+A package tags in one of two lifecycles, per `tag_mode`. Exact tags
 (`{name}-v{version}`) are immutable — created once, never rewritten. Series
 tags (`{name}-v{series}`) move: each release force-moves the tag to the
 release commit and force-pushes it. Because a moving tag names no particular
@@ -425,7 +425,7 @@ against the Hex API (already-published versions are skipped, so re-running a
 partially failed release is safe), validation (`gleam format --check`,
 `build --warnings-as-errors`, `test`), then a path-dep rewrite computed from
 the graph — each workspace path dep becomes the Hex requirement derived from
-that dep's current version (`minor`, `patch`, or `exact`, per `path-dep-requirement`) —
+that dep's current version (`minor`, `patch`, or `exact`, per `path_dep_requirement`) —
 followed by `gleam publish --yes`, and finally restoration of the original
 `gleam.toml` (the repo never shows rewritten files, even on failure). Every
 Hex-touching step runs under the configured `[tools.trellis.publish] retry` backoff policy.
@@ -458,12 +458,12 @@ run it on every PR.
 
 Two further checks cover things that must agree because they are duplicated:
 
-**Unrecognized `[tools.trellis]` keys.** Every trellis config key is
-kebab-case, so `tag_format = "..."` under `[tools.trellis.publish]` was
-silently ignored — the workspace kept producing default tags with no signal.
-A key whose kebab-cased form *is* a real one is now an error naming what you
-meant; anything else is a warning, since it may belong to a newer trellis and
-erroring would make the workspace unloadable under a pinned older one.
+**Deprecated and unrecognized `[tools.trellis]` keys.** Every trellis config
+key is snake_case. Through v0.7.0 they were kebab-case; the old spellings are
+still accepted, and each one is reported so a workspace can migrate at its own
+pace. A key that is not recognized in any spelling is also a warning, since it
+may belong to a newer trellis and erroring would make the workspace unloadable
+under a pinned older one.
 
 **Shared external dependencies.** Members are checked for agreeing on the
 non-path dependencies they share — `lat_core` requiring `gleam_stdlib >=
@@ -473,7 +473,7 @@ deliberate, so it warns by default:
 
 ```toml
 [tools.trellis.doctor]
-shared-dependencies = "warn"   # or "error" to fail CI, "off" to skip
+shared_dependencies = "warn"   # or "error" to fail CI, "off" to skip
 ```
 
 There is no `--fix` for it: picking a winner is a judgment call.

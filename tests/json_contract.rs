@@ -140,7 +140,7 @@ fn changelog_check_json_contract() {
     init_repo(root);
     git(root, &["checkout", "-q", "-b", "feature"]);
     // One releasable package with a fragment, one without, so the payload
-    // exercises both `has-entry` states and a non-empty `preview`.
+    // exercises both `has_entry` states and a non-empty `preview`.
     write(&root.join("packages/lat_core/src/new.gleam"), "// x\n");
     write(&root.join("packages/lat_mid/src/new.gleam"), "// x\n");
     add_fragment(root, "lat_core", "Added", "something");
@@ -243,9 +243,9 @@ fn ci_outputs_contract() {
         [
             "projects",
             "releasable",
-            "version-files",
+            "version_files",
             "tags",
-            "series-tags"
+            "series_tags"
         ]
     );
     insta::assert_json_snapshot!(serde_json::Value::Object(
@@ -270,7 +270,7 @@ fn ci_tag_package_json_contract_for_an_exact_tag() {
     ));
 }
 
-/// A series tag resolves to `tag-series` instead of `tag-version`, so the two
+/// A series tag resolves to `tag_series` instead of `tag_version`, so the two
 /// variants serialize different key sets and both need pinning.
 #[test]
 fn ci_tag_package_json_contract_for_a_series_tag() {
@@ -282,7 +282,7 @@ fn ci_tag_package_json_contract_for_a_series_tag() {
         "[tools.trellis]\nmembers = [\"packages/*\", \"examples/*\"]\n\
          exclude = { \"@release\" = [\"examples/*\"] }\n\n\
          [tools.trellis.publish]\n\
-         tag-mode-overrides = { both = [\"packages/lat_cli\"] }\n",
+         tag_mode_overrides = { both = [\"packages/lat_cli\"] }\n",
     );
     init_repo(root);
 
@@ -339,7 +339,7 @@ fn doctor_json_contract_with_findings() {
 
 // ---- run / exec ----------------------------------------------------------
 
-/// `duration-ms` is contractual as a field, not as a value — it is wall-clock
+/// `duration_ms` is contractual as a field, not as a value — it is wall-clock
 /// and differs on every run. Pin its presence and type, not its number.
 const DURATION: &str = "[ms]";
 
@@ -347,9 +347,9 @@ const DURATION: &str = "[ms]";
 fn run_json_contract() {
     let payload = json_output(&fixture("basic"), &["run", "hello", "--json"], true);
     for result in payload["results"].as_array().unwrap() {
-        assert!(result["duration-ms"].is_u64());
+        assert!(result["duration_ms"].is_u64());
     }
-    insta::assert_json_snapshot!(payload, { r#".results[]["duration-ms"]"# => DURATION });
+    insta::assert_json_snapshot!(payload, { r#".results[]["duration_ms"]"# => DURATION });
 }
 
 /// The failing shape is the one a workflow reads: it carries the exit code and
@@ -361,5 +361,5 @@ fn exec_json_contract_with_a_failure() {
         &["exec", "--serial", "--json", "--", "sh", "-c", "exit 3"],
         false,
     );
-    insta::assert_json_snapshot!(payload, { r#".results[]["duration-ms"]"# => DURATION });
+    insta::assert_json_snapshot!(payload, { r#".results[]["duration_ms"]"# => DURATION });
 }

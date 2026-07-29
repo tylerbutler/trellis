@@ -22,7 +22,7 @@ pub struct Member {
     /// False when the member matches an `@release` exclusion glob.
     pub releasable: bool,
     /// Which tags a release creates for this member: the workspace
-    /// `tag-mode`, unless a `tag-mode-overrides` glob claims it.
+    /// `tag_mode`, unless a `tag_mode_overrides` glob claims it.
     pub tag_mode: TagMode,
 }
 
@@ -254,7 +254,7 @@ impl Workspace {
                     diagnostics.push(
                         Finding::error(
                             Check::WorkspaceConfig,
-                            format!("invalid `tag-mode-overrides.{key}` glob: {err:#}"),
+                            format!("invalid `tag_mode_overrides.{key}` glob: {err:#}"),
                         )
                         .at(GLEAM_TOML),
                     );
@@ -597,36 +597,38 @@ pub fn toposort(
     }
 }
 
-/// Report keys under `[tools.trellis]` that trellis does not recognize.
+/// Report keys under `[tools.trellis]` that trellis does not recognize, and
+/// keys still spelled the pre-0.8 kebab-case way.
 ///
-/// A misspelling is an **error**: `tag_format` looks like it configures the tag
-/// scheme, silently doesn't, and the workspace goes on producing default tags.
-/// Failing every command is the point — that is drift the tool exists to catch,
-/// and the message names the key it meant.
-///
-/// Anything else is a **warning**, so a workspace using a key from a newer
-/// trellis still loads under a pinned older one.
+/// Both are **warnings**. An unrecognized key may simply belong to a newer
+/// trellis, so a workspace using one still loads under a pinned older one; a
+/// deprecated key still configures what it always did, so failing on it would
+/// break working repositories for a spelling change.
 fn report_unknown_config_keys(config: &ConfigFile, diagnostics: &mut Diagnostics) {
-    for key in &config.unknown_keys {
-        let finding = match &key.typo_of {
-            Some(intended) => Finding::error(
+    for key in &config.deprecated_keys {
+        diagnostics.push(
+            Finding::warning(
                 Check::WorkspaceConfig,
                 format!(
-                    "[tools.trellis] has no `{}`; did you mean `{intended}`? \
-                     (trellis config keys are kebab-case)",
-                    key.path
+                    "[tools.trellis] key `{}` is deprecated; rename it to `{}` \
+                     (trellis config keys are snake_case)",
+                    key.path, key.replacement
                 ),
-            ),
-            None => Finding::warning(
+            )
+            .at(GLEAM_TOML),
+        );
+    }
+    for path in &config.unknown_keys {
+        diagnostics.push(
+            Finding::warning(
                 Check::WorkspaceConfig,
                 format!(
-                    "[tools.trellis] key `{}` is not recognized and is being ignored; \
-                     it may belong to a newer trellis",
-                    key.path
+                    "[tools.trellis] key `{path}` is not recognized and is being ignored; \
+                     it may belong to a newer trellis"
                 ),
-            ),
-        };
-        diagnostics.push(finding.at(GLEAM_TOML));
+            )
+            .at(GLEAM_TOML),
+        );
     }
 }
 
@@ -806,7 +808,7 @@ fn resolve_tag_mode(
                 Finding::error(
                     Check::WorkspaceConfig,
                     format!(
-                        "member `{rel_path}` matches `tag-mode-overrides` globs for {}; \
+                        "member `{rel_path}` matches `tag_mode_overrides` globs for {}; \
                          a member may have only one tag mode",
                         modes
                             .iter()

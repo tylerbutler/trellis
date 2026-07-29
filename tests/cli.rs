@@ -256,9 +256,9 @@ fn run_json_reports_one_record_per_package() {
     let core = results.iter().find(|r| r["package"] == "lat_core").unwrap();
     assert_eq!(core["path"], "packages/lat_core");
     assert_eq!(core["status"], "success");
-    assert!(core["duration-ms"].is_u64());
+    assert!(core["duration_ms"].is_u64());
     // Nothing failed, so neither failure field is present.
-    assert!(core.get("exit-code").is_none());
+    assert!(core.get("exit_code").is_none());
     assert!(core.get("command").is_none());
 }
 
@@ -292,7 +292,7 @@ fn exec_json_records_the_exit_code_of_the_failing_command() {
     let results = document["results"].as_array().unwrap();
     assert_eq!(results.len(), 1);
     assert_eq!(results[0]["status"], "failed");
-    assert_eq!(results[0]["exit-code"], 3);
+    assert_eq!(results[0]["exit_code"], 3);
     // `sh -c` is unwrapped back to the script, matching what the summary table
     // and the `$ ...` echo have always shown.
     assert_eq!(results[0]["command"], "exit 3");
@@ -315,7 +315,7 @@ fn exec_json_distinguishes_skipped_from_failed() {
         .collect();
     assert_eq!(statuses, ["failed", "skipped", "skipped", "skipped"]);
     let skipped = results.iter().find(|r| r["status"] == "skipped").unwrap();
-    assert!(skipped.get("exit-code").is_none());
+    assert!(skipped.get("exit_code").is_none());
     assert!(skipped.get("command").is_none());
 }
 
@@ -798,10 +798,10 @@ fn doctor_github_format_emits_annotations_and_nothing_else() {
         .assert()
         .failure()
         .stdout(predicate::str::contains(
-            "::error title=path-dependency,file=packages/a/gleam.toml::",
+            "::error title=path_dependency,file=packages/a/gleam.toml::",
         ))
         .stdout(predicate::str::contains(
-            "::warning title=changelog-missing,file=packages/a/CHANGELOG.md::",
+            "::warning title=changelog_missing,file=packages/a/CHANGELOG.md::",
         ))
         // The prose surfaces belong to text mode alone.
         .stdout(predicate::str::contains("checked:").not())
@@ -903,7 +903,7 @@ fn doctor_json_format_reports_applied_fixes() {
 
     let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
     let payload: serde_json::Value = serde_json::from_str(&stdout).unwrap();
-    assert_eq!(payload["applied"][0]["kind"], "seed-changelog");
+    assert_eq!(payload["applied"][0]["kind"], "seed_changelog");
     assert_eq!(payload["applied"][0]["file"], "packages/a/CHANGELOG.md");
     // The re-inspect ran, so the warning it fixed is gone from the payload.
     assert_eq!(payload["findings"].as_array().unwrap().len(), 0);
@@ -1254,7 +1254,7 @@ fn walk(dir: &Path) -> Vec<PathBuf> {
 
 // ---- doctor: unrecognized config keys ---------------------------------
 
-/// A two-member workspace, so the shared-dependency check has something to
+/// A two-member workspace, so the shared_dependency check has something to
 /// compare. `config` is spliced in under `[tools.trellis]`.
 fn workspace_with(root: &Path, config: &str, a_deps: &str, b_deps: &str) {
     write(
@@ -1272,14 +1272,13 @@ fn workspace_with(root: &Path, config: &str, a_deps: &str, b_deps: &str) {
 }
 
 #[test]
-fn a_misspelled_config_key_is_an_error_naming_the_real_one() {
+fn a_pre_0_8_kebab_case_key_still_works_and_says_it_is_deprecated() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
-    // Underscore instead of hyphen: reads as configuring the tag scheme, and
-    // silently does not.
+    // The spelling every release through v0.7.0 documented.
     workspace_with(
         root,
-        "[tools.trellis.publish]\ntag_format = \"{name}@{version}\"\n",
+        "[tools.trellis.publish]\ntag-format = \"{name}@{version}\"\n",
         "",
         "",
     );
@@ -1287,37 +1286,38 @@ fn a_misspelled_config_key_is_an_error_naming_the_real_one() {
     trellis(root)
         .arg("doctor")
         .assert()
-        .failure()
+        // A warning, not an error: the key still configures what it always did,
+        // so failing would break working repositories over a spelling.
+        .success()
         .stdout(predicate::str::contains(
-            "[tools.trellis] has no `publish.tag_format`; did you mean `publish.tag-format`?",
+            "key `publish.tag-format` is deprecated; rename it to `publish.tag_format`",
         ));
 
-    // Loudly, everywhere — not just in doctor. Producing the default tags
-    // while the config says otherwise is the failure this exists to prevent.
+    // And it is still in effect — the old name is an alias, not a no-op. This
+    // is the half that a silently-ignored key would fail: the tags would come
+    // out in the default `{name}-v{version}` scheme instead.
     trellis(root)
-        .arg("list")
+        .args(["ci", "outputs"])
         .assert()
-        .failure()
-        .stderr(predicate::str::contains(
-            "did you mean `publish.tag-format`",
-        ));
+        .success()
+        .stdout(predicate::str::contains(r#"tags=["a@1.0.0","b@1.0.0"]"#));
 }
 
 #[test]
 fn an_unrecognized_config_key_warns_but_still_loads() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
-    // No kebab-cased form of this is a real key, so it may belong to a newer
-    // trellis. Erroring would make a workspace unloadable under a pinned older
-    // trellis, which is a bad failure for a tool CI pins.
-    workspace_with(root, "future-thing = true\n", "", "");
+    // Not a real key in any spelling, so it may belong to a newer trellis.
+    // Erroring would make a workspace unloadable under a pinned older trellis,
+    // which is a bad failure for a tool CI pins.
+    workspace_with(root, "future_thing = true\n", "", "");
 
     trellis(root)
         .arg("doctor")
         .assert()
         .success()
         .stdout(predicate::str::contains(
-            "key `future-thing` is not recognized and is being ignored",
+            "key `future_thing` is not recognized and is being ignored",
         ));
     trellis(root)
         .arg("list")
@@ -1332,10 +1332,10 @@ fn unknown_key_detection_reaches_nested_tables_and_leaves_free_form_ones_alone()
     let root = dir.path();
     workspace_with(
         root,
-        // `tasks` and `exclude` take arbitrary user-chosen keys, underscores
-        // and all; only the typed structs have a fixed key set.
-        "exclude = { my_task = [\"packages/a\"] }\n\
-         [tools.trellis.tasks.my_task]\ncommand = \"true\"\n\
+        // `tasks` and `exclude` take arbitrary user-chosen keys, hyphens and
+        // all; only the typed structs have a fixed key set.
+        "exclude = { \"my-task\" = [\"packages/a\"] }\n\
+         [tools.trellis.tasks.my-task]\ncommand = \"true\"\n\
          [tools.trellis.changelog]\nnonsense = 1\n",
         "",
         "",
@@ -1346,7 +1346,8 @@ fn unknown_key_detection_reaches_nested_tables_and_leaves_free_form_ones_alone()
         .assert()
         .success()
         .stdout(predicate::str::contains("`changelog.nonsense`"))
-        .stdout(predicate::str::contains("my_task").not());
+        // Neither unrecognized nor deprecated: the user named this table.
+        .stdout(predicate::str::contains("my-task").not());
 }
 
 // ---- doctor: shared dependency agreement ------------------------------
@@ -1405,7 +1406,7 @@ fn shared_dependency_strictness_is_configurable() {
         );
     };
 
-    diverging("[tools.trellis.doctor]\nshared-dependencies = \"error\"\n");
+    diverging("[tools.trellis.doctor]\nshared_dependencies = \"error\"\n");
     trellis(root)
         .arg("doctor")
         .assert()
@@ -1414,7 +1415,7 @@ fn shared_dependency_strictness_is_configurable() {
             "members disagree on `gleam_stdlib`",
         ));
 
-    diverging("[tools.trellis.doctor]\nshared-dependencies = \"off\"\n");
+    diverging("[tools.trellis.doctor]\nshared_dependencies = \"off\"\n");
     trellis(root)
         .arg("doctor")
         .assert()
@@ -1430,7 +1431,7 @@ fn the_new_doctor_table_is_itself_a_recognized_key() {
     let root = dir.path();
     workspace_with(
         root,
-        "[tools.trellis.doctor]\nshared-dependencies = \"warn\"\n",
+        "[tools.trellis.doctor]\nshared_dependencies = \"warn\"\n",
         "",
         "",
     );
@@ -1439,20 +1440,22 @@ fn the_new_doctor_table_is_itself_a_recognized_key() {
         .arg("doctor")
         .assert()
         .success()
-        .stdout(predicate::str::contains("not recognized").not());
+        .stdout(predicate::str::contains("not recognized").not())
+        .stdout(predicate::str::contains("is deprecated").not());
 
-    // ...and its own keys are checked like any other.
+    // ...and its own keys are checked like any other. This table arrived after
+    // the kebab-case era, so the hyphenated spelling gets no alias.
     workspace_with(
         root,
-        "[tools.trellis.doctor]\nshared_dependencies = \"warn\"\n",
+        "[tools.trellis.doctor]\nshared-dependencies = \"warn\"\n",
         "",
         "",
     );
     trellis(root)
         .arg("doctor")
         .assert()
-        .failure()
+        .success()
         .stdout(predicate::str::contains(
-            "did you mean `doctor.shared-dependencies`?",
+            "key `doctor.shared-dependencies` is not recognized",
         ));
 }

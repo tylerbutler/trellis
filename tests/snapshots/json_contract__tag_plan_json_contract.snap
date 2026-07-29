@@ -3,7 +3,7 @@ source: tests/json_contract.rs
 expression: "json_output(root, &[\"tag\", \"plan\", \"--json\"], true)"
 ---
 {
-  "schema": "trellis.tag-plan/1",
+  "schema": "trellis.tag_plan/1",
   "tags": [
     {
       "action": "create",

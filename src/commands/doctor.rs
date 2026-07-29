@@ -80,9 +80,9 @@ impl Fix {
     /// Stable identifier for the wire format; `describe` is the prose beside it.
     fn kind(&self) -> &'static str {
         match self {
-            Fix::SeedChangelog { .. } => "seed-changelog",
-            Fix::PatchLockfile { .. } => "patch-lockfile",
-            Fix::AdoptChangelog { .. } => "adopt-changelog",
+            Fix::SeedChangelog { .. } => "seed_changelog",
+            Fix::PatchLockfile { .. } => "patch_lockfile",
+            Fix::AdoptChangelog { .. } => "adopt_changelog",
         }
     }
 
@@ -205,7 +205,7 @@ pub fn run(root: &Path, options: &DoctorOptions) -> Result<bool> {
             "manifest.toml locked versions match workspace-internal gleam.toml versions",
             "each releasable member's version is not behind its CHANGELOG",
             "unreleased changelog fragments parse and reference valid packages and kinds",
-            "[tools.trellis] carries no unrecognized keys",
+            "[tools.trellis] carries no unrecognized or deprecated keys",
             "members agree on the external dependencies they share",
             "gleam on PATH matches the .tool-versions pin (advisory)",
         ];
@@ -322,7 +322,7 @@ fn print_summary(report: &Report, ok: bool) {
 /// GitHub Actions workflow commands, one per finding.
 ///
 /// Nothing else is printed — a healthy run emits an empty stdout, and the
-/// configless/auto-members inference is deliberately not a `::notice`, since it
+/// configless/auto_members inference is deliberately not a `::notice`, since it
 /// would fire on every run in an auto-discovered repository. The exit code
 /// still carries the verdict.
 fn print_annotations(report: &Report) {
@@ -496,7 +496,7 @@ fn check_exclusions(workspace: &Workspace, report: &mut Report) {
         for pattern in patterns {
             check_member_glob(
                 workspace,
-                &format!("`tag-mode-overrides.{mode}` glob"),
+                &format!("`tag_mode_overrides.{mode}` glob"),
                 pattern,
                 report,
             );
@@ -561,7 +561,7 @@ fn check_member_glob(workspace: &Workspace, label: &str, pattern: &str, report: 
 /// Check 7: no two releasable members produce the same tag, for series tags as
 /// well as exact ones.
 ///
-/// A `series-tag-format` without `{name}` is the exception: sharing one
+/// A `series_tag_format` without `{name}` is the exception: sharing one
 /// repository-wide tag is the point, so it warns rather than errors. The
 /// warning is keyed on the format and the member count, not on today's
 /// versions — `resolve_tag` substitutes `{name}` per member, so with no
@@ -609,7 +609,7 @@ fn check_tag_collisions(workspace: &Workspace, report: &mut Report) {
                 Finding::warning(
                     Check::TagCollision,
                     format!(
-                        "`series-tag-format` `{}` has no {{name}}, so one repository-wide series \
+                        "`series_tag_format` `{}` has no {{name}}, so one repository-wide series \
                          tag covers {}; `trellis ci tag-package` cannot resolve such a tag to one \
                          package",
                         workspace.config.publish.series_tag_format,

@@ -198,15 +198,15 @@ fn changelog_check_maps_diff_to_missing_fragments() {
         .unwrap();
     assert!(!output.status.success(), "lat_mid lacks a fragment");
     let payload: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(payload["has-entries"], true);
-    assert_eq!(payload["needs-entry"], true);
+    assert_eq!(payload["has_entries"], true);
+    assert_eq!(payload["needs_entry"], true);
     let packages = payload["packages"].as_array().unwrap();
     // The example package changed too but is not releasable, so only two rows.
     assert_eq!(packages.len(), 2);
     let core = packages.iter().find(|p| p["name"] == "lat_core").unwrap();
-    assert_eq!(core["has-entry"], true);
+    assert_eq!(core["has_entry"], true);
     let mid = packages.iter().find(|p| p["name"] == "lat_mid").unwrap();
-    assert_eq!(mid["has-entry"], false);
+    assert_eq!(mid["has_entry"], false);
     assert!(payload["preview"].as_str().unwrap().contains("lat_mid"));
 
     // Adding the missing fragment turns the check green.
@@ -270,20 +270,20 @@ fn version_plan_bumps_by_the_largest_kind() {
     assert_eq!(
         plan,
         serde_json::json!({
-            "schema": "trellis.version-plan/1",
+            "schema": "trellis.version_plan/1",
             "bumped": [
                 {"name": "lat_core", "current": "1.2.0", "next": "1.3.0", "fragments": 2,
-                 "updated-dependencies": []},
+                 "updated_dependencies": []},
                 {"name": "lat_mid", "current": "0.5.0", "next": "1.0.0", "fragments": 1,
-                 "updated-dependencies": [{"name": "lat_core", "version": "1.3.0"}]},
+                 "updated_dependencies": [{"name": "lat_core", "version": "1.3.0"}]},
                 {"name": "lat_cli", "current": "0.3.1", "next": "0.3.2", "fragments": 0,
-                 "updated-dependencies": [
+                 "updated_dependencies": [
                      {"name": "lat_core", "version": "1.3.0"},
                      {"name": "lat_mid", "version": "1.0.0"},
                  ]},
             ],
             // An ordinary release retires its fragments.
-            "fragments-retained": false,
+            "fragments_retained": false,
         })
     );
 }
@@ -353,7 +353,7 @@ fn ripple_reaches_dev_dependents() {
     let cli = plan["bumped"].as_array().unwrap().last().unwrap();
     assert_eq!(cli["name"], "lat_cli");
     assert_eq!(
-        cli["updated-dependencies"],
+        cli["updated_dependencies"],
         serde_json::json!([
             {"name": "lat_core", "version": "1.2.1"},
             {"name": "lat_mid", "version": "0.5.1"},
@@ -759,13 +759,13 @@ fn custom_minijinja_templates_shape_the_output() {
             concat!(
                 "{config}\n",
                 "[tools.trellis.changelog]\n",
-                "header-format = \"# Changes to {{{{ name }}}}\"\n",
-                "version-format = \"## {{{{ tag }}}} ({{{{ date }}}})\"\n",
-                "kind-format = \"**{{{{ kind | upper }}}}**\"\n",
-                "change-format = \"* {{{{ body }}}}\"\n",
+                "header_format = \"# Changes to {{{{ name }}}}\"\n",
+                "version_format = \"## {{{{ tag }}}} ({{{{ date }}}})\"\n",
+                "kind_format = \"**{{{{ kind | upper }}}}**\"\n",
+                "change_format = \"* {{{{ body }}}}\"\n",
                 // Ripple entries need a kind too; point them at the only one.
-                "dependency-kind = \"Tweaked\"\n",
-                "dependency-body = \"bumped {{{{ dependency }}}} to {{{{ dependency_version }}}}\"\n",
+                "dependency_kind = \"Tweaked\"\n",
+                "dependency_body = \"bumped {{{{ dependency }}}} to {{{{ dependency_version }}}}\"\n",
                 "kinds = [{{ label = \"Tweaked\", bump = \"patch\" }}]\n",
             ),
             config = config
@@ -1129,7 +1129,7 @@ fn a_prerelease_moves_no_series_tag() {
         &root.join("gleam.toml"),
         "[tools.trellis]\nmembers = [\"packages/*\", \"examples/*\"]\n\
          exclude = { \"@release\" = [\"examples/*\"] }\n\
-         [tools.trellis.publish]\ntag-mode = \"both\"\n",
+         [tools.trellis.publish]\ntag_mode = \"both\"\n",
     );
     add_fragment(root, "lat_core", "Added", "x");
     init_repo(root);
@@ -1183,12 +1183,12 @@ fn version_apply_json_reports_whether_fragments_survived() {
         .output()
         .unwrap();
     let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(document["fragments-retained"], true);
+    assert_eq!(document["fragments_retained"], true);
 
     let output = trellis(root)
         .args(["version", "apply", "--pre", "none", "--json"])
         .output()
         .unwrap();
     let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(document["fragments-retained"], false);
+    assert_eq!(document["fragments_retained"], false);
 }

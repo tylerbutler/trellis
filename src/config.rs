@@ -28,7 +28,7 @@ pub const MEMBERS_EXCLUDE_KEY: &str = "@members";
 pub const RESERVED_EXCLUDE_KEYS: [&str; 2] = [RELEASE_EXCLUDE_KEY, MEMBERS_EXCLUDE_KEY];
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "snake_case")]
 pub struct ConfigFile {
     /// Glob array matched against directories relative to the workspace root.
     /// When omitted, members are auto-discovered: every non-gitignored
@@ -51,27 +51,31 @@ pub struct ConfigFile {
     /// Keys under `[tools.trellis]` that no field claimed. Collected rather
     /// than deserialized — see [`ConfigFile::from_gleam_toml`].
     #[serde(skip)]
-    pub unknown_keys: Vec<UnknownKey>,
+    pub unknown_keys: Vec<String>,
+    /// Keys spelled in the pre-0.8 kebab-case style. Accepted, then reported —
+    /// see [`collect_deprecated_keys`].
+    #[serde(skip)]
+    pub deprecated_keys: Vec<DeprecatedKey>,
 }
 
-/// A key under `[tools.trellis]` that trellis does not recognize.
+/// A key under `[tools.trellis]` still spelled the pre-0.8 kebab-case way.
 ///
-/// Goal #5 in the design is "fail loudly on drift", and a silently ignored
-/// `tag_format` is drift that fails silently: the workspace keeps using the
-/// default and produces the wrong tags with no signal at all.
+/// Goal #5 in the design is "fail loudly on drift". The old spelling is a
+/// [`serde`] alias, so it still configures what it always did — but a workspace
+/// that never migrates is a workspace whose config quietly diverges from every
+/// example in the documentation, so `doctor` says so.
 #[derive(Debug, Clone)]
-pub struct UnknownKey {
-    /// Dotted path beneath `[tools.trellis]`, e.g. `publish.tag_format`.
+pub struct DeprecatedKey {
+    /// Dotted path beneath `[tools.trellis]`, e.g. `publish.tag-format`.
     pub path: String,
-    /// The key this is unambiguously a misspelling of — set when kebab-casing
-    /// the path turns it into one trellis accepts. `None` for a key that is
-    /// merely unrecognized, which may simply belong to a newer trellis.
-    pub typo_of: Option<String>,
+    /// The same path in the spelling trellis documents, e.g.
+    /// `publish.tag_format`.
+    pub replacement: String,
 }
 
 /// What `doctor` does about a check that is a judgment call.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "snake_case")]
 pub enum Strictness {
     #[default]
     Warn,
@@ -80,7 +84,7 @@ pub enum Strictness {
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "snake_case")]
 pub struct DoctorConfig {
     /// Whether members disagreeing on a shared external dependency's
     /// requirement is a warning (the default), an error, or unchecked.
@@ -97,8 +101,8 @@ pub struct DoctorConfig {
 /// from a newer trellis becomes unloadable under a pinned older one, which is a
 /// bad failure for a tool CI pins. The keys are reported by `doctor` instead.
 ///
-/// The free-form tables (`exclude`, `tasks`, `tag-mode-overrides`) accept any
-/// key by construction, so serde consumes them and they are never reported.
+/// The free-form tables ([`FREE_FORM_TABLES`]) accept any key by construction,
+/// so serde consumes them and they are never reported.
 fn deserialize_collecting_unknown(trellis: &toml::Value) -> Result<(ConfigFile, Vec<String>)> {
     let mut ignored = Vec::new();
     let config = serde_ignored::deserialize(trellis.clone(), |path| ignored.push(path.to_string()))
@@ -106,57 +110,76 @@ fn deserialize_collecting_unknown(trellis: &toml::Value) -> Result<(ConfigFile, 
     Ok((config, ignored))
 }
 
-/// Separate the unambiguous typos from the merely unrecognized.
+/// Tables under `[tools.trellis]` whose *keys* are chosen by the user rather
+/// than by trellis: task names, `exclude` selectors, and tag-mode names. A
+/// hyphen in one of those is the user's own naming, not a stale spelling.
+const FREE_FORM_TABLES: [&str; 3] = ["exclude", "tasks", "tag_mode_overrides"];
+
+/// Find the keys still spelled the pre-0.8 kebab-case way.
 ///
-/// Every key trellis defines is kebab-case, so an underscore is the plausible
-/// slip. Rather than compare against a hand-listed set of key names — which
-/// would rot the moment a key is added — this re-runs the collection over a
-/// copy of the table with every underscore key kebab-cased. A path that was
-/// ignored before and is accepted after was a misspelling of a real key;
-/// anything still ignored may simply belong to a newer trellis.
-fn classify_unknown(trellis: &toml::Value, ignored: Vec<String>) -> Vec<UnknownKey> {
-    let accepted_when_kebab_cased = |paths: &[String]| {
-        let Ok((_, still_ignored)) = deserialize_collecting_unknown(&kebab_case_keys(trellis))
-        else {
-            return Vec::new();
-        };
-        paths
-            .iter()
-            .filter(|path| path.contains('_'))
-            .filter(|path| !still_ignored.contains(&kebab_case(path)))
-            .cloned()
-            .collect::<Vec<_>>()
-    };
-    let typos = accepted_when_kebab_cased(&ignored);
-    ignored
-        .into_iter()
-        .map(|path| UnknownKey {
-            typo_of: typos.contains(&path).then(|| kebab_case(&path)),
-            path,
-        })
-        .collect()
-}
-
-fn kebab_case(key: &str) -> String {
-    key.replace('_', "-")
-}
-
-/// A copy of the table with every underscore in every key turned into a
-/// hyphen. Renaming a key of a free-form table along the way is harmless:
-/// those keys are accepted either way, so they never enter the ignored set and
-/// cannot produce a false typo.
-fn kebab_case_keys(value: &toml::Value) -> toml::Value {
-    match value {
-        toml::Value::Table(table) => toml::Value::Table(
-            table
-                .iter()
-                .map(|(key, value)| (kebab_case(key), kebab_case_keys(value)))
-                .collect(),
-        ),
-        toml::Value::Array(items) => {
-            toml::Value::Array(items.iter().map(kebab_case_keys).collect())
+/// Every key trellis defines is snake_case, and the old spellings are [`serde`]
+/// aliases — so serde consumes them and `serde_ignored` never sees them. This
+/// walks the raw table instead. A hyphenated key that is *not* in `ignored`
+/// deserialized into some field, which at a schema position can only mean an
+/// alias fired. Deriving it this way rather than from a hand-listed set of old
+/// names keeps the two from drifting apart.
+fn collect_deprecated_keys(trellis: &toml::Value, ignored: &[String]) -> Vec<DeprecatedKey> {
+    let mut found = Vec::new();
+    walk_schema_keys(trellis, &mut String::new(), &mut |path, key| {
+        if key.contains('-') && !ignored.iter().any(|ignored| ignored == path) {
+            found.push(DeprecatedKey {
+                path: path.to_string(),
+                replacement: snake_case_path(path),
+            });
         }
-        other => other.clone(),
+    });
+    found
+}
+
+/// Visit every key that trellis itself names, in dotted-path form, skipping the
+/// key level of each [`FREE_FORM_TABLES`] entry — a task named `check-all` is
+/// not a deprecated key. The tables *beneath* those keys are still visited, so
+/// `tasks.check-all.needs-deps` is.
+fn walk_schema_keys(value: &toml::Value, path: &mut String, visit: &mut impl FnMut(&str, &str)) {
+    let Some(table) = value.as_table() else {
+        return;
+    };
+    for (key, value) in table {
+        let restore = path.len();
+        if !path.is_empty() {
+            path.push('.');
+        }
+        path.push_str(key);
+        visit(path, key);
+        if FREE_FORM_TABLES.contains(&snake_case(key).as_str()) {
+            // The next level down is user-named; the one after that is ours.
+            if let Some(entries) = value.as_table() {
+                for (name, value) in entries {
+                    let restore = path.len();
+                    path.push('.');
+                    path.push_str(name);
+                    walk_schema_keys(value, path, visit);
+                    path.truncate(restore);
+                }
+            }
+        } else {
+            walk_schema_keys(value, path, visit);
+        }
+        path.truncate(restore);
+    }
+}
+
+fn snake_case(key: &str) -> String {
+    key.replace('-', "_")
+}
+
+/// Snake-case only the *last* segment of a dotted path: the segments above it
+/// may be user-chosen names ([`FREE_FORM_TABLES`]) that must be quoted back
+/// unchanged.
+fn snake_case_path(path: &str) -> String {
+    match path.rsplit_once('.') {
+        Some((parent, key)) => format!("{parent}.{}", snake_case(key)),
+        None => snake_case(path),
     }
 }
 
@@ -170,35 +193,35 @@ pub fn has_trellis_table(document: &toml::Value) -> bool {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "snake_case")]
 pub struct TaskConfig {
     /// Shell command run in each member directory.
     pub command: String,
     /// Run `gleam deps download` first if the package's deps aren't cached.
-    #[serde(default)]
+    #[serde(default, alias = "needs-deps")]
     pub needs_deps: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "snake_case")]
 pub struct PublishConfig {
     /// Tag naming scheme; `{name}` and `{version}` are substituted.
-    #[serde(default = "default_tag_format")]
+    #[serde(default = "default_tag_format", alias = "tag-format")]
     pub tag_format: String,
     /// Naming scheme for the moving series tag; `{name}` and `{series}` are
     /// substituted. Omit `{name}` for a single repository-wide series tag.
-    #[serde(default = "default_series_tag_format")]
+    #[serde(default = "default_series_tag_format", alias = "series-tag-format")]
     pub series_tag_format: String,
     /// Which tags a release creates, for members without an override.
-    #[serde(default)]
+    #[serde(default, alias = "tag-mode")]
     pub tag_mode: TagMode,
     /// Per-member overrides of [`PublishConfig::tag_mode`], keyed by mode name
     /// ([`TagMode::key`]); values are globs matched against member paths. A
     /// member matching globs under two different modes is an error.
-    #[serde(default)]
+    #[serde(default, alias = "tag-mode-overrides")]
     pub tag_mode_overrides: BTreeMap<String, Vec<String>>,
     /// How a path dep is rewritten to a Hex requirement at publish time.
-    #[serde(default)]
+    #[serde(default, alias = "path-dep-requirement")]
     pub path_dep_requirement: PathDepRequirement,
     /// Retry/backoff policy for Hex-touching steps.
     #[serde(default)]
@@ -228,7 +251,7 @@ fn default_series_tag_format() -> String {
 
 /// Which git tags a release creates for a member.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "snake_case")]
 pub enum TagMode {
     /// Immutable per-version tags only (`{name}-v1.2.0`).
     #[default]
@@ -256,12 +279,12 @@ impl TagMode {
         Self::ALL.into_iter().find(|mode| mode.key() == key)
     }
 
-    /// True when releases create an immutable `tag-format` tag.
+    /// True when releases create an immutable `tag_format` tag.
     pub fn includes_exact(self) -> bool {
         matches!(self, TagMode::Exact | TagMode::Both)
     }
 
-    /// True when releases move a `series-tag-format` tag.
+    /// True when releases move a `series_tag_format` tag.
     pub fn includes_series(self) -> bool {
         matches!(self, TagMode::Series | TagMode::Both)
     }
@@ -283,7 +306,7 @@ pub fn series_of(version: &str) -> Option<String> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "snake_case")]
 pub enum PathDepRequirement {
     /// `>= X.Y.Z and < (X+1).0.0` — allows minor and patch bumps.
     #[default]
@@ -295,11 +318,11 @@ pub enum PathDepRequirement {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "snake_case")]
 pub struct RetryConfig {
     #[serde(default = "default_attempts")]
     pub attempts: u32,
-    #[serde(default = "default_initial_delay")]
+    #[serde(default = "default_initial_delay", alias = "initial-delay")]
     pub initial_delay: String,
     #[serde(default = "default_multiplier")]
     pub multiplier: u32,
@@ -330,7 +353,7 @@ fn default_multiplier() -> u32 {
 /// each package's CHANGELOG.md is assembled from those. All formats are
 /// minijinja templates.
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "snake_case")]
 pub struct ChangelogConfig {
     /// Directory (relative to the workspace root) holding fragments and
     /// batched version sections.
@@ -342,19 +365,19 @@ pub struct ChangelogConfig {
     pub kinds: Vec<KindConfig>,
     /// Template for the first line of a package's CHANGELOG.md.
     /// Context: `name`.
-    #[serde(default = "default_header_format")]
+    #[serde(default = "default_header_format", alias = "header-format")]
     pub header_format: String,
     /// Template for a version heading. Context: `name`, `version`, `date`,
     /// `tag`, `series`.
-    #[serde(default = "default_version_format")]
+    #[serde(default = "default_version_format", alias = "version-format")]
     pub version_format: String,
     /// Template for a kind heading within a version. Context: `kind`, `name`,
     /// `version`.
-    #[serde(default = "default_kind_format")]
+    #[serde(default = "default_kind_format", alias = "kind-format")]
     pub kind_format: String,
     /// Template for one change entry. Context: `body`, `kind`, `name`,
     /// `version`.
-    #[serde(default = "default_change_format")]
+    #[serde(default = "default_change_format", alias = "change-format")]
     pub change_format: String,
     /// Kind used for the entries generated when a workspace dependency bumps.
     /// Must name one of `kinds`; that kind's `bump` is what a package bumps by
@@ -362,7 +385,7 @@ pub struct ChangelogConfig {
     #[serde(default = "default_dependency_kind")]
     pub dependency_kind: String,
     /// Template for the *body* of one such entry — it still goes through
-    /// `change-format`. Context: `dependency`, `dependency_version`, `project`.
+    /// `change_format`. Context: `dependency`, `dependency_version`, `project`.
     #[serde(default = "default_dependency_body")]
     pub dependency_body: String,
 }
@@ -383,14 +406,14 @@ impl Default for ChangelogConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "snake_case")]
 pub struct KindConfig {
     pub label: String,
     pub bump: Bump,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "snake_case")]
 pub enum Bump {
     Patch,
     Minor,
@@ -461,7 +484,8 @@ impl ConfigFile {
             bail!("gleam.toml has no [tools.trellis] table");
         };
         let (mut config, ignored) = deserialize_collecting_unknown(trellis)?;
-        config.unknown_keys = classify_unknown(trellis, ignored);
+        config.deprecated_keys = collect_deprecated_keys(trellis, &ignored);
+        config.unknown_keys = ignored;
         config.validate()?;
         Ok(config)
     }
@@ -478,6 +502,7 @@ impl ConfigFile {
             doctor: DoctorConfig::default(),
             // There is no table, so there is nothing in it to misspell.
             unknown_keys: Vec::new(),
+            deprecated_keys: Vec::new(),
         }
     }
 
@@ -512,7 +537,7 @@ impl ConfigFile {
         for key in self.publish.tag_mode_overrides.keys() {
             if TagMode::from_key(key).is_none() {
                 bail!(
-                    "unknown `tag-mode-overrides` key `{key}`; the tag modes are {}",
+                    "unknown `tag_mode_overrides` key `{key}`; the tag modes are {}",
                     TagMode::ALL
                         .map(|mode| format!("`{}`", mode.key()))
                         .join(", ")
@@ -521,7 +546,7 @@ impl ConfigFile {
         }
         if !self.publish.series_tag_format.contains("{series}") {
             bail!(
-                "`series-tag-format` `{}` has no {{series}} placeholder",
+                "`series_tag_format` `{}` has no {{series}} placeholder",
                 self.publish.series_tag_format
             );
         }
@@ -533,9 +558,9 @@ impl ConfigFile {
             .any(|kind| &kind.label == dependency_kind)
         {
             bail!(
-                "`dependency-kind` `{dependency_kind}` is not one of `kinds`; add it, e.g. \
+                "`dependency_kind` `{dependency_kind}` is not one of `kinds`; add it, e.g. \
                  `{{ label = \"{dependency_kind}\", bump = \"patch\" }}`, or point \
-                 `dependency-kind` at an existing kind ({})",
+                 `dependency_kind` at an existing kind ({})",
                 crate::changelog::kind_labels(&self.changelog.kinds)
             );
         }
@@ -585,17 +610,17 @@ mod tests {
 
             [tools.trellis.tasks.lint]
             command = "gleam run -m glinter"
-            needs-deps = true
+            needs_deps = true
 
             [tools.trellis.publish]
-            tag-format = "{name}-v{version}"
-            path-dep-requirement = "minor"
-            retry = { attempts = 5, initial-delay = "30s", multiplier = 2 }
+            tag_format = "{name}-v{version}"
+            path_dep_requirement = "minor"
+            retry = { attempts = 5, initial_delay = "30s", multiplier = 2 }
 
             [tools.trellis.changelog]
             dir = "changes"
-            version-format = "## {{ name }} {{ version }} ({{ date }})"
-            dependency-kind = "Docs"
+            version_format = "## {{ name }} {{ version }} ({{ date }})"
+            dependency_kind = "Docs"
             kinds = [
                 { label = "Boom", bump = "major" },
                 { label = "Docs", bump = "patch" },
@@ -614,6 +639,163 @@ mod tests {
         assert_eq!(config.changelog.kinds.len(), 2);
         assert_eq!(config.changelog.kinds[0].bump, Bump::Major);
         assert_eq!(config.changelog.dependency_kind, "Docs");
+        assert!(config.deprecated_keys.is_empty());
+        assert!(config.unknown_keys.is_empty());
+    }
+
+    /// Every key released through v0.7.0 was kebab-case, so the old spelling
+    /// still parses to exactly what it always did.
+    #[test]
+    fn pre_0_8_kebab_case_keys_still_parse() {
+        let text = r####"
+            [tools.trellis]
+            members = ["packages/*"]
+
+            [tools.trellis.tasks.lint]
+            command = "gleam run -m glinter"
+            needs-deps = true
+
+            [tools.trellis.publish]
+            tag-format = "{name}@{version}"
+            series-tag-format = "{name}@{series}"
+            tag-mode = "both"
+            tag-mode-overrides = { exact = ["packages/old"] }
+            path-dep-requirement = "patch"
+            retry = { attempts = 3, initial-delay = "10ms", multiplier = 4 }
+
+            [tools.trellis.changelog]
+            header-format = "# {{ name }}"
+            version-format = "## {{ version }}"
+            kind-format = "### {{ kind }}"
+            change-format = "* {{ body }}"
+        "####;
+        let config = ConfigFile::from_gleam_toml(text).unwrap();
+        assert!(config.tasks["lint"].needs_deps);
+        assert_eq!(config.publish.tag_format, "{name}@{version}");
+        assert_eq!(config.publish.series_tag_format, "{name}@{series}");
+        assert_eq!(config.publish.tag_mode, TagMode::Both);
+        assert_eq!(
+            config.publish.tag_mode_overrides["exact"],
+            vec!["packages/old"]
+        );
+        assert_eq!(
+            config.publish.path_dep_requirement,
+            PathDepRequirement::Patch
+        );
+        assert_eq!(config.publish.retry.initial_delay, "10ms");
+        assert_eq!(config.changelog.header_format, "# {{ name }}");
+        assert_eq!(config.changelog.version_format, "## {{ version }}");
+        assert_eq!(config.changelog.kind_format, "### {{ kind }}");
+        assert_eq!(config.changelog.change_format, "* {{ body }}");
+        // Nothing was dropped, and every old spelling is reported once.
+        assert!(config.unknown_keys.is_empty());
+        let deprecated = deprecated_paths(&config);
+        assert_eq!(
+            deprecated,
+            [
+                "changelog.change-format",
+                "changelog.header-format",
+                "changelog.kind-format",
+                "changelog.version-format",
+                "publish.path-dep-requirement",
+                "publish.retry.initial-delay",
+                "publish.series-tag-format",
+                "publish.tag-format",
+                "publish.tag-mode",
+                "publish.tag-mode-overrides",
+                "tasks.lint.needs-deps",
+            ]
+        );
+    }
+
+    #[test]
+    fn a_deprecated_key_names_its_replacement() {
+        let config = ConfigFile::from_gleam_toml(
+            "[tools.trellis]\n[tools.trellis.publish]\ntag-format = \"v{version}\"\n",
+        )
+        .unwrap();
+        let [key] = &config.deprecated_keys[..] else {
+            panic!(
+                "expected one deprecated key, got {:?}",
+                config.deprecated_keys
+            );
+        };
+        assert_eq!(key.path, "publish.tag-format");
+        assert_eq!(key.replacement, "publish.tag_format");
+    }
+
+    /// The keys of `exclude`, `tasks`, and `tag_mode_overrides` are the user's
+    /// own names. A hyphen in one is not a stale spelling, and saying so would
+    /// be a warning nobody can act on.
+    #[test]
+    fn hyphens_in_free_form_table_keys_are_not_deprecations() {
+        let config = ConfigFile::from_gleam_toml(
+            r###"
+            [tools.trellis]
+            members = ["packages/*"]
+            exclude = { "check-all" = ["examples/*"] }
+
+            [tools.trellis.tasks.check-all]
+            command = "gleam check"
+        "###,
+        )
+        .unwrap();
+        assert!(config.tasks.contains_key("check-all"));
+        assert!(
+            config.deprecated_keys.is_empty(),
+            "{:?}",
+            config.deprecated_keys
+        );
+    }
+
+    /// ...but the schema keys *beneath* a user-named task are still trellis's,
+    /// so a stale one there is still reported — and reported at a path that
+    /// leaves the task's own name alone.
+    #[test]
+    fn a_stale_key_under_a_hyphenated_task_name_is_still_reported() {
+        let config = ConfigFile::from_gleam_toml(
+            "[tools.trellis.tasks.check-all]\ncommand = \"gleam check\"\nneeds-deps = true\n",
+        )
+        .unwrap();
+        assert!(config.tasks["check-all"].needs_deps);
+        assert_eq!(deprecated_paths(&config), ["tasks.check-all.needs-deps"]);
+        let [key] = &config.deprecated_keys[..] else {
+            unreachable!()
+        };
+        assert_eq!(key.replacement, "tasks.check-all.needs_deps");
+    }
+
+    /// `dependency-kind`, `dependency-body`, and `shared-dependencies` were
+    /// added after v0.7.0, so those spellings never reached a release and get
+    /// no alias — they are simply unknown.
+    #[test]
+    fn keys_added_after_the_last_kebab_release_have_no_alias() {
+        let config = ConfigFile::from_gleam_toml(
+            r###"
+            [tools.trellis.changelog]
+            dependency-kind = "Docs"
+
+            [tools.trellis.doctor]
+            shared-dependencies = "error"
+        "###,
+        )
+        .unwrap();
+        // The defaults stand, and the keys are reported as unrecognized.
+        assert_eq!(config.changelog.dependency_kind, "Dependencies");
+        assert_eq!(config.doctor.shared_dependencies, Strictness::Warn);
+        assert!(config.deprecated_keys.is_empty());
+        assert_eq!(
+            config.unknown_keys,
+            ["changelog.dependency-kind", "doctor.shared-dependencies"]
+        );
+    }
+
+    fn deprecated_paths(config: &ConfigFile) -> Vec<&str> {
+        config
+            .deprecated_keys
+            .iter()
+            .map(|key| key.path.as_str())
+            .collect()
     }
 
     #[test]
@@ -667,7 +849,7 @@ mod tests {
         let message = format!("{err:#}");
         // The error names the kind, the fix, and what is currently available.
         assert!(
-            message.contains("`dependency-kind` `Dependencies`"),
+            message.contains("`dependency_kind` `Dependencies`"),
             "{message}"
         );
         assert!(
@@ -682,8 +864,8 @@ mod tests {
         let config = ConfigFile::from_gleam_toml(
             r###"
             [tools.trellis.changelog]
-            dependency-kind = "Docs"
-            dependency-body = "{{ dependency }} is now {{ dependency_version }}"
+            dependency_kind = "Docs"
+            dependency_body = "{{ dependency }} is now {{ dependency_version }}"
             kinds = [{ label = "Docs", bump = "patch" }]
         "###,
         )
@@ -787,7 +969,7 @@ mod tests {
         assert_eq!(config.format_series_tag("core", "0.0.3-rc.1"), None);
 
         let repo_wide = ConfigFile::from_gleam_toml(
-            "[tools.trellis]\n[tools.trellis.publish]\nseries-tag-format = \"v{series}\"\n",
+            "[tools.trellis]\n[tools.trellis.publish]\nseries_tag_format = \"v{series}\"\n",
         )
         .unwrap();
         assert_eq!(
@@ -804,8 +986,8 @@ mod tests {
             members = ["packages/*"]
 
             [tools.trellis.publish]
-            tag-mode = "series"
-            tag-mode-overrides = { both = ["packages/lat_*"], exact = ["packages/old"] }
+            tag_mode = "series"
+            tag_mode_overrides = { both = ["packages/lat_*"], exact = ["packages/old"] }
         "###,
         )
         .unwrap();
@@ -835,7 +1017,7 @@ mod tests {
     #[test]
     fn unknown_tag_mode_override_key_is_a_clear_error() {
         let err = ConfigFile::from_gleam_toml(
-            "[tools.trellis]\n[tools.trellis.publish]\ntag-mode-overrides = { seires = [\"x\"] }\n",
+            "[tools.trellis]\n[tools.trellis.publish]\ntag_mode_overrides = { seires = [\"x\"] }\n",
         )
         .unwrap_err();
         let message = format!("{err:#}");
@@ -846,7 +1028,7 @@ mod tests {
     #[test]
     fn series_tag_format_must_carry_the_series_placeholder() {
         let err = ConfigFile::from_gleam_toml(
-            "[tools.trellis]\n[tools.trellis.publish]\nseries-tag-format = \"{name}-latest\"\n",
+            "[tools.trellis]\n[tools.trellis.publish]\nseries_tag_format = \"{name}-latest\"\n",
         )
         .unwrap_err();
         assert!(format!("{err:#}").contains("{series}"), "{err:#}");

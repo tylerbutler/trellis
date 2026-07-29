@@ -1,6 +1,6 @@
 //! Path-dependency rewriting for publish: substitute the Hex requirement
 //! derived from each workspace dep's *current* version, per the configured
-//! `path-dep-requirement`. The rewrite map is computed from the graph — no
+//! `path_dep_requirement`. The rewrite map is computed from the graph — no
 //! hand-maintained list. toml_edit keeps the rest of gleam.toml untouched
 //! (the file is restored after publishing either way).
 

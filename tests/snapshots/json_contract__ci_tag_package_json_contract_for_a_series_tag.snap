@@ -5,8 +5,8 @@ expression: "json_output(root, &[\"ci\", \"tag-package\", \"lat_cli-v0.3\", \"--
 {
   "name": "lat_cli",
   "path": "packages/lat_cli",
-  "schema": "trellis.ci-tag-package/1",
-  "tag-kind": "series",
-  "tag-series": "0.3",
+  "schema": "trellis.ci_tag_package/1",
+  "tag_kind": "series",
+  "tag_series": "0.3",
   "version": "0.3.1"
 }

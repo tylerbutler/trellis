@@ -46,7 +46,7 @@ For a payload with a `schema` identifier:
 | Renaming a field | No — bumps the major (`trellis.list/1` → `/2`). |
 | Removing a field | No — bumps the major. |
 | Changing a field's type | No — bumps the major. |
-| Changing a documented enum's values (`kind`, `action`, `tag-kind`) | No — bumps the major. |
+| Changing a documented enum's values (`kind`, `action`, `tag_kind`) | No — bumps the major. |
 
 Two things are explicitly **not** part of the contract:
 
@@ -71,25 +71,25 @@ Two things are explicitly **not** part of the contract:
 | `graph --format json` | `trellis.graph/1`<br />`{schema, nodes[], edges[]}` |
 | `run <task> --json` | `trellis.run/1`<br />`{schema, ok, task, target?, results[]}` |
 | `exec -- <cmd> --json` | `trellis.exec/1`<br />`{schema, ok, command[], results[]}` |
-| `changelog check --json` | `trellis.changelog-check/1`<br />`{schema, has-entries, needs-entry, invalid-fragments[], packages[], preview}` |
-| `version plan --json` | `trellis.version-plan/1`<br />`{schema, bumped[], fragments-retained}` |
-| `version apply --json` | `trellis.version-apply/1`<br />`{schema, bumped[], lockfiles[], adopted[], fragments-retained}` |
-| `tag plan --json` | `trellis.tag-plan/1`<br />`{schema, tags[]}` |
-| `ci tag-package --json` | `trellis.ci-tag-package/1`<br />`{schema, name, path, version, tag-kind, tag-version \| tag-series}` |
-| `doctor --format json` | `trellis.doctor/1`<br />`{schema, ok, members, configless, auto-members, findings[], fixes[], applied[]}` |
+| `changelog check --json` | `trellis.changelog_check/1`<br />`{schema, has_entries, needs_entry, invalid_fragments[], packages[], preview}` |
+| `version plan --json` | `trellis.version_plan/1`<br />`{schema, bumped[], fragments_retained}` |
+| `version apply --json` | `trellis.version_apply/1`<br />`{schema, bumped[], lockfiles[], adopted[], fragments_retained}` |
+| `tag plan --json` | `trellis.tag_plan/1`<br />`{schema, tags[]}` |
+| `ci tag-package --json` | `trellis.ci_tag_package/1`<br />`{schema, name, path, version, tag_kind, tag_version \| tag_series}` |
+| `doctor --format json` | `trellis.doctor/1`<br />`{schema, ok, members, configless, auto_members, findings[], fixes[], applied[]}` |
 
 A `packages[]` entry in `list` and the top level of `info` are the same shape,
 so a consumer can handle one package the same way whichever command produced
 it. `version plan` and `version apply` likewise share the `bumped[]` entry
-shape (`name`, `current`, `next`, `fragments`, `updated-dependencies[]`).
+shape (`name`, `current`, `next`, `fragments`, `updated_dependencies[]`).
 
-`updated-dependencies[]` is empty unless the package bumped, wholly or partly,
+`updated_dependencies[]` is empty unless the package bumped, wholly or partly,
 because a [workspace dependency bumped](/docs/changelog/#dependents-bump-too)
 in the same plan; `fragments` is `0` when that was the only reason. `adopted[]`
 names the version sections captured from
 [pre-existing changelogs](/docs/changelog/#adopting-an-existing-changelog).
 
-`fragments-retained` is true only under
+`fragments_retained` is true only under
 [`--pre <label>`](/docs/changelog/#prereleases): the fragments behind the
 release were left unreleased, and a later version will render them again. It is
 false for every ordinary release and for a `--pre none` promotion. A workflow
@@ -97,14 +97,14 @@ that gates on "are there unreleased changes left" needs it to tell a cut release
 candidate from an incomplete release.
 
 `run` and `exec` share the `results[]` entry shape — `package`, `path`,
-`status` (`success`, `failed`, or `skipped`), and `duration-ms`. `status` is
+`status` (`success`, `failed`, or `skipped`), and `duration_ms`. `status` is
 `skipped` for a package that never ran because scheduling stopped at an earlier
 failure; that is not a pass, and it still fails the command. A failed entry also
-carries `exit-code` and the `command` that produced it. Because a job runs
-several commands when a custom task sets `needs-deps`, those two describe the
+carries `exit_code` and the `command` that produced it. Because a job runs
+several commands when a custom task sets `needs_deps`, those two describe the
 one that *failed*, not the whole job.
 
-`duration-ms` is wall-clock and differs on every run: it is contractual as a
+`duration_ms` is wall-clock and differs on every run: it is contractual as a
 field, not as a value.
 
 <Callout>
@@ -121,12 +121,12 @@ field, not as a value.
 series tag, and reports whichever applies:
 
 ```json
-{"schema":"trellis.ci-tag-package/1","name":"lat_cli","path":"packages/lat_cli","version":"0.3.1","tag-kind":"exact","tag-version":"0.3.1"}
-{"schema":"trellis.ci-tag-package/1","name":"lat_cli","path":"packages/lat_cli","version":"0.3.1","tag-kind":"series","tag-series":"0.3"}
+{"schema":"trellis.ci_tag_package/1","name":"lat_cli","path":"packages/lat_cli","version":"0.3.1","tag_kind":"exact","tag_version":"0.3.1"}
+{"schema":"trellis.ci_tag_package/1","name":"lat_cli","path":"packages/lat_cli","version":"0.3.1","tag_kind":"series","tag_series":"0.3"}
 ```
 
-Branch on `tag-kind`: `exact` carries `tag-version`, `series` carries
-`tag-series`, and the other key is absent rather than null. A series tag names
+Branch on `tag_kind`: `exact` carries `tag_version`, `series` carries
+`tag_series`, and the other key is absent rather than null. A series tag names
 no version, which is why it cannot trigger a publish.
 
 ### `preview` is a field, not a text
@@ -142,7 +142,7 @@ it.
 
 ```json
 {
-  "check": "lockfile-drift",
+  "check": "lockfile_drift",
   "severity": "error",
   "message": "packages/lat_mid/manifest.toml locks `lat_core` at 1.1.0 …",
   "file": "packages/lat_mid/manifest.toml",
@@ -165,23 +165,23 @@ person and will be reworded without a schema bump. Branch on `check`:
 
 | `check` | Raised when |
 | --- | --- |
-| `member-glob` | a `members` glob is invalid, unreadable, or matches nothing |
-| `member-manifest` | a member's `gleam.toml` is missing, unparseable, carries a `[tools.trellis]` table, or repeats another member's name |
-| `path-dependency` | a path dependency escapes the workspace or names no member |
-| `dependency-cycle` | the graph is cyclic |
-| `workspace-config` | the root `[tools.trellis]` table is itself wrong |
-| `exclusion-glob` | a task-exclusion or tag-mode-override glob matches no member |
-| `release-boundary` | a releasable package depends on one excluded from release |
-| `tag-collision` | two releasable packages produce the same tag |
-| `lockfile-drift` | a `manifest.toml` locks a workspace-internal dep at a stale version |
-| `changelog-missing` | a releasable package has no `CHANGELOG.md` |
-| `changelog-unreadable` | a `CHANGELOG.md` exists but could not be read |
-| `changelog-behind` | a package's version is behind the newest one in its changelog |
-| `changelog-adoption` | a package has pre-trellis changelog history the next release will adopt |
-| `package-version` | a package's version is not valid semver |
-| `changelog-fragment` | an unreleased fragment does not parse, or names an unknown project or kind |
+| `member_glob` | a `members` glob is invalid, unreadable, or matches nothing |
+| `member_manifest` | a member's `gleam.toml` is missing, unparseable, carries a `[tools.trellis]` table, or repeats another member's name |
+| `path_dependency` | a path dependency escapes the workspace or names no member |
+| `dependency_cycle` | the graph is cyclic |
+| `workspace_config` | the root `[tools.trellis]` table is itself wrong |
+| `exclusion_glob` | a task-exclusion or tag-mode-override glob matches no member |
+| `release_boundary` | a releasable package depends on one excluded from release |
+| `tag_collision` | two releasable packages produce the same tag |
+| `lockfile_drift` | a `manifest.toml` locks a workspace-internal dep at a stale version |
+| `changelog_missing` | a releasable package has no `CHANGELOG.md` |
+| `changelog_unreadable` | a `CHANGELOG.md` exists but could not be read |
+| `changelog_behind` | a package's version is behind the newest one in its changelog |
+| `changelog_adoption` | a package has pre-trellis changelog history the next release will adopt |
+| `package_version` | a package's version is not valid semver |
+| `changelog_fragment` | an unreleased fragment does not parse, or names an unknown project or kind |
 | `toolchain` | the gleam on PATH disagrees with the `.tool-versions` pin |
-| `shared-dependency` | members require different versions of the same external dependency |
+| `shared_dependency` | members require different versions of the same external dependency |
 
 These values are a documented enum, so the table above is the contract: a new
 `check` may appear without a bump — handle an unrecognized one by reporting it
@@ -189,7 +189,7 @@ rather than dropping it — but renaming or removing one bumps the major.
 
 <Callout>
   **`--format github` is not JSON.** It emits GitHub Actions workflow commands
-  (`::error title=lockfile-drift,file=packages/lat_mid/manifest.toml::…`) so
+  (`::error title=lockfile_drift,file=packages/lat_mid/manifest.toml::…`) so
   findings land on the file in a PR's Files tab. `title` is the `check`, `file`
   is the same path — one line per finding, nothing else on stdout, and nothing
   at all when the workspace is healthy. See [CI recipes](/docs/ci/).
@@ -220,9 +220,9 @@ promise is what GitHub accepts.
 ```
 projects=["lat_core","lat_mid","lat_cli","package_a"]
 releasable=["lat_core","lat_mid","lat_cli"]
-version-files=["packages/lat_core/gleam.toml","packages/lat_mid/gleam.toml","packages/lat_cli/gleam.toml"]
+version_files=["packages/lat_core/gleam.toml","packages/lat_mid/gleam.toml","packages/lat_cli/gleam.toml"]
 tags=["lat_core-v1.2.0","lat_mid-v0.5.0","lat_cli-v0.3.1"]
-series-tags=[]
+series_tags=[]
 ```
 
 The contract is the set of output names above and each value's element type —

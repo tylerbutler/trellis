@@ -15,7 +15,7 @@ pub fn tag_package(workspace: &Workspace, tag: &str, json_output: bool) -> Resul
     let member = &workspace.members[resolved.member()];
     if json_output {
         // A series tag identifies the package but no version, so it reports
-        // the series it names instead of `tag-version`.
+        // the series it names instead of `tag_version`.
         let (tag_kind, tag_version, tag_series) = match &resolved {
             ResolvedTag::Exact { version, .. } => (TagKind::Exact, Some(version.as_str()), None),
             ResolvedTag::Series { series, .. } => (TagKind::Series, None, Some(series.as_str())),
@@ -87,8 +87,8 @@ pub fn outputs(workspace: &Workspace) -> Result<()> {
 
     println!("projects={}", serde_json::to_string(&all)?);
     println!("releasable={}", serde_json::to_string(&releasable)?);
-    println!("version-files={}", serde_json::to_string(&version_files)?);
+    println!("version_files={}", serde_json::to_string(&version_files)?);
     println!("tags={}", serde_json::to_string(&tags)?);
-    println!("series-tags={}", serde_json::to_string(&series_tags)?);
+    println!("series_tags={}", serde_json::to_string(&series_tags)?);
     Ok(())
 }
