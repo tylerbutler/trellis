@@ -11,10 +11,10 @@
 //! `tests/json_contract.rs` snapshots every shape below so a breaking change
 //! fails here rather than in a consumer's repository.
 //!
-//! Key naming is kebab-case, matching the config module's deserialize side.
-//! `#[serde(rename_all = "kebab-case")]` sits on every struct — a no-op for
-//! single-word fields, but it means a later multi-word field cannot silently
-//! arrive as snake_case.
+//! Key naming is snake_case — as is every identifier trellis controls, from
+//! `[tools.trellis]` keys to the enum values below. `#[serde(rename_all =
+//! "snake_case")]` sits on every struct: a no-op for single-word fields, but it
+//! means a later multi-word field cannot silently arrive as kebab-case.
 //!
 //! Two payloads deliberately carry no `schema` field; see [`CiMatrix`] and
 //! `commands::ci::outputs`.
@@ -34,7 +34,7 @@ use serde::Serialize;
 /// than in its command module, because `workspace::Diagnostics` produces
 /// findings too and must not depend on `commands::doctor`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "snake_case")]
 pub enum Check {
     /// A `members` glob is invalid, unreadable, or matches nothing.
     MemberGlob,
@@ -82,23 +82,23 @@ impl Check {
     /// so the two cannot disagree; `check_names_match_serde` asserts it.
     pub fn as_str(self) -> &'static str {
         match self {
-            Check::MemberGlob => "member-glob",
-            Check::MemberManifest => "member-manifest",
-            Check::PathDependency => "path-dependency",
-            Check::DependencyCycle => "dependency-cycle",
-            Check::WorkspaceConfig => "workspace-config",
-            Check::ExclusionGlob => "exclusion-glob",
-            Check::ReleaseBoundary => "release-boundary",
-            Check::TagCollision => "tag-collision",
-            Check::LockfileDrift => "lockfile-drift",
-            Check::ChangelogMissing => "changelog-missing",
-            Check::ChangelogUnreadable => "changelog-unreadable",
-            Check::ChangelogBehind => "changelog-behind",
-            Check::ChangelogAdoption => "changelog-adoption",
-            Check::PackageVersion => "package-version",
-            Check::ChangelogFragment => "changelog-fragment",
+            Check::MemberGlob => "member_glob",
+            Check::MemberManifest => "member_manifest",
+            Check::PathDependency => "path_dependency",
+            Check::DependencyCycle => "dependency_cycle",
+            Check::WorkspaceConfig => "workspace_config",
+            Check::ExclusionGlob => "exclusion_glob",
+            Check::ReleaseBoundary => "release_boundary",
+            Check::TagCollision => "tag_collision",
+            Check::LockfileDrift => "lockfile_drift",
+            Check::ChangelogMissing => "changelog_missing",
+            Check::ChangelogUnreadable => "changelog_unreadable",
+            Check::ChangelogBehind => "changelog_behind",
+            Check::ChangelogAdoption => "changelog_adoption",
+            Check::PackageVersion => "package_version",
+            Check::ChangelogFragment => "changelog_fragment",
             Check::Toolchain => "toolchain",
-            Check::SharedDependency => "shared-dependency",
+            Check::SharedDependency => "shared_dependency",
         }
     }
 
@@ -128,7 +128,7 @@ impl Check {
 /// Whether a [`Finding`] fails the run. Warnings are advisory; `doctor` exits
 /// non-zero only on an error.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "snake_case")]
 pub enum Severity {
     Error,
     Warning,
@@ -143,7 +143,7 @@ pub enum Severity {
 /// `message` is prose written for a person, like `changelog check`'s `preview`.
 /// The field is contractual; its wording is not. Branch on `check`.
 #[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "snake_case")]
 pub struct Finding {
     pub check: Check,
     pub severity: Severity,
@@ -212,7 +212,7 @@ impl Finding {
 /// reports it. `kind` is the stable identifier; `description` is the same prose
 /// text mode prints after `would fix:`.
 #[derive(Serialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "snake_case")]
 pub struct FixRecord<'a> {
     pub kind: &'static str,
     pub description: String,
@@ -223,14 +223,14 @@ pub struct FixRecord<'a> {
 
 /// `trellis doctor --format json`.
 ///
-/// `configless` and `auto-members` are workspace facts rather than problems —
+/// `configless` and `auto_members` are workspace facts rather than problems —
 /// they are the `note:` lines text mode prints — so they sit at the top level
 /// instead of masquerading as findings.
 ///
 /// `fixes` is what `--fix` would still apply; after a successful `--fix` it is
 /// empty and `applied` holds what was written. Both are always present.
 #[derive(Serialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "snake_case")]
 pub struct DoctorDocument<'a> {
     pub schema: &'static str,
     /// Mirrors the exit code: false when any finding is an error.
@@ -253,7 +253,7 @@ impl DoctorDocument<'_> {
 /// never ran — it is not a pass, and [`crate::runner::all_succeeded`] counts it
 /// against the exit code.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "snake_case")]
 pub enum TaskStatus {
     Success,
     Failed,
@@ -262,11 +262,11 @@ pub enum TaskStatus {
 
 /// One package's outcome, shared by [`RunDocument`] and [`ExecDocument`].
 ///
-/// A job runs several commands when a custom task sets `needs-deps`, so
-/// `exit-code` and `command` describe the one that *failed* rather than a
+/// A job runs several commands when a custom task sets `needs_deps`, so
+/// `exit_code` and `command` describe the one that *failed* rather than a
 /// single command per package.
 #[derive(Serialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "snake_case")]
 pub struct TaskResult<'a> {
     pub package: &'a str,
     pub path: &'a str,
@@ -304,7 +304,7 @@ impl<'a> TaskResult<'a> {
 
 /// `trellis run <task> --json`.
 #[derive(Serialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "snake_case")]
 pub struct RunDocument<'a> {
     pub schema: &'static str,
     /// Mirrors the exit code: false unless every package succeeded.
@@ -323,7 +323,7 @@ impl RunDocument<'_> {
 
 /// `trellis exec -- <command...> --json`.
 #[derive(Serialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "snake_case")]
 pub struct ExecDocument<'a> {
     pub schema: &'static str,
     /// Mirrors the exit code: false unless every package succeeded.
@@ -340,7 +340,7 @@ impl ExecDocument<'_> {
 
 /// A workspace member, as `list` and `info` report it.
 #[derive(Serialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "snake_case")]
 pub struct Package<'a> {
     pub name: &'a str,
     pub version: &'a str,
@@ -373,7 +373,7 @@ fn member_names<'a>(workspace: &'a Workspace, indices: &[usize]) -> Vec<&'a str>
 
 /// `trellis list --json`.
 #[derive(Serialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "snake_case")]
 pub struct ListDocument<'a> {
     pub schema: &'static str,
     pub packages: Vec<Package<'a>>,
@@ -396,7 +396,7 @@ impl<'a> ListDocument<'a> {
 /// `trellis info <package> --json`. The package's fields are flattened to the
 /// top level, so this is `list`'s element shape plus a `schema`.
 #[derive(Serialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "snake_case")]
 pub struct InfoDocument<'a> {
     pub schema: &'static str,
     #[serde(flatten)]
@@ -418,7 +418,7 @@ impl<'a> InfoDocument<'a> {
 /// the edges carry the dependency relation, so repeating it per node would
 /// state the same fact twice.
 #[derive(Serialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "snake_case")]
 pub struct GraphNode<'a> {
     pub name: &'a str,
     pub version: &'a str,
@@ -428,7 +428,7 @@ pub struct GraphNode<'a> {
 
 /// A dependency edge, pointing from dependent to dependency.
 #[derive(Serialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "snake_case")]
 pub struct GraphEdge<'a> {
     pub from: &'a str,
     pub to: &'a str,
@@ -436,7 +436,7 @@ pub struct GraphEdge<'a> {
 
 /// `trellis graph --format json`.
 #[derive(Serialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "snake_case")]
 pub struct GraphDocument<'a> {
     pub schema: &'static str,
     pub nodes: Vec<GraphNode<'a>>,
@@ -476,7 +476,7 @@ impl<'a> GraphDocument<'a> {
 
 /// One changed package in `trellis changelog check --json`.
 #[derive(Serialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "snake_case")]
 pub struct ChangelogPackage<'a> {
     pub name: &'a str,
     /// Always true — the list only contains packages the diff touched. Kept so
@@ -488,7 +488,7 @@ pub struct ChangelogPackage<'a> {
 
 /// `trellis changelog check --json`.
 #[derive(Serialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "snake_case")]
 pub struct ChangelogCheckDocument<'a> {
     pub schema: &'static str,
     pub has_entries: bool,
@@ -501,13 +501,13 @@ pub struct ChangelogCheckDocument<'a> {
 }
 
 impl ChangelogCheckDocument<'_> {
-    pub const SCHEMA: &'static str = "trellis.changelog-check/1";
+    pub const SCHEMA: &'static str = "trellis.changelog_check/1";
 }
 
 /// A workspace dependency that bumped in the same plan. Its dependents bump
 /// with it, so a published version and the requirement it carries stay in step.
 #[derive(Serialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "snake_case")]
 pub struct UpdatedDependency<'a> {
     pub name: &'a str,
     pub version: &'a str,
@@ -516,7 +516,7 @@ pub struct UpdatedDependency<'a> {
 /// One planned or applied version bump. Shared by `version plan` and
 /// `version apply` so the two never drift.
 #[derive(Serialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "snake_case")]
 pub struct Bump<'a> {
     pub name: &'a str,
     pub current: &'a str,
@@ -531,7 +531,7 @@ pub struct Bump<'a> {
 
 /// `trellis version plan --json`.
 #[derive(Serialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "snake_case")]
 pub struct VersionPlanDocument<'a> {
     pub schema: &'static str,
     pub bumped: Vec<Bump<'a>>,
@@ -542,14 +542,14 @@ pub struct VersionPlanDocument<'a> {
 }
 
 impl VersionPlanDocument<'_> {
-    pub const SCHEMA: &'static str = "trellis.version-plan/1";
+    pub const SCHEMA: &'static str = "trellis.version_plan/1";
 }
 
 /// `trellis version apply --json`. `bumped` repeats `version plan`'s shape;
 /// `lockfiles` names the manifests that were rewritten; `adopted` names the
 /// version sections captured from pre-existing CHANGELOG.md files.
 #[derive(Serialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "snake_case")]
 pub struct VersionApplyDocument<'a> {
     pub schema: &'static str,
     pub bumped: Vec<Bump<'a>>,
@@ -563,12 +563,12 @@ pub struct VersionApplyDocument<'a> {
 }
 
 impl VersionApplyDocument<'_> {
-    pub const SCHEMA: &'static str = "trellis.version-apply/1";
+    pub const SCHEMA: &'static str = "trellis.version_apply/1";
 }
 
 /// One pending tag in `trellis tag plan --json`.
 #[derive(Serialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "snake_case")]
 pub struct PlannedTag<'a> {
     pub name: &'a str,
     pub version: &'a str,
@@ -579,22 +579,22 @@ pub struct PlannedTag<'a> {
 
 /// `trellis tag plan --json`.
 #[derive(Serialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "snake_case")]
 pub struct TagPlanDocument<'a> {
     pub schema: &'static str,
     pub tags: Vec<PlannedTag<'a>>,
 }
 
 impl TagPlanDocument<'_> {
-    pub const SCHEMA: &'static str = "trellis.tag-plan/1";
+    pub const SCHEMA: &'static str = "trellis.tag_plan/1";
 }
 
 /// `trellis ci tag-package --json`.
 ///
 /// A series tag identifies the package but no version, so exactly one of
-/// `tag-version` and `tag-series` is present, keyed by `tag-kind`.
+/// `tag_version` and `tag_series` is present, keyed by `tag_kind`.
 #[derive(Serialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "snake_case")]
 pub struct CiTagPackageDocument<'a> {
     pub schema: &'static str,
     pub name: &'a str,
@@ -608,12 +608,12 @@ pub struct CiTagPackageDocument<'a> {
 }
 
 impl CiTagPackageDocument<'_> {
-    pub const SCHEMA: &'static str = "trellis.ci-tag-package/1";
+    pub const SCHEMA: &'static str = "trellis.ci_tag_package/1";
 }
 
 /// One job in `trellis ci matrix`.
 #[derive(Serialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "snake_case")]
 pub struct MatrixEntry<'a> {
     pub name: &'a str,
     pub path: &'a str,
@@ -628,7 +628,7 @@ pub struct MatrixEntry<'a> {
 /// would multiply the job matrix by one. The shape is dictated by GitHub, so
 /// its stability is GitHub's contract, not ours.
 #[derive(Serialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "snake_case")]
 pub struct CiMatrix<'a> {
     pub include: Vec<MatrixEntry<'a>>,
 }

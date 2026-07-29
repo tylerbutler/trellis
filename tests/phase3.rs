@@ -199,7 +199,7 @@ fn tag_plan_lists_untagged_versions_and_create_tags_them() {
         .unwrap();
     assert!(output.status.success());
     let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(document["schema"], "trellis.tag-plan/1");
+    assert_eq!(document["schema"], "trellis.tag_plan/1");
     let plan = document["tags"].as_array().unwrap();
     let names: Vec<&str> = plan.iter().map(|p| p["name"].as_str().unwrap()).collect();
     // package_a is @release-excluded; lat_core already tagged.
@@ -380,7 +380,7 @@ fn ci_tag_package_resolves_tag_to_package() {
     let info: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(info["name"], "lat_mid");
     assert_eq!(info["version"], "0.5.0");
-    assert_eq!(info["tag-version"], "9.9.9");
+    assert_eq!(info["tag_version"], "9.9.9");
 
     trellis(&fixture("basic"))
         .args(["ci", "tag-package", "unrelated-v1.0.0"])
@@ -638,7 +638,7 @@ fn series_tag_moves_with_each_release_while_exact_tags_stay_put() {
     let root = tmp.path();
     let remote = series_repo(
         root,
-        "tag-mode-overrides = { both = [\"packages/lat_cli\"] }",
+        "tag_mode_overrides = { both = [\"packages/lat_cli\"] }",
     );
     let remote = remote.path();
     set_version(root, "lat_cli", "0.0.1");
@@ -703,7 +703,7 @@ fn info_reports_the_tags_a_package_actually_gets() {
     let root = tmp.path();
     let _remote = series_repo(
         root,
-        "tag-mode-overrides = { both = [\"packages/lat_cli\"] }",
+        "tag_mode_overrides = { both = [\"packages/lat_cli\"] }",
     );
 
     trellis(root)
@@ -726,7 +726,7 @@ fn tag_plan_reports_the_series_move() {
     let root = tmp.path();
     let _remote = series_repo(
         root,
-        "tag-mode-overrides = { both = [\"packages/lat_cli\"] }",
+        "tag_mode_overrides = { both = [\"packages/lat_cli\"] }",
     );
     trellis(root).args(["tag", "create"]).assert().success();
     git(root, &["commit", "-q", "--allow-empty", "-m", "later work"]);
@@ -757,7 +757,7 @@ fn github_releases_skip_series_tags() {
     let root = tmp.path();
     let _remote = series_repo(
         root,
-        "tag-mode-overrides = { both = [\"packages/lat_cli\"] }",
+        "tag_mode_overrides = { both = [\"packages/lat_cli\"] }",
     );
     let gh = install_fake_gh(root);
 
@@ -783,7 +783,7 @@ fn github_releases_skip_series_tags() {
 fn series_only_mode_creates_no_exact_tags() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
-    let _remote = series_repo(root, "tag-mode = \"series\"");
+    let _remote = series_repo(root, "tag_mode = \"series\"");
     // A prerelease belongs to no series, so it moves nothing.
     set_version(root, "lat_mid", "0.6.0-rc.1");
     git(root, &["commit", "-qam", "lat_mid rc"]);
@@ -801,7 +801,7 @@ fn series_only_mode_creates_no_exact_tags() {
         .success()
         .stdout(predicate::str::contains("tags=[]\n"))
         .stdout(predicate::str::contains(
-            "series-tags=[\"lat_core-v1\",\"lat_cli-v0.3\"]",
+            "series_tags=[\"lat_core-v1\",\"lat_cli-v0.3\"]",
         ));
 }
 
@@ -822,7 +822,7 @@ fn default_config_creates_no_series_tags() {
         .args(["ci", "outputs"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("series-tags=[]"));
+        .stdout(predicate::str::contains("series_tags=[]"));
 }
 
 #[test]
@@ -831,7 +831,7 @@ fn a_series_tag_names_a_package_but_never_a_release() {
     let root = tmp.path();
     let _remote = series_repo(
         root,
-        "tag-mode-overrides = { both = [\"packages/lat_cli\"] }",
+        "tag_mode_overrides = { both = [\"packages/lat_cli\"] }",
     );
 
     // CI can still route on it…
@@ -846,9 +846,9 @@ fn a_series_tag_names_a_package_but_never_a_release() {
         .unwrap();
     let resolved: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(resolved["name"], "lat_cli");
-    assert_eq!(resolved["tag-kind"], "series");
-    assert_eq!(resolved["tag-series"], "0.3");
-    assert!(resolved.get("tag-version").is_none());
+    assert_eq!(resolved["tag_kind"], "series");
+    assert_eq!(resolved["tag_series"], "0.3");
+    assert!(resolved.get("tag_version").is_none());
 
     // …but it names no version, so it cannot trigger a publish.
     trellis(root)
@@ -864,8 +864,8 @@ fn a_series_tag_names_a_package_but_never_a_release() {
         .output()
         .unwrap();
     let resolved: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(resolved["tag-kind"], "exact");
-    assert_eq!(resolved["tag-version"], "0.3.1");
+    assert_eq!(resolved["tag_kind"], "exact");
+    assert_eq!(resolved["tag_version"], "0.3.1");
 }
 
 #[test]
@@ -874,7 +874,7 @@ fn doctor_warns_about_a_repo_wide_series_tag_whatever_the_versions() {
     let root = tmp.path();
     let _remote = series_repo(
         root,
-        "tag-mode = \"both\"\nseries-tag-format = \"v{series}\"",
+        "tag_mode = \"both\"\nseries_tag_format = \"v{series}\"",
     );
 
     // lat_core 1.2.0, lat_mid 0.5.0 and lat_cli 0.3.1 are three distinct
@@ -885,7 +885,7 @@ fn doctor_warns_about_a_repo_wide_series_tag_whatever_the_versions() {
         .assert()
         .success()
         .stdout(predicate::str::contains(
-            "`series-tag-format` `v{series}` has no {name}, so one repository-wide series tag \
+            "`series_tag_format` `v{series}` has no {name}, so one repository-wide series tag \
              covers `lat_core`, `lat_mid`, `lat_cli`",
         ));
     trellis(root)
@@ -908,7 +908,7 @@ fn doctor_warns_about_a_repo_wide_series_tag_whatever_the_versions() {
 fn a_named_series_format_stays_unambiguous() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
-    let _remote = series_repo(root, "tag-mode = \"both\"");
+    let _remote = series_repo(root, "tag_mode = \"both\"");
     // Two packages in the same series: with `{name}` in the format their tags
     // stay distinct, so there is nothing to warn about and each still resolves.
     set_version(root, "lat_cli", "0.5.2");
@@ -937,7 +937,7 @@ fn doctor_rejects_a_tag_mode_override_that_matches_nothing() {
     let root = tmp.path();
     let _remote = series_repo(
         root,
-        "tag-mode-overrides = { series = [\"packages/nope\"] }",
+        "tag_mode_overrides = { series = [\"packages/nope\"] }",
     );
 
     trellis(root)
@@ -945,7 +945,7 @@ fn doctor_rejects_a_tag_mode_override_that_matches_nothing() {
         .assert()
         .failure()
         .stdout(predicate::str::contains(
-            "`tag-mode-overrides.series` glob `packages/nope` matches no member",
+            "`tag_mode_overrides.series` glob `packages/nope` matches no member",
         ));
 }
 

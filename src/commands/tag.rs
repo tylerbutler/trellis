@@ -1,7 +1,7 @@
 //! `trellis tag` — compare each releasable member's gleam.toml version
 //! against existing tags and reconcile the difference, in topological order.
 //!
-//! A member tags in one of two lifecycles, chosen by `tag-mode`: immutable
+//! A member tags in one of two lifecycles, chosen by `tag_mode`: immutable
 //! `{name}-v{version}` tags, created once and never touched again, and moving
 //! `{name}-v{series}` tags, force-moved to the release commit every time that
 //! series releases. Only the immutable ones can carry a GitHub Release — a
@@ -19,18 +19,18 @@ use std::process::Command;
 /// Which tag lifecycle a planned tag belongs to. The serialized names are wire
 /// format — see `crate::json`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "snake_case")]
 pub enum TagKind {
-    /// An immutable `tag-format` tag naming one version.
+    /// An immutable `tag_format` tag naming one version.
     Exact,
-    /// A moving `series-tag-format` tag naming a release series.
+    /// A moving `series_tag_format` tag naming a release series.
     Series,
 }
 
 /// The work `tag create` would do for a planned tag, from local state alone.
 /// The serialized names are wire format — see `crate::json`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "snake_case")]
 pub enum TagAction {
     /// The tag does not exist locally.
     Create,
@@ -50,7 +50,7 @@ pub struct PlannedTag {
 }
 
 /// Every tag the current versions call for, in topological order, each with
-/// the work it needs. A repository-wide series tag (a `series-tag-format`
+/// the work it needs. A repository-wide series tag (a `series_tag_format`
 /// without `{name}`) is claimed by the first member that would produce it, so
 /// it is moved once rather than once per package.
 fn plan_tags(workspace: &Workspace) -> Result<Vec<PlannedTag>> {

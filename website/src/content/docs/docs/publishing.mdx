@@ -25,22 +25,22 @@ Tag format, path-dep rewriting, and Hex retry policy are configured under
 
 ```toml title="gleam.toml" wrap
 [tools.trellis.publish]
-tag-format = "{name}-v{version}"          # lat_core-v1.2.0
-series-tag-format = "{name}-v{series}"    # lat_core-v1, lat_cli-v0.4
+tag_format = "{name}-v{version}"          # lat_core-v1.2.0
+series_tag_format = "{name}-v{series}"    # lat_core-v1, lat_cli-v0.4
 # Which tags a release creates:
 #   exact   → the immutable per-version tag only   (default)
 #   series  → the moving series tag only
 #   both    → one of each
-tag-mode = "exact"
+tag_mode = "exact"
 # Per-package overrides, as globs matched against member paths.
-tag-mode-overrides = { both = ["packages/lat_cli"] }
+tag_mode_overrides = { both = ["packages/lat_cli"] }
 # How a path dep is rewritten to a Hex requirement at publish time, from the
 # dependency's current version X.Y.Z:
 #   minor  → ">= X.Y.Z and < (X+1).0.0"   (default)
 #   patch  → ">= X.Y.Z and < X.(Y+1).0"
 #   exact  → "== X.Y.Z"
-path-dep-requirement = "minor"
-retry = { attempts = 5, initial-delay = "30s", multiplier = 2 }
+path_dep_requirement = "minor"
+retry = { attempts = 5, initial_delay = "30s", multiplier = 2 }
 ```
 
 ## The release PR
@@ -60,7 +60,7 @@ and is a no-op when there are no fragments.
 creates a GitHub Release per tag with the matching CHANGELOG section as the
 body.
 
-A package tags in one of two lifecycles, chosen by `tag-mode`:
+A package tags in one of two lifecycles, chosen by `tag_mode`:
 
 - **Exact tags** (`{name}-v{version}`) are immutable. They are created once,
   fetched when origin already has them, and never rewritten — local and remote
@@ -92,7 +92,7 @@ silently retarget on the next release, so only the immutable per-version tags
 carry one.
 </Callout>
 
-Under `tag-mode = "series"` a package has no per-version tags at all, so there
+Under `tag_mode = "series"` a package has no per-version tags at all, so there
 is no tag to trigger a publish from: run `trellis publish --all-untagged` on
 release-PR merge instead. Passing a series tag to `publish --tag` is an error
 — it names a package, but no particular version.
@@ -107,7 +107,7 @@ release-PR merge instead. Passing a series tag to `publish --tag` is an error
    `gleam test`, run against the original manifest with path deps intact.
 3. **Path-dep rewrite** — computed from the graph, never hand-listed: each
    workspace path dependency becomes the Hex requirement derived from that
-   dep's current version, per `path-dep-requirement`.
+   dep's current version, per `path_dep_requirement`.
 4. **Publish** — `gleam publish --yes`.
 5. **Restore** — the original `gleam.toml` comes back even when publishing
    fails; the repo never shows rewritten files.

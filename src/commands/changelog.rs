@@ -99,7 +99,7 @@ pub fn check(workspace: &Workspace, options: &CheckOptions) -> Result<bool> {
         .map(|status| status.name.as_str())
         .collect();
     let ok = needs_entry.is_empty() && fragments.problems.is_empty();
-    // `invalid-fragments` is a contract field of `trellis.changelog-check/1`
+    // `invalid_fragments` is a contract field of `trellis.changelog_check/1`
     // and stays an array of strings; the structured form exists for `doctor`.
     let invalid = fragments.problem_messages();
 

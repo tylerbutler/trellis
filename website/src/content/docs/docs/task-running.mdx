@@ -46,7 +46,7 @@ package selection:
 # a task with a built-in's name overrides it.
 [tools.trellis.tasks.lint]
 command = "gleam run -m glinter"
-needs-deps = true            # run `gleam deps download` first if not cached
+needs_deps = true            # run `gleam deps download` first if not cached
 ```
 
 Any built-in or custom task can omit members through a same-named key under

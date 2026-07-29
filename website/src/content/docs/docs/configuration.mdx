@@ -33,12 +33,12 @@ exclude = { docs = ["examples/*"], "@release" = ["examples/*"] }
 # format, docs, deps, clean) need no declaration.
 [tools.trellis.tasks.lint]
 command = "gleam run -m glinter"
-needs-deps = true            # run `gleam deps download` first if not cached
+needs_deps = true            # run `gleam deps download` first if not cached
 
 [tools.trellis.publish]
-tag-format = "{name}-v{version}"
-series-tag-format = "{name}-v{series}"
-tag-mode = "exact"
+tag_format = "{name}-v{version}"
+series_tag_format = "{name}-v{series}"
+tag_mode = "exact"
 ```
 
 Each member is a directory with its own `gleam.toml`. Path dependencies
@@ -117,17 +117,17 @@ their roots.
 | `exclude.<task>` | no | Member-path globs omitted from that built-in or custom task. The exclusion still applies when a package is named explicitly. |
 | `exclude.@release` | no | The shared package set omitted from changelog, versioning, tagging, publishing, and release CI. The `@` prefix is reserved for special keys like this one, so it can never collide with a task name — task names may not start with `@`. |
 | `exclude.@members` | no | Directories removed from workspace membership entirely — never parsed, graphed, or touched by any command. Useful for committed test fixtures that auto-discovery would otherwise sweep in; also filters explicit `members` globs. |
-| `tasks.<name>` | no | Custom tasks for `trellis run`. A task with a built-in's name (`build`, `test`, …) overrides it. `needs-deps = true` downloads dependencies first. |
-| `publish.tag-format` | no | Template for per-member git tags. Default: `{name}-v{version}`. |
-| `publish.series-tag-format` | no | Template for the moving series tag, substituting `{name}` and `{series}`. Omit `{name}` for one repository-wide tag. Default: `{name}-v{series}`. |
-| `publish.tag-mode` | no | Which tags a release creates: `exact` (default), `series`, or `both`. |
-| `publish.tag-mode-overrides` | no | Per-package tag modes: a map of mode name to member-path globs. A member matching globs under two modes is an error. |
-| `publish.retry` | no | Backoff for Hex rate limits: `{ attempts, initial-delay, multiplier }`. |
+| `tasks.<name>` | no | Custom tasks for `trellis run`. A task with a built-in's name (`build`, `test`, …) overrides it. `needs_deps = true` downloads dependencies first. |
+| `publish.tag_format` | no | Template for per-member git tags. Default: `{name}-v{version}`. |
+| `publish.series_tag_format` | no | Template for the moving series tag, substituting `{name}` and `{series}`. Omit `{name}` for one repository-wide tag. Default: `{name}-v{series}`. |
+| `publish.tag_mode` | no | Which tags a release creates: `exact` (default), `series`, or `both`. |
+| `publish.tag_mode_overrides` | no | Per-package tag modes: a map of mode name to member-path globs. A member matching globs under two modes is an error. |
+| `publish.retry` | no | Backoff for Hex rate limits: `{ attempts, initial_delay, multiplier }`. |
 | `changelog.kinds` | no | Change kinds and the version bump each implies. The largest bump among a package's unreleased fragments wins. |
-| `changelog.*-format` | no | Minijinja templates for rendered changelog sections: `version-format`, `kind-format`, `change-format`. |
-| `changelog.dependency-kind` | no | Kind used for the entries generated when a workspace dependency bumps. Must name one of `kinds`. |
-| `changelog.dependency-body` | no | Minijinja template for one such entry's body. Context: `dependency`, `dependency_version`, `project`. |
-| `doctor.shared-dependencies` | no | How `doctor` treats members disagreeing on a shared external dependency: `warn` (default), `error`, or `off`. |
+| `changelog.*-format` | no | Minijinja templates for rendered changelog sections: `version_format`, `kind_format`, `change_format`. |
+| `changelog.dependency_kind` | no | Kind used for the entries generated when a workspace dependency bumps. Must name one of `kinds`. |
+| `changelog.dependency_body` | no | Minijinja template for one such entry's body. Context: `dependency`, `dependency_version`, `project`. |
+| `doctor.shared_dependencies` | no | How `doctor` treats members disagreeing on a shared external dependency: `warn` (default), `error`, or `off`. |
 
 ## Package exclusions
 
@@ -201,13 +201,13 @@ afterward it is the major alone:
 | `1.2.1`, `1.9.0` | `lat_cli-v1` |
 | `0.0.1-rc.1` | none — a prerelease belongs to no series and moves no tag |
 
-`tag-mode` picks the lifecycle for the workspace, and `tag-mode-overrides`
+`tag_mode` picks the lifecycle for the workspace, and `tag_mode_overrides`
 picks it per package, as globs matched against member paths:
 
 ```toml title="gleam.toml"
 [tools.trellis.publish]
-tag-mode = "exact"                                    # workspace default
-tag-mode-overrides = { both = ["packages/lat_cli"] }  # lat_cli also moves a series tag
+tag_mode = "exact"                                    # workspace default
+tag_mode_overrides = { both = ["packages/lat_cli"] }  # lat_cli also moves a series tag
 ```
 
 Releasing `lat_cli` twice then leaves the exact tags where they were and the
@@ -227,7 +227,7 @@ moved lat_cli-v0.0
 force-pushed lat_cli-v0.0
 ```
 
-Setting `series-tag-format = "v{series}"` drops `{name}` and gives the whole
+Setting `series_tag_format = "v{series}"` drops `{name}` and gives the whole
 repository one shared series tag — exactly right for a single-package repo.
 With more than one package it is still allowed, but it costs something: the
 tag no longer identifies a package, so `trellis ci tag-package` cannot resolve
@@ -254,9 +254,9 @@ rendering is controlled by small minijinja templates, each with a context of
 
 ```toml wrap
 [tools.trellis.changelog]
-version-format = "## v{{ version }} - {{ date }}"     # default
-kind-format = "### {{ kind }}"                        # default
-change-format = "- {{ body }}"                        # default
+version_format = "## v{{ version }} - {{ date }}"     # default
+kind_format = "### {{ kind }}"                        # default
+change_format = "- {{ body }}"                        # default
 kinds = [
   { label = "Initial Release", bump = "major" },
   { label = "Breaking", bump = "major" },
@@ -267,14 +267,14 @@ kinds = [
 
 # When a package bumps, its workspace dependents bump too and get a generated
 # entry saying why. Those entries are ordinary entries of one configured kind.
-dependency-kind = "Dependencies"                                          # default
-dependency-body = "Updated {{ dependency }} to {{ dependency_version }}"  # default
+dependency_kind = "Dependencies"                                          # default
+dependency_body = "Updated {{ dependency }} to {{ dependency_version }}"  # default
 ```
 
-`dependency-kind` must name one of `kinds`; that kind's bump is what a package
+`dependency_kind` must name one of `kinds`; that kind's bump is what a package
 bumps by when a dependency bump is the only reason it is being released. If
 you replace the default `kinds` list, include a kind for it or point
-`dependency-kind` at one of yours — trellis refuses to load otherwise rather
+`dependency_kind` at one of yours — trellis refuses to load otherwise rather
 than drop the entries silently.
 
 Each package's `CHANGELOG.md` is a generated file: the source of truth is the
@@ -308,39 +308,40 @@ default:
 
 ```toml
 [tools.trellis.doctor]
-shared-dependencies = "error"   # warn (default), error, or off
+shared_dependencies = "error"   # warn (default), error, or off
 ```
 
 There is no `doctor --fix` for it: unifying to the highest requirement is a
 judgment call, not a mechanical remedy.
 
-## Unrecognized keys
+## Deprecated and unrecognized keys
 
-Every key above is kebab-case, which makes an underscore the plausible slip:
-
-```toml
-[tools.trellis.publish]
-tag_format = "{name}-v{version}"   # underscore — silently did nothing
-```
-
-That used to be ignored in silence, leaving the workspace on the default tag
-scheme with no signal. A key whose kebab-cased form is a real one is now an
-error naming what you meant, and it fails *every* command rather than only
-`doctor` — producing the wrong tags is exactly the drift this tool exists to
-catch:
+Every key above is snake_case, matching `gleam.toml`'s own settings and Gleam
+itself. Through v0.7.0 they were kebab-case, and the old spellings still work —
+`doctor` reports each one so a workspace can migrate at its own pace:
 
 ```console
 $ trellis doctor
-error: [tools.trellis] has no `publish.tag_format`; did you mean
-`publish.tag-format`? (trellis config keys are kebab-case)
+warning: [tools.trellis] key `publish.tag-format` is deprecated; rename it to
+`publish.tag_format` (trellis config keys are snake_case)
 ```
 
-Any other unrecognized key is a warning instead. It may belong to a newer
-trellis, and erroring would make the workspace unloadable under a pinned older
-one — a bad failure for a tool CI pins.
+A warning, not an error: the key still configures what it always did, so failing
+would break working repositories over a spelling. Plan on the aliases going away
+at 1.0.
 
-The free-form tables — `exclude`, `tasks`, and `publish.tag-mode-overrides` —
-take keys you choose, underscores and all, and are never reported.
+A key that is not recognized in *any* spelling is also a warning. It may belong
+to a newer trellis, and erroring would make the workspace unloadable under a
+pinned older one — a bad failure for a tool CI pins:
+
+```console
+$ trellis doctor
+warning: [tools.trellis] key `publish.tag_frmat` is not recognized and is being
+ignored; it may belong to a newer trellis
+```
+
+The free-form tables — `exclude`, `tasks`, and `publish.tag_mode_overrides` —
+take keys you choose, hyphens and all, and are never reported.
 
 ## Verifying it
 
@@ -348,4 +349,4 @@ Run `trellis doctor` after any config change. It validates that member globs
 resolve, the graph is acyclic, task exclusion globs match members, release
 boundaries are safe, the tag format produces unique tags, locked versions
 match, members agree on their shared dependencies, and `[tools.trellis]`
-carries no unrecognized keys — exiting non-zero on any error.
+carries no unrecognized or deprecated keys — exiting non-zero on any error.

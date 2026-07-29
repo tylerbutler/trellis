@@ -12,26 +12,26 @@ expression: payload
   "results": [
     {
       "command": "exit 3",
-      "duration-ms": "[ms]",
-      "exit-code": 3,
+      "duration_ms": "[ms]",
+      "exit_code": 3,
       "package": "lat_core",
       "path": "packages/lat_core",
       "status": "failed"
     },
     {
-      "duration-ms": "[ms]",
+      "duration_ms": "[ms]",
       "package": "lat_mid",
       "path": "packages/lat_mid",
       "status": "skipped"
     },
     {
-      "duration-ms": "[ms]",
+      "duration_ms": "[ms]",
       "package": "lat_cli",
       "path": "packages/lat_cli",
       "status": "skipped"
     },
     {
-      "duration-ms": "[ms]",
+      "duration_ms": "[ms]",
       "package": "package_a",
       "path": "examples/package-a",
       "status": "skipped"

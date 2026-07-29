@@ -60,13 +60,13 @@ comment:
 
 ```json
 {
-  "schema": "trellis.changelog-check/1",
-  "has-entries": true,
-  "needs-entry": true,
-  "invalid-fragments": [],
+  "schema": "trellis.changelog_check/1",
+  "has_entries": true,
+  "needs_entry": true,
+  "invalid_fragments": [],
   "packages": [
-    { "name": "lat_core", "changed": true, "has-entry": true, "fragments": 2 },
-    { "name": "lat_cli", "changed": true, "has-entry": false, "fragments": 0 }
+    { "name": "lat_core", "changed": true, "has_entry": true, "fragments": 2 },
+    { "name": "lat_cli", "changed": true, "has_entry": false, "fragments": 0 }
   ],
   "preview": "| package | status |\n| --- | --- |\n…"
 }
@@ -106,7 +106,7 @@ two dependency sets.
 
 The rules:
 
-- A rippled package bumps by whatever `dependency-kind` is configured to bump,
+- A rippled package bumps by whatever `dependency_kind` is configured to bump,
   patch by default. It needs no fragment of its own.
 - A package with its own fragments keeps its own bump; a ripple never lowers
   it. `lat_cli` above is `0.4.3` from its own fragment, not `0.4.3` from the
@@ -204,7 +204,7 @@ leave the final release with nothing to say.
 
 The consequence is that an entry appears twice in `CHANGELOG.md` — once under
 the RC that shipped it, once under the final version. `version --json` reports
-[`fragments-retained`](/docs/json-output/) so a workflow can tell a cut RC from
+[`fragments_retained`](/docs/json-output/) so a workflow can tell a cut RC from
 a completed release.
 
 </Callout>
