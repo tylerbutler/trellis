@@ -5,7 +5,7 @@ description: What trellis's --json payloads guarantee — the schema field, what
 
 import Callout from "../../../components/Callout.astro";
 
-Ten commands emit JSON. Every payload carries a `schema` field naming it and
+Every command that emits JSON carries a `schema` field naming the payload and
 its major version:
 
 ```json
@@ -56,7 +56,7 @@ commands pretty-print, some emit one line for shell-variable capture).
 | `version apply --json` | `trellis.version_apply/1`<br />`{schema, bumped[], lockfiles[], adopted[], fragments_retained}` |
 | `tag plan --json` | `trellis.tag_plan/1`<br />`{schema, tags[]}` |
 | `ci tag-package --json` | `trellis.ci_tag_package/1`<br />`{schema, name, path, version, tag_kind, tag_version \| tag_series}` |
-| `doctor --format json` | `trellis.doctor/1`<br />`{schema, ok, members, configless, auto_members, findings[], fixes[], applied[]}` |
+| `doctor --format json` | `trellis.doctor/1`<br />`{schema, ok, packages, configless, auto_members, findings[], fixes[], applied[]}` |
 
 Notes:
 
@@ -102,8 +102,8 @@ is prose, not stable — branch on `check`:
 | `check` | Raised when |
 | --- | --- |
 | `member_glob` | a `members` glob is invalid, unreadable, or matches nothing |
-| `member_manifest` | a member's `gleam.toml` is missing, unparseable, carries a `[tools.trellis]` table, or repeats another member's name |
-| `path_dependency` | a path dependency escapes the workspace or names no member |
+| `package_manifest` | a package's `gleam.toml` is missing, unparseable, carries a `[tools.trellis]` table, or repeats another package's name |
+| `path_dependency` | a path dependency escapes the workspace or names no package in it |
 | `dependency_cycle` | the graph is cyclic |
 | `workspace_config` | the root `[tools.trellis]` table is itself wrong |
 | `exclusion_glob` | a task-exclusion or tag-mode-override glob matches no member |
@@ -115,9 +115,9 @@ is prose, not stable — branch on `check`:
 | `changelog_behind` | a package's version is behind the newest one in its changelog |
 | `changelog_adoption` | a package has pre-trellis changelog history the next release will adopt |
 | `package_version` | a package's version is not valid semver |
-| `changelog_fragment` | an unreleased fragment does not parse, or names an unknown project or kind |
+| `changelog_fragment` | an unreleased fragment does not parse, or names an unknown package or kind |
 | `toolchain` | the gleam on PATH disagrees with the `.tool-versions` pin |
-| `shared_dependency` | members require different versions of the same external dependency |
+| `shared_dependency` | packages require different versions of the same external dependency |
 
 New `check` values may appear without a bump — handle unrecognized ones by
 reporting them, not dropping them.
@@ -149,17 +149,19 @@ dictated by GitHub Actions, not trellis.
 array of strings:
 
 ```
-projects=["lat_core","lat_mid","lat_cli","package_a"]
+packages=["lat_core","lat_mid","lat_cli","lat_example"]
+projects=["lat_core","lat_mid","lat_cli","lat_example"]
 releasable=["lat_core","lat_mid","lat_cli"]
 version_files=["packages/lat_core/gleam.toml","packages/lat_mid/gleam.toml","packages/lat_cli/gleam.toml"]
-tags=["lat_core-v1.2.0","lat_mid-v0.5.0","lat_cli-v0.3.1"]
+tags=["lat_core-v1.2.0","lat_mid-v0.5.1","lat_cli-v0.4.3"]
 series_tags=[]
 ```
+
+`projects` duplicates `packages` and is deprecated; it goes away at 1.0.
 
 See [CI recipes](/docs/ci/) for how these are consumed.
 
 ## Enforcement
 
-Every payload is defined once, as a serializable type, in `src/json.rs`, and
-snapshotted in `tests/json_contract.rs`. A change to a stable shape fails
-trellis's own CI.
+Every payload is defined once, in one file, and snapshotted in trellis's test
+suite. A change to a stable shape fails CI before it can ship.

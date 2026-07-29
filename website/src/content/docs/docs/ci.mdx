@@ -60,8 +60,8 @@ jobs:
 <Callout>
 
 Full fan-out is the default on purpose: `--since` is opt-in because implicit
-coupling between packages — the kind the path-dep graph can't see — shouldn't
-be silently untested. A repo that wants affected-only CI writes
+coupling between packages, the kind the path-dep graph can't see, shouldn't be
+silently untested. A repo that wants affected-only CI writes
 `--since origin/main` into its workflow deliberately.
 
 </Callout>
@@ -73,12 +73,16 @@ be silently untested. A repo that wants affected-only CI writes
 
 ```console
 $ trellis ci outputs
-projects=["lat_core","lat_mid","lat_cli","package_a"]
+packages=["lat_core","lat_mid","lat_cli","lat_example"]
+projects=["lat_core","lat_mid","lat_cli","lat_example"]
 releasable=["lat_core","lat_mid","lat_cli"]
 version_files=["packages/lat_core/gleam.toml","packages/lat_mid/gleam.toml","packages/lat_cli/gleam.toml"]
-tags=["lat_core-v1.2.0","lat_mid-v0.5.0","lat_cli-v0.3.1"]
-series_tags=["lat_cli-v0.3"]
+tags=["lat_core-v1.2.0","lat_mid-v0.5.1","lat_cli-v0.4.3"]
+series_tags=["lat_cli-v0.4"]
 ```
+
+`projects` is a deprecated alias of `packages` carrying an identical value.
+Read `packages`; the alias goes away at 1.0.
 
 `tags` lists the immutable per-version tags and `series_tags` the moving ones,
 each covering only the packages whose
@@ -102,8 +106,8 @@ sticky comment:
 - run: trellis changelog check --base "origin/${{ github.base_ref }}" --json
 ```
 
-When the tripwire fires on a mechanical finding — a missing `CHANGELOG.md` or a
-stale `manifest.toml` locked version — clear it locally with
+When the tripwire fires on a mechanical finding, such as a missing
+`CHANGELOG.md` or a stale `manifest.toml` locked version, clear it locally with
 `trellis doctor --fix`, which applies exactly those fixes and re-reports the
 rest. `--fix` never touches the report-only findings (path-dep escapes, tag
 collisions, versions behind their changelog), so it stays safe to run

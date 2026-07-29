@@ -3,20 +3,29 @@ title: Overview
 description: What trellis is, how it derives its workspace model from gleam.toml, and where to start.
 ---
 
-Trellis is one binary that provides task fan-out, dependency-graph
-introspection, changelogs, versioning, and publish orchestration for
-multi-package Gleam repositories — all derived from the `gleam.toml` files
-you already have.
+Gleam builds, tests, and publishes one package directory at a time. Trellis
+is the workspace layer on top: it fans those commands across a whole
+repository and adds changelogs, versioning, and publishing, deriving its model
+of the workspace from the `gleam.toml` files already in it.
 
-Trellis derives what it can, and verifies what must remain explicit. The
-member set, its topological order, change impact, and publish order all come
-from manifests that already exist; the things that can't be derived — locked
-versions, changelogs, tags, toolchain pins — are checked by
-`trellis doctor`, which exits non-zero when an invariant breaks. When a
-finding is mechanically fixable — a releasable package missing its
-`CHANGELOG.md`, or a `manifest.toml` locked version that drifted from its
-package's `gleam.toml` — `trellis doctor --fix` writes the fix and re-reports
-whatever's left (`--dry-run` lists the same fixes without touching a file).
+Throughout these docs, a **package** is one Gleam package — a directory with
+its own `gleam.toml`. A **member** is a package that belongs to this
+workspace. The two are the same thing seen from different sides, so "member"
+appears only where membership is the point: the `members` key, the `@members`
+exclusion, and the member paths that exclusion globs match.
+
+## Derived, then verified
+
+The member set, its topological order, change impact, and publish order all
+come from manifests that already exist. Four things can't be derived: locked
+versions, changelogs, tags, and toolchain pins. `trellis doctor` checks those
+and exits non-zero when one breaks.
+
+Some findings are mechanically fixable — a releasable package missing its
+`CHANGELOG.md`, a `manifest.toml` locked version that drifted from its
+package's `gleam.toml`. For those, `trellis doctor --fix` writes the fix and
+re-reports whatever's left. `--dry-run` lists the same fixes without touching
+a file.
 
 ## Opinionated, but modular
 

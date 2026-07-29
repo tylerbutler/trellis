@@ -6,9 +6,9 @@ description: Trellis ships as a single prebuilt binary that installs in about a 
 import { Code } from "@astrojs/starlight/components";
 import { TRELLIS_VERSION } from "../../../lib/version";
 
-Trellis ships as a single prebuilt binary — the same distribution model as
-`just`, `changie`, and `ratchet` — so it installs in CI in about a second with
-zero runtime dependencies. Releases are built and published by
+One prebuilt binary, no runtime dependencies, about a second to install on a
+CI runner — the same distribution model as `just`, `changie`, and `ratchet`.
+Releases are built and published by
 [cargo-dist](https://opensource.axo.dev/cargo-dist/) for five targets (Linux
 gnu, macOS, and Windows, on x86_64 and aarch64), with SLSA build provenance
 attestations attached to every release.
@@ -102,7 +102,7 @@ man trellis
 man trellis-run
 ```
 
-Everything in those pages is also on the [CLI reference](/docs/reference) page.
+Everything in those pages is also on the [CLI reference](/docs/reference/) page.
 
 ## Pinning a version in CI
 
@@ -119,8 +119,9 @@ Prebuilt archives for every target are on the
 
 ## Verifying it
 
-From anywhere inside a workspace — trellis finds the root by walking up to the
-first `gleam.toml` with a `[tools.trellis]` table, like `git` or `cargo`:
+From anywhere inside a workspace — trellis finds the root by walking up, like
+`git` or `cargo`, to the first `gleam.toml` carrying a `[tools.trellis]` table,
+or to the git repository root when no manifest carries one:
 
 <Code
   lang="console"
@@ -128,10 +129,10 @@ first `gleam.toml` with a `[tools.trellis]` table, like `git` or `cargo`:
 trellis ${TRELLIS_VERSION}
 
 $ trellis doctor
-checked: member globs resolve and every member has a parseable gleam.toml
+checked: member globs resolve and every package has a parseable gleam.toml
 checked: path dependencies stay inside the workspace; graph is acyclic
 ...
-ok: 4 member(s), 0 warning(s)`}
+ok: 4 package(s), 0 warning(s)`}
 />
 
 If the workspace isn't set up yet, start with the
