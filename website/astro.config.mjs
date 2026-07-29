@@ -25,6 +25,7 @@ export default defineConfig({
         { label: "Publishing", slug: "docs/publishing" },
         { label: "CI recipes", slug: "docs/ci" },
         { label: "JSON output contract", slug: "docs/json-output" },
+        { label: "Compatibility", slug: "docs/compatibility" },
         { label: "CLI reference", slug: "docs/reference" },
         {
           label: "Full README ↗",

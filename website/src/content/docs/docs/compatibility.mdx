@@ -1,0 +1,82 @@
+---
+title: Compatibility
+description: What trellis's version number promises — the exit-code contract, the surfaces semver covers, and the minimum supported Rust version.
+---
+
+import Callout from "../../../components/Callout.astro";
+
+Trellis is built to be wired into CI and left alone. This page states what you
+can bind a workflow to, and what may change under you.
+
+## Exit codes
+
+Every command uses the same four codes. The distinction that matters is **1 vs
+3**: a CI step that should fail the build when a workspace has problems still
+needs to report "trellis could not run at all" differently — a missing `gh`, an
+unparseable config, or Hex being unreachable is not the same event as a
+workspace with findings.
+
+| Code | Meaning | Examples |
+| --- | --- | --- |
+| `0` | Success, no findings | `doctor` found nothing; every task passed |
+| `1` | The command ran correctly and found problems | `doctor` findings, missing changelog fragments, a failed task |
+| `2` | Usage error | Unknown flag, missing argument, bad subcommand |
+| `3` | Trellis itself could not run | Unparseable config, not a git repository, missing `gleam`/`gh`, Hex unreachable after retries |
+
+A failed task exits `1`, not the child's own exit code. If `gleam test` exits
+`3`, trellis still exits `1` — trellis reports its own outcome, and propagating
+the child's code would collide with the meanings above.
+
+```yaml
+- name: Check the workspace
+  run: |
+    trellis doctor
+    case $? in
+      0) echo "clean" ;;
+      1) echo "::error::workspace has findings"; exit 1 ;;
+      *) echo "::error::trellis could not run"; exit 1 ;;
+    esac
+```
+
+## What semver covers
+
+From 1.0, the version number is a promise about the surfaces you can automate
+against:
+
+**Covered.** A breaking change to any of these bumps the major version.
+
+- **The CLI surface** — command names, subcommands, flags, and arguments.
+- **Configuration keys** — the `[tools.trellis]` table in your root
+  `gleam.toml`.
+- **The exit codes** above.
+- **The `--json` payloads**, under the rules in the [JSON output
+  contract](/docs/json-output/) — those carry their own `schema` identifiers
+  and may bump independently of the CLI's version.
+
+**Not covered.** These change freely in any release.
+
+- **Human-readable output.** Text is written for a person at a terminal, is
+  already TTY-dependent, and is not a parsing target. The `--json` form exists
+  so you don't have to.
+- **Anything inside `src/`.** Trellis is a binary, not a library.
+
+<Callout>
+  **Trellis publishes no Rust API.** The crate is bin-only — there is no
+  `lib.rs`, and nothing in `src/` is reachable by a dependent crate. Adding a
+  library target later would *widen* what 1.0 promised, so it is a deliberate
+  decision rather than an incidental refactor.
+</Callout>
+
+## Minimum supported Rust version
+
+Trellis's MSRV is **1.85**, the floor its Rust edition implies, declared as
+`rust-version` in `Cargo.toml`.
+
+This matters only if you build from source. The [installation
+methods](/docs/installation/) that most people use — the installer scripts and
+the Homebrew tap — ship prebuilt binaries and need no Rust toolchain at all.
+The declaration exists so that `cargo install` on an older toolchain tells you
+which version it needs, instead of failing partway through a dependency build.
+
+An MSRV bump is a minor version. Because trellis is bin-only, no other crate's
+build can break when it moves.
