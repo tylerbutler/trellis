@@ -1,16 +1,12 @@
 ---
-title: JSON output contract
-description: What trellis promises about its --json payloads — the schema field, what a stable shape permits, and where the guarantee stops.
+title: JSON output
+description: What trellis's --json payloads guarantee — the schema field, what a stable shape permits, and where the guarantee stops.
 ---
 
 import Callout from "../../../components/Callout.astro";
 
-Ten trellis commands emit JSON for machine consumption, and workflows are
-built on them. This page states what those shapes promise, so you can wire one
-into CI and know what would break it.
-
-Every JSON *document* trellis emits carries a `schema` field naming the payload
-and its major version:
+Every command that emits JSON carries a `schema` field naming the payload and
+its major version:
 
 ```json
 {
@@ -28,38 +24,22 @@ and its major version:
 }
 ```
 
-(Trimmed to one package; `packages` holds one entry per selected member, in
-topological order.)
-
-Assert on it. An identifier you don't recognize is a version you don't support,
-and that is a condition your workflow can detect and report — rather than one
-it discovers by producing wrong results.
+An unrecognized `schema` means an unsupported version — assert on it.
 
 ## What "stable" permits
 
-For a payload with a `schema` identifier:
-
 | Change | Allowed? |
 | --- | --- |
-| Adding a field | **Yes** — without bumping the identifier. Ignore fields you don't know. |
-| Adding an element to an existing array | **Yes**, subject to the command's documented selection rules. |
-| Renaming a field | No — bumps the major (`trellis.list/1` → `/2`). |
-| Removing a field | No — bumps the major. |
-| Changing a field's type | No — bumps the major. |
-| Changing a documented enum's values (`kind`, `action`, `tag_kind`) | No — bumps the major. |
+| Adding a field | **Yes**, without a version bump — ignore fields you don't know. |
+| Adding an array element | **Yes**, per the command's documented selection rules. |
+| Renaming, removing, or retyping a field; changing a documented enum's values (`kind`, `action`, `tag_kind`) | **No** — bumps the major (`trellis.list/1` → `/2`). |
 
-Two things are explicitly **not** part of the contract:
-
-- **Key order.** Parse as JSON; don't pattern-match the serialized text.
-- **Whitespace.** Some commands pretty-print and some emit a single line,
-  because `ci` output is meant to survive being pasted into a shell variable.
-  That split may change.
+Not guaranteed: **key order** (parse as JSON) or **whitespace** (some
+commands pretty-print, some emit one line for shell-variable capture).
 
 <Callout>
-  **Human-readable output is not covered.** Text output is written for a person
-  at a terminal, is already TTY-dependent, and changes freely. If you are
-  parsing it, you are on your own — the `--json` form exists so you don't have
-  to.
+  **Human-readable output isn't covered.** It's written for a terminal, is
+  TTY-dependent, and changes freely. Use `--json` if you're parsing.
 </Callout>
 
 ## The payloads
@@ -76,69 +56,33 @@ Two things are explicitly **not** part of the contract:
 | `version apply --json` | `trellis.version_apply/1`<br />`{schema, bumped[], lockfiles[], adopted[], fragments_retained}` |
 | `tag plan --json` | `trellis.tag_plan/1`<br />`{schema, tags[]}` |
 | `ci tag-package --json` | `trellis.ci_tag_package/1`<br />`{schema, name, path, version, tag_kind, tag_version \| tag_series}` |
-| `doctor --format json` | `trellis.doctor/1`<br />`{schema, ok, members, configless, auto_members, findings[], fixes[], applied[]}` |
+| `doctor --format json` | `trellis.doctor/1`<br />`{schema, ok, packages, configless, auto_members, findings[], fixes[], applied[]}` |
 
-A `packages[]` entry in `list` and the top level of `info` are the same shape,
-so a consumer can handle one package the same way whichever command produced
-it. `version plan` and `version apply` likewise share the `bumped[]` entry
-shape (`name`, `current`, `next`, `fragments`, `updated_dependencies[]`).
+Notes:
 
-`updated_dependencies[]` is empty unless the package bumped, wholly or partly,
-because a [workspace dependency bumped](/docs/changelog/#dependents-bump-too)
-in the same plan; `fragments` is `0` when that was the only reason. `adopted[]`
-names the version sections captured from
-[pre-existing changelogs](/docs/changelog/#adopting-an-existing-changelog).
-
-`fragments_retained` is true only under
-[`--pre <label>`](/docs/changelog/#prereleases): the fragments behind the
-release were left unreleased, and a later version will render them again. It is
-false for every ordinary release and for a `--pre none` promotion. A workflow
-that gates on "are there unreleased changes left" needs it to tell a cut release
-candidate from an incomplete release.
-
-`run` and `exec` share the `results[]` entry shape — `package`, `path`,
-`status` (`success`, `failed`, or `skipped`), and `duration_ms`. `status` is
-`skipped` for a package that never ran because scheduling stopped at an earlier
-failure; that is not a pass, and it still fails the command. A failed entry also
-carries `exit_code` and the `command` that produced it. Because a job runs
-several commands when a custom task sets `needs_deps`, those two describe the
-one that *failed*, not the whole job.
-
-`duration_ms` is wall-clock and differs on every run: it is contractual as a
-field, not as a value.
+- `list`'s `packages[]` entries and `info`'s top level share a shape.
+- `version plan`/`version apply` share the `bumped[]` shape (`name`,
+  `current`, `next`, `fragments`, `updated_dependencies[]`).
+  `fragments_retained` is true only under
+  [`--pre <label>`](/docs/changelog/#prereleases).
+- `run`/`exec` share the `results[]` shape — `package`, `path`, `status`
+  (`success` | `failed` | `skipped`), `duration_ms`. A failed entry also
+  carries `exit_code` and `command`. `duration_ms`'s presence is stable, its
+  value isn't.
+- `ci tag-package` reports `tag_kind: exact` with `tag_version`, or
+  `tag_kind: series` with `tag_series` — the other key is absent, not null.
+- `changelog check`'s `preview` field is always present and a string, but its
+  Markdown prose can change without a version bump.
 
 <Callout>
-  **`--json` moves package output to stderr.** `run` and `exec` normally stream
-  each package's output to stdout behind a `pkg ▏` prefix. Under `--json` that
-  stream moves to stderr, so a long run stays observable while stdout carries
-  nothing but the payload. Progress rows and the summary table are suppressed
-  entirely. `-q` suppresses the stream as well.
+  **`--json` moves package output to stderr.** `run`/`exec` normally stream
+  package output to stdout; under `--json` it moves to stderr so stdout
+  carries only the payload. `-q` suppresses the stream.
 </Callout>
-
-### Conditional fields
-
-`ci tag-package` resolves either an immutable per-version tag or a moving
-series tag, and reports whichever applies:
-
-```json
-{"schema":"trellis.ci_tag_package/1","name":"lat_cli","path":"packages/lat_cli","version":"0.3.1","tag_kind":"exact","tag_version":"0.3.1"}
-{"schema":"trellis.ci_tag_package/1","name":"lat_cli","path":"packages/lat_cli","version":"0.3.1","tag_kind":"series","tag_series":"0.3"}
-```
-
-Branch on `tag_kind`: `exact` carries `tag_version`, `series` carries
-`tag_series`, and the other key is absent rather than null. A series tag names
-no version, which is why it cannot trigger a publish.
-
-### `preview` is a field, not a text
-
-`changelog check --json` includes `preview`, Markdown intended for a PR sticky
-comment. The field is contractual — always present, always a string. **Its
-prose is not**, and will change without a schema bump. Render it; don't parse
-it.
 
 ## `doctor` findings
 
-`doctor --format json` reports one entry per problem:
+One entry per problem:
 
 ```json
 {
@@ -151,23 +95,15 @@ it.
 }
 ```
 
-`severity` is `error` or `warning`; only an error fails the run, and `ok`
-mirrors the exit code. `file` is workspace-relative with forward slashes, and
-`file` and `package` are **absent rather than null** when the finding is a
-property of the workspace instead of one file — a dependency cycle names no
-single manifest. `fixable` says `doctor --fix` would remediate it; the `fixes[]`
-array describes those remedies, and one entry there can clear several findings.
-After a successful `--fix`, `fixes[]` is empty and `applied[]` holds what was
-written.
-
-Like `preview`, **`message` is prose and not contractual** — it is written for a
-person and will be reworded without a schema bump. Branch on `check`:
+`severity` is `error` or `warning` (only `error` fails the run). `file`/
+`package` are absent, not null, when a finding isn't tied to one file. `message`
+is prose, not stable — branch on `check`:
 
 | `check` | Raised when |
 | --- | --- |
 | `member_glob` | a `members` glob is invalid, unreadable, or matches nothing |
-| `member_manifest` | a member's `gleam.toml` is missing, unparseable, carries a `[tools.trellis]` table, or repeats another member's name |
-| `path_dependency` | a path dependency escapes the workspace or names no member |
+| `package_manifest` | a package's `gleam.toml` is missing, unparseable, carries a `[tools.trellis]` table, or repeats another package's name |
+| `path_dependency` | a path dependency escapes the workspace or names no package in it |
 | `dependency_cycle` | the graph is cyclic |
 | `workspace_config` | the root `[tools.trellis]` table is itself wrong |
 | `exclusion_glob` | a task-exclusion or tag-mode-override glob matches no member |
@@ -179,58 +115,53 @@ person and will be reworded without a schema bump. Branch on `check`:
 | `changelog_behind` | a package's version is behind the newest one in its changelog |
 | `changelog_adoption` | a package has pre-trellis changelog history the next release will adopt |
 | `package_version` | a package's version is not valid semver |
-| `changelog_fragment` | an unreleased fragment does not parse, or names an unknown project or kind |
+| `changelog_fragment` | an unreleased fragment does not parse, or names an unknown package or kind |
 | `toolchain` | the gleam on PATH disagrees with the `.tool-versions` pin |
-| `shared_dependency` | members require different versions of the same external dependency |
+| `shared_dependency` | packages require different versions of the same external dependency |
 
-These values are a documented enum, so the table above is the contract: a new
-`check` may appear without a bump — handle an unrecognized one by reporting it
-rather than dropping it — but renaming or removing one bumps the major.
+New `check` values may appear without a bump — handle unrecognized ones by
+reporting them, not dropping them.
 
 <Callout>
-  **`--format github` is not JSON.** It emits GitHub Actions workflow commands
+  **`--format github` is not JSON.** It emits workflow commands
   (`::error title=lockfile_drift,file=packages/lat_mid/manifest.toml::…`) so
-  findings land on the file in a PR's Files tab. `title` is the `check`, `file`
-  is the same path — one line per finding, nothing else on stdout, and nothing
-  at all when the workspace is healthy. See [CI recipes](/docs/ci/).
+  findings land on a PR's Files tab. See [CI recipes](/docs/ci/).
 </Callout>
 
-## The two exceptions
+## Two exceptions
 
-`trellis ci matrix` and `trellis ci outputs` carry **no `schema` field**. Their
-shapes are dictated by GitHub Actions rather than by trellis, so what they
-promise is what GitHub accepts.
+`ci matrix` and `ci outputs` carry **no `schema`** — their shapes are
+dictated by GitHub Actions, not trellis.
 
-`ci matrix` emits exactly one key:
+`ci matrix` emits one key, fed straight to `strategy.matrix` via
+`fromJSON()`:
 
 ```json
-{"include":[{"name":"lat_core","path":"packages/lat_core","version":"1.2.0"},{"name":"lat_mid","path":"packages/lat_mid","version":"0.5.0"},{"name":"lat_cli","path":"packages/lat_cli","version":"0.3.1"},{"name":"package_a","path":"examples/package-a","version":"0.0.0"}]}
+{"include":[{"name":"lat_core","path":"packages/lat_core","version":"1.2.0"}]}
 ```
 
 <Callout>
-  A `schema` sibling here would be a bug, not an improvement. GitHub feeds this
-  object straight to `strategy.matrix` via `fromJSON()`, where **every
-  top-level key other than `include` becomes another matrix axis** — so adding
-  one would silently multiply the number of jobs.
+  A `schema` sibling here would be a bug: every top-level key besides
+  `include` becomes another matrix axis.
 </Callout>
 
-`ci outputs` is not a JSON document at all. It emits `key=value` lines for
-`$GITHUB_OUTPUT`, where each value happens to be a JSON array:
+`ci outputs` emits `key=value` lines for `$GITHUB_OUTPUT`, each value a JSON
+array of strings:
 
 ```
-projects=["lat_core","lat_mid","lat_cli","package_a"]
+packages=["lat_core","lat_mid","lat_cli","lat_example"]
+projects=["lat_core","lat_mid","lat_cli","lat_example"]
 releasable=["lat_core","lat_mid","lat_cli"]
 version_files=["packages/lat_core/gleam.toml","packages/lat_mid/gleam.toml","packages/lat_cli/gleam.toml"]
-tags=["lat_core-v1.2.0","lat_mid-v0.5.0","lat_cli-v0.3.1"]
+tags=["lat_core-v1.2.0","lat_mid-v0.5.1","lat_cli-v0.4.3"]
 series_tags=[]
 ```
 
-The contract is the set of output names above and each value's element type —
-all five are arrays of strings. See [CI recipes](/docs/ci/) for how they are
-consumed.
+`projects` duplicates `packages` and is deprecated; it goes away at 1.0.
 
-## How this is enforced
+See [CI recipes](/docs/ci/) for how these are consumed.
 
-Every payload on this page is defined once, as a serializable type, in
-`src/json.rs`, and snapshotted in `tests/json_contract.rs`. A change to a
-stable shape fails trellis's own CI rather than yours.
+## Enforcement
+
+Every payload is defined once, in one file, and snapshotted in trellis's test
+suite. A change to a stable shape fails CI before it can ship.

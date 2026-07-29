@@ -238,9 +238,12 @@ fn ci_outputs_contract() {
         })
         .collect();
     let keys: Vec<&str> = pairs.iter().map(|(key, _)| *key).collect();
+    // `projects` is the deprecated alias of `packages`, emitted with an
+    // identical value until 1.0 so existing workflows keep resolving.
     assert_eq!(
         keys,
         [
+            "packages",
             "projects",
             "releasable",
             "version_files",
@@ -248,6 +251,8 @@ fn ci_outputs_contract() {
             "series_tags"
         ]
     );
+    let by_key: std::collections::HashMap<_, _> = pairs.iter().cloned().collect();
+    assert_eq!(by_key["packages"], by_key["projects"]);
     insta::assert_json_snapshot!(serde_json::Value::Object(
         pairs
             .into_iter()

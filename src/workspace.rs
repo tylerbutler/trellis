@@ -268,7 +268,7 @@ impl Workspace {
             if !manifest_path.is_file() {
                 diagnostics.push(
                     Finding::error(
-                        Check::MemberManifest,
+                        Check::PackageManifest,
                         format!("member `{rel_path}` has no gleam.toml"),
                     )
                     .at(format!("{rel_path}/{GLEAM_TOML}")),
@@ -294,7 +294,7 @@ impl Workspace {
                             )
                         };
                         diagnostics.push(
-                            Finding::error(Check::MemberManifest, message)
+                            Finding::error(Check::PackageManifest, message)
                                 .at(format!("{rel_path}/{GLEAM_TOML}"))
                                 .in_package(manifest.name.clone()),
                         );
@@ -319,7 +319,7 @@ impl Workspace {
                     });
                 }
                 Err(err) => diagnostics.push(
-                    Finding::error(Check::MemberManifest, format!("{err:#}"))
+                    Finding::error(Check::PackageManifest, format!("{err:#}"))
                         .at(format!("{rel_path}/{GLEAM_TOML}")),
                 ),
             }
@@ -331,7 +331,7 @@ impl Workspace {
             if let Some(other) = seen.insert(&member.name, &member.rel_path) {
                 diagnostics.push(
                     Finding::error(
-                        Check::MemberManifest,
+                        Check::PackageManifest,
                         format!(
                             "duplicate package name `{}` in `{}` and `{}`",
                             member.name, other, member.rel_path

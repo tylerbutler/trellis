@@ -1,7 +1,7 @@
 //! The native changelog engine (changie subsumed — design §7, revised).
 //!
 //! Layout, under `[tools.trellis.changelog] dir` (default `.changes/`):
-//!   unreleased/*.toml        one fragment per change: project, kind, body
+//!   unreleased/*.toml        one fragment per change: package, kind, body
 //!   <package>/v<X.Y.Z>.md    batched version sections, rendered once
 //! Each package's CHANGELOG.md is assembled from its header plus its version
 //! sections, newest first. All formats are minijinja templates, so the
@@ -17,8 +17,12 @@ use std::path::PathBuf;
 
 #[derive(Debug, Clone)]
 pub struct Fragment {
-    pub project: String,
+    pub package: String,
     pub kind: String,
+    /// The optional second grouping axis. `None` files the entry under the
+    /// configured `uncategorized_label`, which is where every fragment written
+    /// before categories existed lands.
+    pub category: Option<String>,
     pub body: String,
     /// `None` for a fragment trellis generated rather than read from disk, so
     /// `consume_fragments` can never mistake one for a file to delete.
@@ -28,8 +32,18 @@ pub struct Fragment {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawFragment {
-    project: String,
+    /// The package the change belongs to. `project` is the original spelling,
+    /// inherited from changie; it still parses so fragments written by an
+    /// older trellis keep working. Removed at 1.0.
+    #[serde(alias = "project")]
+    package: String,
     kind: String,
+    /// Optional, so fragments predating categories still parse. Note the
+    /// reverse does not hold: this struct denies unknown fields, so a fragment
+    /// carrying a category fails to parse under a trellis older than the one
+    /// that introduced it.
+    #[serde(default)]
+    category: Option<String>,
     body: String,
 }
 
@@ -40,9 +54,9 @@ struct RawFragment {
 pub struct FragmentProblem {
     pub message: String,
     pub path: PathBuf,
-    /// The `project` the fragment claimed, when it parsed far enough to have
+    /// The `package` the fragment claimed, when it parsed far enough to have
     /// one.
-    pub project: Option<String>,
+    pub package: Option<String>,
 }
 
 /// All unreleased fragments plus every problem found while reading them.
@@ -56,12 +70,12 @@ pub struct Fragments {
 }
 
 impl Fragments {
-    pub fn for_project<'a>(&'a self, project: &'a str) -> impl Iterator<Item = &'a Fragment> {
-        self.fragments.iter().filter(move |f| f.project == project)
+    pub fn for_package<'a>(&'a self, package: &'a str) -> impl Iterator<Item = &'a Fragment> {
+        self.fragments.iter().filter(move |f| f.package == package)
     }
 
-    pub fn count_for(&self, project: &str) -> usize {
-        self.for_project(project).count()
+    pub fn count_for(&self, package: &str) -> usize {
+        self.for_package(package).count()
     }
 
     /// Problem messages alone, for the callers that only render prose.
@@ -80,11 +94,11 @@ pub fn unreleased_dir(workspace: &Workspace) -> PathBuf {
         .join("unreleased")
 }
 
-fn versions_dir(workspace: &Workspace, project: &str) -> PathBuf {
+fn versions_dir(workspace: &Workspace, package: &str) -> PathBuf {
     workspace
         .root
         .join(&workspace.config.changelog.dir)
-        .join(project)
+        .join(package)
 }
 
 /// Read and validate every unreleased fragment: it must parse, name a
@@ -103,6 +117,7 @@ pub fn load_fragments(workspace: &Workspace) -> Result<Fragments> {
     paths.sort(); // deterministic order across filesystems
 
     let kinds = &workspace.config.changelog.kinds;
+    let categories = &workspace.config.changelog.categories;
     for path in paths {
         let display = path
             .file_name()
@@ -117,30 +132,30 @@ pub fn load_fragments(workspace: &Workspace) -> Result<Fragments> {
                 result.problems.push(FragmentProblem {
                     message: format!("fragment `{display}`: {err}"),
                     path,
-                    project: None,
+                    package: None,
                 });
                 continue;
             }
         };
-        // Past the parse, every problem names the same file and project.
+        // Past the parse, every problem names the same file and package.
         let blame = |message: String| FragmentProblem {
             message,
             path: path.clone(),
-            project: Some(raw.project.clone()),
+            package: Some(raw.package.clone()),
         };
-        match workspace.member_index(&raw.project) {
+        match workspace.member_index(&raw.package) {
             Some(idx) if workspace.members[idx].releasable => {}
             Some(_) => {
                 result.problems.push(blame(format!(
-                    "fragment `{display}`: project `{}` is excluded from release by `@release`",
-                    raw.project
+                    "fragment `{display}`: package `{}` is excluded from release by `@release`",
+                    raw.package
                 )));
                 continue;
             }
             None => {
                 result.problems.push(blame(format!(
-                    "fragment `{display}`: project `{}` is not a workspace member",
-                    raw.project
+                    "fragment `{display}`: package `{}` is not a workspace member",
+                    raw.package
                 )));
                 continue;
             }
@@ -153,6 +168,25 @@ pub fn load_fragments(workspace: &Workspace) -> Result<Fragments> {
             )));
             continue;
         }
+        if let Some(category) = &raw.category
+            && !categories.iter().any(|c| c == category)
+        {
+            // With no `categories` configured there is no list to print, and
+            // "not one of" would read as though the label were merely
+            // misspelled. Name the key that turns the axis on instead.
+            result.problems.push(blame(if categories.is_empty() {
+                format!(
+                    "fragment `{display}`: category `{category}` is set, but no `categories` \
+                     are configured; add them under [tools.trellis.changelog]"
+                )
+            } else {
+                format!(
+                    "fragment `{display}`: category `{category}` is not one of {}",
+                    category_labels(categories)
+                )
+            }));
+            continue;
+        }
         if raw.body.trim().is_empty() {
             result
                 .problems
@@ -160,8 +194,9 @@ pub fn load_fragments(workspace: &Workspace) -> Result<Fragments> {
             continue;
         }
         result.fragments.push(Fragment {
-            project: raw.project,
+            package: raw.package,
             kind: raw.kind,
+            category: raw.category,
             body: raw.body.trim().to_string(),
             path: Some(path),
         });
@@ -177,6 +212,10 @@ pub fn kind_labels(kinds: &[KindConfig]) -> String {
         .join(", ")
 }
 
+pub fn category_labels(categories: &[String]) -> String {
+    categories.join(", ")
+}
+
 /// The entry recording that a workspace dependency bumped in this release.
 ///
 /// A ripple is modelled as an ordinary fragment so the rest of the engine
@@ -187,38 +226,50 @@ pub fn kind_labels(kinds: &[KindConfig]) -> String {
 /// the whole plan is computed.
 pub fn dependency_fragment(
     config: &ChangelogConfig,
-    project: &str,
+    package: &str,
     dependency: &str,
     dependency_version: &str,
 ) -> Result<Fragment> {
     let body = render(
         &config.dependency_body,
         "dependency_body",
-        minijinja::context! { dependency, dependency_version, project },
+        // `project` is the pre-1.0 spelling of `package`, kept so existing
+        // `dependency_body` templates keep rendering. Removed at 1.0.
+        minijinja::context! { dependency, dependency_version, package, project => package },
     )?;
     Ok(Fragment {
-        project: project.to_string(),
+        package: package.to_string(),
         kind: config.dependency_kind.clone(),
+        // A ripple belongs to no one part of the package — it happened to the
+        // whole of it — so it files under `uncategorized_label` alongside any
+        // other entry that named no category.
+        category: None,
         body: body.trim().to_string(),
         path: None,
     })
 }
 
-/// Write a new fragment file, picking an unused `<project>-<n>.toml` name.
+/// Write a new fragment file, picking an unused `<package>-<n>.toml` name.
 pub fn write_fragment(
     workspace: &Workspace,
-    project: &str,
+    package: &str,
     kind: &str,
+    category: Option<&str>,
     body: &str,
 ) -> Result<PathBuf> {
     let dir = unreleased_dir(workspace);
     std::fs::create_dir_all(&dir).with_context(|| format!("failed to create {}", dir.display()))?;
     let mut doc = toml_edit::DocumentMut::new();
-    doc["project"] = toml_edit::value(project);
+    doc["package"] = toml_edit::value(package);
     doc["kind"] = toml_edit::value(kind);
+    // Omitted entirely when absent, so a workspace not using categories writes
+    // exactly the file it always did.
+    if let Some(category) = category {
+        doc["category"] = toml_edit::value(category);
+    }
     doc["body"] = toml_edit::value(body);
     for n in 1u32.. {
-        let path = dir.join(format!("{project}-{n}.toml"));
+        let path = dir.join(format!("{package}-{n}.toml"));
         if !path.exists() {
             std::fs::write(&path, doc.to_string())
                 .with_context(|| format!("failed to write {}", path.display()))?;
@@ -273,8 +324,9 @@ fn render(template: &str, what: &str, context: minijinja::Value) -> Result<Strin
         .with_context(|| format!("failed to render {what} template"))
 }
 
-/// Render one version section: the version heading, then each kind (in
-/// configured order) with its entries.
+/// Render one version section: the version heading, then the entries grouped
+/// by kind in configured order — or, when categories are configured, by
+/// category first and kind within each.
 pub fn render_section(
     config: &ChangelogConfig,
     name: &str,
@@ -291,6 +343,72 @@ pub fn render_section(
         minijinja::context! { name, version, date, tag, series },
     )?;
     out.push('\n');
+
+    if !config.categories_enabled() {
+        // The pre-categories path, kept exactly as it was: a workspace that
+        // configures no categories renders byte-for-byte what it used to.
+        render_kinds(config, &mut out, name, version, fragments, None)?;
+        return Ok(out);
+    }
+
+    for category in &config.categories {
+        let entries: Vec<&Fragment> = fragments
+            .iter()
+            .copied()
+            .filter(|f| f.category.as_deref() == Some(category.as_str()))
+            .collect();
+        if entries.is_empty() {
+            continue; // same skip-empty rule kinds follow
+        }
+        render_category_heading(config, &mut out, category, name, version)?;
+        render_kinds(config, &mut out, name, version, &entries, Some(category))?;
+    }
+
+    // Everything that named no category, including the generated ripple
+    // entries, trails the named ones under one shared heading.
+    let uncategorized: Vec<&Fragment> = fragments
+        .iter()
+        .copied()
+        .filter(|f| f.category.is_none())
+        .collect();
+    if !uncategorized.is_empty() {
+        let label = &config.uncategorized_label;
+        render_category_heading(config, &mut out, label, name, version)?;
+        render_kinds(config, &mut out, name, version, &uncategorized, Some(label))?;
+    }
+    Ok(out)
+}
+
+/// One category heading. The uncategorized block goes through here too, so a
+/// custom `category_format` shapes every heading in the section alike.
+fn render_category_heading(
+    config: &ChangelogConfig,
+    out: &mut String,
+    category: &str,
+    name: &str,
+    version: &str,
+) -> Result<()> {
+    out.push('\n');
+    out.push_str(&render(
+        &config.category_format,
+        "category_format",
+        minijinja::context! { category, name, version },
+    )?);
+    out.push('\n');
+    Ok(())
+}
+
+/// The kind headings and entries for one group of fragments. Opens each kind
+/// with a blank line, which is also what separates it from a category heading
+/// above — so the two compose without either knowing about the other.
+fn render_kinds(
+    config: &ChangelogConfig,
+    out: &mut String,
+    name: &str,
+    version: &str,
+    fragments: &[&Fragment],
+    category: Option<&str>,
+) -> Result<()> {
     for kind in &config.kinds {
         let entries: Vec<&&Fragment> = fragments.iter().filter(|f| f.kind == kind.label).collect();
         if entries.is_empty() {
@@ -298,9 +416,9 @@ pub fn render_section(
         }
         out.push('\n');
         out.push_str(&render(
-            &config.kind_format,
+            config.kind_format(),
             "kind_format",
-            minijinja::context! { kind => kind.label, name, version },
+            minijinja::context! { kind => kind.label, category, name, version },
         )?);
         out.push('\n');
         out.push('\n');
@@ -308,19 +426,25 @@ pub fn render_section(
             out.push_str(&render(
                 &config.change_format,
                 "change_format",
-                minijinja::context! { body => fragment.body, kind => fragment.kind, name, version },
+                minijinja::context! {
+                    body => fragment.body,
+                    kind => fragment.kind,
+                    category,
+                    name,
+                    version,
+                },
             )?);
             out.push('\n');
         }
     }
-    Ok(out)
+    Ok(())
 }
 
 // ---- adoption ----------------------------------------------------------------
 
 /// A package's pre-trellis CHANGELOG.md body, captured as one version section.
 ///
-/// CHANGELOG.md is a generated file: it is rebuilt from `<dir>/<project>/v*.md`
+/// CHANGELOG.md is a generated file: it is rebuilt from `<dir>/<package>/v*.md`
 /// alone. Without this, the first release of a package that already had a
 /// changelog would silently delete all of its history. Capturing the body
 /// verbatim keeps it byte-for-byte and needs no heading parsing — it simply
@@ -332,18 +456,18 @@ pub struct Adoption {
     pub contents: String,
 }
 
-/// The history to adopt for `project`, if any. `None` once trellis has batched
+/// The history to adopt for `package`, if any. `None` once trellis has batched
 /// a version for it: from then on CHANGELOG.md is fully generated, so leftover
 /// content is drift rather than history.
 pub fn plan_adoption(
     workspace: &Workspace,
-    project: &str,
+    package: &str,
     current: &str,
 ) -> Result<Option<Adoption>> {
     let idx = workspace
-        .member_index(project)
-        .with_context(|| format!("unknown package `{project}`"))?;
-    let dir = versions_dir(workspace, project);
+        .member_index(package)
+        .with_context(|| format!("unknown package `{package}`"))?;
+    let dir = versions_dir(workspace, package);
     let already_batched = std::fs::read_dir(&dir).is_ok_and(|entries| {
         entries
             .filter_map(|entry| entry.ok())
@@ -365,7 +489,7 @@ pub fn plan_adoption(
     let version = match latest_changelog_version(&text) {
         Some(version) => version,
         None => semver::Version::parse(current).with_context(|| {
-            format!("cannot date `{project}`'s changelog history: `{current}` is not valid semver")
+            format!("cannot date `{package}`'s changelog history: `{current}` is not valid semver")
         })?,
     };
     Ok(Some(Adoption {
@@ -406,15 +530,15 @@ pub fn latest_changelog_version(text: &str) -> Option<semver::Version> {
 /// and an optional block of adopted pre-trellis history.
 pub fn render_merged_changelog(
     workspace: &Workspace,
-    project: &str,
+    package: &str,
     pending: Option<(&semver::Version, &str)>,
     adopted: Option<&Adoption>,
 ) -> Result<String> {
     workspace
-        .member_index(project)
-        .with_context(|| format!("unknown package `{project}`"))?;
+        .member_index(package)
+        .with_context(|| format!("unknown package `{package}`"))?;
     let config = &workspace.config.changelog;
-    let dir = versions_dir(workspace, project);
+    let dir = versions_dir(workspace, package);
 
     let mut sections: Vec<(semver::Version, String)> = Vec::new();
     if let Ok(entries) = std::fs::read_dir(&dir) {
@@ -446,7 +570,7 @@ pub fn render_merged_changelog(
     }
     sections.sort_by(|a, b| b.0.cmp(&a.0));
 
-    let header = render_header(config, project)?;
+    let header = render_header(config, package)?;
     let mut out = header.trim_end().to_string();
     out.push('\n');
     for (_, section) in &sections {
@@ -471,15 +595,15 @@ pub fn render_header(config: &ChangelogConfig, name: &str) -> Result<String> {
 /// Write a pre-rendered version section and complete package changelog.
 pub fn write_batch(
     workspace: &Workspace,
-    project: &str,
+    package: &str,
     version: &semver::Version,
     section: &str,
     changelog: &str,
 ) -> Result<()> {
     let idx = workspace
-        .member_index(project)
-        .with_context(|| format!("unknown package `{project}`"))?;
-    let dir = versions_dir(workspace, project);
+        .member_index(package)
+        .with_context(|| format!("unknown package `{package}`"))?;
+    let dir = versions_dir(workspace, package);
     std::fs::create_dir_all(&dir).with_context(|| format!("failed to create {}", dir.display()))?;
     let section_path = dir.join(format!("v{version}.md"));
     std::fs::write(&section_path, section)
@@ -550,12 +674,20 @@ mod tests {
     use super::*;
     use crate::config::ChangelogConfig;
 
-    fn fragment(project: &str, kind: &str, body: &str) -> Fragment {
+    fn fragment(package: &str, kind: &str, body: &str) -> Fragment {
         Fragment {
-            project: project.to_string(),
+            package: package.to_string(),
             kind: kind.to_string(),
+            category: None,
             body: body.to_string(),
             path: Some(PathBuf::from("unused")),
+        }
+    }
+
+    fn categorized(package: &str, kind: &str, category: &str, body: &str) -> Fragment {
+        Fragment {
+            category: Some(category.to_string()),
+            ..fragment(package, kind, body)
         }
     }
 
@@ -615,11 +747,189 @@ mod tests {
         );
     }
 
+    /// A configured category becomes a heading above the kinds, which drop a
+    /// level to sit under it. Categories render in configured order — not the
+    /// order the fragments happen to arrive in — exactly as kinds do.
+    #[test]
+    fn categories_group_above_kinds_in_configured_order() {
+        let config = ChangelogConfig {
+            categories: vec!["build".to_string(), "publish".to_string()],
+            ..Default::default()
+        };
+        let publish = categorized("lat_cli", "Added", "publish", "--dry-run");
+        let build_add = categorized("lat_cli", "Added", "build", "--watch");
+        let build_fix = categorized("lat_cli", "Fixed", "build", "stop rebuilding deps");
+        let section = render_section(
+            &config,
+            "lat_cli",
+            "1.3.0",
+            "lat_cli-v1.3.0",
+            "2026-07-11",
+            &[&publish, &build_add, &build_fix],
+        )
+        .unwrap();
+        assert_eq!(
+            section,
+            "## v1.3.0 - 2026-07-11\n\
+             \n### build\n\
+             \n#### Added\n\n- --watch\n\
+             \n#### Fixed\n\n- stop rebuilding deps\n\
+             \n### publish\n\
+             \n#### Added\n\n- --dry-run\n"
+        );
+    }
+
+    /// Entries naming no category trail the named ones under one heading —
+    /// including the generated ripple entries, which belong to no one part of
+    /// a package.
+    #[test]
+    fn uncategorized_entries_render_last_under_their_label() {
+        let config = ChangelogConfig {
+            categories: vec!["build".to_string()],
+            ..Default::default()
+        };
+        let loose = fragment("lat_cli", "Fixed", "a general fix");
+        let build = categorized("lat_cli", "Added", "build", "--watch");
+        let section = render_section(
+            &config,
+            "lat_cli",
+            "1.3.0",
+            "lat_cli-v1.3.0",
+            "2026-07-11",
+            &[&loose, &build],
+        )
+        .unwrap();
+        assert_eq!(
+            section,
+            "## v1.3.0 - 2026-07-11\n\
+             \n### build\n\
+             \n#### Added\n\n- --watch\n\
+             \n### Other\n\
+             \n#### Fixed\n\n- a general fix\n"
+        );
+    }
+
+    /// A category with nothing in it is skipped, the same way an empty kind is
+    /// — configuring the axis does not commit a package to filling every
+    /// heading in every release.
+    #[test]
+    fn empty_categories_are_skipped() {
+        let config = ChangelogConfig {
+            categories: vec!["build".to_string(), "publish".to_string()],
+            ..Default::default()
+        };
+        let build = categorized("lat_cli", "Added", "build", "--watch");
+        let section = render_section(
+            &config,
+            "lat_cli",
+            "1.3.0",
+            "lat_cli-v1.3.0",
+            "2026-07-11",
+            &[&build],
+        )
+        .unwrap();
+        assert_eq!(
+            section,
+            "## v1.3.0 - 2026-07-11\n\n### build\n\n#### Added\n\n- --watch\n"
+        );
+        // No stray `Other` heading when nothing is uncategorized, either.
+        assert!(!section.contains("Other"));
+    }
+
+    /// The uncategorized block is a category like any other as far as the
+    /// templates are concerned, and both headings can see the category name.
+    #[test]
+    fn custom_category_templates_get_full_context() {
+        let config = ChangelogConfig {
+            categories: vec!["build".to_string()],
+            category_format: "### `{{ category }}` in {{ name }}".to_string(),
+            kind_format_override: Some("**{{ kind }}** ({{ category }})".to_string()),
+            change_format: "* {{ body }} [{{ category }}]".to_string(),
+            uncategorized_label: "Everything else".to_string(),
+            ..Default::default()
+        };
+        let build = categorized("lat_cli", "Added", "build", "--watch");
+        let loose = fragment("lat_cli", "Added", "something general");
+        let section = render_section(
+            &config,
+            "lat_cli",
+            "1.3.0",
+            "lat_cli-v1.3.0",
+            "2026-07-11",
+            &[&build, &loose],
+        )
+        .unwrap();
+        assert!(section.contains("### `build` in lat_cli"), "{section}");
+        assert!(section.contains("**Added** (build)"), "{section}");
+        assert!(section.contains("* --watch [build]"), "{section}");
+        assert!(
+            section.contains("### `Everything else` in lat_cli"),
+            "{section}"
+        );
+        assert!(section.contains("* something general [Everything else]"));
+    }
+
+    /// The whole compatibility contract in one assertion: a fragment may carry
+    /// a category, but with the axis switched off it changes nothing about
+    /// what gets rendered.
+    #[test]
+    fn a_category_renders_nothing_when_no_categories_are_configured() {
+        let config = ChangelogConfig::default();
+        let build = categorized("lat_cli", "Added", "build", "--watch");
+        let section = render_section(
+            &config,
+            "lat_cli",
+            "1.3.0",
+            "lat_cli-v1.3.0",
+            "2026-07-11",
+            &[&build],
+        )
+        .unwrap();
+        assert_eq!(
+            section,
+            "## v1.3.0 - 2026-07-11\n\n### Added\n\n- --watch\n"
+        );
+    }
+
+    /// The version heading must stay the only `## ` line in a section.
+    /// `commands::tag::changelog_section` extracts release notes by scanning
+    /// for `## ` and stopping at the next one, so a category heading at that
+    /// level would truncate every set of release notes to nothing.
+    #[test]
+    fn categories_leave_the_version_heading_the_only_h2() {
+        let config = ChangelogConfig {
+            categories: vec!["build".to_string()],
+            ..Default::default()
+        };
+        let build = categorized("lat_cli", "Added", "build", "--watch");
+        let loose = fragment("lat_cli", "Fixed", "a general fix");
+        let section = render_section(
+            &config,
+            "lat_cli",
+            "1.3.0",
+            "lat_cli-v1.3.0",
+            "2026-07-11",
+            &[&build, &loose],
+        )
+        .unwrap();
+        let h2s: Vec<&str> = section
+            .lines()
+            .filter(|line| line.starts_with("## "))
+            .collect();
+        assert_eq!(h2s, ["## v1.3.0 - 2026-07-11"]);
+
+        // And the extractor really does recover the whole categorized body.
+        let notes = crate::commands::tag::changelog_section(&section, "1.3.0").unwrap();
+        assert!(notes.contains("### build"), "{notes}");
+        assert!(notes.contains("#### Added"), "{notes}");
+        assert!(notes.contains("- a general fix"), "{notes}");
+    }
+
     #[test]
     fn custom_templates_get_full_context() {
         let config = ChangelogConfig {
             version_format: "## {{ tag }} ({{ date }})".to_string(),
-            kind_format: "**{{ kind | upper }}**".to_string(),
+            kind_format_override: Some("**{{ kind | upper }}**".to_string()),
             change_format: "* {{ body }} [{{ kind }}]".to_string(),
             ..Default::default()
         };
@@ -646,7 +956,7 @@ mod tests {
     fn dependency_fragment_uses_the_configured_kind_and_body() {
         let config = ChangelogConfig::default();
         let generated = dependency_fragment(&config, "lat_mid", "lat_core", "1.3.0").unwrap();
-        assert_eq!(generated.project, "lat_mid");
+        assert_eq!(generated.package, "lat_mid");
         assert_eq!(generated.kind, "Dependencies");
         assert_eq!(generated.body, "Updated lat_core to 1.3.0");
         assert!(generated.path.is_none(), "generated fragments have no file");
@@ -655,7 +965,7 @@ mod tests {
     #[test]
     fn dependency_body_template_gets_full_context() {
         let config = ChangelogConfig {
-            dependency_body: "{{ project }} now needs {{ dependency }} {{ dependency_version }}"
+            dependency_body: "{{ package }} now needs {{ dependency }} {{ dependency_version }}"
                 .to_string(),
             ..Default::default()
         };

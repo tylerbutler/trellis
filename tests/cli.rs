@@ -491,7 +491,7 @@ fn doctor_passes_on_healthy_workspace() {
         .arg("doctor")
         .assert()
         .success()
-        .stdout(predicate::str::contains("ok: 4 member(s)"));
+        .stdout(predicate::str::contains("ok: 4 package(s)"));
 }
 
 fn write(path: &Path, content: &str) {
@@ -642,7 +642,7 @@ fn doctor_fix_seeds_missing_changelog() {
         .arg("doctor")
         .assert()
         .success()
-        .stdout(predicate::str::contains("ok: 1 member(s), 0 warning(s)"));
+        .stdout(predicate::str::contains("ok: 1 package(s), 0 warning(s)"));
 }
 
 /// A CHANGELOG.md that trellis never batched would be regenerated away on the
@@ -688,7 +688,7 @@ fn doctor_fix_adopts_unbatched_changelog_history() {
         .arg("doctor")
         .assert()
         .success()
-        .stdout(predicate::str::contains("ok: 1 member(s), 0 warning(s)"));
+        .stdout(predicate::str::contains("ok: 1 package(s), 0 warning(s)"));
 }
 
 #[test]
@@ -1369,7 +1369,7 @@ fn divergent_shared_dependencies_warn_by_default() {
         // A warning: divergence is sometimes deliberate, so it does not fail CI.
         .success()
         .stdout(predicate::str::contains(
-            "members disagree on `gleam_stdlib`",
+            "packages disagree on `gleam_stdlib`",
         ))
         .stdout(predicate::str::contains("`>= 0.44.0` (a)"))
         .stdout(predicate::str::contains("`>= 0.60.0` (b)"));
@@ -1412,7 +1412,7 @@ fn shared_dependency_strictness_is_configurable() {
         .assert()
         .failure()
         .stdout(predicate::str::contains(
-            "members disagree on `gleam_stdlib`",
+            "packages disagree on `gleam_stdlib`",
         ));
 
     diverging("[tools.trellis.doctor]\nshared_dependencies = \"off\"\n");

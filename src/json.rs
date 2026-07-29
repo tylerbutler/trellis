@@ -38,10 +38,10 @@ use serde::Serialize;
 pub enum Check {
     /// A `members` glob is invalid, unreadable, or matches nothing.
     MemberGlob,
-    /// A member's `gleam.toml` is missing, unparseable, carries a
-    /// `[tools.trellis]` table, or repeats another member's name.
-    MemberManifest,
-    /// A path dependency escapes the workspace or names no member.
+    /// A package's `gleam.toml` is missing, unparseable, carries a
+    /// `[tools.trellis]` table, or repeats another package's name.
+    PackageManifest,
+    /// A path dependency escapes the workspace or names no package in it.
     PathDependency,
     /// The dependency graph has a cycle.
     DependencyCycle,
@@ -68,11 +68,11 @@ pub enum Check {
     /// for it.
     PackageVersion,
     /// An unreleased changelog fragment does not parse, or names an unknown
-    /// project or kind.
+    /// package or kind.
     ChangelogFragment,
     /// The gleam on PATH disagrees with the `.tool-versions` pin.
     Toolchain,
-    /// Members require different versions of the same external dependency.
+    /// Packages require different versions of the same external dependency.
     SharedDependency,
 }
 
@@ -83,7 +83,7 @@ impl Check {
     pub fn as_str(self) -> &'static str {
         match self {
             Check::MemberGlob => "member_glob",
-            Check::MemberManifest => "member_manifest",
+            Check::PackageManifest => "package_manifest",
             Check::PathDependency => "path_dependency",
             Check::DependencyCycle => "dependency_cycle",
             Check::WorkspaceConfig => "workspace_config",
@@ -106,7 +106,7 @@ impl Check {
     #[cfg(test)]
     const ALL: &'static [Check] = &[
         Check::MemberGlob,
-        Check::MemberManifest,
+        Check::PackageManifest,
         Check::PathDependency,
         Check::DependencyCycle,
         Check::WorkspaceConfig,
@@ -235,8 +235,11 @@ pub struct DoctorDocument<'a> {
     pub schema: &'static str,
     /// Mirrors the exit code: false when any finding is an error.
     pub ok: bool,
-    pub members: usize,
+    /// How many packages the workspace holds.
+    pub packages: usize,
     pub configless: bool,
+    /// True when `members` is unset and the package list came from git.
+    /// Membership, not the packages themselves, is what was inferred.
     pub auto_members: bool,
     pub findings: &'a [Finding],
     pub fixes: Vec<FixRecord<'a>>,

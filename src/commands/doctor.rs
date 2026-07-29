@@ -144,7 +144,7 @@ struct Report {
     /// severity when printing; the JSON payload preserves this order.
     findings: Vec<Finding>,
     fixes: Vec<Fix>,
-    members: usize,
+    packages: usize,
     /// No [tools.trellis] anywhere; the root was inferred from git.
     configless: bool,
     /// `members` is not configured; the member list came from git.
@@ -179,7 +179,7 @@ fn inspect(root: &Path) -> Result<Report> {
     };
 
     if let Some(workspace) = &workspace {
-        report.members = workspace.members.len();
+        report.packages = workspace.members.len();
         report.configless = workspace.configless;
         report.auto_members = workspace.config.members.is_none();
         check_exclusions(workspace, &mut report);
@@ -198,15 +198,15 @@ pub fn run(root: &Path, options: &DoctorOptions) -> Result<bool> {
     let text = options.format.is_text();
     if text {
         let checked = [
-            "member globs resolve and every member has a parseable gleam.toml",
+            "member globs resolve and every package has a parseable gleam.toml",
             "path dependencies stay inside the workspace; graph is acyclic",
-            "task exclusion globs match members; no releasable member depends on an unreleasable one",
-            "tag format produces a unique tag per releasable member",
+            "task exclusion globs match members; no releasable package depends on an unreleasable one",
+            "tag format produces a unique tag per releasable package",
             "manifest.toml locked versions match workspace-internal gleam.toml versions",
-            "each releasable member's version is not behind its CHANGELOG",
-            "unreleased changelog fragments parse and reference valid packages and kinds",
+            "each releasable package's version is not behind its CHANGELOG",
+            "unreleased changelog fragments parse and reference valid packages, kinds, and categories",
             "[tools.trellis] carries no unrecognized or deprecated keys",
-            "members agree on the external dependencies they share",
+            "packages agree on the external dependencies they share",
             "gleam on PATH matches the .tool-versions pin (advisory)",
         ];
         for check in checked {
@@ -267,12 +267,12 @@ fn print_findings(report: &Report) {
         crate::status!(
             "note: no [tools.trellis] configuration found; workspace root inferred from git, \
              {} member(s) auto-discovered",
-            report.members
+            report.packages
         );
     } else if report.auto_members {
         crate::status!(
             "note: `members` is not configured; {} member(s) auto-discovered from git",
-            report.members
+            report.packages
         );
     }
     for warning in report.of_severity(Severity::Warning) {
@@ -293,7 +293,7 @@ fn finish(report: &Report, applied: &[Fix], format: DoctorFormat) -> Result<bool
             let document = DoctorDocument {
                 schema: DoctorDocument::SCHEMA,
                 ok,
-                members: report.members,
+                packages: report.packages,
                 configless: report.configless,
                 auto_members: report.auto_members,
                 findings: &report.findings,
@@ -310,7 +310,9 @@ fn finish(report: &Report, applied: &[Fix], format: DoctorFormat) -> Result<bool
 fn print_summary(report: &Report, ok: bool) {
     let warnings = report.count(Severity::Warning);
     if ok {
-        crate::status!("ok: {} member(s), {warnings} warning(s)", report.members);
+        // The JSON field behind this count is still `members` — renaming a
+        // stable key would bump `trellis.doctor/1`, so it waits for 1.0.
+        crate::status!("ok: {} package(s), {warnings} warning(s)", report.packages);
     } else {
         crate::status!(
             "FAILED: {} error(s), {warnings} warning(s)",
@@ -364,8 +366,8 @@ fn check_fragments(workspace: &Workspace, report: &mut Report) {
             for problem in fragments.problems {
                 let mut finding = Finding::error(Check::ChangelogFragment, problem.message)
                     .at(workspace.rel_path_of(&problem.path));
-                if let Some(project) = problem.project {
-                    finding = finding.in_package(project);
+                if let Some(package) = problem.package {
+                    finding = finding.in_package(package);
                 }
                 report.push(finding);
             }
@@ -420,7 +422,7 @@ fn check_shared_dependencies(workspace: &Workspace, report: &mut Report) {
             .collect::<Vec<_>>()
             .join(" vs ");
         let message = format!(
-            "members disagree on `{dependency}`: {detail}. Requirements are compared as \
+            "packages disagree on `{dependency}`: {detail}. Requirements are compared as \
              written, so whitespace counts"
         );
         report.push(match strictness {
