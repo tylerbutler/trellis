@@ -1,10 +1,10 @@
 //! `trellis init` — bootstrap a workspace by writing a `[tools.trellis]`
 //! table at the repo root.
 //!
-//! The output is deliberately almost empty: everything trellis can derive,
-//! it derives, so the only thing `init` must write is the table itself —
-//! its presence is what marks the workspace root. The comments it leaves
-//! behind point at what *could* be configured, without declaring any of it.
+//! The output is almost empty: everything trellis can derive, it derives, so
+//! the only thing `init` must write is the table itself — its presence is what
+//! marks the workspace root. The comments it leaves behind point at what
+//! *could* be configured, without declaring any of it.
 
 use crate::config::has_trellis_table;
 use crate::git;

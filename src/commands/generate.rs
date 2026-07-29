@@ -5,10 +5,10 @@
 //!
 //! The man pages are committed under `assets/man` and shipped in the release
 //! archives; `just docs` regenerates them and a test in `tests/cli.rs` fails if
-//! they're stale. Completion snippets are deliberately *not* committed —
-//! they're produced on demand by `trellis completions <shell>`, since the shim
-//! talks to the binary over an interface that changes between releases and a
-//! saved copy would go stale after an upgrade.
+//! they're stale. Completion snippets are *not* committed — they're produced on
+//! demand by `trellis completions <shell>`, since the shim talks to the binary
+//! over an interface that changes between releases and a saved copy would go
+//! stale after an upgrade.
 
 use anyhow::{Context, Result};
 use clap::CommandFactory;
@@ -123,7 +123,7 @@ fn write_page(cmd: &clap::Command, out_dir: &Path) -> Result<()> {
     if cmd.get_after_long_help().is_some() || cmd.get_after_help().is_some() {
         section(&mut page, |w| man.render_extra_section(w))?;
     }
-    // Deliberately no version section — see the `.source` comment above.
+    // No version section — see the `.source` comment above.
 
     let path = out_dir.join(man.get_filename());
     fs::write(&path, page).with_context(|| format!("writing {}", path.display()))

@@ -16,7 +16,7 @@
 //! "snake_case")]` sits on every struct: a no-op for single-word fields, but it
 //! means a later multi-word field cannot silently arrive as kebab-case.
 //!
-//! Two payloads deliberately carry no `schema` field; see [`CiMatrix`] and
+//! Two payloads carry no `schema` field; see [`CiMatrix`] and
 //! `commands::ci::outputs`.
 
 use crate::workspace::Workspace;
@@ -417,9 +417,9 @@ impl<'a> InfoDocument<'a> {
     }
 }
 
-/// One node in `trellis graph --format json`. Deliberately not [`Package`]:
-/// the edges carry the dependency relation, so repeating it per node would
-/// state the same fact twice.
+/// One node in `trellis graph --format json`. Not [`Package`]: the edges carry
+/// the dependency relation, so repeating it per node would state the same fact
+/// twice.
 #[derive(Serialize)]
 #[serde(rename_all = "snake_case")]
 pub struct GraphNode<'a> {
@@ -625,11 +625,11 @@ pub struct MatrixEntry<'a> {
 
 /// `trellis ci matrix`.
 ///
-/// **This document has no `schema` field, on purpose.** GitHub Actions feeds it
-/// straight to `strategy.matrix` via `fromJSON()`, and every top-level key
-/// other than `include` becomes an additional matrix axis — a `schema` sibling
-/// would multiply the job matrix by one. The shape is dictated by GitHub, so
-/// its stability is GitHub's contract, not ours.
+/// **This document has no `schema` field.** GitHub Actions feeds it straight to
+/// `strategy.matrix` via `fromJSON()`, and every top-level key other than
+/// `include` becomes an additional matrix axis — a `schema` sibling would
+/// multiply the job matrix by one. The shape is dictated by GitHub, so its
+/// stability is GitHub's contract, not ours.
 #[derive(Serialize)]
 #[serde(rename_all = "snake_case")]
 pub struct CiMatrix<'a> {

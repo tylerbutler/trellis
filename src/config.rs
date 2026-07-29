@@ -88,7 +88,7 @@ pub enum Strictness {
 pub struct DoctorConfig {
     /// Whether members disagreeing on a shared external dependency's
     /// requirement is a warning (the default), an error, or unchecked.
-    /// Divergence is sometimes deliberate, so this does not fail CI by default.
+    /// Divergence is sometimes intended, so this does not fail CI by default.
     #[serde(default)]
     pub shared_dependencies: Strictness,
 }
@@ -369,8 +369,7 @@ pub struct ChangelogConfig {
     ///
     /// The order here is the render order. Entries naming no category render
     /// last, under `uncategorized_label`. Empty (the default) switches the
-    /// axis off entirely, and rendered output is then exactly what it was
-    /// before categories existed.
+    /// axis off entirely.
     #[serde(default)]
     pub categories: Vec<String>,
     /// Template for the first line of a package's CHANGELOG.md.
@@ -436,10 +435,9 @@ impl ChangelogConfig {
     /// Whether the category axis is on. One predicate drives both the extra
     /// grouping level and the kind heading depth, so the two cannot disagree.
     ///
-    /// It is config-wide rather than per-section deliberately: a release that
-    /// happens to carry no categorized entry still renders the
-    /// `uncategorized_label` wrapper, because a generated file whose heading
-    /// depth flips between adjacent versions is worse than one extra heading.
+    /// Config-wide rather than per-section: a release carrying no categorized
+    /// entry still renders the `uncategorized_label` wrapper, so heading depth
+    /// never flips between adjacent versions of a generated file.
     pub fn categories_enabled(&self) -> bool {
         !self.categories.is_empty()
     }
@@ -626,8 +624,7 @@ impl ConfigFile {
             );
         }
         // Both blocks render through `category_format`, so a collision would
-        // emit the same heading twice in one section — entries split across
-        // two identical headings for no visible reason.
+        // emit the same heading twice in one section.
         let label = &self.changelog.uncategorized_label;
         if self.changelog.categories.iter().any(|c| c == label) {
             bail!(
@@ -747,8 +744,7 @@ mod tests {
             parse("categories = [\"build\"]\n").kind_format(),
             "#### {{ kind }}"
         );
-        // An explicit setting wins either way — trellis never rewrites a
-        // template the user wrote down.
+        // An explicit `kind_format` wins either way.
         assert_eq!(
             parse("kind_format = \"**{{ kind }}**\"\n").kind_format(),
             "**{{ kind }}**"

@@ -240,7 +240,7 @@ pub fn apply(workspace: &Workspace, overrides: &Overrides, json: bool) -> Result
         let member_fragments: Vec<&changelog::Fragment> =
             fragments.for_package(&entry.name).collect();
         // Generated ripple entries render alongside the real ones, but are
-        // deliberately absent from what `consume_fragments` is later given.
+        // absent from what `consume_fragments` is later given.
         let rendered: Vec<&changelog::Fragment> = member_fragments
             .iter()
             .copied()

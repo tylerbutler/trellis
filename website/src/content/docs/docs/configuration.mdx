@@ -326,18 +326,18 @@ body = "A `--watch` flag"
 
 The details worth knowing:
 
-- **Categories are opt-in and off by default.** With none configured, rendered
-  output is byte-for-byte what it was before categories existed.
+- **Categories are opt-in and off by default.** With none configured, a version
+  section is a flat list of kind headings.
 - **A category must be one of `categories`**, exactly as a kind must be one of
   `kinds`. An unknown one is an invalid fragment: `doctor` reports it and
-  `version` refuses, rather than quietly rendering the entry nowhere.
+  `version` refuses.
 - **The category stays optional** on each fragment. Entries naming none — along
   with the generated dependency entries, which belong to no single part of a
   package — render last under `uncategorized_label`.
 - **Kind headings drop to `####`** while the axis is on, since categories now
-  occupy `###`. Setting `kind_format` yourself overrides that; trellis never
-  rewrites a template you wrote down. Keep both below `##`, which the release
-  notes extractor reads as the start of a version section.
+  occupy `###`. Setting `kind_format` yourself overrides that. Keep both below
+  `##`, which the release notes extractor reads as the start of a version
+  section.
 - **Empty categories are skipped**, so a release touching one area shows one
   heading.
 
@@ -365,7 +365,7 @@ stores them verbatim, so `>= 1.0` and `>=1.0` read as divergent. Path
 dependencies are out of scope. They carry no requirement to agree on, and
 lockfile drift already covers them.
 
-Divergence is sometimes deliberate, so this warns rather than failing by
+Divergence is sometimes intended, so this warns rather than failing by
 default:
 
 ```toml

@@ -1366,7 +1366,7 @@ fn divergent_shared_dependencies_warn_by_default() {
     trellis(root)
         .arg("doctor")
         .assert()
-        // A warning: divergence is sometimes deliberate, so it does not fail CI.
+        // A warning: divergence is sometimes intended, so it does not fail CI.
         .success()
         .stdout(predicate::str::contains(
             "packages disagree on `gleam_stdlib`",

@@ -24,6 +24,11 @@ use std::process::ExitCode;
 use term::{ColorChoice, Verbosity};
 use workspace::Workspace;
 
+/// Trellis itself could not run: unparseable config, not a git repository, a
+/// missing `gleam`/`gh`, Hex unreachable after retries. Distinct from 1, which
+/// means the command ran and found problems.
+const EXIT_INTERNAL_ERROR: u8 = 3;
+
 /// Crate version, with `git describe` output appended for builds that aren't
 /// a clean release tag. "VERGEN_IDEMPOTENT_OUTPUT" is the placeholder build.rs
 /// emits when git metadata is unavailable (e.g. a crates.io tarball).
@@ -467,12 +472,15 @@ fn main() -> ExitCode {
     if notify_update && result.is_ok() {
         update_check::notify();
     }
+    // The exit-code contract: 0 success, 1 the command ran and found problems,
+    // 2 usage (clap's own), 3 trellis could not run. See the Compatibility page
+    // in website/src/content/docs/docs/.
     match result {
         Ok(true) => ExitCode::SUCCESS,
         Ok(false) => ExitCode::FAILURE,
         Err(err) => {
             eprintln!("error: {err:#}");
-            ExitCode::FAILURE
+            ExitCode::from(EXIT_INTERNAL_ERROR)
         }
     }
 }

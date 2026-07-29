@@ -145,9 +145,9 @@ Each rippled package gets a generated changelog entry, rendered like any other:
 The entries are generated at plan time and never written to
 `.changes/unreleased/` — the body embeds the dependency's new version, which is
 only settled once the whole plan is computed. Hand-written entries of the same
-kind share the heading rather than producing a second section. A ripple names
-no category, so in a workspace using them it files under `uncategorized_label`
-alongside anything else that named none.
+kind share the heading rather than producing a second section. A ripple entry
+names no category, so in a workspace using them it files under
+`uncategorized_label`.
 
 ## Applying it
 
@@ -233,7 +233,7 @@ gained fragments *after* the RC was cut still bumps normally under `--pre none`,
 so a late arrival never blocks the promotion.
 
 Once a package sits at a prerelease, a plain `version apply` is an error rather
-than a silent bump to the next release — leaving a cycle has to be deliberate:
+than a silent bump to the next release — leaving a cycle has to be explicit:
 
 ```console
 $ trellis version plan

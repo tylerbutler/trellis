@@ -177,9 +177,9 @@ dependency_kind = "Dependencies"
 dependency_body = "Updated {{ dependency }} to {{ dependency_version }}"
 # A second grouping axis, rendered above `kinds` and carrying no bump — the
 # sections of a package, such as the subcommands of a CLI. Empty (the default)
-# switches it off, and rendering is then exactly what it was before categories
-# existed. With it on, kind headings drop to `####` unless `kind_format` says
-# otherwise, and entries naming no category trail under `uncategorized_label`.
+# switches it off. With it on, kind headings drop to `####` unless `kind_format`
+# says otherwise, and entries naming no category trail under
+# `uncategorized_label`.
 categories = []
 category_format = "### {{ category }}"
 uncategorized_label = "Other"
@@ -187,8 +187,8 @@ uncategorized_label = "Other"
 
 Wildcard discovery honors repository `.gitignore` files at every level and
 `.git/info/exclude`, but only when the workspace is in a Git repository. It
-deliberately ignores global `core.excludesFile` rules for reproducibility and
-generic `.ignore` files; hidden paths are traversed, symlinks are followed, and
+ignores global `core.excludesFile` rules, for reproducibility, and generic
+`.ignore` files; hidden paths are traversed, symlinks are followed, and
 the `.git` directory itself is skipped. Literal member entries (those without
 `*`, `?`, or `[`) bypass ignore status and are resolved directly.
 `[tools.trellis.exclude]` is separate: task and `@release` exclusions filter
@@ -455,12 +455,10 @@ Since trellis was pre-release, the native engine slotted in behind the same
   on every PR (an invalid fragment can't hide until release time).
 - Version bumps derive from the kinds' configured `bump` (largest wins);
   `gleam.toml` is bumped with toml_edit, not regex.
-- `kinds` answers "how big is this change", which is the axis a version bump
-  needs. `categories` is the orthogonal one — "which part of the package
-  changed" — deliberately kept separate rather than overloading kinds with
-  scopes: it carries no bump, so it can group above kinds without touching
-  version derivation at all. Off by default; a workspace that wants one
-  flat list per version simply never configures it.
+- `kinds` answers "how big is this change", the axis a version bump needs;
+  `categories` answers "which part of the package changed" and carries no bump,
+  so it groups above kinds without touching version derivation. Kept separate
+  rather than overloading kinds with scopes. Off by default.
 - Rendered version sections live under `.changes/<package>/`; each package's
   CHANGELOG.md is a generated file reassembled from them, newest first.
 - All formats are minijinja templates with a small context, so rendering
@@ -630,7 +628,7 @@ root `gleam.toml` (§4).
    `list`/`run`/`exec`/`ci matrix` — the safety trade-off (implicit coupling
    between packages that the path-dep graph can't see) shouldn't be silent.
    A repo that wants affected-only CI writes `--since origin/main` into its
-   workflow deliberately.
+   workflow explicitly.
 4. **Should trellis own `.tool-versions` awareness?**
    **Resolved: advisory only.** `doctor` warns when `.tool-versions` pins a
    gleam version different from the gleam on PATH, but never errors —
