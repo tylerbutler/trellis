@@ -324,9 +324,9 @@ fn print_summary(report: &Report, ok: bool) {
 /// GitHub Actions workflow commands, one per finding.
 ///
 /// Nothing else is printed — a healthy run emits an empty stdout, and the
-/// configless/auto_members inference is deliberately not a `::notice`, since it
-/// would fire on every run in an auto-discovered repository. The exit code
-/// still carries the verdict.
+/// configless/auto_members inference is not a `::notice`, since it would fire
+/// on every run in an auto-discovered repository. The exit code still carries
+/// the verdict.
 fn print_annotations(report: &Report) {
     for finding in &report.findings {
         let level = match finding.severity {

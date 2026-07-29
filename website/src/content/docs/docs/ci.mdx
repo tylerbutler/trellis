@@ -59,10 +59,10 @@ jobs:
 
 <Callout>
 
-Full fan-out is the default on purpose: `--since` is opt-in because implicit
-coupling between packages, the kind the path-dep graph can't see, shouldn't be
-silently untested. A repo that wants affected-only CI writes
-`--since origin/main` into its workflow deliberately.
+Full fan-out is the default: `--since` is opt-in because implicit coupling
+between packages, the kind the path-dep graph can't see, shouldn't be silently
+untested. A repo that wants affected-only CI writes `--since origin/main` into
+its workflow explicitly.
 
 </Callout>
 

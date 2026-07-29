@@ -1285,7 +1285,7 @@ fn a_prerelease_labels_the_whole_plan_including_ripples() {
 }
 
 #[test]
-fn a_pending_prerelease_must_be_resolved_deliberately() {
+fn a_pending_prerelease_must_be_resolved_explicitly() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
     copy_fixture_to(root);

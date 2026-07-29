@@ -88,7 +88,7 @@ pub enum Strictness {
 pub struct DoctorConfig {
     /// Whether members disagreeing on a shared external dependency's
     /// requirement is a warning (the default), an error, or unchecked.
-    /// Divergence is sometimes deliberate, so this does not fail CI by default.
+    /// Divergence is sometimes intended, so this does not fail CI by default.
     #[serde(default)]
     pub shared_dependencies: Strictness,
 }

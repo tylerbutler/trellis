@@ -233,7 +233,7 @@ gained fragments *after* the RC was cut still bumps normally under `--pre none`,
 so a late arrival never blocks the promotion.
 
 Once a package sits at a prerelease, a plain `version apply` is an error rather
-than a silent bump to the next release — leaving a cycle has to be deliberate:
+than a silent bump to the next release — leaving a cycle has to be explicit:
 
 ```console
 $ trellis version plan

@@ -25,8 +25,8 @@ Two exclusions, both formats trellis does not own:
   universal convention there and clap's default.
 
 Free-form table keys (`exclude`, `tasks`, `publish.tag_mode_overrides`) are the
-user's to name; a hyphen in one is not a violation, and `doctor` deliberately
-says nothing about them.
+user's to name; a hyphen in one is not a violation, and `doctor` says nothing
+about them.
 
 Config keys released through v0.7.0 keep their kebab-case spelling as a
 `#[serde(alias)]`, reported by `doctor` as a deprecation. These come out at 1.0;

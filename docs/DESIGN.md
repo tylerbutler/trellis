@@ -187,8 +187,8 @@ uncategorized_label = "Other"
 
 Wildcard discovery honors repository `.gitignore` files at every level and
 `.git/info/exclude`, but only when the workspace is in a Git repository. It
-deliberately ignores global `core.excludesFile` rules for reproducibility and
-generic `.ignore` files; hidden paths are traversed, symlinks are followed, and
+ignores global `core.excludesFile` rules, for reproducibility, and generic
+`.ignore` files; hidden paths are traversed, symlinks are followed, and
 the `.git` directory itself is skipped. Literal member entries (those without
 `*`, `?`, or `[`) bypass ignore status and are resolved directly.
 `[tools.trellis.exclude]` is separate: task and `@release` exclusions filter
@@ -628,7 +628,7 @@ root `gleam.toml` (§4).
    `list`/`run`/`exec`/`ci matrix` — the safety trade-off (implicit coupling
    between packages that the path-dep graph can't see) shouldn't be silent.
    A repo that wants affected-only CI writes `--since origin/main` into its
-   workflow deliberately.
+   workflow explicitly.
 4. **Should trellis own `.tool-versions` awareness?**
    **Resolved: advisory only.** `doctor` warns when `.tool-versions` pins a
    gleam version different from the gleam on PATH, but never errors —

@@ -17,9 +17,9 @@ use clap_complete::engine::{ArgValueCandidates, CompletionCandidate};
 /// error, never a panic, since a completer that fails loudly makes the shell
 /// unusable.
 ///
-/// The global `-C/--directory` flag is deliberately not consulted: the
-/// completion engine hands custom completers only the partial word being
-/// completed, so the process's cwd is the only context available.
+/// The global `-C/--directory` flag is not consulted: the completion engine
+/// hands custom completers only the partial word being completed, so the
+/// process's cwd is the only context available.
 fn workspace() -> Option<Workspace> {
     Workspace::load(&std::env::current_dir().ok()?).ok()
 }

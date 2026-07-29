@@ -364,7 +364,7 @@ never blocks the promotion.
 
 Once a package is at a prerelease, a plain `version apply` is an error rather
 than a silent bump to the next release — resolving the cycle has to be
-deliberate. A prerelease belongs to no series, so it moves no
+explicit. A prerelease belongs to no series, so it moves no
 [series tag](#release--publish); exact tags apply as usual, and Hex accepts
 prerelease versions.
 
@@ -485,7 +485,7 @@ under a pinned older one.
 non-path dependencies they share — `lat_core` requiring `gleam_stdlib >=
 0.44.0` while `lat_cli` requires `>= 0.60.0`. Requirements are compared as
 written, never parsed as ranges, so whitespace counts. Divergence is sometimes
-deliberate, so it warns by default:
+intended, so it warns by default:
 
 ```toml
 [tools.trellis.doctor]
