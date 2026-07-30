@@ -1,9 +1,7 @@
 component: version
 kind: Breaking
 body: |-
-  **`trellis version plan --json` returns an object, not a bare array.** The array
-    moves under a `bumped` key so the document can carry the new `schema` field —
-    matching `version apply`, which already used that name.
+  **`trellis version plan --json` returns an object, not a bare array.** The array moves under a `bumped` key so the document can carry the new `schema` field — matching `version apply`, which already used that name.
 
     `trellis version plan --json | jq ".[].name"` becomes `jq ".bumped[].name"`.
 time: 2026-07-25T09:00:01.000000-07:00

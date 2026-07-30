@@ -1,14 +1,7 @@
 component: run
 kind: Added
 body: |-
-  **`trellis run` accepts `--json`.** The new `trellis.run/1` payload names the task
-    and the `--target` as you gave it, then carries one record per package — path,
-    status, wall-clock duration, and, on failure, the exit code and the command that
-    produced it. Until now the only machine-readable signal was the overall exit code.
+  **`trellis run` accepts `--json`.** The new `trellis.run/1` payload names the task and the `--target` as you gave it, then carries one record per package — path, status, wall-clock duration, and, on failure, the exit code and the command that produced it. Until now the only machine-readable signal was the overall exit code.
 
-    A task that sets `needs_deps` runs several commands, so `exit_code` and `command`
-    describe the one that failed rather than the whole job. A package that never ran —
-    scheduling stopped at an earlier failure — reports `skipped`, which still fails the
-    command. Under `--json` the per-package stream moves to stderr and the spinners and
-    summary table go away, leaving stdout to the payload alone.
+    A task that sets `needs_deps` runs several commands, so `exit_code` and `command` describe the one that failed rather than the whole job. A package that never ran — scheduling stopped at an earlier failure — reports `skipped`, which still fails the command. Under `--json` the per-package stream moves to stderr and the spinners and summary table go away, leaving stdout to the payload alone.
 time: 2026-07-26T09:01:00.000000-07:00
