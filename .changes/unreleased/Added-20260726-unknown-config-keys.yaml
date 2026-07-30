@@ -1,3 +1,9 @@
 kind: Added
-body: 'Keys under `[tools.trellis]` that trellis does not recognize are now reported instead of ignored, so a misspelled key no longer leaves the workspace silently using the default. `doctor` reports each one as a warning rather than an error: an unrecognized key may belong to a newer trellis, and erroring would make the workspace unloadable under a pinned older one. The free-form tables — `exclude`, `tasks`, and `publish.tag_mode_overrides` — take keys you choose, hyphens and all, and are never reported.'
+body: |-
+  **Keys under `[tools.trellis]` that trellis does not recognize are now reported
+    instead of ignored,** so a misspelled key no longer leaves the workspace silently
+    on the default. `doctor` reports each as a warning rather than an error, since an
+    unrecognized key may belong to a newer trellis. The free-form tables — `exclude`,
+    `tasks`, and `publish.tag_mode_overrides` — take keys you choose and are never
+    reported.
 time: 2026-07-26T09:04:00.000000-07:00

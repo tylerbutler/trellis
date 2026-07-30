@@ -1,3 +1,11 @@
 kind: Added
-body: '`trellis init` bootstraps a workspace: it writes the `[tools.trellis]` table into the repository root''s `gleam.toml`, creating a config-only manifest if the root is not itself a package and preserving formatting, comments, and any other `[tools.*]` table if it is. What it writes is almost empty: the table''s presence is what marks the workspace root, and members stay auto-discovered, so `members` is derivable and is not declared. In its place are comments pointing at what can be configured. It reports the members it discovered so they can be checked, refuses to run if the repository is already a trellis workspace or if a member manifest carries the table, and finishes by running `doctor`.'
+body: |-
+  **`trellis init` bootstraps a workspace.** It writes the `[tools.trellis]` table
+    into the repository root's `gleam.toml`, creating a config-only manifest if the
+    root is not itself a package and preserving comments and formatting if it is.
+
+    What it writes is nearly empty: the table's presence is what marks the workspace
+    root, members stay auto-discovered, and comments point at what can be configured.
+    `init` lists the members it found, refuses to run on a repository that is already
+    a trellis workspace, and finishes by running `doctor`.
 time: 2026-07-26T09:06:00.000000-07:00

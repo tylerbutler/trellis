@@ -1,6 +1,8 @@
 kind: Fixed
-body: '`-q/--quiet` suppresses normal-path narration — progress lines, summaries,
-  confirmations — across every command, not just `run`/`exec`. `--json`/`--format
-  json|github`/`--format dot|mermaid` payloads, `man`/`completions`/`markdown-help`
-  output, fatal errors, and exit codes are unaffected.'
+body: |-
+  **`-q/--quiet` now suppresses normal-path narration across every command,** not
+    just `run` and `exec` — progress lines, summaries, and confirmations.
+    `--json`, `--format json|github`, and `--format dot|mermaid` payloads,
+    `man`/`completions`/`markdown-help` output, fatal errors, and exit codes are
+    unaffected.
 time: 2026-07-26T09:30:00.000000-07:00
