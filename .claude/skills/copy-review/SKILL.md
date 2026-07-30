@@ -1,0 +1,318 @@
+---
+name: copy-review
+description: >
+  Aggressively edit user-facing copy so it is accurate, concrete, and consistent enough to
+  ship — changelog entries and release notes, README and documentation pages, landing-page
+  and marketing copy, CLI help text, error messages, and API doc comments. Verifies every
+  example, key, flag, and output sample against the source before touching prose, because a
+  documented behavior that isn't real is the costliest defect in a doc set. Use this whenever
+  the user asks to review, polish, tighten, proofread, reword, rewrite, or clean up docs, a
+  changelog, release notes, a README, help text, or error messages; whenever they mention
+  user-facing or customer-facing wording, terminology consistency, or getting docs ready for
+  a release; and whenever they are drafting changelog entries or docs aimed at an external
+  audience, even if they never use the word "copy" or explicitly ask for an edit.
+---
+
+# Copy review
+
+Editing everything a user reads: changelog entries and release notes, documentation pages,
+README, landing-page copy, CLI help text, error messages, and API doc comments.
+
+This is not proofreading. Typos are the cheapest defect in a doc set and the least damaging —
+a reader corrects them silently and moves on. The expensive defects are a config key spelled a
+way that doesn't work, an example that silently does nothing, a claim that a field is required
+when every field is optional, and three different words for one concept across four pages.
+Each of those costs a reader an hour and some of their trust in everything else you wrote.
+Hunt those first. Then make the prose good.
+
+The order matters and isn't negotiable: **verify, then write.** Verification routinely changes
+what a sentence should say, so polishing first means polishing sentences you're about to
+replace.
+
+## Edit, don't suggest
+
+Rewrite in place. Forty suggestions in a list is work handed back to the author; forty applied
+edits with a short report is work done. Delete sentences that earn nothing, merge paragraphs,
+retitle sections, replace an entire lead when the lead is the problem.
+
+Two limits on that aggression, both about not destroying something you can't get back:
+
+- **Never invent a fact to make a sentence better.** If you can't confirm what a flag does,
+  leave the vague sentence and put the question in your report. Fluent wrong copy is worse
+  than the awkward correct copy it replaced, because nobody re-checks prose that reads well.
+- **Don't sand the voice flat.** Your defaults will pull toward shorter sentences, fewer
+  dashes, more transitions, softer claims — the house style of no house in particular. Read
+  the strongest two or three pages in the project first and match *that*. Long dense
+  sentences, em dashes, semicolons, and blunt declaratives are style choices, not errors.
+  Change what is wrong, vague, or inconsistent; leave what is merely unlike how you'd write it.
+
+## Step 1: Orient
+
+Establish all of the following before the first edit. Each one invalidates work done without it,
+which is why they come first rather than when you happen to trip over them.
+
+**Read the project's own rules before forming an opinion about anything.** Look for
+`AGENTS.md`, `CLAUDE.md`, `CONTRIBUTING.md`, `.github/`, and any style guide in `docs/`, and
+read the ones that exist. A project that has written down its naming rule, changelog format,
+or terminology has already decided those questions, and its decisions outrank every general
+preference in this skill.
+
+Two things follow, and they are easy to skip because nothing breaks when you do:
+
+- **Name the document you worked from in your report** — "`AGENTS.md` §Changelog fragments",
+  not "the house style". This isn't ceremony. It's how the author confirms you applied *their*
+  conventions rather than your defaults, and it's the fastest way for them to notice you missed
+  a doc entirely.
+- **Never cite this skill to the user.** They asked for a copy review, not a tour of the
+  tooling. Quoting `references/surfaces.md` at them explains a change by pointing at a file
+  they've never seen, when the honest citation is either the project's own doc or the source
+  you verified against.
+
+**When a house rule is itself the problem, name the conflict.** Written rules go stale, and a
+rule written for one audience can actively produce the defect you were asked to fix — a
+contributor-facing instruction to explain *why a change was worth making* is exactly how
+release notes fill with design rationale no user reads. Don't silently contradict the rule, and
+don't follow it off a cliff either. Serve the artifact's real audience, then tell the author
+which rule you departed from and why, so they can fix the rule. A pass that cleans up the docs
+and leaves the rule that rotted them in place gets undone by the next contributor.
+
+**Find the generated files and don't edit them.** Grep for `Generated by`, `do not edit`,
+`@generated`, and `autogenerated`; read the build recipes (`justfile`, `Makefile`,
+`package.json` scripts) to learn what regenerates what from where. A generated CLI reference or
+man page is downstream of the code that defines the help text — edit the definition, then run
+the regeneration command. Editing the artifact directly is work that disappears on the next
+build, and worse, it splits the truth in two.
+
+**Find the source of truth for every identifier.** Config keys live in a settings struct or
+schema, flags in the CLI definition, JSON fields in the serializer, output names in whatever
+emits them. Locate these once; Step 2 leans on them constantly.
+
+**Learn the voice** from the best existing prose, per the warning above.
+
+## Step 2: Verify every claim
+
+This is the pass that earns the skill. Work through the copy and check each factual assertion
+against the source. Read `references/verification.md` for the techniques — how to prove a
+config sample parses, how to regenerate an output sample, how to confirm a key is optional.
+
+What to check, roughly in order of how much damage each one does when wrong:
+
+- **Examples that fail silently.** The worst class, because no error ever surfaces to tell the
+  reader they were misled. A key with sigil or namespace syntax where the bare word is *also*
+  valid but means something else; a glob that matches nothing; a config section under the
+  wrong parent table. Feed samples to the real parser rather than eyeballing them.
+- **Identifiers.** Every config key, flag, env var, JSON field, output name, and command in the
+  copy must exist with exactly that spelling. Confirm against the definition, not against
+  another doc page — doc pages copy each other's mistakes.
+- **Requirement and default claims.** "Required", "optional", "defaults to", "must be set".
+  These are load-bearing for a reader deciding what to write, and they drift as code gains
+  defaults.
+- **Output samples.** Terminal transcripts and JSON payloads go stale on every release.
+  Regenerate by running the command and pasting the result; never hand-patch a transcript.
+- **Cross-page consistency of examples.** One canonical example — the same workspace, the same
+  package names, the same versions — everywhere. A reader following a tutorial across three
+  pages whose examples disagree assumes they broke something.
+- **Version archaeology and links.** "As of 2.3" claims about the current release, links that
+  404, references to a renamed command.
+
+### When the copy is wrong because the code is wrong
+
+Verification will sometimes prove the docs describe better behavior than the code has. That is
+a real finding and often the most valuable thing the pass produces.
+
+**Fix the docs to describe what the code actually does, then report the code defect
+separately.** Don't change the code. A copy pass that quietly alters shipped behavior is a
+behavior change reviewed as a proofread, and the author loses their chance to weigh the
+alternative — maybe the docs described the intended design and the code is the bug, which is a
+decision only they can make. State the finding concretely: what the docs claimed, what the code
+does, which is likelier to be the mistake, and what the fix would cost.
+
+## Step 3: Take the terminology census
+
+Pick each core concept and list every word the project uses for it, across code, docs, help
+text, and error messages. Competing words accumulate honestly — one from a tool you wrapped, one
+from the original design, one from how users talk — so finding three is normal, not evidence of
+carelessness.
+
+What makes this a census rather than an impression is counting. Get occurrences per candidate
+word before changing anything, so you can prove afterwards that something moved:
+
+```sh
+rg -c -w 'member|members' README.md docs/ website/    # repeat per candidate word
+```
+
+Then:
+
+1. **Pick the winner on evidence, not taste.** The word the shipped interface already uses —
+   config keys, JSON fields, CLI flags — wins, because those are the spellings you can't cheaply
+   change. Next tiebreak: what the surrounding ecosystem calls the thing, since readers arrive
+   holding that vocabulary. Last: which word names *the thing itself* rather than a role it
+   plays, because most sentences are about the thing. Where the code already leans one way,
+   follow it — a copy pass is the wrong place to legislate a convention the code will contradict
+   tomorrow.
+
+2. **Drive the losing word's count down, and report both numbers.** "Apply it everywhere" is too
+   easily satisfied by fixing the one sentence that bothered you. Re-count when you're done. If
+   the losing word appears about as often as when you started, you renamed nothing — you added a
+   definition and left the ambiguity in place.
+
+   There is a floor, though, and it is not a failure: occurrences inside a quoted terminal
+   transcript, verbatim help text, or the name of a config key are not yours to edit. Changing
+   them would make the page disagree with the binary, which is worse than an inconsistent word.
+   Say where the floor is — how many of the remaining occurrences are quoted output versus
+   editable prose — and put the code change needed to lower it in your findings. A count that
+   stops at the floor with the reason stated is a complete result; a count that stops there
+   silently looks like the step never ran.
+
+3. **Distrust any distinction that lets you keep both words.** Occasionally two words genuinely
+   survive because one names a thing and the other a *relationship* it has — and then the second
+   belongs only where that relationship is the subject of the sentence. But inventing such a
+   distinction is the most common way this step fails. It feels like a resolution, it reads
+   plausibly, and it hands the reader the same two-word ambiguity plus a sentence of theory to
+   absorb. The count is the test: if the secondary word still appears everywhere it used to, the
+   distinction is a rationalisation. If it drops to the few places the relationship is actually
+   the point, it's real.
+
+4. **Write the surviving rule where readers meet it,** not only in a contributor doc — one
+   sentence, near the top of the overview, saves every future reader the inference and stops the
+   words drifting back together.
+
+5. **Keep the old spelling working** if it's part of a shipped interface. Renaming a concept in
+   prose is free; renaming a config key or JSON field breaks consumers. Note in your report
+   which renames are prose-only and which need an alias, a deprecation, or a major version.
+
+The tell that a census is overdue: one sentence using two words for the same thing. A CLI
+whose help read *"Packages to run in; all members when omitted"* had been flipping between
+"package" and "member" mid-command for months without anyone noticing, because each word
+looked right in isolation.
+
+## Step 4: Fix the prose
+
+Now the writing. The moves below are ordered by how much they improve a page.
+
+**Lead with the premise, not the feature list.** A reader who doesn't yet know what problem
+you solve cannot parse a list of capabilities — they have nothing to hang it on. Name the gap
+first, then say you fill it.
+
+> "Tools for Gleam monorepos. / Derived from gleam.toml." → "Gleam has no workspaces. /
+> Trellis adds them."
+
+**Replace abstract noun piles with the concrete thing.** Strings of nominalizations ("task
+fan-out, dependency-graph introspection, publish orchestration") are how a feature list reads
+when nobody asked what it does for anyone. Name the actual commands, keys, and behavior.
+
+> "Trellis is one binary that provides task fan-out, dependency-graph introspection,
+> changelogs, versioning, and publish orchestration." → "`gleam build`, `gleam test`, and
+> `gleam publish` each operate on a single package directory. Trellis is one binary that fans
+> them across every package in the repository."
+
+**Cut what the reader can't act on, and measure the cut.** Design rationale, alternatives
+considered, how it's implemented, version archaeology ("In 0.2.0, `exclude` gained…"), and
+self-congratulation. Keep the change, its consequence, the migration, the names of things, and
+edge cases a reader can actually hit.
+
+The trap is that restructuring *feels* like editing. Moving a paragraph, adding a lead-in
+sentence, splitting a wall of text — each improves a page while leaving its length untouched,
+and afterwards the bloat you were asked to fix is still there, just better organised. So treat
+deletion as a measured act rather than a disposition you hope kicks in:
+
+1. **Count the words before and after** on anything you were asked to tighten, and put both
+   numbers in your report.
+2. **Apply the deletion test to each sentence:** what does a reader *do* differently for having
+   read it? When the honest answer is "understands why we chose this design", cut it — that's a
+   design-doc sentence wearing a docs-page costume.
+3. **If a long passage barely shrank, you restructured instead of cutting.** Go back and cut.
+   Prose written as working notes typically runs a quarter to two-fifths rationale by volume,
+   and what survives is more useful, not less.
+
+Deleting feels riskier than it is, and that fear — not disagreement — is usually why it doesn't
+happen. The words aren't lost: they're in the design doc, the pull request that made the change,
+and git history. Every place a contributor looks, and no place a user does.
+
+What you must never cut to reach a number is the load-bearing content: a migration, a key or
+flag name, a reachable edge case, a warning. If a passage genuinely won't compress because all
+of it is load-bearing, report that with the counts — an honest "this is already dense" is a
+finding, and inventing a cut to hit a ratio is a defect.
+
+**Front-load every unit.** First sentence of the paragraph, first clause of the sentence, first
+line of the changelog entry. Readers scan until something catches; a paragraph that opens with
+setup gets skipped wholesale.
+
+**Get single words right.** These carry more than their size: "contract" promises more than
+"guarantee"; "special key" describes, "reserved key" explains; "should" and "may" are
+commitments in reference docs. When a word is doing real work, spend a moment on it.
+
+**Split overloaded units.** A section covering two things serves neither, and the reader who
+wants the second one won't find it under a heading naming the first. One card titled "Add
+releases" that covered changelogs, versioning, tagging, and publishing works better as two.
+
+**Make parallel ideas parallel.** Matched grammar makes a pair memorable and exposes whether
+the ideas actually are a pair.
+
+> "Trellis derives what it can. / It verifies what must remain explicit." → "Configure nothing
+> that can be derived. / Verify anything that must be duplicated."
+
+**Delete hedges and filler.** "Simply", "just", "of course", "note that", "it's worth
+mentioning", "in order to", "is able to", "allows you to". Cutting them shortens the sentence
+and strengthens the claim.
+
+## Step 5: Verify your own edits
+
+Copy passes break builds, and a broken build is a worse outcome than the copy you started with.
+Before reporting done:
+
+- Run whatever regenerates generated artifacts, and whatever builds the docs site.
+- Run the tests if you touched anything compiled — help text and error strings usually live in
+  code, and snapshot tests assert on them.
+- Re-check the format traps for each surface you edited (`references/surfaces.md` lists them —
+  the changelog-fragment indentation rule is the classic one, silently producing a code block
+  or a stray bullet instead of a paragraph).
+- Confirm every example you rewrote still parses, and every sample output still matches.
+- Re-count the words on anything you were asked to tighten, from the files as they now stand
+  rather than from memory of what you intended. If something you set out to compress came back
+  the same size or larger, that's the compression step not having happened — go do it before you
+  report, not after.
+- Re-run the terminology counts the same way. A losing word that held its ground, or grew, means
+  the census produced a definition instead of a rename.
+
+Say plainly what you ran and what you didn't. "No code changed, so tests weren't run" is a fine
+line in a report; implying a verification you skipped is not.
+
+## Report
+
+Structure the summary so the author can act on it fast:
+
+```
+Rules followed: the project document you worked from, named by section, plus any
+rule you departed from and why. One or two lines, before the sections below.
+
+## Fixes
+Defects found and corrected, worst first — wrong keys, broken examples, false
+requirement claims, stale output. Name the file and what was wrong.
+
+## Terminology
+The rule applied and the evidence for it, the losing word's occurrence count
+before and after, and which renames touch a shipped interface (so need an alias
+or a major bump) rather than only prose.
+
+## Copy
+The substantive rewrites — new leads, cut sections, split headings — with
+before/after word counts for anything you were asked to tighten. Not a diff
+recital; the author can read the diff. Say what changed and why it reads better.
+
+## Findings for you
+Code defects the pass uncovered, questions you couldn't resolve, and claims you
+left alone because you couldn't verify them.
+
+## Verification
+What you ran, what passed, what you deliberately skipped and why.
+```
+
+## Reference files
+
+- `references/verification.md` — how to prove a claim: locating identifier definitions, running
+  config samples through the real parser, regenerating output transcripts. Read this during
+  Step 2.
+- `references/surfaces.md` — per-surface rules and format traps for changelog entries, landing
+  and marketing copy, reference docs, README, and code-level copy (doc comments, CLI help,
+  error messages). Read the section for whichever surface you're editing.

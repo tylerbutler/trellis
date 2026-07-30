@@ -1,0 +1,83 @@
+[
+  {
+    "query": "we're cutting 0.9.0 friday and the 14 fragments sitting in .changes/unreleased are all still written like PR descriptions — dense, full of why-I-did-it-this-way. get them into shape for release notes",
+    "should_trigger": true
+  },
+  {
+    "query": "our landing page at apps/web/src/pages/index.astro still says we support three databases. we added clickhouse in june and dropped mongo entirely. fix that, and whatever else has rotted while you're in there",
+    "should_trigger": true
+  },
+  {
+    "query": "readme is a monster, like 900 lines, and honestly i think half of it is wrong now. give it a proper going over before i point anyone at it",
+    "should_trigger": true
+  },
+  {
+    "query": "the --help output for our cli reads like five different people wrote it. some flag descriptions end in periods, some don't, half of them start with 'the'. make it consistent — clap definitions are in src/cli.rs",
+    "should_trigger": true
+  },
+  {
+    "query": "support keeps getting tickets from people who hit 'invalid configuration' and have no idea what to change. the error strings in src/errors.rs are useless. rewrite them so someone can actually act on them",
+    "should_trigger": true
+  },
+  {
+    "query": "we call the same thing a workspace, a project, and a repo depending on which docs page you land on. it's confusing people in support threads. sort it out",
+    "should_trigger": true
+  },
+  {
+    "query": "Before the Tuesday announcement I'd like a careful pass over the documentation site — the getting-started guide and the configuration reference especially. Accuracy first, then tone.",
+    "should_trigger": true
+  },
+  {
+    "query": "the rustdoc on our public traits in crates/core/src/lib.rs has gone stale — a couple of methods still document params that got deleted two releases ago. clean it up, it's what shows on docs.rs",
+    "should_trigger": true
+  },
+  {
+    "query": "wrote docs/migrating-v2.md from memory over the weekend. can you check that every code sample and config key in it actually matches what shipped in v2",
+    "should_trigger": true
+  },
+  {
+    "query": "changelog for 3.2 reads like release notes for the engineering team rather than our customers. rewrite the entries so a user can tell whether the release affects them",
+    "should_trigger": true
+  },
+
+  {
+    "query": "review this PR for me — packages/api/src/handlers/webhook.ts. mainly worried about the retry logic and whether we're dumping the raw payload into logs",
+    "should_trigger": false
+  },
+  {
+    "query": "need to get the docs into german and japanese. what's the least painful way to wire up i18n in astro starlight without duplicating every mdx file",
+    "should_trigger": false
+  },
+  {
+    "query": "our changie setup batches everything into one CHANGELOG.md but we're a monorepo now and need one per package. how do i configure that",
+    "should_trigger": false
+  },
+  {
+    "query": "docs site build is failing on netlify — 'Cannot find module astro:content'. builds fine locally. any ideas",
+    "should_trigger": false
+  },
+  {
+    "query": "trying to work out our positioning against dagger and earthly. what should we even be claiming as the differentiator",
+    "should_trigger": false
+  },
+  {
+    "query": "our structured logs are unusable, everything is at info level. go through src/ and set sensible levels — debug for the per-package stuff, warn for the retries",
+    "should_trigger": false
+  },
+  {
+    "query": "src/scheduler.rs has a 200-line function i cannot follow at all. add comments explaining what the algorithm is actually doing",
+    "should_trigger": false
+  },
+  {
+    "query": "add a spellcheck step to CI so typos in docs get caught on PRs. cspell probably? needs to ignore code blocks and our product names",
+    "should_trigger": false
+  },
+  {
+    "query": "write me a commit message for what's staged — there's the exit code change plus the two new doctor checks",
+    "should_trigger": false
+  },
+  {
+    "query": "we need docs for the new webhooks feature, nothing exists yet. figure out what pages we need and where they slot into the sidebar",
+    "should_trigger": false
+  }
+]
