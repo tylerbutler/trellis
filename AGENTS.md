@@ -35,13 +35,14 @@ new keys never get one.
 ## Changelog fragments
 
 Every user-visible change needs one: a YAML file in `.changes/unreleased/` named
-`<Kind>-<YYYYMMDD>-<slug>.yaml`, with `kind`, `body`, and `time`. The audience is
-a stranger reading the release notes, not the reviewer of your PR.
+`<Kind>-<YYYYMMDD>-<slug>.yaml`, with `component`, `kind`, `body`, and `time`. The
+audience is a stranger reading the release notes, not the reviewer of your PR.
 
 Write the body as a `|-` block scalar with a **bolded lead-in sentence**, then
 paragraphs:
 
 ```yaml
+component: completions
 kind: Added
 body: |-
   **`trellis completions` generates tab-completion for five shells.** Candidates
@@ -51,6 +52,29 @@ body: |-
     Release archives also ship man pages under `man/`.
 time: 2026-07-25T18:01:19.474540769-07:00
 ```
+
+`component` is the subcommand the change belongs to, and renders as a `###`
+heading above the `####` kind headings, so a reader can find what changed in
+`doctor` without reading the whole release. The list and its render order live in
+`.changie.yaml`; `changie new` prompts from it.
+
+**`trellis` is the catch-all,** for a change that genuinely isn't scoped to one
+subcommand: the exit-code contract, the global flags, a rule that holds for every
+`--json` payload. It sorts first, ahead of the per-command sections.
+
+Reach for it last. A change landing on two or three subcommands wants two or
+three fragments, one per command, each saying what that command's payload or flag
+actually does — not one `trellis` entry. Splitting usually sharpens the copy,
+because the caveats differ per command: `run --json` documents `exit_code` naming
+the failed command of a `needs_deps` task, which `exec --json` has no equivalent
+of. Used as a bucket for "more than one command", `trellis` stops meaning
+anything.
+
+Two ways to get this wrong, neither of which fails the batch:
+
+- **Omitting `component`** renders the entry under an empty `### ` heading.
+- **Misspelling one** invents a section rather than erroring — changie does not
+  validate the value against the configured list.
 
 changie renders each body as `- {{.Body}}`, one bullet, so every line after the
 first needs a 2-space indent to stay inside it. YAML takes the block's

@@ -1,11 +1,12 @@
+component: doctor
 kind: Breaking
 body: |-
   **`trellis.doctor/1` renames two identifiers to match the package/member rule:**
     the workspace-size field `members` becomes `packages`, and the `member_manifest`
     check value becomes `package_manifest`. `member_glob`, `configless`, and
     `auto_members` keep their names — they report on the `members` globs and on how
-    membership was determined, not on the packages themselves.
+    trellis worked out membership, not on the packages themselves.
 
-    A consumer doing `jq ".members"` becomes `jq ".packages"`, and a workflow
-    branching on `check == "member_manifest"` must match `"package_manifest"`.
+    A consumer doing `jq ".members"` switches to `jq ".packages"`, and a workflow
+    branching on `check == "member_manifest"` has to match `"package_manifest"`.
 time: 2026-07-28T18:04:00.000000-07:00

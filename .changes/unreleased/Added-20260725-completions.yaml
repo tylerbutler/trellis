@@ -1,10 +1,13 @@
+component: completions
 kind: Added
 body: |-
-  **`trellis completions <shell>` generates tab-completion for bash, zsh, fish,
-    PowerShell, and elvish.** Candidates are computed by the binary as you type, so
-    completion offers the real package names, task names, and changelog kinds from
-    the surrounding workspace.
+  **`trellis completions <shell>` prints the snippet that turns on tab-completion**
+    for bash, zsh, fish, PowerShell, and elvish. The snippet asks trellis for
+    candidates on each tab-press, so you get the real package names, task names, and
+    changelog kinds from the workspace you're standing in. Evaluate it on shell
+    startup rather than saving it to a completions directory — a saved copy goes
+    stale on the next upgrade.
 
-    Release archives also ship man pages under `man/` — `trellis.1` plus a page per
+    Release archives also ship man pages under `man/`: `trellis.1`, plus a page per
     subcommand.
 time: 2026-07-25T18:01:19.474540769-07:00

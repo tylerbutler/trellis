@@ -1,12 +1,13 @@
+component: version
 kind: Added
 body: |-
   **When a package bumps, its workspace dependents now bump too** — transitively,
-    one patch each, with a generated `Dependencies` entry naming what moved. A path
-    dependency's Hex requirement is derived at publish time, so an unbumped dependent
-    could resolve to two different dependency sets.
+    one patch each, with a generated `Dependencies` entry naming what moved. Trellis
+    derives a path dependency's Hex requirement at publish time, so a dependent left
+    behind can ship resolving to two different dependency sets.
 
-    A dependent needs no fragment of its own, a package that has one keeps its larger
-    bump, and a ripple stops at an `@release`-excluded package. Two new keys under
-    `[tools.trellis.changelog]` shape the generated entry: `dependency_kind` and
-    `dependency_body`.
+    Dependents need no fragment of their own, and one that already has a fragment
+    keeps its larger bump. A ripple stops at any package excluded from `@release`.
+    Two new keys under `[tools.trellis.changelog]` shape the generated entry:
+    `dependency_kind` and `dependency_body`.
 time: 2026-07-25T09:00:00.000000-07:00

@@ -4,11 +4,41 @@ headerPath: header.md
 changelogPath: CHANGELOG.md
 versionExt: md
 versionFormat: '## {{.Version}} - {{.Time.Format "2006-01-02"}}'
-kindFormat: '### {{.Kind}}'
+componentFormat: '### {{.Component}}'
+kindFormat: '#### {{.Kind}}'
 changeFormat: '- {{.Body}}'
 body:
     block: true
     minLength: 1
+# The subcommand a change belongs to, rendered as a `###` heading above the
+# `####` kind headings. Subcommands follow the order `trellis --help` lists them.
+#
+# `trellis` is the catch-all for changes that aren't scoped to one subcommand —
+# the exit-code contract, the global flags, a rule that holds for every `--json`
+# payload. It sorts first so a reader meets the binary-wide news before the
+# per-command detail.
+#
+# Every fragment needs a component: changie renders one without under an empty
+# `### ` heading. It does not validate the value either, so a typo quietly
+# invents a section rather than failing the batch.
+components:
+    - trellis
+    - list
+    - graph
+    - info
+    - run
+    - exec
+    - changelog
+    - version
+    - init
+    - new
+    - release
+    - tag
+    - publish
+    - lockfile
+    - doctor
+    - ci
+    - completions
 kinds:
     - label: Breaking
       auto: minor
@@ -29,8 +59,10 @@ kinds:
 newlines:
     afterChangelogHeader: 1
     afterChangelogVersion: 1
+    afterComponent: 0
     afterKind: 0
     afterVersion: 1
     beforeChange: 1
+    beforeComponent: 1
     beforeKind: 1
     endOfVersion: 1

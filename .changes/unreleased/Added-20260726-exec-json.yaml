@@ -1,0 +1,14 @@
+component: exec
+kind: Added
+body: |-
+  **`trellis exec` accepts `--json`.** The new `trellis.exec/1` payload echoes the
+    command back as argv, so nothing downstream has to re-split a quoted string, and
+    carries one record per package — path, status, wall-clock duration, and, on
+    failure, the exit code. Until now the only machine-readable signal was the overall
+    exit code.
+
+    A package that never ran — scheduling stopped at an earlier failure — reports
+    `skipped`, which still fails the command. Under `--json` the per-package stream
+    moves to stderr and the spinners and summary table go away, leaving stdout to the
+    payload alone.
+time: 2026-07-26T09:01:30.000000-07:00

@@ -1,0 +1,9 @@
+component: list
+kind: Breaking
+body: |-
+  **`trellis list --json` returns an object, not a bare array.** The array moves under
+    a `packages` key so the document can carry the new `schema` field:
+    `{"schema": "trellis.list/1", "packages": [...]}`.
+
+    `trellis list --json | jq ".[].name"` becomes `jq ".packages[].name"`.
+time: 2026-07-25T09:00:00.000000-07:00
