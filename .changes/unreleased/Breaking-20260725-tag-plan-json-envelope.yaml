@@ -1,7 +1,0 @@
-component: tag
-kind: Breaking
-body: |-
-  **`trellis tag plan --json` returns an object, not a bare array.** The array moves under a `tags` key so the document can carry the new `schema` field: `{"schema": "trellis.tag_plan/1", "tags": [...]}`.
-
-    `trellis tag plan --json | jq ".[].tag"` becomes `jq ".tags[].tag"`.
-time: 2026-07-25T09:00:02.000000-07:00

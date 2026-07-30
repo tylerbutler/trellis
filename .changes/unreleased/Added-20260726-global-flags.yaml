@@ -1,7 +1,0 @@
-component: trellis
-kind: Added
-body: |-
-  **Four global flags now work before or after the subcommand.** `--color auto|always|never` overrides terminal detection both ways, so `--color always` survives a pipe and `--color never` survives a terminal; `auto` keeps honoring `NO_COLOR` and `CLICOLOR=0`. Spinners still follow the terminal, so forcing color into a pipe won't draw any.
-
-    `-q/--quiet` drops the per-package stream and the summary table without touching exit codes. `-v/--verbose` traces every `gleam`, `git`, and `gh` command to stderr, prefixed `+ ` and naming the directory it ran in. `--no-update-check` skips the release check for one invocation.
-time: 2026-07-26T09:00:00.000000-07:00
