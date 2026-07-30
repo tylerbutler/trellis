@@ -1,13 +1,7 @@
 component: ci
 kind: Breaking
 body: |-
-  **`trellis ci outputs` renames two of its GitHub Actions outputs to snake_case:**
-    `version-files` becomes `version_files` and `series-tags` becomes `series_tags`.
-    `releasable` and `tags` are unchanged; `packages` supersedes `projects`, which
-    sticks around as a deprecated alias. The values are identical — only the names
-    moved, to follow the same snake_case rule as the config keys and the `--json`
-    payloads.
+  **`trellis ci outputs` renames two of its GitHub Actions outputs to snake_case:** `version-files` becomes `version_files` and `series-tags` becomes `series_tags`. `releasable` and `tags` are unchanged; `packages` supersedes `projects`, which sticks around as a deprecated alias. The values are identical — only the names moved, to follow the same snake_case rule as the config keys and the `--json` payloads.
 
-    A workflow reading `steps.<id>.outputs.version-files` or `.series-tags` has to
-    switch to `.version_files` and `.series_tags`.
+    A workflow reading `steps.<id>.outputs.version-files` or `.series-tags` has to switch to `.version_files` and `.series_tags`.
 time: 2026-07-28T18:01:00.000000-07:00

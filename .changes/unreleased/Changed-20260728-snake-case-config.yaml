@@ -1,15 +1,7 @@
 component: trellis
 kind: Changed
 body: |-
-  **Every identifier trellis controls is now snake_case,** matching Gleam's own
-    convention. `[tools.trellis]` keys lose their hyphens — `tag-format` becomes
-    `tag_format`, `needs-deps` becomes `needs_deps`, and so on for the eleven keys
-    that had one — as do the `--json` payloads' object keys, enum values, and `schema`
-    names.
+  **Every identifier trellis controls is now snake_case,** matching Gleam's own convention. `[tools.trellis]` keys lose their hyphens — `tag-format` becomes `tag_format`, `needs-deps` becomes `needs_deps`, and so on for the eleven keys that had one — as do the `--json` payloads' object keys, enum values, and `schema` names.
 
-    Every spelling released through v0.7.0 still parses, so existing workspaces keep
-    working; `doctor` warns on each one and names its replacement, and the aliases go
-    away at 1.0. The free-form tables (`exclude`, `tasks`,
-    `publish.tag_mode_overrides`) and Gleam's own manifest keys, `dev-dependencies`
-    among them, are untouched.
+    Every spelling released through v0.7.0 still parses, so existing workspaces keep working; `doctor` warns on each one and names its replacement, and the aliases go away at 1.0. The free-form tables (`exclude`, `tasks`, `publish.tag_mode_overrides`) and Gleam's own manifest keys, `dev-dependencies` among them, are untouched.
 time: 2026-07-28T18:00:00.000000-07:00

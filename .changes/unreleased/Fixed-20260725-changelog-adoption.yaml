@@ -1,12 +1,7 @@
 component: version
 kind: Fixed
 body: |-
-  **`version apply` no longer deletes a package's pre-existing changelog.** Trellis
-    regenerates `CHANGELOG.md` from the sections under `.changes/<package>/`, so a
-    package that already had a changelog when it adopted trellis lost the lot on its
-    first release.
+  **`version apply` no longer deletes a package's pre-existing changelog.** Trellis regenerates `CHANGELOG.md` from the sections under `.changes/<package>/`, so a package that already had a changelog when it adopted trellis lost the lot on its first release.
 
-    That history now survives verbatim as a single section, filed under the newest
-    version its headings mention. `trellis doctor` flags the pending capture and
-    `doctor --fix` does it up front, so the restructuring lands in a diff of its own.
+    That history now survives verbatim as a single section, filed under the newest version its headings mention. `trellis doctor` flags the pending capture and `doctor --fix` does it up front, so the restructuring lands in a diff of its own.
 time: 2026-07-25T09:00:01.000000-07:00
