@@ -1,3 +1,15 @@
 kind: Added
-body: '`version apply --pre rc` cuts a release candidate, and repeating it advances the counter within the same base version (`1.0.0-rc.1`, then `1.0.0-rc.2`) instead of deriving a fresh bump from the same fragments each time; `--pre none` promotes the candidate to its final version. Fragments survive a prerelease: the candidate renders its changelog section but leaves them in `.changes/unreleased/`, since retiring them at `rc.1` would leave `1.0.0` with nothing to say. The consequence is that an entry appears twice in `CHANGELOG.md`, once under the RC that shipped it and once under the final, and `version --json` now reports `fragments_retained` so a workflow can tell a cut RC from a completed release. A prerelease labels the whole plan including rippled dependents, so the workspace moves as one coherent candidate, while a package that gained fragments only after the RC was cut still bumps normally under `--pre none`. Once a package sits at a prerelease a plain `version apply` is an error naming both ways out, rather than silently bumping past the cycle. See [prereleases](https://trellis.tylerbutler.com/docs/changelog/#prereleases).'
+body: |-
+  **`version apply --pre rc` cuts a release candidate, and `--pre none` promotes it
+    to the final version.** Repeating `--pre rc` advances the counter within the same
+    base version — `1.0.0-rc.1`, then `1.0.0-rc.2`.
+
+    Fragments survive a prerelease: the candidate renders its changelog section but
+    leaves them in `.changes/unreleased/`, so an entry appears twice in
+    `CHANGELOG.md` — once under the RC, once under the final release. `version
+    --json` reports `fragments_retained` so a workflow can tell the two apart.
+
+    A prerelease labels the whole plan, rippled dependents included. Once a package
+    sits at a prerelease, a plain `version apply` is an error naming both ways out.
+    See [prereleases](https://trellis.tylerbutler.com/docs/changelog/#prereleases).
 time: 2026-07-26T09:03:00.000000-07:00

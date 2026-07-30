@@ -1,3 +1,13 @@
 kind: Added
-body: '`version plan` and `version apply` accept `--bump` and `--set`, so the version no longer has to be whatever the pending fragments'' kinds derive. `--bump major` overrides the level for the whole plan and `--bump lat_core=major` for one package, which is the escape hatch for a breaking change filed as `Fixed` and already merged; `--set lat_core=1.0.0` pins an exact version, for the jump to 1.0 that the pre-1.0 rule would otherwise treat as a minor, or a one-off number matching something upstream. Precedence runs `--set`, then per-package `--bump`, then workspace-wide `--bump`, then the derived level. Both commands take the same flags, so an override is visible in the dry run before it is applied, and naming a package in both flags, naming one that is not a releasable member, or pinning a version that is not ahead of the current one are all errors raised before anything is written.'
+body: |-
+  **`version plan` and `version apply` accept `--bump` and `--set`,** so the version
+    no longer has to be whatever the pending fragments derive. `--bump major` sets the
+    level for the whole plan and `--bump lat_core=major` for one package; `--set
+    lat_core=1.0.0` pins an exact version, for the jump to 1.0 that the pre-1.0 rule
+    would otherwise treat as a minor.
+
+    Precedence runs `--set`, then per-package `--bump`, then workspace-wide `--bump`,
+    then the derived level. Both commands take the same flags, so an override shows up
+    in the dry run first, and conflicting or backwards overrides are rejected before
+    anything is written.
 time: 2026-07-26T09:02:00.000000-07:00

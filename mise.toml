@@ -1,0 +1,5 @@
+[tools]
+# Batches .changes/unreleased/ fragments into CHANGELOG.md. The release workflow
+# runs it via tylerbutler/actions/changie-release; this is for local previews
+# (`changie batch <level> --dry-run`).
+changie = "latest"

@@ -1,3 +1,11 @@
 kind: Breaking
-body: '`trellis ci outputs` renames two of its GitHub Actions outputs to snake_case: `version-files` becomes `version_files` and `series-tags` becomes `series_tags`. `releasable` and `tags` are unchanged; `projects` is superseded by `packages` and kept as a deprecated alias. A workflow reading `steps.<id>.outputs.version-files` or `.series-tags` must be updated — nothing else in the command changes, and the values are identical. These are trellis''s own names rather than a convention GitHub imposes, so they follow the same snake_case rule as the config keys and the `--json` payloads.'
+body: |-
+  **`trellis ci outputs` renames two of its GitHub Actions outputs to snake_case:**
+    `version-files` becomes `version_files` and `series-tags` becomes `series_tags`.
+    `releasable` and `tags` are unchanged; `projects` is superseded by `packages` and
+    kept as a deprecated alias. The values are identical — only the names moved, to
+    follow the same snake_case rule as the config keys and the `--json` payloads.
+
+    A workflow reading `steps.<id>.outputs.version-files` or `.series-tags` must
+    switch to `.version_files` and `.series_tags`.
 time: 2026-07-28T18:01:00.000000-07:00

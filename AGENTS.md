@@ -32,13 +32,48 @@ Config keys released through v0.7.0 keep their kebab-case spelling as a
 `#[serde(alias)]`, reported by `doctor` as a deprecation. These come out at 1.0;
 new keys never get one.
 
+## Changelog fragments
+
+Every user-visible change needs one: a YAML file in `.changes/unreleased/` named
+`<Kind>-<YYYYMMDD>-<slug>.yaml`, with `kind`, `body`, and `time`. The audience is
+a stranger reading the release notes, not the reviewer of your PR.
+
+Write the body as a `|-` block scalar with a **bolded lead-in sentence**, then
+paragraphs:
+
+```yaml
+kind: Added
+body: |-
+  **`trellis completions` generates tab-completion for five shells.** Candidates
+    are computed by the binary as you type, so completion offers real package,
+    task, and changelog-kind names from the surrounding workspace.
+
+    Release archives also ship man pages under `man/`.
+time: 2026-07-25T18:01:19.474540769-07:00
+```
+
+changie renders each body as `- {{.Body}}`, one bullet, so every line after the
+first needs a 2-space indent to stay inside it. YAML takes the block's
+indentation from its **first** line, so write the first line at 2 spaces and
+every later line at **4** — that lands as the 2-space markdown indent. A line at
+6+ spaces becomes a code block; a line at 2 becomes a sibling bullet.
+
+- The lead-in is one sentence, ≤ ~15 words, naming the command, flag, or key and
+  what it now does. For a small change it is the whole entry.
+- Keep what a reader acts on: the change, its user-visible consequence, the
+  migration, flags and keys by name, and edge cases they can actually hit.
+- Cut the design rationale — why this shape, what was rejected, how it is
+  implemented. That belongs in [docs/DESIGN.md](docs/DESIGN.md) or the website
+  docs. At most one "previously…" clause, where the fix makes no sense without it.
+- End a `Breaking` entry with the concrete migration: old spelling → new, or the
+  `jq` change.
+- Use current spellings in prose: snake_case keys, "package" not "project".
+- 40–90 words for most entries; two or three short paragraphs for a big one.
+
 ## Conventions
 
 - **Commits** use [conventional commits](https://www.conventionalcommits.org/):
   `type(scope): description`. Include a body; skip attribution trailers.
-- **Changelog fragments** are required for user-visible changes — a YAML file in
-  `.changes/unreleased/` with `kind`, `body`, and `time`. Prose, not a summary:
-  say what changed and why it was worth changing.
 - **Tests** come first for bug fixes and new behavior.
 
 ## Commands

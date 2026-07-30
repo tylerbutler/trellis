@@ -1,0 +1,10 @@
+kind: Added
+body: |-
+  **`trellis completions <shell>` generates tab-completion for bash, zsh, fish,
+    PowerShell, and elvish.** Candidates are computed by the binary as you type, so
+    completion offers the real package names, task names, and changelog kinds from
+    the surrounding workspace.
+
+    Release archives also ship man pages under `man/` — `trellis.1` plus a page per
+    subcommand.
+time: 2026-07-25T18:01:19.474540769-07:00

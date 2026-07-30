@@ -1,3 +1,13 @@
 kind: Changed
-body: '`package` replaces `project` as the word for a Gleam package everywhere trellis names one. A changelog fragment''s `project` key is now `package`, `trellis ci outputs` emits `packages` alongside its existing `projects` line, and the `changelog.dependency_body` template context gains `package`. Every old spelling still works — fragments already sitting in `.changes/unreleased/` parse unchanged, `projects` carries a value identical to `packages`, and `{{ project }}` still renders — so nothing breaks; `changelog new` writes the new spelling and the aliases go away at 1.0. The rule is that a package is the thing and a member is a package that belongs to the workspace, so "member" survives only where membership is the point: the `members` key, the `@members` exclusion, and the member paths that exclusion globs match. Error messages naming a fragment''s package follow suit — `doctor`''s `changelog_fragment` findings now read "package `x` is not a workspace member" rather than "project `x`". CLI help and `doctor`''s text output move with them: `trellis list` now describes itself as listing packages rather than members, `--since` selects packages, `doctor` summarizes "ok: 4 package(s)", and its `checked:` preamble names packages except where a line is genuinely about the `members` globs.'
+body: |-
+  **`package` replaces `project` as the word for a Gleam package everywhere trellis
+    names one.** A fragment's `project` key is now `package`, `trellis ci outputs`
+    emits `packages` alongside `projects`, and the `changelog.dependency_body`
+    template context gains `package`. Help text and `doctor`'s output follow — it now
+    summarizes "ok: 4 package(s)".
+
+    Nothing breaks: existing fragments parse unchanged, `projects` carries the same
+    value as `packages`, and `{{ project }}` still renders. `changelog new` writes the
+    new spelling, and the aliases go away at 1.0. "Member" survives where membership
+    is the point — the `members` key and the `@members` exclusion.
 time: 2026-07-28T18:02:00.000000-07:00

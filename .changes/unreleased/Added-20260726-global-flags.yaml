@@ -1,3 +1,13 @@
 kind: Added
-body: 'Four global flags, accepted before or after the subcommand. `--color auto|always|never` overrides the terminal detection that previously could not be overridden in either direction, so `--color always` survives a pipe and `--color never` survives a terminal; `auto` keeps honoring `NO_COLOR` and `CLICOLOR=0`. `-q/--quiet` drops the per-package output stream and the summary table without touching exit codes, and `-v/--verbose` writes a `+ ` trace to stderr for every `gleam`, `git`, and `gh` command trellis shells out to, naming the directory it ran in. `--no-update-check` suppresses the release check for one invocation, which was previously possible only through the `TRELLIS_NO_UPDATE_CHECK` and `DO_NOT_TRACK` environment variables. Live progress rows stay tied to terminal detection regardless of `--color`, so forcing color into a pipe does not start drawing spinners into it.'
+body: |-
+  **Four global flags now work before or after the subcommand.** `--color
+    auto|always|never` overrides terminal detection in both directions, so `--color
+    always` survives a pipe and `--color never` survives a terminal; `auto` still
+    honors `NO_COLOR` and `CLICOLOR=0`. Progress rows stay tied to terminal
+    detection, so forcing color into a pipe draws no spinners.
+
+    `-q/--quiet` drops the per-package stream and the summary table without changing
+    exit codes. `-v/--verbose` traces every `gleam`, `git`, and `gh` command to
+    stderr, prefixed `+ ` and naming the directory it ran in. `--no-update-check`
+    skips the release check for one invocation.
 time: 2026-07-26T09:00:00.000000-07:00
