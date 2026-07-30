@@ -195,6 +195,13 @@ impl JobDisplay {
 /// Run jobs respecting workspace dependency order among the selected members.
 /// Ordering constraints follow *transitive* deps, so order is preserved even
 /// when intermediate packages aren't part of the selection.
+///
+/// This is Kahn's algorithm driving a bounded worker pool. Each job carries a
+/// count of how many *selected* dependencies it is still waiting on; a job
+/// whose count is zero is runnable. Finished jobs decrement their dependents'
+/// counts, releasing new work. Up to `parallelism` jobs run at once, so the
+/// schedule is a topological order widened into levels rather than a strict
+/// sequence.
 pub fn run_jobs(
     workspace: &Workspace,
     jobs: Vec<Job>,
@@ -216,14 +223,28 @@ pub fn run_jobs(
         .unwrap_or(0);
     let output = Output::new(options.json);
 
+    // The schedule is a Kahn-style ready queue over the selection, and every
+    // index below is a *job* index (position in `jobs`), not a member index.
+    // `selected` is the member → job reverse map used to translate workspace
+    // dependency edges into that space; members outside the selection have no
+    // entry and so contribute no edge.
     let selected: HashMap<usize, usize> = jobs
         .iter()
         .enumerate()
         .map(|(job_idx, job)| (job.member, job_idx))
         .collect();
+    // `remaining[j]`: how many of j's dependencies have yet to finish — j is
+    // ready to start at zero. `waiters[d]`: the jobs to decrement once d
+    // finishes, i.e. the dependency edges pointing away from d.
     let mut remaining = vec![0usize; jobs.len()];
     let mut waiters: Vec<Vec<usize>> = vec![Vec::new(); jobs.len()];
     for (job_idx, job) in jobs.iter().enumerate() {
+        // Transitive rather than direct deps, then narrowed to the selection.
+        // An unselected package imposes no ordering of its own, but a selected
+        // package *behind* one still has to wait, and only the transitive walk
+        // sees through the gap. `transitive_deps` already collapses the many
+        // paths that can reach one dep into a single set entry, so each dep is
+        // counted once here no matter how it was reached.
         let deps: HashSet<usize> = workspace
             .transitive_deps(job.member)
             .into_iter()
@@ -238,15 +259,26 @@ pub fn run_jobs(
     // Jobs arrive in topological order, so a FIFO ready queue keeps starts
     // deterministic when parallelism is 1.
     let mut ready: VecDeque<usize> = (0..jobs.len()).filter(|&j| remaining[j] == 0).collect();
+    // Sparse until the run ends: a slot stays `None` if that job never started,
+    // which is what distinguishes "skipped" from "ran" in the final pass.
     let mut results: Vec<Option<JobResult>> = (0..jobs.len()).map(|_| None).collect();
     let (sender, receiver) = mpsc::channel::<JobResult>();
     let mut running = 0usize;
+    // Set once a job fails without `--keep-going`. It stops *new* starts only;
+    // jobs already in flight are still awaited, never killed.
     let mut halted = false;
     // Keep finished bars alive so later log lines do not erase their rows.
     let mut live_displays = Vec::new();
 
     std::thread::scope(|scope| -> Result<()> {
+        // Each turn of the loop does two things: fill the pool from the ready
+        // queue, then block until exactly one job reports back. Because a
+        // completion is the only event that can make another job ready, there is
+        // nothing to do between the two — no polling, no sleeping.
         loop {
+            // Fill phase: start jobs until the pool is full or nothing is ready.
+            // A non-empty pool with an empty ready queue is the normal state, not
+            // a stall; the jobs still running are what will unblock the rest.
             while !halted && running < options.parallelism.max(1) {
                 let Some(job_idx) = ready.pop_front() else {
                     break;
@@ -261,6 +293,10 @@ pub fn run_jobs(
                 scope.spawn(move || {
                     let outcome = execute_job(job, &name, prefix_width, &output, &display);
                     display.finish(&outcome.status, outcome.duration);
+                    // `member` smuggles the *job* index back over the channel so
+                    // the receiver can tell which job this is — results arrive in
+                    // completion order, not job order. It is overwritten with the
+                    // real member index on receipt.
                     let _ = sender.send(JobResult {
                         member: job_idx, // job index in-flight; remapped below
                         status: outcome.status,
@@ -270,20 +306,29 @@ pub fn run_jobs(
                     });
                 });
             }
+            // Nothing running and nothing startable: either every job finished, or
+            // `halted` cut the run short and the stragglers have now drained.
+            // Checked after the fill phase and before the blocking receive, this
+            // is the loop's only exit — so it cannot leave a sent result unread.
             if running == 0 {
                 break;
             }
+            // Reap phase. Blocking on one completion is what bounds the pool —
+            // control returns to the fill phase with exactly one free slot.
             let done = receiver.recv().expect("worker threads outlive the loop");
             running -= 1;
-            let job_idx = done.member;
+            let job_idx = done.member; // see the send above: job index, not member
             let failed = matches!(done.status, JobStatus::Failed(_));
             results[job_idx] = Some(JobResult {
-                member: jobs[job_idx].member,
+                member: jobs[job_idx].member, // now the real member index
                 ..done
             });
             if failed && !options.keep_going {
                 halted = true;
             }
+            // Release the dependents. Even when halted, this keeps `remaining`
+            // truthful; `halted` gates the starts, so a newly ready job simply
+            // waits in the queue and is reported as skipped at the end.
             for &waiter in &waiters[job_idx] {
                 remaining[waiter] -= 1;
                 if remaining[waiter] == 0 {
@@ -294,6 +339,10 @@ pub fn run_jobs(
         Ok(())
     })?;
 
+    // Walking `jobs` rather than `results` restores the caller's input order,
+    // discarding the completion order the channel imposed. Any slot still `None`
+    // is a job that never started — blocked behind a failure, or still queued
+    // when the run halted — and is reported as skipped with a zero duration.
     let results: Vec<JobResult> = jobs
         .iter()
         .enumerate()
