@@ -45,13 +45,19 @@ paragraphs:
 component: completions
 kind: Added
 body: |-
-  **`trellis completions` generates tab-completion for five shells.** Candidates
-    are computed by the binary as you type, so completion offers real package,
-    task, and changelog-kind names from the surrounding workspace.
+  **`trellis completions` generates tab-completion for five shells.** Candidates are computed by the binary as you type, so completion offers real package, task, and changelog-kind names from the surrounding workspace.
 
     Release archives also ship man pages under `man/`.
 time: 2026-07-25T18:01:19.474540769-07:00
 ```
+
+**One line per paragraph. Never hard-wrap a body**, however long the line gets —
+the shipped entries run to 500+ characters. cargo-dist copies the version's
+CHANGELOG.md section verbatim into the GitHub release body, and GitHub renders
+release notes the way it renders comments: every single newline becomes a `<br>`,
+unlike a `.md` file in the repo, where it collapses to a space. A body wrapped at
+80 columns reads fine in CHANGELOG.md and arrives in the release notes as a
+ragged column of short lines. Wrap only *between* paragraphs, with a blank line.
 
 `component` is the subcommand the change belongs to, and renders as a `###`
 heading above the `####` kind headings, so a reader can find what changed in
@@ -76,10 +82,10 @@ Two ways to get this wrong, neither of which fails the batch:
 - **Misspelling one** invents a section rather than erroring — changie does not
   validate the value against the configured list.
 
-changie renders each body as `- {{.Body}}`, one bullet, so every line after the
-first needs a 2-space indent to stay inside it. YAML takes the block's
-indentation from its **first** line, so write the first line at 2 spaces and
-every later line at **4** — that lands as the 2-space markdown indent. A line at
+changie renders each body as `- {{.Body}}`, one bullet, so every paragraph after
+the first needs a 2-space indent to stay inside it. YAML takes the block's
+indentation from its **first** line, so write the first paragraph at 2 spaces and
+every later one at **4** — that lands as the 2-space markdown indent. A line at
 6+ spaces becomes a code block; a line at 2 becomes a sibling bullet.
 
 - The lead-in is one sentence, ≤ ~15 words, naming the command, flag, or key and
