@@ -1,6 +1,6 @@
 [package]
 name = "trellis-gleam"
-version = "0.7.0"
+version = "0.8.0"
 edition = "2024"
 # MSRV: the floor edition 2024 implies. Declared so a `cargo install` on an
 # older toolchain reports the version it needs rather than failing mid-build.

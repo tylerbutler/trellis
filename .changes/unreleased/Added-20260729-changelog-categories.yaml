@@ -1,7 +1,0 @@
-component: changelog
-kind: Added
-body: |-
-  **Changelog entries can group under a second axis above their kind.** Set `categories` under `[tools.trellis.changelog]` — a vocabulary like `kinds`, but with no bump attached — then write a fragment into one with `trellis changelog new --category <name>`.
-
-    Leave `categories` unset and nothing changes. Even with it set, a fragment needn't name one; those that don't trail the rest under `uncategorized_label`, which is `Other` unless you say otherwise. Naming a category that isn't in the list invalidates the fragment, exactly as an unknown kind does. While the axis is on, kind headings drop from `###` to `####` unless `kind_format` says otherwise — and an older trellis will choke on a fragment carrying a `category`. See [categories](https://trellis.tylerbutler.com/docs/configuration/#categories).
-time: 2026-07-29T12:00:00.000000-07:00

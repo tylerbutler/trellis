@@ -1,7 +1,0 @@
-component: doctor
-kind: Added
-body: |-
-  **`trellis doctor --format json|github` reports findings as data instead of prose.** Each finding is a typed record — `{check, severity, message, file, package, fixable}` — so CI can group them by package or narrow to the ones `--fix` would clear. `--format github` emits GitHub Actions workflow commands, which annotate the offending file right in a PR's Files tab.
-
-    Branch on `check`: it's a documented enum on the [JSON output contract](https://trellis.tylerbutler.com/docs/json-output/) page. Don't branch on `message` — that prose can change. Text output stays as it was.
-time: 2026-07-25T18:30:00.000000-07:00

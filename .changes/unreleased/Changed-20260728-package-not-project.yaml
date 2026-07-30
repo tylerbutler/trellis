@@ -1,7 +1,0 @@
-component: trellis
-kind: Changed
-body: |-
-  **`package` replaces `project` as the word for a Gleam package everywhere trellis names one.** A fragment's `project` key is now `package`, `trellis ci outputs` emits `packages` alongside `projects`, and the `changelog.dependency_body` template context gains `package`. Help text and `doctor`'s output follow — it now sums up with "ok: 4 package(s)".
-
-    Nothing breaks: existing fragments parse unchanged, `projects` carries the same value as `packages`, and `{{ project }}` still renders. `changelog new` writes the new spelling, and the aliases go away at 1.0. "Member" survives where membership is the point — the `members` key and the `@members` exclusion.
-time: 2026-07-28T18:02:00.000000-07:00

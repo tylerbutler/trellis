@@ -1,5 +1,0 @@
-component: doctor
-kind: Added
-body: |-
-  **Trellis now reports keys under `[tools.trellis]` it doesn't recognize instead of ignoring them,** so a typo no longer leaves the workspace quietly sitting on a default. `doctor` calls each one a warning rather than an error — an unrecognized key may simply belong to a newer trellis. The free-form tables (`exclude`, `tasks`, and `publish.tag_mode_overrides`) take keys you choose, and never get reported.
-time: 2026-07-26T09:04:00.000000-07:00

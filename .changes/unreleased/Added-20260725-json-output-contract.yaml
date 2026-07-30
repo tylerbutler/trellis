@@ -1,7 +1,0 @@
-component: trellis
-kind: Added
-body: |-
-  **Every JSON document now names its payload and major version in a `schema` field** — `"schema": "trellis.list/1"` — so a workflow can assert on the shape it was built against.
-
-    The new [JSON output contract](https://trellis.tylerbutler.com/docs/json-output/) page sets the rules: new fields can turn up at any time, but renaming, removing, or retyping one bumps the major. Every existing payload gains the `schema` key and nothing else, bar the three bare arrays that had to become objects to hold it — `list`, `version plan`, and `tag plan`, each covered in its own entry. `ci matrix` and `ci outputs` take their shape from GitHub Actions and carry no `schema`.
-time: 2026-07-25T09:01:00.000000-07:00
