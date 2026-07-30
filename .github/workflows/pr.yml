@@ -47,6 +47,9 @@ jobs:
             ```
             changie new
             ```
+
+            It asks which component the change belongs to: pick the subcommand it
+            changes, or `trellis` if it isn't scoped to one. See `AGENTS.md`.
       - name: Remove changelog comment
         if: steps.changelog.outputs.has-entries == 'false' && steps.changelog.outputs.needs-entry == 'false'
         uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # ratchet:marocchino/sticky-pull-request-comment@v3.0.5

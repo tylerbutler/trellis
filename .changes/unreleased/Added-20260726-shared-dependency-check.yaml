@@ -1,11 +1,13 @@
+component: doctor
 kind: Added
 body: |-
-  **`trellis doctor` now checks that members agree on the external dependencies they
-    share** — `lat_core` requiring `gleam_stdlib >= 0.44.0` while `lat_cli` requires
-    `>= 0.60.0`. Requirements are compared as written rather than parsed as ranges, so
-    `>= 1.0` and `>=1.0` read as divergent; path dependencies are out of scope.
+  **`trellis doctor` now checks that packages agree on the external dependencies
+    they share** — `lat_core` wanting `gleam_stdlib >= 0.44.0` while `lat_cli` wants
+    `>= 0.60.0`. It compares the requirement strings as written instead of parsing
+    them as ranges, so `>= 1.0` and `>=1.0` count as a disagreement; path
+    dependencies are out of scope.
 
-    Divergence is often intended, so this is a warning by default and does not fail
-    CI. The new `[tools.trellis.doctor] shared_dependencies` key takes `warn`,
-    `error`, or `off`. There is no `--fix` for it.
+    Disagreeing on purpose is common enough that this only warns and won't fail CI.
+    Set `shared_dependencies` under `[tools.trellis.doctor]` to `warn`, `error`, or
+    `off`. Nothing here is `--fix`-able.
 time: 2026-07-26T09:05:00.000000-07:00

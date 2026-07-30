@@ -1,13 +1,14 @@
+component: version
 kind: Added
 body: |-
   **`version plan` and `version apply` accept `--bump` and `--set`,** so the version
     no longer has to be whatever the pending fragments derive. `--bump major` sets the
-    level for the whole plan and `--bump lat_core=major` for one package; `--set
+    level for the whole plan, `--bump lat_core=major` for one package; `--set
     lat_core=1.0.0` pins an exact version, for the jump to 1.0 that the pre-1.0 rule
-    would otherwise treat as a minor.
+    would otherwise call a minor.
 
-    Precedence runs `--set`, then per-package `--bump`, then workspace-wide `--bump`,
-    then the derived level. Both commands take the same flags, so an override shows up
-    in the dry run first, and conflicting or backwards overrides are rejected before
-    anything is written.
+    `--set` wins over a per-package `--bump`, which wins over a workspace-wide one,
+    which wins over the derived level. Both commands take the same flags, so you see
+    an override in the dry run first, and trellis rejects conflicting or backwards
+    overrides before writing anything.
 time: 2026-07-26T09:02:00.000000-07:00

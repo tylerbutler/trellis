@@ -1,8 +1,8 @@
+component: trellis
 kind: Fixed
 body: |-
-  **`-q/--quiet` now suppresses normal-path narration across every command,** not
-    just `run` and `exec` — progress lines, summaries, and confirmations.
-    `--json`, `--format json|github`, and `--format dot|mermaid` payloads,
-    `man`/`completions`/`markdown-help` output, fatal errors, and exit codes are
-    unaffected.
+  **`-q/--quiet` now silences the normal chatter of every command,** not just `run`
+    and `exec` — progress lines, summaries, and confirmations. It leaves alone the
+    `--json`, `--format json|github`, and `--format dot|mermaid` payloads, the
+    `man`/`completions`/`markdown-help` output, fatal errors, and exit codes.
 time: 2026-07-26T09:30:00.000000-07:00

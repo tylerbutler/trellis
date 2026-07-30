@@ -1,14 +1,14 @@
+component: trellis
 kind: Changed
 body: |-
-  **Trellis now exits `3` when it could not run at all,** distinct from the `1` it
-    returns when a command ran correctly and found problems. An unparseable config, a
-    missing `gleam` or `gh`, a non-git directory, and Hex unreachable after retries all
-    exit `3`; previously they exited `1`, indistinguishable from `doctor` findings.
+  **Trellis now exits `3` when it couldn't run at all,** as distinct from the `1` it
+    returns when a command ran fine and found problems. An unparseable config, a
+    missing `gleam` or `gh`, a non-git directory, and Hex unreachable after retries
+    all exit `3`; they used to exit `1`, indistinguishable from `doctor` findings.
 
-    The full contract is `0` success, `1` ran correctly and found problems, `2` usage
-    error, `3` could not run. A failed task exits `1` and does not propagate the
-    child's exit code. The new
-    [Compatibility](https://trellis.tylerbutler.com/docs/compatibility/) page
-    documents it alongside what semver will cover at 1.0, and declares an MSRV of
-    1.85.
+    The whole contract: `0` success, `1` ran fine and found problems, `2` usage error,
+    `3` couldn't run. A failed task exits `1` and doesn't pass along the child's exit
+    code. The new [Compatibility](https://trellis.tylerbutler.com/docs/compatibility/)
+    page writes all this down next to what semver covers at 1.0, and declares an MSRV
+    of 1.85.
 time: 2026-07-28T09:00:00.000000-07:00
