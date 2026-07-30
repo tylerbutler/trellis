@@ -1,0 +1,77 @@
+{
+  "skill_name": "copy-review",
+  "notes": "Evals 0 and 1 run in git worktrees at the parent of a real copy-review commit, so the ground truth is the diff Tyler actually shipped. Eval 2 has no ground truth and is judged qualitatively.",
+  "evals": [
+    {
+      "id": 0,
+      "name": "landing-page-claim-verification",
+      "prompt": "Doing a copy pass on the site before 0.8.0. Can you review the landing page and the docs overview — accuracy first, then the writing.",
+      "expected_output": "Edits to website/src/pages/index.astro and website/src/content/docs/docs/index.mdx, plus a report. Should independently rediscover the findings in commit f9eb603: the bare `release` key that should be `@release` (and that bare `release` parses as a task, so the example silently excludes nothing), the false claim that `members` is required when every key is optional, stale `doctor` output, example package versions that disagree across pages, member/package/project terminology drift, a tagline that never states the premise, `In 0.2.0` version archaeology, `contract` overpromising vs `guarantee`, and one overloaded feature card covering changelogs+versioning+tagging+publishing. Code defects should be reported, not fixed.",
+      "worktree_rev": "b91b51c",
+      "files": [
+        "website/src/pages/index.astro",
+        "website/src/content/docs/docs/index.mdx"
+      ],
+      "assertions": [
+        "Corrects the bare `release` exclude key in the landing-page config sample to `@release`",
+        "Explains that bare `release` parses as a task name, so the original sample silently excluded nothing from releases",
+        "Removes or corrects the false claim that `members` is the only required key (every key is optional)",
+        "Corrects the stale `trellis doctor` output sample to match what the command actually emits",
+        "Makes the example workspace consistent across both files — same package names and same versions",
+        "Rewrites the landing-page lead so it states the premise (Gleam has no workspaces) instead of only listing features",
+        "Removes version archaeology such as `In 0.2.0, exclude gives…`",
+        "Applies one word per concept consistently, rather than alternating between member, package, and project",
+        "Edits no generated artifact — nothing under assets/man, and not website/src/content/docs/docs/reference.md",
+        "Changes nothing under src/ or tests/; any code-level defect appears as a reported finding instead",
+        "Report separates defects it verified and fixed from claims it could not verify"
+      ]
+    },
+    {
+      "id": 1,
+      "name": "changelog-fragment-rewrite",
+      "prompt": "These fragments read like working notes. Get them ready for the v0.8.0 release notes: .changes/unreleased/Changed-20260728-exit-codes.yaml, .changes/unreleased/Changed-20260728-snake-case-config.yaml, .changes/unreleased/Added-20260726-prereleases.yaml, .changes/unreleased/Fixed-20260726-quiet-everywhere.yaml",
+      "expected_output": "Each body converted from a single-quoted flow scalar to a `|-` block scalar, opening with a bolded lead-in sentence of ~15 words or fewer, with continuation lines at 4 spaces in YAML so they render as the 2-space markdown indent inside changie's `- {{.Body}}` bullet. Contributor rationale cut (roughly 25-40% shorter on the long entries); migrations, keys, flags and reachable edge cases kept. `time` values untouched. Note: AGENTS.md at this commit says 'say what changed and why it was worth changing', which invites the rationale that should be cut — a good run notices this tension.",
+      "worktree_rev": "64e3aca",
+      "files": [
+        ".changes/unreleased/Changed-20260728-exit-codes.yaml",
+        ".changes/unreleased/Changed-20260728-snake-case-config.yaml",
+        ".changes/unreleased/Added-20260726-prereleases.yaml",
+        ".changes/unreleased/Fixed-20260726-quiet-everywhere.yaml"
+      ],
+      "assertions": [
+        "All four bodies use a `|-` block scalar rather than a quoted flow scalar",
+        "Every body opens with a bolded lead-in sentence",
+        "Each lead-in is a single sentence of roughly 15 words or fewer",
+        "Continuation lines sit at 4 spaces in YAML, with the body's first line at 2, so they render as the 2-space markdown indent inside changie's bullet",
+        "No body line is indented 6 or more spaces, which would render as a code block",
+        "Every `time` value is byte-for-byte unchanged",
+        "All four files still parse as valid YAML carrying exactly kind, body, and time",
+        "The three long entries lose at least 20% of their words",
+        "Contributor-facing rationale is cut while migrations, config keys, and flag names are kept",
+        "Breaking or renaming entries end with the concrete migration (old spelling to new)",
+        "Notices that AGENTS.md's existing rule — say why it was worth changing — is what produced the rationale being cut, and says so rather than silently contradicting it",
+        "Either previews the rendered output or states plainly that it could not"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "readme-scale-and-restraint",
+      "prompt": "README's 27KB and I don't think it's been read end to end in months. Copy review it.",
+      "expected_output": "No ground truth. Judged on whether the skill stays useful at scale, verifies install instructions and identifiers against source rather than polishing prose blindly, catches duplication that has drifted from the docs site, and shows restraint — aggressive editing without flattening the voice or inventing facts.",
+      "worktree_rev": "87a9e89",
+      "files": [
+        "README.md"
+      ],
+      "assertions": [
+        "Verifies identifiers in the README (config keys, flags, commands) against their definitions in src/ rather than only editing prose",
+        "Checks the install instructions and the versions or URLs they reference",
+        "Identifies content duplicated between README.md and the website docs, and says which copy should be canonical",
+        "Every factual change is traceable to a source definition — no invented behavior",
+        "Edits no generated artifact",
+        "Changes nothing under src/ or tests/; code-level defects appear as reported findings",
+        "Covers the whole file rather than stopping partway, or states explicitly what it did not reach",
+        "Report separates fixes from findings and names what was verified"
+      ]
+    }
+  ]
+}
