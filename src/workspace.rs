@@ -284,13 +284,10 @@ impl Workspace {
         // `tag_mode_overrides`, each key names exactly one glob, so a member
         // can match several with different targets, which is the case
         // `resolve_lifecycle` must reject.
-        let mut lifecycle_overrides: Vec<(&str, ReleaseLifecycle, globset::GlobMatcher)> =
-            Vec::new();
+        let mut lifecycle_overrides: Vec<(ReleaseLifecycle, globset::GlobMatcher)> = Vec::new();
         for (pattern, lifecycle) in &config.publish.lifecycle.packages {
             match globset::Glob::new(pattern) {
-                Ok(glob) => {
-                    lifecycle_overrides.push((pattern.as_str(), *lifecycle, glob.compile_matcher()))
-                }
+                Ok(glob) => lifecycle_overrides.push((*lifecycle, glob.compile_matcher())),
                 Err(err) => {
                     diagnostics.push(
                         Finding::error(
@@ -905,28 +902,27 @@ fn resolve_tag_mode(
 /// several rules that agree on the same lifecycle is fine — that's how a
 /// directory and a narrower glob inside it can both claim a member.
 fn resolve_lifecycle(
-    overrides: &[(&str, ReleaseLifecycle, globset::GlobMatcher)],
+    overrides: &[(ReleaseLifecycle, globset::GlobMatcher)],
     release_excludes: Option<&globset::GlobSet>,
     rel_path: &str,
     default: ReleaseLifecycle,
     diagnostics: &mut Diagnostics,
 ) -> ReleaseLifecycle {
-    let matched: Vec<(&str, ReleaseLifecycle)> = overrides
+    let matched: Vec<(ReleaseLifecycle, &str)> = overrides
         .iter()
-        .filter(|(_, _, set)| set.is_match(rel_path))
-        .map(|(pattern, lifecycle, _)| (*pattern, *lifecycle))
+        .filter(|(_, matcher)| matcher.is_match(rel_path))
+        .map(|(lifecycle, matcher)| (*lifecycle, matcher.glob().glob()))
         .collect();
-    let distinct: BTreeSet<ReleaseLifecycle> = matched.iter().map(|(_, l)| *l).collect();
-    match distinct.len() {
-        0 => {
+    match matched.split_first() {
+        None => {
             if release_excludes.is_some_and(|set| set.is_match(rel_path)) {
                 ReleaseLifecycle::Workspace
             } else {
                 default
             }
         }
-        1 => distinct.into_iter().next().expect("checked len == 1"),
-        _ => {
+        Some((&(first, _), rest)) if rest.iter().all(|&(lifecycle, _)| lifecycle == first) => first,
+        Some(_) => {
             diagnostics.push(
                 Finding::error(
                     Check::WorkspaceConfig,
@@ -935,7 +931,7 @@ fn resolve_lifecycle(
                          conflicting lifecycles: {}",
                         matched
                             .iter()
-                            .map(|(pattern, lifecycle)| format!(
+                            .map(|(lifecycle, pattern)| format!(
                                 "`{pattern}` => `{}`",
                                 lifecycle.key()
                             ))
@@ -1074,14 +1070,13 @@ mod tests {
         );
     }
 
-    fn lifecycle_overrides<'a>(
-        entries: &[(&'a str, ReleaseLifecycle)],
-    ) -> Vec<(&'a str, ReleaseLifecycle, globset::GlobMatcher)> {
+    fn lifecycle_overrides(
+        entries: &[(&str, ReleaseLifecycle)],
+    ) -> Vec<(ReleaseLifecycle, globset::GlobMatcher)> {
         entries
             .iter()
             .map(|(pattern, lifecycle)| {
                 (
-                    *pattern,
                     *lifecycle,
                     globset::Glob::new(pattern).unwrap().compile_matcher(),
                 )

@@ -225,11 +225,11 @@ pub struct FixRecord<'a> {
 
 /// One member's resolved release lifecycle, as `doctor --format json` reports
 /// it — additive alongside the numeric `packages` count, in workspace
-/// (topological) order.
+/// (topological) order. Owned so doctor's report can hold it directly.
 #[derive(Serialize)]
 #[serde(rename_all = "snake_case")]
-pub struct PackageLifecycleRecord<'a> {
-    pub name: &'a str,
+pub struct PackageLifecycleRecord {
+    pub name: String,
     pub lifecycle: crate::config::ReleaseLifecycle,
 }
 
@@ -258,7 +258,7 @@ pub struct DoctorDocument<'a> {
     pub applied: Vec<FixRecord<'a>>,
     /// Additive: each member's resolved lifecycle, alongside the (retained)
     /// numeric `packages` count above.
-    pub package_lifecycles: Vec<PackageLifecycleRecord<'a>>,
+    pub package_lifecycles: &'a [PackageLifecycleRecord],
 }
 
 impl DoctorDocument<'_> {

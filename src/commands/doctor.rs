@@ -144,15 +144,14 @@ struct Report {
     /// severity when printing; the JSON payload preserves this order.
     findings: Vec<Finding>,
     fixes: Vec<Fix>,
-    packages: usize,
     /// No [tools.trellis] anywhere; the root was inferred from git.
     configless: bool,
     /// `members` is not configured; the member list came from git.
     auto_members: bool,
     /// Every member's resolved lifecycle, in workspace (topological) order —
-    /// the source for both the text summary's counts and the JSON payload's
-    /// `package_lifecycles`.
-    package_lifecycles: Vec<(String, crate::config::ReleaseLifecycle)>,
+    /// the source for the text summary's counts, the JSON payload's
+    /// `package_lifecycles`, and the package count.
+    package_lifecycles: Vec<PackageLifecycleRecord>,
 }
 
 impl Report {
@@ -171,6 +170,9 @@ impl Report {
     fn count(&self, severity: Severity) -> usize {
         self.of_severity(severity).count()
     }
+    fn packages(&self) -> usize {
+        self.package_lifecycles.len()
+    }
 }
 
 /// Load the workspace and run every check, collecting findings and the fixes
@@ -183,13 +185,15 @@ fn inspect(root: &Path) -> Result<Report> {
     };
 
     if let Some(workspace) = &workspace {
-        report.packages = workspace.members.len();
         report.configless = workspace.configless;
         report.auto_members = workspace.config.members.is_none();
         report.package_lifecycles = workspace
             .members
             .iter()
-            .map(|member| (member.name.clone(), member.lifecycle))
+            .map(|member| PackageLifecycleRecord {
+                name: member.name.clone(),
+                lifecycle: member.lifecycle,
+            })
             .collect();
         check_exclusions(workspace, &mut report);
         check_tag_collisions(workspace, &mut report);
@@ -276,12 +280,12 @@ fn print_findings(report: &Report) {
         crate::status!(
             "note: no [tools.trellis] configuration found; workspace root inferred from git, \
              {} member(s) auto-discovered",
-            report.packages
+            report.packages()
         );
     } else if report.auto_members {
         crate::status!(
             "note: `members` is not configured; {} member(s) auto-discovered from git",
-            report.packages
+            report.packages()
         );
     }
     for warning in report.of_severity(Severity::Warning) {
@@ -302,20 +306,13 @@ fn finish(report: &Report, applied: &[Fix], format: DoctorFormat) -> Result<bool
             let document = DoctorDocument {
                 schema: DoctorDocument::SCHEMA,
                 ok,
-                packages: report.packages,
+                packages: report.packages(),
                 configless: report.configless,
                 auto_members: report.auto_members,
                 findings: &report.findings,
                 fixes: report.fixes.iter().map(Fix::record).collect(),
                 applied: applied.iter().map(Fix::record).collect(),
-                package_lifecycles: report
-                    .package_lifecycles
-                    .iter()
-                    .map(|(name, lifecycle)| PackageLifecycleRecord {
-                        name,
-                        lifecycle: *lifecycle,
-                    })
-                    .collect(),
+                package_lifecycles: &report.package_lifecycles,
             };
             println!("{}", serde_json::to_string_pretty(&document)?);
         }
@@ -326,30 +323,25 @@ fn finish(report: &Report, applied: &[Fix], format: DoctorFormat) -> Result<bool
 
 fn print_summary(report: &Report, ok: bool) {
     let warnings = report.count(Severity::Warning);
-    // Compact lifecycle counts, always in `workspace, git_only, hex` order,
-    // so a reader can scan the same position across workspaces rather than
-    // parsing which label is which.
-    use crate::config::ReleaseLifecycle;
-    let lifecycles = [
-        ReleaseLifecycle::Workspace,
-        ReleaseLifecycle::GitOnly,
-        ReleaseLifecycle::Hex,
-    ]
-    .map(|lifecycle| {
-        let count = report
-            .package_lifecycles
-            .iter()
-            .filter(|(_, l)| *l == lifecycle)
-            .count();
-        format!("{count} {}", lifecycle.key())
-    })
-    .join(", ");
+    // Compact lifecycle counts, always in `ReleaseLifecycle::ALL` order, so a
+    // reader can scan the same position across workspaces rather than parsing
+    // which label is which.
+    let lifecycles = crate::config::ReleaseLifecycle::ALL
+        .map(|lifecycle| {
+            let count = report
+                .package_lifecycles
+                .iter()
+                .filter(|record| record.lifecycle == lifecycle)
+                .count();
+            format!("{count} {}", lifecycle.key())
+        })
+        .join(", ");
     if ok {
         // The JSON field behind this count is still `members` — renaming a
         // stable key would bump `trellis.doctor/1`, so it waits for 1.0.
         crate::status!(
             "ok: {} package(s) ({lifecycles}), {warnings} warning(s)",
-            report.packages
+            report.packages()
         );
     } else {
         crate::status!(
@@ -519,7 +511,7 @@ fn check_tool_versions(workspace: &Workspace, report: &mut Report) {
 
 /// Check 6: every exclusion glob matches at least one member (catches typos),
 /// and no member's runtime distribution would depend on a package unavailable
-/// in it — see [`ReleaseLifecycle`]'s ordering.
+/// in it — see [`crate::config::ReleaseLifecycle::available_to`].
 fn check_exclusions(workspace: &Workspace, report: &mut Report) {
     for (task, patterns) in &workspace.config.exclude {
         for pattern in patterns {
@@ -557,18 +549,17 @@ fn check_exclusions(workspace: &Workspace, report: &mut Report) {
     for (idx, member) in workspace.members.iter().enumerate() {
         for &dep in workspace.runtime_deps_of(idx) {
             let dep = &workspace.members[dep];
-            if dep.lifecycle < member.lifecycle {
+            if !dep.lifecycle.available_to(member.lifecycle) {
                 report.push(
                     Finding::error(
                         Check::ReleaseBoundary,
                         format!(
-                            "package `{}` (lifecycle `{}`) path-depends on `{}` (lifecycle \
-                             `{}`), which is unavailable in `{}`'s distribution",
+                            "package `{0}` (lifecycle `{1}`) path-depends on `{2}` (lifecycle \
+                             `{3}`), which is unavailable in `{0}`'s distribution",
                             member.name,
                             member.lifecycle.key(),
                             dep.name,
                             dep.lifecycle.key(),
-                            member.name
                         ),
                     )
                     .at(format!("{}/gleam.toml", member.rel_path))

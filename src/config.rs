@@ -118,7 +118,14 @@ fn deserialize_collecting_unknown(trellis: &toml::Value) -> Result<(ConfigFile, 
 /// than by trellis: task names, `exclude` selectors, tag-mode names, and
 /// `publish.lifecycle.packages` globs. A hyphen in one of those is the user's
 /// own naming (or a directory name inside a glob), not a stale spelling.
-const FREE_FORM_TABLES: [&str; 4] = ["exclude", "tasks", "tag_mode_overrides", "packages"];
+/// Entries are full snake-cased dotted paths, so a schema table that happens
+/// to share a segment name (`packages`, say) is not silently exempted.
+const FREE_FORM_TABLES: [&str; 4] = [
+    "exclude",
+    "tasks",
+    "publish.tag_mode_overrides",
+    "publish.lifecycle.packages",
+];
 
 /// Find the keys still spelled the pre-0.8 kebab-case way.
 ///
@@ -156,7 +163,7 @@ fn walk_schema_keys(value: &toml::Value, path: &mut String, visit: &mut impl FnM
         }
         path.push_str(key);
         visit(path, key);
-        if FREE_FORM_TABLES.contains(&snake_case(key).as_str()) {
+        if FREE_FORM_TABLES.contains(&snake_case(path).as_str()) {
             // The next level down is user-named; the one after that is ours.
             if let Some(entries) = value.as_table() {
                 for (name, value) in entries {
@@ -257,23 +264,11 @@ impl Default for PublishConfig {
 /// Replaces the old binary `@release` boundary with three states, so a
 /// monorepo can hold packages at different maturity levels without moving
 /// directories: build-and-test-only packages, packages versioned and tagged
-/// in git but never published, and fully published packages. Ordered from
-/// least to most capable — `dependency >= dependent` in this order is exactly
-/// the rule [`crate::commands::doctor`]'s `release_boundary` check enforces
-/// for runtime path dependencies.
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Default,
-    Deserialize,
-    serde::Serialize,
-    clap::ValueEnum,
-)]
+/// in git but never published, and fully published packages. The states form
+/// a capability ladder — [`ReleaseLifecycle::available_to`] is the rule
+/// [`crate::commands::doctor`]'s `release_boundary` check enforces for
+/// runtime path dependencies.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ReleaseLifecycle {
     /// No changelog/version, no git tags, no Hex publish — build and test
@@ -288,6 +283,13 @@ pub enum ReleaseLifecycle {
 }
 
 impl ReleaseLifecycle {
+    /// Every lifecycle, least to most capable — the order summaries display.
+    pub const ALL: [ReleaseLifecycle; 3] = [
+        ReleaseLifecycle::Workspace,
+        ReleaseLifecycle::GitOnly,
+        ReleaseLifecycle::Hex,
+    ];
+
     /// The configuration spelling, for messages that quote it back.
     pub fn key(self) -> &'static str {
         match self {
@@ -295,6 +297,23 @@ impl ReleaseLifecycle {
             ReleaseLifecycle::GitOnly => "git_only",
             ReleaseLifecycle::Hex => "hex",
         }
+    }
+
+    /// Position on the capability ladder; higher reaches further through the
+    /// release pipeline.
+    fn rank(self) -> u8 {
+        match self {
+            ReleaseLifecycle::Workspace => 0,
+            ReleaseLifecycle::GitOnly => 1,
+            ReleaseLifecycle::Hex => 2,
+        }
+    }
+
+    /// True when a package at this lifecycle is present in the distribution of
+    /// a dependent at `dependent`'s lifecycle — a dependency must be at least
+    /// as capable as its dependent.
+    pub fn available_to(self, dependent: ReleaseLifecycle) -> bool {
+        self.rank() >= dependent.rank()
     }
 }
 

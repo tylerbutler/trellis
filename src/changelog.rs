@@ -8,12 +8,22 @@
 //! rendered shape is configurable without a second tool.
 
 use crate::config::{Bump, ChangelogConfig, KindConfig};
-use crate::workspace::Workspace;
+use crate::workspace::{Member, Workspace};
 use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 use std::path::PathBuf;
 
 // ---- fragments -------------------------------------------------------------
+
+/// Why a non-releasable member can never take a changelog entry — quoted by
+/// both `changelog new` and fragment validation, so the wording stays one.
+pub fn no_changelog_reason(member: &Member) -> String {
+    format!(
+        "package `{}` has release lifecycle `{}`, so it never gets a changelog entry",
+        member.name,
+        member.lifecycle.key()
+    )
+}
 
 #[derive(Debug, Clone)]
 pub struct Fragment {
@@ -145,10 +155,8 @@ pub fn load_fragments(workspace: &Workspace) -> Result<Fragments> {
             Some(idx) if workspace.members[idx].releasable() => {}
             Some(idx) => {
                 result.problems.push(blame(format!(
-                    "fragment `{display}`: package `{}` has release lifecycle `{}`, so it \
-                     never gets a changelog entry",
-                    raw.package,
-                    workspace.members[idx].lifecycle.key()
+                    "fragment `{display}`: {}",
+                    no_changelog_reason(&workspace.members[idx])
                 )));
                 continue;
             }

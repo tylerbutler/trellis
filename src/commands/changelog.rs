@@ -31,9 +31,8 @@ pub fn new_fragment(
                 .with_context(|| format!("unknown package `{name}`"))?;
             if !workspace.members[idx].releasable() {
                 bail!(
-                    "package `{name}` has release lifecycle `{}`, so it never gets a changelog \
-                     entry",
-                    workspace.members[idx].lifecycle.key()
+                    "{}",
+                    changelog::no_changelog_reason(&workspace.members[idx])
                 );
             }
             name
