@@ -10,6 +10,7 @@ expression: "json_output(&fixture(\"basic\"), &[\"list\", \"--json\"], true)"
         "lat_mid",
         "lat_cli"
       ],
+      "lifecycle": "hex",
       "name": "lat_core",
       "path": "packages/lat_core",
       "releasable": true,
@@ -22,6 +23,7 @@ expression: "json_output(&fixture(\"basic\"), &[\"list\", \"--json\"], true)"
       "dependents": [
         "lat_cli"
       ],
+      "lifecycle": "hex",
       "name": "lat_mid",
       "path": "packages/lat_mid",
       "releasable": true,
@@ -35,6 +37,7 @@ expression: "json_output(&fixture(\"basic\"), &[\"list\", \"--json\"], true)"
       "dependents": [
         "package_a"
       ],
+      "lifecycle": "hex",
       "name": "lat_cli",
       "path": "packages/lat_cli",
       "releasable": true,
@@ -45,6 +48,7 @@ expression: "json_output(&fixture(\"basic\"), &[\"list\", \"--json\"], true)"
         "lat_cli"
       ],
       "dependents": [],
+      "lifecycle": "workspace",
       "name": "package_a",
       "path": "examples/package-a",
       "releasable": false,

@@ -1,0 +1,5 @@
+component: ci
+kind: Added
+body: |-
+  **`trellis ci` treats `git_only` and `hex` packages as releasable and excludes `workspace` packages from release outputs.** `ci matrix --releasable`, `releasable`, `version_files`, exact tags, series tags, and tag-to-package resolution now follow the resolved lifecycle without changing their existing output shapes.
+time: 2026-07-31T23:03:32.015056000-07:00

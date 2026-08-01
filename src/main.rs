@@ -93,7 +93,7 @@ struct Cli {
 enum Command {
     /// List packages in topological order (dependencies first)
     List {
-        /// Emit JSON instead of names
+        /// Emit JSON instead of name/lifecycle columns
         #[arg(long)]
         json: bool,
         /// Only packages owning files changed since this git ref
@@ -102,7 +102,7 @@ enum Command {
         /// Add the reverse-dependency closure of the selection
         #[arg(long)]
         with_dependents: bool,
-        /// Only packages that participate in releases (excludes `@release` matches)
+        /// Only packages whose release lifecycle is `git_only` or `hex`
         #[arg(long)]
         releasable: bool,
     },
@@ -224,12 +224,12 @@ enum Command {
     /// Publish packages to Hex, in dependency order, with path deps rewritten
     Publish {
         /// A single package to publish
-        #[arg(add = completion::releasable_packages())]
+        #[arg(add = completion::hex_packages())]
         package: Option<String>,
         /// Resolve a pushed tag (e.g. lat_core-v1.2.0) to its package
         #[arg(long, conflicts_with = "package")]
         tag: Option<String>,
-        /// Every releasable package whose version isn't on Hex yet
+        /// Every `hex`-lifecycle package whose version isn't on Hex yet
         #[arg(long, conflicts_with_all = ["package", "tag"])]
         all_untagged: bool,
         /// Show what would be published (and rewritten) without doing it

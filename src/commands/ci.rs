@@ -53,19 +53,19 @@ pub fn outputs(workspace: &Workspace) -> Result<()> {
     let releasable: Vec<&str> = workspace
         .members
         .iter()
-        .filter(|m| m.releasable)
+        .filter(|m| m.releasable())
         .map(|m| m.name.as_str())
         .collect();
     let version_files: Vec<String> = workspace
         .members
         .iter()
-        .filter(|m| m.releasable)
+        .filter(|m| m.releasable())
         .map(|m| format!("{}/gleam.toml", m.rel_path))
         .collect();
     let tags: Vec<String> = workspace
         .members
         .iter()
-        .filter(|m| m.releasable && m.tag_mode.includes_exact())
+        .filter(|m| m.releasable() && m.tag_mode.includes_exact())
         .map(|m| workspace.config.format_tag(&m.name, m.version()))
         .collect();
     // Deduplicated: a repository-wide series tag is one tag, however many
@@ -74,7 +74,7 @@ pub fn outputs(workspace: &Workspace) -> Result<()> {
     for member in workspace
         .members
         .iter()
-        .filter(|m| m.releasable && m.tag_mode.includes_series())
+        .filter(|m| m.releasable() && m.tag_mode.includes_series())
     {
         if let Some(tag) = workspace
             .config

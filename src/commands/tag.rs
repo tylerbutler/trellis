@@ -74,7 +74,7 @@ pub(crate) fn plan_tags(workspace: &Workspace) -> Result<Vec<PlannedTag>> {
         .members
         .iter()
         .zip(0..)
-        .filter(|(member, _)| member.releasable)
+        .filter(|(member, _)| member.releasable())
     {
         if member.tag_mode.includes_exact() {
             let tag = workspace.config.format_tag(&member.name, member.version());
@@ -537,7 +537,7 @@ fn candidates(
         .members
         .iter()
         .zip(0..)
-        .filter(|(member, _)| member.releasable && wanted(member.tag_mode))
+        .filter(|(member, _)| member.releasable() && wanted(member.tag_mode))
         .map(|(member, index)| (index, member.name.as_str()))
         .collect()
 }

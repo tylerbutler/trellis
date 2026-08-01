@@ -25,7 +25,7 @@ fn list_prints_members_in_topological_order() {
         .arg("list")
         .assert()
         .success()
-        .stdout("lat_core\nlat_mid\nlat_cli\npackage_a\n");
+        .stdout("lat_core   hex\nlat_mid    hex\nlat_cli    hex\npackage_a  workspace\n");
 }
 
 #[test]
@@ -34,7 +34,7 @@ fn list_works_from_inside_a_package() {
         .arg("list")
         .assert()
         .success()
-        .stdout(predicate::str::starts_with("lat_core\n"));
+        .stdout(predicate::str::starts_with("lat_core"));
 }
 
 #[test]
@@ -43,7 +43,7 @@ fn list_releasable_excludes_release_excluded_members() {
         .args(["list", "--releasable"])
         .assert()
         .success()
-        .stdout("lat_core\nlat_mid\nlat_cli\n");
+        .stdout("lat_core  hex\nlat_mid   hex\nlat_cli   hex\n");
 }
 
 #[test]
@@ -60,10 +60,12 @@ fn list_json_includes_graph_facts() {
     let mid = items.iter().find(|i| i["name"] == "lat_mid").unwrap();
     assert_eq!(mid["version"], "0.5.0");
     assert_eq!(mid["path"], "packages/lat_mid");
+    assert_eq!(mid["lifecycle"], "hex");
     assert_eq!(mid["releasable"], true);
     assert_eq!(mid["dependencies"], serde_json::json!(["lat_core"]));
     assert_eq!(mid["dependents"], serde_json::json!(["lat_cli"]));
     let package_a = items.iter().find(|i| i["name"] == "package_a").unwrap();
+    assert_eq!(package_a["lifecycle"], "workspace");
     assert_eq!(package_a["releasable"], false);
 }
 
@@ -471,7 +473,7 @@ fn global_flags_are_accepted_after_the_subcommand() {
         .args(["list", "--verbose", "--color", "never", "--no-update-check"])
         .assert()
         .success()
-        .stdout("lat_core\nlat_mid\nlat_cli\npackage_a\n");
+        .stdout("lat_core   hex\nlat_mid    hex\nlat_cli    hex\npackage_a  workspace\n");
 }
 
 #[test]
@@ -587,7 +589,9 @@ fn doctor_flags_releasable_dep_on_unreleasable_member() {
         .arg("doctor")
         .assert()
         .failure()
-        .stdout(predicate::str::contains("will never exist on Hex"));
+        .stdout(predicate::str::contains(
+            "which is unavailable in `app`'s distribution",
+        ));
 }
 
 #[test]
@@ -642,7 +646,9 @@ fn doctor_fix_seeds_missing_changelog() {
         .arg("doctor")
         .assert()
         .success()
-        .stdout(predicate::str::contains("ok: 1 package(s), 0 warning(s)"));
+        .stdout(predicate::str::contains(
+            "ok: 1 package(s) (0 workspace, 0 git_only, 1 hex), 0 warning(s)",
+        ));
 }
 
 /// A CHANGELOG.md that trellis never batched would be regenerated away on the
@@ -688,7 +694,9 @@ fn doctor_fix_adopts_unbatched_changelog_history() {
         .arg("doctor")
         .assert()
         .success()
-        .stdout(predicate::str::contains("ok: 1 package(s), 0 warning(s)"));
+        .stdout(predicate::str::contains(
+            "ok: 1 package(s) (0 workspace, 0 git_only, 1 hex), 0 warning(s)",
+        ));
 }
 
 #[test]
@@ -1186,13 +1194,13 @@ fn since_selects_changed_packages_and_dependents() {
         .args(["list", "--since", "main"])
         .assert()
         .success()
-        .stdout("lat_mid\n");
+        .stdout("lat_mid  hex\n");
 
     trellis(root)
         .args(["list", "--since", "main", "--with-dependents"])
         .assert()
         .success()
-        .stdout("lat_mid\nlat_cli\npackage_a\n");
+        .stdout("lat_mid    hex\nlat_cli    hex\npackage_a  workspace\n");
 
     // Uncommitted changes count too.
     write(&root.join("packages/lat_core/src/wip.gleam"), "// wip\n");
@@ -1200,7 +1208,7 @@ fn since_selects_changed_packages_and_dependents() {
         .args(["list", "--since", "main"])
         .assert()
         .success()
-        .stdout("lat_core\nlat_mid\n");
+        .stdout("lat_core  hex\nlat_mid   hex\n");
 }
 
 // ---- version ---------------------------------------------------------
@@ -1323,7 +1331,7 @@ fn an_unrecognized_config_key_warns_but_still_loads() {
         .arg("list")
         .assert()
         .success()
-        .stdout("a\nb\n");
+        .stdout("a  hex\nb  hex\n");
 }
 
 #[test]

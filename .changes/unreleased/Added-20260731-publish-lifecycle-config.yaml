@@ -1,0 +1,7 @@
+component: publish
+kind: Added
+body: |-
+  **`[tools.trellis.publish.lifecycle]` gives each package a release lifecycle: `workspace`, `git_only`, or `hex` (the default).** `workspace` packages never get a changelog entry, a version bump, a git tag, or a Hex publish; `git_only` packages get all of those except the Hex publish; `hex` packages get the full pipeline. Configure a `default` and per-package `packages = { "glob/**" = "state" }` overrides, matched against member paths — a member matched by globs resolving to different states is a doctor error, but globs agreeing on the same state are fine.
+
+    The legacy `exclude.@release` key keeps working: a match there still resolves to `workspace`, unless an explicit `publish.lifecycle.packages` rule for that member says otherwise, which lets a package graduate from `workspace` to `git_only` to `hex` without moving directories or rewriting the exclusion. `--releasable` keeps meaning `git_only` **or** `hex`; `publish` alone narrows further, since only `hex` packages ever reach Hex — naming a `workspace` or `git_only` package with `--package` or `--tag`, or leaving one out of the path-dependency rewrite map, now fails with a message naming the package's actual lifecycle instead of a generic `@release` exclusion.
+time: 2026-07-31T23:03:32.015056000-07:00
