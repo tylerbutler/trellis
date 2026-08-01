@@ -192,6 +192,10 @@ retry = { attempts = 5, initial_delay = "30s", multiplier = 2 }
 default = "hex"
 packages = { "packages/experimental/**" = "workspace", "packages/providers/**" = "git_only" }
 
+[tools.trellis.publish.repository_series]
+package = "lattice_cli"
+format = "v{series}"
+
 [tools.trellis.changelog]
 # Native engine (§7): fragments in <dir>/unreleased/, version sections in
 # <dir>/<package>/, per-package CHANGELOG.md assembled from them. All
@@ -428,6 +432,15 @@ trellis lockfile refresh [--package <pkg>]
   resolves it, so CI can route on it), and a `series`-only workspace releases
   through `--all-untagged` rather than a tag-push trigger. `tag_mode` sets the
   lifecycle for the workspace; `tag_mode_overrides` sets it per member.
+- A **repository series tag** is separate repository metadata, anchored to one
+  releasable package and independent of package `tag_mode`. Its current series
+  comes from the anchor's stable manifest version. An existing tag moves only
+  when that manifest version differs from the anchor manifest stored at the
+  tag; exact package tags are not a release signal. Entering a new series
+  creates a new tag and preserves the old one. Repository tags are mutable,
+  get no GitHub Release, and never participate in `publish --tag` or
+  `ci tag-package` resolution. The `{name}`-less `series_tag_format` remains a
+  legacy package-series behavior with its ambiguity warning.
 - `publish` performs, per package:
   1. **Idempotency check** — query Hex once; skip if this exact version is already
      published (makes re-runs of a partially failed release safe).

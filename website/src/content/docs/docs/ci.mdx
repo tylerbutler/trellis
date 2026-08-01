@@ -87,7 +87,8 @@ Read `packages`; the alias goes away at 1.0.
 `tags` lists the immutable per-version tags and `series_tags` the moving ones,
 each covering only the packages whose
 [`tag_mode`](/docs/configuration/#series-tags) creates that kind — so a
-`series`-only workspace reports an empty `tags`.
+`series`-only workspace reports an empty `tags`. Repository series tags are
+deliberately absent from both outputs because they do not identify packages.
 
 Both `ci matrix` and `ci outputs` are shaped by GitHub rather than by trellis,
 which is why neither carries the `schema` field every other payload does — see

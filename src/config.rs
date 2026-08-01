@@ -232,6 +232,9 @@ pub struct PublishConfig {
     /// member matching globs under two different modes is an error.
     #[serde(default, alias = "tag-mode-overrides")]
     pub tag_mode_overrides: BTreeMap<String, Vec<String>>,
+    /// One moving repository tag, with its series and release signal taken
+    /// from the named package. Independent of package tag modes.
+    pub repository_series: Option<RepositorySeriesConfig>,
     /// How a path dep is rewritten to a Hex requirement at publish time.
     #[serde(default, alias = "path-dep-requirement")]
     pub path_dep_requirement: PathDepRequirement,
@@ -252,11 +255,21 @@ impl Default for PublishConfig {
             series_tag_format: default_series_tag_format(),
             tag_mode: TagMode::default(),
             tag_mode_overrides: BTreeMap::new(),
+            repository_series: None,
             path_dep_requirement: PathDepRequirement::default(),
             retry: RetryConfig::default(),
             lifecycle: LifecycleConfig::default(),
         }
     }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct RepositorySeriesConfig {
+    /// Package whose stable manifest version determines the repository series.
+    pub package: String,
+    /// Repository tag template; `{series}` is substituted.
+    pub format: String,
 }
 
 /// How much of the release pipeline a member participates in.
@@ -717,6 +730,23 @@ impl ConfigFile {
                 self.publish.series_tag_format
             );
         }
+        if let Some(repository_series) = &self.publish.repository_series {
+            if !repository_series.format.contains("{series}") {
+                bail!(
+                    "`repository_series.format` `{}` has no {{series}} placeholder",
+                    repository_series.format
+                );
+            }
+            // `{series}` is the template's only placeholder; a `{name}` would
+            // be written into the tag literally.
+            if repository_series.format.contains("{name}") {
+                bail!(
+                    "`repository_series.format` `{}` cannot contain {{name}}; \
+                     the tag is repository-wide, not per-package",
+                    repository_series.format
+                );
+            }
+        }
         let dependency_kind = &self.changelog.dependency_kind;
         if !self
             .changelog
@@ -766,6 +796,13 @@ impl ConfigFile {
     /// series-mode member rather than one per package.
     pub fn series_tag_is_repo_wide(&self) -> bool {
         !self.publish.series_tag_format.contains("{name}")
+    }
+
+    /// The anchored repository tag for `version`, or `None` when the feature
+    /// is unconfigured or the anchor is on a prerelease.
+    pub fn format_repository_series_tag(&self, version: &str) -> Option<String> {
+        let repository_series = self.publish.repository_series.as_ref()?;
+        series_of(version).map(|series| repository_series.format.replace("{series}", &series))
     }
 }
 
@@ -1363,6 +1400,63 @@ mod tests {
         )
         .unwrap_err();
         assert!(format!("{err:#}").contains("{series}"), "{err:#}");
+    }
+
+    #[test]
+    fn parses_and_formats_repository_series() {
+        let config = ConfigFile::from_gleam_toml(
+            r#"
+            [tools.trellis.publish.repository_series]
+            package = "core"
+            format = "v{series}"
+            "#,
+        )
+        .unwrap();
+        let repository_series = config.publish.repository_series.as_ref().unwrap();
+        assert_eq!(repository_series.package, "core");
+        assert_eq!(repository_series.format, "v{series}");
+        assert_eq!(
+            config.format_repository_series_tag("0.4.3").as_deref(),
+            Some("v0.4")
+        );
+        assert_eq!(config.format_repository_series_tag("0.4.3-rc.1"), None);
+    }
+
+    #[test]
+    fn repository_series_is_optional() {
+        let config = ConfigFile::from_gleam_toml("[tools.trellis]").unwrap();
+        assert!(config.publish.repository_series.is_none());
+        assert_eq!(config.format_repository_series_tag("1.2.3"), None);
+    }
+
+    #[test]
+    fn repository_series_format_must_carry_the_series_placeholder() {
+        let err = ConfigFile::from_gleam_toml(
+            r#"
+            [tools.trellis.publish.repository_series]
+            package = "core"
+            format = "latest"
+            "#,
+        )
+        .unwrap_err();
+        let message = format!("{err:#}");
+        assert!(message.contains("`repository_series.format`"), "{message}");
+        assert!(message.contains("{series}"), "{message}");
+    }
+
+    #[test]
+    fn repository_series_format_rejects_the_name_placeholder() {
+        let err = ConfigFile::from_gleam_toml(
+            r#"
+            [tools.trellis.publish.repository_series]
+            package = "core"
+            format = "{name}-v{series}"
+            "#,
+        )
+        .unwrap_err();
+        let message = format!("{err:#}");
+        assert!(message.contains("`repository_series.format`"), "{message}");
+        assert!(message.contains("{name}"), "{message}");
     }
 
     #[test]

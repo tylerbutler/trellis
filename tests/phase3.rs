@@ -182,7 +182,7 @@ fn tag_plan_lists_untagged_versions_and_create_tags_them() {
         .unwrap();
     assert!(output.status.success());
     let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(document["schema"], "trellis.tag_plan/1");
+    assert_eq!(document["schema"], "trellis.tag_plan/2");
     let plan = document["tags"].as_array().unwrap();
     let names: Vec<&str> = plan.iter().map(|p| p["name"].as_str().unwrap()).collect();
     // package_a is @release-excluded; lat_core already tagged.
@@ -605,6 +605,11 @@ fn publish_rejects_unreleasable_package() {
 
 // ---- series tags -----------------------------------------------------------
 
+/// The repository-series config the tag tests share: `lat_cli` anchoring
+/// `repo-v{series}`.
+const REPO_SERIES: &str = "[tools.trellis.publish.repository_series]\n\
+     package = \"lat_cli\"\nformat = \"repo-v{series}\"";
+
 /// A bare repository added to `root`'s repo as `origin`. The returned remote
 /// must outlive the test.
 fn bare_origin(root: &Path) -> tempfile::TempDir {
@@ -655,7 +660,12 @@ fn git_stdout(dir: &Path, args: &[&str]) -> String {
         .current_dir(dir)
         .output()
         .unwrap();
-    assert!(output.status.success(), "git {args:?} failed");
+    assert!(
+        output.status.success(),
+        "git {args:?} failed in {}: {}",
+        dir.display(),
+        String::from_utf8_lossy(&output.stderr)
+    );
     String::from_utf8_lossy(&output.stdout).trim().to_string()
 }
 
@@ -932,6 +942,285 @@ fn doctor_warns_about_a_repo_wide_series_tag_whatever_the_versions() {
         .assert()
         .success()
         .stdout(predicate::str::contains("has no {name}"));
+}
+
+#[test]
+fn repository_series_moves_only_when_the_anchor_manifest_version_changes() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let _remote = series_repo(root, &format!("tag_mode = \"exact\"\n{REPO_SERIES}"));
+
+    trellis(root)
+        .args(["tag", "create"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("tagged repo-v0.3"));
+    let first = commit_of(root, "repo-v0.3");
+
+    set_version(root, "lat_mid", "0.5.1");
+    git(root, &["commit", "-qam", "release only lat_mid"]);
+    trellis(root)
+        .args(["tag", "plan"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("repo-v0.3").not());
+    trellis(root).args(["tag", "create"]).assert().success();
+    assert_eq!(commit_of(root, "repo-v0.3"), first);
+
+    set_version(root, "lat_cli", "0.3.2");
+    git(root, &["commit", "-qam", "release anchor"]);
+    let output = trellis(root)
+        .args(["tag", "plan", "--json"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let repository = document["tags"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|tag| tag["tag"] == "repo-v0.3")
+        .unwrap();
+    assert_eq!(repository["name"], "lat_cli");
+    assert_eq!(repository["version"], "0.3.2");
+    assert_eq!(repository["kind"], "repository_series");
+    assert_eq!(repository["action"], "move");
+}
+
+#[test]
+fn repository_series_transition_keeps_the_old_tag_and_skips_prereleases() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let _remote = series_repo(root, REPO_SERIES);
+    trellis(root).args(["tag", "create"]).assert().success();
+    let old = commit_of(root, "repo-v0.3");
+
+    set_version(root, "lat_cli", "0.4.0-rc.1");
+    git(root, &["commit", "-qam", "anchor prerelease"]);
+    trellis(root).args(["tag", "create"]).assert().success();
+    assert!(!git_stdout(root, &["tag", "--list"]).contains("repo-v0.4"));
+
+    set_version(root, "lat_cli", "0.4.0");
+    git(root, &["commit", "-qam", "anchor stable"]);
+    trellis(root).args(["tag", "create"]).assert().success();
+    assert_eq!(commit_of(root, "repo-v0.3"), old);
+    assert_eq!(commit_of(root, "repo-v0.4"), commit_of(root, "HEAD"));
+}
+
+#[test]
+fn repository_series_uses_committed_anchor_version_not_worktree_edits() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let _remote = series_repo(root, REPO_SERIES);
+    trellis(root).args(["tag", "create"]).assert().success();
+    let tagged = commit_of(root, "repo-v0.3");
+
+    set_version(root, "lat_cli", "0.4.0");
+    trellis(root)
+        .args(["tag", "plan"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("repo-v0.4").not());
+    assert_eq!(commit_of(root, "repo-v0.3"), tagged);
+}
+
+#[test]
+fn repository_series_fetches_a_remote_only_tag_before_planning_a_push() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let remote = series_repo(root, REPO_SERIES);
+    trellis(root)
+        .args(["tag", "create", "--push"])
+        .assert()
+        .success();
+    let original = git_stdout(root, &["ls-remote", "origin", "refs/tags/repo-v0.3^{}"]);
+    git(root, &["tag", "-d", "repo-v0.3"]);
+    git(root, &["commit", "-q", "--allow-empty", "-m", "unrelated"]);
+
+    trellis(root)
+        .args(["tag", "create", "--push"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("force-pushed repo-v0.3").not());
+    assert!(
+        original.starts_with(&commit_of(root, "repo-v0.3")),
+        "{original}"
+    );
+    assert_eq!(
+        git_stdout(root, &["ls-remote", "origin", "refs/tags/repo-v0.3^{}"]),
+        original
+    );
+    drop(remote);
+}
+
+#[test]
+fn repository_series_refuses_to_move_a_newer_remote_tag_backward() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let _remote = series_repo(root, REPO_SERIES);
+    trellis(root)
+        .args(["tag", "create", "--push"])
+        .assert()
+        .success();
+    let old_commit = commit_of(root, "HEAD");
+
+    set_version(root, "lat_cli", "0.3.2");
+    git(root, &["commit", "-qam", "anchor 0.3.2"]);
+    trellis(root)
+        .args(["tag", "create", "--push"])
+        .assert()
+        .success();
+    let remote_new = git_stdout(root, &["ls-remote", "origin", "refs/tags/repo-v0.3^{}"]);
+
+    git(root, &["checkout", "-q", &old_commit]);
+    git(root, &["tag", "-f", "repo-v0.3", &old_commit]);
+    trellis(root)
+        .args(["tag", "create", "--push"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "origin is anchored at newer lat_cli version `0.3.2`",
+        ))
+        .stderr(predicate::str::contains(
+            "refusing to move it backward to `0.3.1`",
+        ));
+    assert_eq!(
+        git_stdout(root, &["ls-remote", "origin", "refs/tags/repo-v0.3^{}"]),
+        remote_new
+    );
+}
+
+#[test]
+fn repository_series_is_independent_of_tag_mode_and_never_resolves_as_a_package_tag() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let _remote = series_repo(
+        root,
+        "tag_mode = \"exact\"\n\
+         [tools.trellis.publish.repository_series]\n\
+         package = \"lat_core\"\nformat = \"repo-v{series}\"",
+    );
+    trellis(root).args(["tag", "create"]).assert().success();
+    assert!(git_stdout(root, &["tag", "--list"]).contains("repo-v1"));
+
+    trellis(root)
+        .args(["ci", "tag-package", "repo-v1"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("repository series tag"));
+    trellis(root)
+        .args(["publish", "--tag", "repo-v1"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("repository series tag"));
+}
+
+#[test]
+fn repository_series_anchor_and_namespace_are_validated_by_doctor() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let _remote = series_repo(
+        root,
+        "[tools.trellis.publish.repository_series]\n\
+         package = \"missing\"\nformat = \"repo-v{series}\"",
+    );
+    trellis(root)
+        .args(["doctor"])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains(
+            "repository series anchor package `missing` is not a workspace member",
+        ));
+
+    write(
+        &root.join("gleam.toml"),
+        "[tools.trellis]\nmembers = [\"packages/*\", \"examples/*\"]\n\
+         exclude = { \"@release\" = [\"examples/*\"] }\n\
+         [tools.trellis.publish.repository_series]\n\
+         package = \"package_a\"\nformat = \"repo-v{series}\"\n",
+    );
+    trellis(root)
+        .args(["doctor"])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains(
+            "repository series anchor package `package_a` is excluded from release",
+        ));
+
+    write(
+        &root.join("gleam.toml"),
+        "[tools.trellis]\nmembers = [\"packages/*\", \"examples/*\"]\n\
+         exclude = { \"@release\" = [\"examples/*\"] }\n\
+         [tools.trellis.publish]\ntag_format = \"repo-v{version}\"\n\
+         [tools.trellis.publish.repository_series]\n\
+         package = \"lat_core\"\nformat = \"repo-v{series}.0.0\"\n",
+    );
+    set_version(root, "lat_core", "1.0.0");
+    trellis(root)
+        .args(["doctor"])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("tag collision"))
+        .stdout(predicate::str::contains("repo-v1.0.0"));
+    trellis(root)
+        .args(["tag", "create"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "collides with a package tag namespace",
+        ));
+}
+
+#[test]
+fn repository_series_is_force_pushed_and_gets_no_github_release() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let _remote = series_repo(root, REPO_SERIES);
+    let api = common::mock_github(root);
+    trellis_github(root, &api)
+        .args(["tag", "create", "--github-release"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("pushed repo-v0.3"));
+
+    set_version(root, "lat_cli", "0.3.2");
+    git(root, &["commit", "-qam", "anchor release"]);
+    trellis_github(root, &api)
+        .args(["tag", "create", "--github-release"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("force-pushed repo-v0.3"));
+    let remote_peeled = git_stdout(root, &["ls-remote", "origin", "refs/tags/repo-v0.3^{}"]);
+    assert!(
+        remote_peeled.starts_with(&commit_of(root, "HEAD")),
+        "{remote_peeled}"
+    );
+    // A repository series tag is a moving tag, so it is never checked for or
+    // given a GitHub release, which would silently retarget on the next move.
+    let log = fs::read_to_string(root.join(".fake/github-log")).unwrap();
+    assert!(!log.contains(r#""tag_name": "repo-v0.3""#), "{log}");
+    assert!(!log.contains("/releases/tags/repo-v0.3"), "{log}");
+}
+
+#[test]
+fn repository_series_reports_an_unreadable_historical_anchor_manifest() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let _remote = series_repo(root, REPO_SERIES);
+    git(root, &["checkout", "-q", "-b", "missing-anchor"]);
+    git(root, &["rm", "-q", "packages/lat_cli/gleam.toml"]);
+    git(root, &["commit", "-qm", "remove anchor manifest"]);
+    git(root, &["tag", "-a", "repo-v0.3", "-m", "broken history"]);
+    git(root, &["checkout", "-q", "main"]);
+
+    trellis(root)
+        .args(["tag", "plan"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "cannot read repository series anchor manifest \
+             `packages/lat_cli/gleam.toml` at revision `repo-v0.3`",
+        ));
 }
 
 #[test]

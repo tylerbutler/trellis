@@ -55,6 +55,11 @@ pub struct Workspace {
     pub configless: bool,
     /// Members in topological order (dependencies before dependents).
     pub members: Vec<Member>,
+    /// Index of the repository series anchor member. `None` when the feature
+    /// is unconfigured — or, under doctor's lenient load, when the configured
+    /// anchor is missing or unreleasable (an error diagnostic either way, so
+    /// strict-loading commands never run without it).
+    pub repository_series_anchor: Option<usize>,
     /// Direct workspace dependencies, indexed like `members`.
     deps: Vec<Vec<usize>>,
     /// Direct workspace dependents, indexed like `members`.
@@ -386,6 +391,36 @@ impl Workspace {
             }
         }
 
+        if let Some(repository_series) = &config.publish.repository_series {
+            match members
+                .iter()
+                .find(|member| member.name == repository_series.package)
+            {
+                None => diagnostics.push(
+                    Finding::error(
+                        Check::WorkspaceConfig,
+                        format!(
+                            "repository series anchor package `{}` is not a workspace member",
+                            repository_series.package
+                        ),
+                    )
+                    .at(GLEAM_TOML),
+                ),
+                Some(member) if !member.releasable() => diagnostics.push(
+                    Finding::error(
+                        Check::ReleaseBoundary,
+                        format!(
+                            "repository series anchor package `{}` is excluded from release",
+                            repository_series.package
+                        ),
+                    )
+                    .at(GLEAM_TOML)
+                    .in_package(&member.name),
+                ),
+                Some(_) => {}
+            }
+        }
+
         // Resolve path dependencies between members into graph edges. Runtime
         // edges (non-dev) are also tracked separately: dev-only path deps
         // never ship in a distribution, so the lifecycle-availability check
@@ -487,11 +522,22 @@ impl Workspace {
             list.sort_unstable();
         }
 
+        let repository_series_anchor =
+            config
+                .publish
+                .repository_series
+                .as_ref()
+                .and_then(|series| {
+                    members
+                        .iter()
+                        .position(|member| member.name == series.package && member.releasable())
+                });
         let workspace = Workspace {
             root: root.to_path_buf(),
             config,
             configless,
             members,
+            repository_series_anchor,
             deps,
             dependents,
             runtime_deps,

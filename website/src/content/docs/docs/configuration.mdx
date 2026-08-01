@@ -120,6 +120,8 @@ their roots.
 | `tasks.<name>` | no | Custom tasks for `trellis run`. A task with a built-in's name (`build`, `test`, …) overrides it. `needs_deps = true` downloads dependencies first. |
 | `publish.tag_format` | no | Template for per-package git tags. Default: `{name}-v{version}`. |
 | `publish.series_tag_format` | no | Template for the moving series tag, substituting `{name}` and `{series}`. Omit `{name}` for one repository-wide tag. Default: `{name}-v{series}`. |
+| `publish.repository_series.package` | no | Anchor package for one repository-wide moving series tag. The anchor must be releasable. |
+| `publish.repository_series.format` | with `package` | Repository tag template; must contain `{series}` and no `{name}`. |
 | `publish.tag_mode` | no | Which tags a release creates: `exact` (default), `series`, or `both`. |
 | `publish.tag_mode_overrides` | no | Per-package tag modes: a map of mode name to member-path globs. A package matching globs under two modes is an error. |
 | `publish.retry` | no | Backoff for Hex rate limits: `{ attempts, initial_delay, multiplier }`. |
@@ -301,6 +303,35 @@ Release: the release would silently retarget on the next move. See
 [Publishing](/docs/publishing/#tags) for how the two lifecycles differ.
 
 </Callout>
+
+### Repository series tags
+
+For a multi-package repository consumed through Gleam 1.18 git path
+dependencies, configure one first-class repository tag instead of overloading
+the legacy `{name}`-less package format:
+
+```toml title="gleam.toml"
+[tools.trellis.publish.repository_series]
+package = "vestibule"
+format = "v{series}"
+```
+
+The anchor package determines both the series and whether the tag moves.
+Trellis compares the anchor's manifest version at `HEAD` with its manifest
+version at the existing repository tag. Changes to other packages do not move
+the tag, and package exact tags and `tag_mode` do not affect that decision. A
+series transition creates the new tag while preserving the old one;
+prereleases create no repository tag.
+
+```toml title="gleam.toml"
+[dependencies]
+vestibule = { git = "https://github.com/example/monorepo.git", ref = "v0.4", path = "packages/vestibule" }
+```
+
+Repository series tags are mutable repository metadata. They are force-pushed,
+never receive GitHub Releases, and never resolve through `publish --tag` or
+`ci tag-package`. The legacy `{name}`-less `series_tag_format` remains
+supported with its ambiguity warning.
 
 ## Changelog configuration
 

@@ -612,23 +612,39 @@ fn check_member_glob(workspace: &Workspace, label: &str, pattern: &str, report: 
 /// of what they're versioned at. Warning only on a version collision would go
 /// quiet on exactly the configurations `trellis ci tag-package` still fails on.
 fn check_tag_collisions(workspace: &Workspace, report: &mut Report) {
-    let mut seen: std::collections::HashMap<String, &str> = std::collections::HashMap::new();
+    fn insert(
+        seen: &mut std::collections::HashMap<String, String>,
+        report: &mut Report,
+        tag: String,
+        owner: String,
+        member: &crate::workspace::Member,
+    ) {
+        if let Some(other) = seen.get(&tag) {
+            report.push(
+                Finding::error(
+                    Check::TagCollision,
+                    format!("tag collision: {other} and {owner} both produce tag `{tag}`"),
+                )
+                .at(crate::workspace::GLEAM_TOML)
+                .in_package(&member.name),
+            );
+        } else {
+            seen.insert(tag, owner);
+        }
+    }
+
+    let mut seen: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+
     for member in workspace.members.iter().filter(|m| m.releasable()) {
         if member.tag_mode.includes_exact() {
             let tag = workspace.config.format_tag(&member.name, member.version());
-            if let Some(other) = seen.insert(tag.clone(), &member.name) {
-                report.push(
-                    Finding::error(
-                        Check::TagCollision,
-                        format!(
-                            "tag collision: `{other}` and `{}` both produce tag `{tag}`",
-                            member.name
-                        ),
-                    )
-                    .at(format!("{}/gleam.toml", member.rel_path))
-                    .in_package(member.name.clone()),
-                );
-            }
+            insert(
+                &mut seen,
+                report,
+                tag,
+                format!("package `{}` exact tag", member.name),
+                member,
+            );
         }
     }
 
@@ -646,27 +662,26 @@ fn check_tag_collisions(workspace: &Workspace, report: &mut Report) {
             .join(", ")
     };
 
-    if workspace.config.series_tag_is_repo_wide() {
-        if series_members.len() > 1 {
-            report.push(
-                Finding::warning(
-                    Check::TagCollision,
-                    format!(
-                        "`series_tag_format` `{}` has no {{name}}, so one repository-wide series \
-                         tag covers {}; `trellis ci tag-package` cannot resolve such a tag to one \
-                         package",
-                        workspace.config.publish.series_tag_format,
-                        names(&series_members)
-                    ),
-                )
-                .at(crate::workspace::GLEAM_TOML),
-            );
-        }
-        return;
+    let repo_wide = workspace.config.series_tag_is_repo_wide();
+    if repo_wide && series_members.len() > 1 {
+        report.push(
+            Finding::warning(
+                Check::TagCollision,
+                format!(
+                    "`series_tag_format` `{}` has no {{name}}, so one repository-wide series \
+                     tag covers {}; `trellis ci tag-package` cannot resolve such a tag to one \
+                     package",
+                    workspace.config.publish.series_tag_format,
+                    names(&series_members)
+                ),
+            )
+            .at(crate::workspace::GLEAM_TOML),
+        );
     }
 
-    let mut sharing: std::collections::BTreeMap<String, Vec<&str>> =
-        std::collections::BTreeMap::new();
+    // Members sharing a legacy `{name}`-less series tag is intentional — the
+    // ambiguity warning above covers it — so claim each such tag only once.
+    let mut legacy_claimed: std::collections::HashSet<String> = std::collections::HashSet::new();
     for member in workspace
         .members
         .iter()
@@ -676,20 +691,42 @@ fn check_tag_collisions(workspace: &Workspace, report: &mut Report) {
             .config
             .format_series_tag(&member.name, member.version())
         {
-            sharing.entry(tag).or_default().push(&member.name);
+            if repo_wide && !legacy_claimed.insert(tag.clone()) {
+                continue;
+            }
+            insert(
+                &mut seen,
+                report,
+                tag,
+                format!("package `{}` series tag", member.name),
+                member,
+            );
         }
     }
-    for (tag, members) in sharing {
-        if members.len() > 1 {
+
+    // The repository tag's collision rule is `tag create`'s namespace check:
+    // it must not look like any package's tag at any version, not merely avoid
+    // the tag strings today's versions happen to produce.
+    if let Some(index) = workspace.repository_series_anchor {
+        let anchor = &workspace.members[index];
+        if let Some(tag) = workspace
+            .config
+            .format_repository_series_tag(anchor.version())
+            && crate::commands::tag::repository_tag_collides_with_packages(workspace, &tag)
+                .unwrap_or(false)
+        {
             report.push(
                 Finding::error(
                     Check::TagCollision,
                     format!(
-                        "series tag collision: {} all produce tag `{tag}`",
-                        names(&members)
+                        "tag collision: repository series tag `{tag}` (anchored to `{}`) \
+                         occupies a package tag namespace; choose a distinct \
+                         `repository_series.format`",
+                        anchor.name
                     ),
                 )
-                .at(crate::workspace::GLEAM_TOML),
+                .at(crate::workspace::GLEAM_TOML)
+                .in_package(&anchor.name),
             );
         }
     }

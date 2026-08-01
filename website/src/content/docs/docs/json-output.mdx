@@ -55,7 +55,7 @@ commands pretty-print, some emit one line for shell-variable capture).
 | `changelog check --format json` | `trellis.changelog_check/1`<br />`{schema, ok, strictness, has_entries, needs_entry, invalid_fragments[], packages[], preview}` |
 | `version plan --json` | `trellis.version_plan/1`<br />`{schema, bumped[], fragments_retained}` |
 | `version apply --json` | `trellis.version_apply/1`<br />`{schema, bumped[], lockfiles[], adopted[], fragments_retained}` |
-| `tag plan --json` | `trellis.tag_plan/1`<br />`{schema, tags[]}` |
+| `tag plan --json` | `trellis.tag_plan/2`<br />`{schema, tags[]}` |
 | `ci tag-package --json` | `trellis.ci_tag_package/1`<br />`{schema, name, path, version, tag_kind, tag_version \| tag_series}` |
 | `doctor --format json` | `trellis.doctor/1`<br />`{schema, ok, packages, configless, auto_members, findings[], fixes[], applied[], package_lifecycles[]}` |
 
@@ -76,6 +76,11 @@ Notes:
   value isn't.
 - `ci tag-package` reports `tag_kind: exact` with `tag_version`, or
   `tag_kind: series` with `tag_series` — the other key is absent, not null.
+- `tag plan` entries use `kind: repository_series` for an anchored repository
+  tag. The entry retains the anchor package's `name` and `version`; this kind
+  is never returned by package-oriented `ci tag-package`. Adding this
+  documented enum value advanced the payload from `trellis.tag_plan/1` to
+  `trellis.tag_plan/2`.
 - `changelog check`'s `preview` field is always present and a string, but its
   Markdown prose can change without a version bump. `needs_entry` reports
   whether an entry is missing; `ok` reports what

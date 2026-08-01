@@ -197,6 +197,14 @@ fn tag_plan_json_contract() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
     copy_fixture_to(root);
+    let manifest = root.join("gleam.toml");
+    let mut config = fs::read_to_string(&manifest).unwrap();
+    config.push_str(
+        "\n[tools.trellis.publish.repository_series]\n\
+         package = \"lat_cli\"\n\
+         format = \"repo-v{series}\"\n",
+    );
+    fs::write(manifest, config).unwrap();
     init_repo(root);
     // lat_core is already tagged, so it drops out of the plan.
     git(root, &["tag", "-a", "lat_core-v1.2.0", "-m", "existing"]);
