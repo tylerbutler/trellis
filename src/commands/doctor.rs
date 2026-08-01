@@ -573,11 +573,11 @@ fn check_member_glob(workspace: &Workspace, label: &str, pattern: &str, report: 
 fn check_tag_collisions(workspace: &Workspace, report: &mut Report) {
     fn insert(
         seen: &mut std::collections::HashMap<String, (String, bool)>,
-        findings: &mut Vec<Finding>,
+        report: &mut Report,
         tag: String,
         owner: String,
         legacy_shared: bool,
-        member: Option<&crate::workspace::Member>,
+        member: &crate::workspace::Member,
     ) {
         if let Some((other, other_legacy_shared)) = seen.get(&tag) {
             // Preserve the intentionally shared legacy `{name}`-less package
@@ -585,15 +585,14 @@ fn check_tag_collisions(workspace: &Workspace, report: &mut Report) {
             if legacy_shared && *other_legacy_shared {
                 return;
             }
-            let mut finding = Finding::error(
-                Check::TagCollision,
-                format!("tag collision: {other} and {owner} both produce tag `{tag}`"),
-            )
-            .at(crate::workspace::GLEAM_TOML);
-            if let Some(member) = member {
-                finding = finding.in_package(&member.name);
-            }
-            findings.push(finding);
+            report.push(
+                Finding::error(
+                    Check::TagCollision,
+                    format!("tag collision: {other} and {owner} both produce tag `{tag}`"),
+                )
+                .at(crate::workspace::GLEAM_TOML)
+                .in_package(&member.name),
+            );
         } else {
             seen.insert(tag, (owner, legacy_shared));
         }
@@ -601,18 +600,17 @@ fn check_tag_collisions(workspace: &Workspace, report: &mut Report) {
 
     let mut seen: std::collections::HashMap<String, (String, bool)> =
         std::collections::HashMap::new();
-    let mut findings = Vec::new();
 
     for member in workspace.members.iter().filter(|m| m.releasable) {
         if member.tag_mode.includes_exact() {
             let tag = workspace.config.format_tag(&member.name, member.version());
             insert(
                 &mut seen,
-                &mut findings,
+                report,
                 tag,
                 format!("package `{}` exact tag", member.name),
                 false,
-                Some(member),
+                member,
             );
         }
     }
@@ -632,7 +630,7 @@ fn check_tag_collisions(workspace: &Workspace, report: &mut Report) {
     };
 
     if workspace.config.series_tag_is_repo_wide() && series_members.len() > 1 {
-        findings.push(
+        report.push(
             Finding::warning(
                 Check::TagCollision,
                 format!(
@@ -658,11 +656,11 @@ fn check_tag_collisions(workspace: &Workspace, report: &mut Report) {
         {
             insert(
                 &mut seen,
-                &mut findings,
+                report,
                 tag,
                 format!("package `{}` series tag", member.name),
                 workspace.config.series_tag_is_repo_wide(),
-                Some(member),
+                member,
             );
         }
     }
@@ -678,18 +676,15 @@ fn check_tag_collisions(workspace: &Workspace, report: &mut Report) {
     {
         insert(
             &mut seen,
-            &mut findings,
+            report,
             tag,
             format!(
                 "repository series tag anchored to `{}`",
                 repository_series.package
             ),
             false,
-            Some(anchor),
+            anchor,
         );
-    }
-    for finding in findings {
-        report.push(finding);
     }
 }
 

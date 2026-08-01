@@ -637,18 +637,6 @@ fn commit_of(dir: &Path, revision: &str) -> String {
     git_stdout(dir, &["rev-parse", &format!("{revision}^{{commit}}")])
 }
 
-fn commit_of_bare(dir: &Path, revision: &str) -> String {
-    git_stdout(
-        Path::new("/"),
-        &[
-            "--git-dir",
-            dir.to_str().unwrap(),
-            "rev-parse",
-            &format!("{revision}^{{commit}}"),
-        ],
-    )
-}
-
 #[test]
 fn series_tag_moves_with_each_release_while_exact_tags_stay_put() {
     let tmp = tempfile::tempdir().unwrap();
@@ -657,7 +645,7 @@ fn series_tag_moves_with_each_release_while_exact_tags_stay_put() {
         root,
         "tag_mode_overrides = { both = [\"packages/lat_cli\"] }",
     );
-    let remote_path = remote.path().to_path_buf();
+    let remote = remote.path();
     set_version(root, "lat_cli", "0.0.1");
     git(root, &["commit", "-qam", "lat_cli 0.0.1"]);
 
@@ -696,8 +684,8 @@ fn series_tag_moves_with_each_release_while_exact_tags_stay_put() {
     );
     assert_eq!(commit_of(root, "lat_cli-v0.0.2"), second);
     // Origin has the move too, not just the local repo.
-    assert_eq!(commit_of_bare(&remote_path, "lat_cli-v0.0"), second);
-    assert_eq!(commit_of_bare(&remote_path, "lat_cli-v0.0.1"), first);
+    assert_eq!(commit_of(remote, "lat_cli-v0.0"), second);
+    assert_eq!(commit_of(remote, "lat_cli-v0.0.1"), first);
 
     // Re-running moves nothing.
     trellis(root)

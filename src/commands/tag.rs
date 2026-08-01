@@ -117,17 +117,7 @@ fn plan_tags(workspace: &Workspace) -> Result<Vec<PlannedTag>> {
         }
     }
     if let Some(repository_series) = &workspace.config.publish.repository_series {
-        let (index, anchor) = workspace
-            .members
-            .iter()
-            .enumerate()
-            .find(|(_, member)| member.name == repository_series.package)
-            .with_context(|| {
-                format!(
-                    "repository series anchor package `{}` is not a workspace member",
-                    repository_series.package
-                )
-            })?;
+        let (index, anchor) = anchor_member(workspace, repository_series)?;
         let anchor_version = manifest_version_at_revision(workspace, anchor, "HEAD")?;
         if let Some(tag) = workspace
             .config
@@ -151,6 +141,24 @@ fn plan_tags(workspace: &Workspace) -> Result<Vec<PlannedTag>> {
         }
     }
     Ok(planned)
+}
+
+/// The workspace member the repository series tag is anchored to.
+fn anchor_member<'a>(
+    workspace: &'a Workspace,
+    repository_series: &crate::config::RepositorySeriesConfig,
+) -> Result<(usize, &'a crate::workspace::Member)> {
+    workspace
+        .members
+        .iter()
+        .enumerate()
+        .find(|(_, member)| member.name == repository_series.package)
+        .with_context(|| {
+            format!(
+                "repository series anchor package `{}` is not a workspace member",
+                repository_series.package
+            )
+        })
 }
 
 /// A repository tag must never occupy a package-tag namespace. `doctor`
@@ -287,17 +295,7 @@ pub fn create(workspace: &Workspace, options: &CreateOptions) -> Result<()> {
         let Some(repository_series) = &workspace.config.publish.repository_series else {
             return Ok(());
         };
-        let (_, anchor) = workspace
-            .members
-            .iter()
-            .enumerate()
-            .find(|(_, member)| member.name == repository_series.package)
-            .with_context(|| {
-                format!(
-                    "repository series anchor package `{}` is not a workspace member",
-                    repository_series.package
-                )
-            })?;
+        let (_, anchor) = anchor_member(workspace, repository_series)?;
         let anchor_version = manifest_version_at_revision(workspace, anchor, "HEAD")?;
         let Some(tag) = workspace
             .config
@@ -626,11 +624,7 @@ impl ResolvedTag {
 /// series), so `lat_core-v0.3` doesn't resolve as version "0.3".
 pub fn resolve_tag(workspace: &Workspace, tag: &str) -> Result<ResolvedTag> {
     if let Some(repository_series) = &workspace.config.publish.repository_series {
-        let anchor = workspace
-            .members
-            .iter()
-            .enumerate()
-            .find(|(_, member)| member.name == repository_series.package)
+        let anchor = anchor_member(workspace, repository_series)
             .map(|(index, member)| vec![(index, member.name.as_str())])
             .unwrap_or_default();
         if !match_tag_template(
