@@ -2,7 +2,7 @@
 //! dependency graph. Every command starts here; the topological order is
 //! computed once and consumed everywhere.
 
-use crate::config::{ConfigFile, TagMode};
+use crate::config::{ConfigFile, ReleaseLifecycle, TagMode};
 use crate::gleam::GleamManifest;
 use crate::json::{Check, Finding};
 use anyhow::{Context, Result, bail};
@@ -19,7 +19,13 @@ pub struct Member {
     /// Path relative to the workspace root, with forward slashes.
     pub rel_path: String,
     pub manifest: GleamManifest,
-    /// False when the member matches an `@release` exclusion glob.
+    /// Resolved release lifecycle: `publish.lifecycle.default`, overridden by
+    /// a legacy `exclude.@release` match, overridden in turn by an explicit
+    /// `publish.lifecycle.packages` match. See [`Workspace::load_with_diagnostics`].
+    pub lifecycle: ReleaseLifecycle,
+    /// Derived compatibility field: `lifecycle != workspace`. `true` for both
+    /// `git_only` and `hex` — changelog, version, and tag/release commands
+    /// select on this; `publish` alone needs `lifecycle == hex` specifically.
     pub releasable: bool,
     /// Which tags a release creates for this member: the workspace
     /// `tag_mode`, unless a `tag_mode_overrides` glob claims it.
@@ -27,6 +33,11 @@ pub struct Member {
 }
 
 impl Member {
+    /// True when this member is published to Hex (`lifecycle == hex`).
+    pub fn publishes_to_hex(&self) -> bool {
+        self.lifecycle == ReleaseLifecycle::Hex
+    }
+
     pub fn version(&self) -> &str {
         &self.manifest.version
     }
@@ -45,6 +56,11 @@ pub struct Workspace {
     deps: Vec<Vec<usize>>,
     /// Direct workspace dependents, indexed like `members`.
     dependents: Vec<Vec<usize>>,
+    /// Direct workspace dependencies from *runtime* (`[dependencies]`) path
+    /// deps only, indexed like `members`. Subset of `deps`, used by the
+    /// `release_boundary` lifecycle-availability check — a dev-only path dep
+    /// never ships in a distribution, so it never constrains it.
+    runtime_deps: Vec<Vec<usize>>,
 }
 
 /// Problems collected while loading. `Workspace::load` turns any error into a
@@ -261,6 +277,27 @@ impl Workspace {
                 }
             }
         }
+        // `publish.lifecycle.packages` globs, compiled individually — unlike
+        // `tag_mode_overrides`, each key names exactly one glob, so a member
+        // can match several with different targets, which is the case
+        // `resolve_lifecycle` must reject.
+        let mut lifecycle_overrides: Vec<(&str, ReleaseLifecycle, globset::GlobSet)> = Vec::new();
+        for (pattern, lifecycle) in &config.publish.lifecycle.packages {
+            match single_glob(pattern) {
+                Ok(set) => lifecycle_overrides.push((pattern.as_str(), *lifecycle, set)),
+                Err(err) => {
+                    diagnostics.push(
+                        Finding::error(
+                            Check::WorkspaceConfig,
+                            format!(
+                                "invalid `publish.lifecycle.packages` glob `{pattern}`: {err:#}"
+                            ),
+                        )
+                        .at(GLEAM_TOML),
+                    );
+                }
+            }
+        }
         let mut members = Vec::new();
         for dir in member_dirs {
             let rel_path = rel_path_string(root, &dir);
@@ -299,10 +336,13 @@ impl Workspace {
                                 .in_package(manifest.name.clone()),
                         );
                     }
-                    let releasable = release_excludes
-                        .as_ref()
-                        .map(|set| !set.is_match(&rel_path))
-                        .unwrap_or(true);
+                    let lifecycle = resolve_lifecycle(
+                        &lifecycle_overrides,
+                        release_excludes.as_ref(),
+                        &rel_path,
+                        config.publish.lifecycle.default,
+                        &mut diagnostics,
+                    );
                     let tag_mode = resolve_tag_mode(
                         &tag_mode_overrides,
                         &rel_path,
@@ -314,7 +354,8 @@ impl Workspace {
                         path: dir,
                         rel_path,
                         manifest,
-                        releasable,
+                        releasable: lifecycle != ReleaseLifecycle::Workspace,
+                        lifecycle,
                         tag_mode,
                     });
                 }
@@ -343,13 +384,17 @@ impl Workspace {
             }
         }
 
-        // Resolve path dependencies between members into graph edges.
+        // Resolve path dependencies between members into graph edges. Runtime
+        // edges (non-dev) are also tracked separately: dev-only path deps
+        // never ship in a distribution, so the lifecycle-availability check
+        // must not see them.
         let path_to_idx: HashMap<PathBuf, usize> = members
             .iter()
             .enumerate()
             .map(|(idx, member)| (member.path.clone(), idx))
             .collect();
         let mut edges: BTreeSet<(usize, usize)> = BTreeSet::new();
+        let mut runtime_edges: BTreeSet<(usize, usize)> = BTreeSet::new();
         for (idx, member) in members.iter().enumerate() {
             // Every problem here is a claim about this member's manifest, so
             // they all annotate the same file.
@@ -358,7 +403,7 @@ impl Workspace {
                     .at(format!("{}/{GLEAM_TOML}", member.rel_path))
                     .in_package(member.name.clone())
             };
-            for (dep_name, dep_path, _dev) in member.manifest.path_deps() {
+            for (dep_name, dep_path, dev) in member.manifest.path_deps() {
                 let resolved = normalize_path(&member.path.join(dep_path));
                 if !resolved.starts_with(root) {
                     diagnostics.push(blame(format!(
@@ -382,6 +427,9 @@ impl Workspace {
                             )));
                         } else {
                             edges.insert((dep_idx, idx)); // dependency -> dependent
+                            if !dev {
+                                runtime_edges.insert((dep_idx, idx));
+                            }
                         }
                     }
                     None => diagnostics.push(blame(format!(
@@ -425,7 +473,15 @@ impl Workspace {
             deps[dependent].push(dep);
             dependents[dep].push(dependent);
         }
-        for list in deps.iter_mut().chain(dependents.iter_mut()) {
+        let mut runtime_deps = vec![Vec::new(); members.len()];
+        for &(dep, dependent) in &runtime_edges {
+            runtime_deps[new_index[dependent]].push(new_index[dep]);
+        }
+        for list in deps
+            .iter_mut()
+            .chain(dependents.iter_mut())
+            .chain(runtime_deps.iter_mut())
+        {
             list.sort_unstable();
         }
 
@@ -436,6 +492,7 @@ impl Workspace {
             members,
             deps,
             dependents,
+            runtime_deps,
         };
         Ok((Some(workspace), diagnostics))
     }
@@ -449,6 +506,13 @@ impl Workspace {
     /// are returned unchanged rather than rewritten into `../` chains.
     pub fn rel_path_of(&self, path: &Path) -> String {
         rel_path_string(&self.root, path)
+    }
+
+    /// Direct *runtime* (`[dependencies]`, not `[dev-dependencies]`) workspace
+    /// dependencies of a member — the subset of [`Workspace::deps_of`] that
+    /// would actually ship in that member's distribution.
+    pub fn runtime_deps_of(&self, idx: usize) -> &[usize] {
+        &self.runtime_deps[idx]
     }
 
     /// Direct workspace dependencies of a member.
@@ -824,11 +888,89 @@ fn resolve_tag_mode(
     }
 }
 
+/// The member's resolved release lifecycle:
+///
+/// 1. Start from `publish.lifecycle.default`.
+/// 2. Apply the legacy `exclude.@release` mapping to `workspace`, when matched.
+/// 3. Apply an explicit `publish.lifecycle.packages` rule, when matched —
+///    this takes precedence over both of the above.
+///
+/// A member matched by explicit rules resolving to more than one distinct
+/// lifecycle is a deterministic error (falls back to the default); matching
+/// several rules that agree on the same lifecycle is fine — that's how a
+/// directory and a narrower glob inside it can both claim a member.
+fn resolve_lifecycle(
+    overrides: &[(&str, ReleaseLifecycle, globset::GlobSet)],
+    release_excludes: Option<&globset::GlobSet>,
+    rel_path: &str,
+    default: ReleaseLifecycle,
+    diagnostics: &mut Diagnostics,
+) -> ReleaseLifecycle {
+    let matched: Vec<(&str, ReleaseLifecycle)> = overrides
+        .iter()
+        .filter(|(_, _, set)| set.is_match(rel_path))
+        .map(|(pattern, lifecycle, _)| (*pattern, *lifecycle))
+        .collect();
+    let distinct: BTreeSet<ReleaseLifecycle> = matched.iter().map(|(_, l)| *l).collect();
+    match distinct.len() {
+        0 => {
+            if release_excludes.is_some_and(|set| set.is_match(rel_path)) {
+                ReleaseLifecycle::Workspace
+            } else {
+                default
+            }
+        }
+        1 => distinct.into_iter().next().expect("checked len == 1"),
+        _ => {
+            let mut by_lifecycle: Vec<(ReleaseLifecycle, Vec<&str>)> = Vec::new();
+            for (pattern, lifecycle) in &matched {
+                match by_lifecycle.iter_mut().find(|(l, _)| l == lifecycle) {
+                    Some((_, patterns)) => patterns.push(pattern),
+                    None => by_lifecycle.push((*lifecycle, vec![pattern])),
+                }
+            }
+            diagnostics.push(
+                Finding::error(
+                    Check::WorkspaceConfig,
+                    format!(
+                        "member `{rel_path}` matches `publish.lifecycle.packages` globs for \
+                         conflicting lifecycles: {}",
+                        by_lifecycle
+                            .iter()
+                            .map(|(lifecycle, patterns)| format!(
+                                "`{}` ({})",
+                                lifecycle.key(),
+                                patterns
+                                    .iter()
+                                    .map(|p| format!("`{p}`"))
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
+                            ))
+                            .collect::<Vec<_>>()
+                            .join(" vs "),
+                    ),
+                )
+                .at(GLEAM_TOML),
+            );
+            default
+        }
+    }
+}
+
 fn build_globset(patterns: &[String]) -> Result<globset::GlobSet> {
     let mut builder = globset::GlobSetBuilder::new();
     for pattern in patterns {
         builder.add(globset::Glob::new(pattern)?);
     }
+    Ok(builder.build()?)
+}
+
+/// A `GlobSet` of exactly one pattern, for tables like
+/// `publish.lifecycle.packages` where each key is its own single glob rather
+/// than a mode-keyed list of them.
+fn single_glob(pattern: &str) -> Result<globset::GlobSet> {
+    let mut builder = globset::GlobSetBuilder::new();
+    builder.add(globset::Glob::new(pattern)?);
     Ok(builder.build()?)
 }
 
@@ -944,6 +1086,126 @@ mod tests {
         assert!(error.contains("packages/lat_core"), "{error}");
         assert!(
             error.contains("`series`") && error.contains("`both`"),
+            "{error}"
+        );
+    }
+
+    fn lifecycle_overrides<'a>(
+        entries: &[(&'a str, ReleaseLifecycle, &str)],
+    ) -> Vec<(&'a str, ReleaseLifecycle, globset::GlobSet)> {
+        entries
+            .iter()
+            .map(|(pattern, lifecycle, glob)| (*pattern, *lifecycle, single_glob(glob).unwrap()))
+            .collect()
+    }
+
+    #[test]
+    fn lifecycle_falls_back_to_the_workspace_default_with_no_matches() {
+        let mut diagnostics = Diagnostics::default();
+        let lifecycle = resolve_lifecycle(
+            &[],
+            None,
+            "packages/core",
+            ReleaseLifecycle::Hex,
+            &mut diagnostics,
+        );
+        assert_eq!(lifecycle, ReleaseLifecycle::Hex);
+        assert!(!diagnostics.has_errors());
+    }
+
+    #[test]
+    fn legacy_release_exclude_maps_to_workspace_lifecycle() {
+        let mut diagnostics = Diagnostics::default();
+        let release_excludes = globs(&["examples/*"]);
+        let lifecycle = resolve_lifecycle(
+            &[],
+            Some(&release_excludes),
+            "examples/demo",
+            ReleaseLifecycle::Hex,
+            &mut diagnostics,
+        );
+        assert_eq!(lifecycle, ReleaseLifecycle::Workspace);
+        // A member the legacy glob doesn't match keeps the default.
+        let lifecycle = resolve_lifecycle(
+            &[],
+            Some(&release_excludes),
+            "packages/core",
+            ReleaseLifecycle::Hex,
+            &mut diagnostics,
+        );
+        assert_eq!(lifecycle, ReleaseLifecycle::Hex);
+        assert!(!diagnostics.has_errors());
+    }
+
+    #[test]
+    fn explicit_lifecycle_rule_overrides_the_legacy_mapping() {
+        let mut diagnostics = Diagnostics::default();
+        let release_excludes = globs(&["examples/*"]);
+        let overrides =
+            lifecycle_overrides(&[("examples/**", ReleaseLifecycle::GitOnly, "examples/**")]);
+        let lifecycle = resolve_lifecycle(
+            &overrides,
+            Some(&release_excludes),
+            "examples/demo",
+            ReleaseLifecycle::Hex,
+            &mut diagnostics,
+        );
+        // Legacy alone would say `workspace`; the explicit rule wins.
+        assert_eq!(lifecycle, ReleaseLifecycle::GitOnly);
+        assert!(!diagnostics.has_errors());
+    }
+
+    #[test]
+    fn overlapping_rules_agreeing_on_the_same_lifecycle_are_fine() {
+        let mut diagnostics = Diagnostics::default();
+        let overrides = lifecycle_overrides(&[
+            ("packages/**", ReleaseLifecycle::GitOnly, "packages/**"),
+            (
+                "packages/providers/**",
+                ReleaseLifecycle::GitOnly,
+                "packages/providers/**",
+            ),
+        ]);
+        let lifecycle = resolve_lifecycle(
+            &overrides,
+            None,
+            "packages/providers/aws",
+            ReleaseLifecycle::Hex,
+            &mut diagnostics,
+        );
+        assert_eq!(lifecycle, ReleaseLifecycle::GitOnly);
+        assert!(!diagnostics.has_errors());
+    }
+
+    #[test]
+    fn conflicting_explicit_rules_are_a_deterministic_error() {
+        let mut diagnostics = Diagnostics::default();
+        let overrides = lifecycle_overrides(&[
+            ("packages/**", ReleaseLifecycle::GitOnly, "packages/**"),
+            (
+                "packages/special/**",
+                ReleaseLifecycle::Workspace,
+                "packages/special/**",
+            ),
+        ]);
+        let lifecycle = resolve_lifecycle(
+            &overrides,
+            None,
+            "packages/special/thing",
+            ReleaseLifecycle::Hex,
+            &mut diagnostics,
+        );
+        assert_eq!(
+            lifecycle,
+            ReleaseLifecycle::Hex,
+            "falls back to the default"
+        );
+        let errors: Vec<&str> = diagnostics.errors().collect();
+        assert_eq!(errors.len(), 1);
+        let error = errors[0];
+        assert!(error.contains("packages/special/thing"), "{error}");
+        assert!(
+            error.contains("`git_only`") && error.contains("`workspace`"),
             "{error}"
         );
     }

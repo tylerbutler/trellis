@@ -3,7 +3,7 @@
 
 use crate::config::Strictness;
 use crate::gleam::Requirement;
-use crate::json::{Check, DoctorDocument, Finding, FixRecord, Severity};
+use crate::json::{Check, DoctorDocument, Finding, FixRecord, PackageLifecycleRecord, Severity};
 use crate::lockfile;
 use crate::workspace::Workspace;
 use anyhow::{Context, Result};
@@ -149,6 +149,10 @@ struct Report {
     configless: bool,
     /// `members` is not configured; the member list came from git.
     auto_members: bool,
+    /// Every member's resolved lifecycle, in workspace (topological) order —
+    /// the source for both the text summary's counts and the JSON payload's
+    /// `package_lifecycles`.
+    package_lifecycles: Vec<(String, crate::config::ReleaseLifecycle)>,
 }
 
 impl Report {
@@ -167,6 +171,25 @@ impl Report {
     fn count(&self, severity: Severity) -> usize {
         self.of_severity(severity).count()
     }
+    /// How many members resolved to each lifecycle, in the fixed order
+    /// `workspace, git_only, hex` — the order the text summary prints them.
+    fn lifecycle_counts(&self) -> [(crate::config::ReleaseLifecycle, usize); 3] {
+        use crate::config::ReleaseLifecycle;
+        let count = |lifecycle: ReleaseLifecycle| {
+            self.package_lifecycles
+                .iter()
+                .filter(|(_, l)| *l == lifecycle)
+                .count()
+        };
+        [
+            (
+                ReleaseLifecycle::Workspace,
+                count(ReleaseLifecycle::Workspace),
+            ),
+            (ReleaseLifecycle::GitOnly, count(ReleaseLifecycle::GitOnly)),
+            (ReleaseLifecycle::Hex, count(ReleaseLifecycle::Hex)),
+        ]
+    }
 }
 
 /// Load the workspace and run every check, collecting findings and the fixes
@@ -182,6 +205,11 @@ fn inspect(root: &Path) -> Result<Report> {
         report.packages = workspace.members.len();
         report.configless = workspace.configless;
         report.auto_members = workspace.config.members.is_none();
+        report.package_lifecycles = workspace
+            .members
+            .iter()
+            .map(|member| (member.name.clone(), member.lifecycle))
+            .collect();
         check_exclusions(workspace, &mut report);
         check_tag_collisions(workspace, &mut report);
         check_lockfiles(workspace, &mut report);
@@ -200,7 +228,7 @@ pub fn run(root: &Path, options: &DoctorOptions) -> Result<bool> {
         let checked = [
             "member globs resolve and every package has a parseable gleam.toml",
             "path dependencies stay inside the workspace; graph is acyclic",
-            "task exclusion globs match members; no releasable package depends on an unreleasable one",
+            "task exclusion globs match members; no package depends on one unavailable at its release lifecycle",
             "tag format produces a unique tag per releasable package",
             "manifest.toml locked versions match workspace-internal gleam.toml versions",
             "each releasable package's version is not behind its CHANGELOG",
@@ -299,6 +327,14 @@ fn finish(report: &Report, applied: &[Fix], format: DoctorFormat) -> Result<bool
                 findings: &report.findings,
                 fixes: report.fixes.iter().map(Fix::record).collect(),
                 applied: applied.iter().map(Fix::record).collect(),
+                package_lifecycles: report
+                    .package_lifecycles
+                    .iter()
+                    .map(|(name, lifecycle)| PackageLifecycleRecord {
+                        name,
+                        lifecycle: *lifecycle,
+                    })
+                    .collect(),
             };
             println!("{}", serde_json::to_string_pretty(&document)?);
         }
@@ -309,10 +345,22 @@ fn finish(report: &Report, applied: &[Fix], format: DoctorFormat) -> Result<bool
 
 fn print_summary(report: &Report, ok: bool) {
     let warnings = report.count(Severity::Warning);
+    // Compact lifecycle counts, e.g. "3 hex, 1 git_only, 0 workspace" — always
+    // in `workspace, git_only, hex` order, so a reader can scan the same
+    // position across workspaces rather than parsing which label is which.
+    let lifecycles = report
+        .lifecycle_counts()
+        .into_iter()
+        .map(|(lifecycle, count)| format!("{count} {}", lifecycle.key()))
+        .collect::<Vec<_>>()
+        .join(", ");
     if ok {
         // The JSON field behind this count is still `members` — renaming a
         // stable key would bump `trellis.doctor/1`, so it waits for 1.0.
-        crate::status!("ok: {} package(s), {warnings} warning(s)", report.packages);
+        crate::status!(
+            "ok: {} package(s) ({lifecycles}), {warnings} warning(s)",
+            report.packages
+        );
     } else {
         crate::status!(
             "FAILED: {} error(s), {warnings} warning(s)",
@@ -480,7 +528,8 @@ fn check_tool_versions(workspace: &Workspace, report: &mut Report) {
 }
 
 /// Check 6: every exclusion glob matches at least one member (catches typos),
-/// and no releasable member path-depends on a release-excluded member.
+/// and no member's runtime distribution would depend on a package unavailable
+/// in it — see [`ReleaseLifecycle`]'s ordering.
 fn check_exclusions(workspace: &Workspace, report: &mut Report) {
     for (task, patterns) in &workspace.config.exclude {
         for pattern in patterns {
@@ -504,21 +553,32 @@ fn check_exclusions(workspace: &Workspace, report: &mut Report) {
             );
         }
     }
+    // And again for `publish.lifecycle.packages`: a glob matching nothing
+    // silently leaves its packages on the legacy mapping or the default.
+    for pattern in workspace.config.publish.lifecycle.packages.keys() {
+        check_member_glob(
+            workspace,
+            "`publish.lifecycle.packages` glob",
+            pattern,
+            report,
+        );
+    }
 
     for (idx, member) in workspace.members.iter().enumerate() {
-        if !member.releasable {
-            continue;
-        }
-        for &dep in workspace.deps_of(idx) {
+        for &dep in workspace.runtime_deps_of(idx) {
             let dep = &workspace.members[dep];
-            if !dep.releasable {
+            if dep.lifecycle < member.lifecycle {
                 report.push(
                     Finding::error(
                         Check::ReleaseBoundary,
                         format!(
-                            "releasable package `{}` path-depends on `{}`, which is excluded \
-                             from release and will never exist on Hex",
-                            member.name, dep.name
+                            "package `{}` (lifecycle `{}`) path-depends on `{}` (lifecycle \
+                             `{}`), which is unavailable in `{}`'s distribution",
+                            member.name,
+                            member.lifecycle.key(),
+                            dep.name,
+                            dep.lifecycle.key(),
+                            member.name
                         ),
                     )
                     .at(format!("{}/gleam.toml", member.rel_path))

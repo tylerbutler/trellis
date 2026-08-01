@@ -143,10 +143,12 @@ pub fn load_fragments(workspace: &Workspace) -> Result<Fragments> {
         };
         match workspace.member_index(&raw.package) {
             Some(idx) if workspace.members[idx].releasable => {}
-            Some(_) => {
+            Some(idx) => {
                 result.problems.push(blame(format!(
-                    "fragment `{display}`: package `{}` is excluded from release by `@release`",
-                    raw.package
+                    "fragment `{display}`: package `{}` has release lifecycle `{}`, so it \
+                     never gets a changelog entry",
+                    raw.package,
+                    workspace.members[idx].lifecycle.key()
                 )));
                 continue;
             }

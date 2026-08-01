@@ -230,7 +230,7 @@ fn new_fragment_writes_toml_and_validates_inputs() {
         ])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("excluded from release"));
+        .stderr(predicate::str::contains("release lifecycle `workspace`"));
     trellis(root)
         .args([
             "changelog",
@@ -1376,7 +1376,7 @@ fn overrides_reject_names_that_are_not_releasable_members() {
         .args(["version", "plan", "--bump", "package_a=major"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("excluded from releases"));
+        .stderr(predicate::str::contains("release lifecycle is `workspace`"));
     trellis(root)
         .args([
             "version",

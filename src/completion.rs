@@ -45,10 +45,25 @@ pub fn packages() -> ArgValueCandidates {
     ArgValueCandidates::new(|| member_candidates(false))
 }
 
-/// Only members that participate in releases — the ones `publish` and
-/// `changelog new` accept.
+/// Only members that participate in releases — the ones `changelog new`
+/// accepts (release lifecycle `git_only` or `hex`).
 pub fn releasable_packages() -> ArgValueCandidates {
     ArgValueCandidates::new(|| member_candidates(true))
+}
+
+/// Only members `publish` will actually accept: release lifecycle `hex`.
+pub fn hex_packages() -> ArgValueCandidates {
+    ArgValueCandidates::new(|| {
+        let Some(workspace) = workspace() else {
+            return Vec::new();
+        };
+        workspace
+            .members
+            .iter()
+            .filter(|m| m.publishes_to_hex())
+            .map(|m| candidate(&m.name, format!("{} v{}", m.rel_path, m.version())))
+            .collect()
+    })
 }
 
 /// Built-in verbs plus every `[tools.trellis.tasks]` entry. The built-ins are

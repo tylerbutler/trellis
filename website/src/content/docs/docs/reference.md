@@ -86,10 +86,10 @@ List packages in topological order (dependencies first)
 
 ###### **Options:**
 
-* `--json` — Emit JSON instead of names
+* `--json` — Emit JSON instead of name/lifecycle columns
 * `--since <REF>` — Only packages owning files changed since this git ref
 * `--with-dependents` — Add the reverse-dependency closure of the selection
-* `--releasable` — Only packages that participate in releases (excludes `@release` matches)
+* `--releasable` — Only packages whose release lifecycle is `git_only` or `hex`
 
 
 
@@ -386,7 +386,7 @@ Publish packages to Hex, in dependency order, with path deps rewritten
 ###### **Options:**
 
 * `--tag <TAG>` — Resolve a pushed tag (e.g. lat_core-v1.2.0) to its package
-* `--all-untagged` — Every releasable package whose version isn't on Hex yet
+* `--all-untagged` — Every `hex`-lifecycle package whose version isn't on Hex yet
 * `--dry-run` — Show what would be published (and rewritten) without doing it
 
 

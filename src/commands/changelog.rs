@@ -30,7 +30,11 @@ pub fn new_fragment(
                 .member_index(name)
                 .with_context(|| format!("unknown package `{name}`"))?;
             if !workspace.members[idx].releasable {
-                bail!("package `{name}` is excluded from release by `@release`");
+                bail!(
+                    "package `{name}` has release lifecycle `{}`, so it never gets a changelog \
+                     entry",
+                    workspace.members[idx].lifecycle.key()
+                );
             }
             name
         }

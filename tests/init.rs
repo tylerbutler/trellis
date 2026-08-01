@@ -114,7 +114,7 @@ fn the_written_table_is_what_root_discovery_finds() {
         .arg("list")
         .assert()
         .success()
-        .stdout("a\nb\n");
+        .stdout("a  hex\nb  hex\n");
     // The configless note is gone: the workspace is now declared.
     trellis(root)
         .arg("doctor")
@@ -243,5 +243,9 @@ fn init_in_an_empty_repository_still_writes_a_usable_root() {
         &root.join("packages/a/gleam.toml"),
         "name = \"a\"\nversion = \"1.0.0\"\n",
     );
-    trellis(root).arg("list").assert().success().stdout("a\n");
+    trellis(root)
+        .arg("list")
+        .assert()
+        .success()
+        .stdout("a  hex\n");
 }

@@ -130,7 +130,11 @@ fn validate_named_packages(workspace: &Workspace, overrides: &Overrides) -> Resu
         match workspace.member_index(name) {
             None => bail!("--bump/--set names unknown package `{name}`"),
             Some(idx) if !workspace.members[idx].releasable => {
-                bail!("--bump/--set names `{name}`, which is excluded from releases");
+                bail!(
+                    "--bump/--set names `{name}`, whose release lifecycle is `{}`, so it is \
+                     never versioned",
+                    workspace.members[idx].lifecycle.key()
+                );
             }
             Some(_) => {}
         }

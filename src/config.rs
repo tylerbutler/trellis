@@ -115,9 +115,10 @@ fn deserialize_collecting_unknown(trellis: &toml::Value) -> Result<(ConfigFile, 
 }
 
 /// Tables under `[tools.trellis]` whose *keys* are chosen by the user rather
-/// than by trellis: task names, `exclude` selectors, and tag-mode names. A
-/// hyphen in one of those is the user's own naming, not a stale spelling.
-const FREE_FORM_TABLES: [&str; 3] = ["exclude", "tasks", "tag_mode_overrides"];
+/// than by trellis: task names, `exclude` selectors, tag-mode names, and
+/// `publish.lifecycle.packages` globs. A hyphen in one of those is the user's
+/// own naming (or a directory name inside a glob), not a stale spelling.
+const FREE_FORM_TABLES: [&str; 4] = ["exclude", "tasks", "tag_mode_overrides", "packages"];
 
 /// Find the keys still spelled the pre-0.8 kebab-case way.
 ///
@@ -230,6 +231,11 @@ pub struct PublishConfig {
     /// Retry/backoff policy for Hex-touching steps.
     #[serde(default)]
     pub retry: RetryConfig,
+    /// Per-package release lifecycle: which of changelog/version, git tags,
+    /// and Hex publishing a member participates in. See
+    /// [`ReleaseLifecycle`].
+    #[serde(default)]
+    pub lifecycle: LifecycleConfig,
 }
 
 impl Default for PublishConfig {
@@ -241,8 +247,72 @@ impl Default for PublishConfig {
             tag_mode_overrides: BTreeMap::new(),
             path_dep_requirement: PathDepRequirement::default(),
             retry: RetryConfig::default(),
+            lifecycle: LifecycleConfig::default(),
         }
     }
+}
+
+/// How much of the release pipeline a member participates in.
+///
+/// Replaces the old binary `@release` boundary with three states, so a
+/// monorepo can hold packages at different maturity levels without moving
+/// directories: build-and-test-only packages, packages versioned and tagged
+/// in git but never published, and fully published packages. Ordered from
+/// least to most capable — `dependency >= dependent` in this order is exactly
+/// the rule [`crate::commands::doctor`]'s `release_boundary` check enforces
+/// for runtime path dependencies.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Default,
+    Deserialize,
+    serde::Serialize,
+    clap::ValueEnum,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum ReleaseLifecycle {
+    /// No changelog/version, no git tags, no Hex publish — build and test
+    /// only. The legacy `exclude.@release` mapping resolves here.
+    Workspace,
+    /// Changelog, version, and git tags/releases, but never published to Hex.
+    GitOnly,
+    /// The full pipeline: changelog, version, git tags/releases, and Hex
+    /// publish. The default lifecycle.
+    #[default]
+    Hex,
+}
+
+impl ReleaseLifecycle {
+    /// The configuration spelling, for messages that quote it back.
+    pub fn key(self) -> &'static str {
+        match self {
+            ReleaseLifecycle::Workspace => "workspace",
+            ReleaseLifecycle::GitOnly => "git_only",
+            ReleaseLifecycle::Hex => "hex",
+        }
+    }
+}
+
+/// `[tools.trellis.publish.lifecycle]`: the workspace default plus per-package
+/// overrides matched by member-path glob. `packages` is free-form — see
+/// [`FREE_FORM_TABLES`] — since its keys are globs, not schema names.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct LifecycleConfig {
+    /// Lifecycle for a member matched by no `packages` glob and no legacy
+    /// `exclude.@release` glob.
+    #[serde(default)]
+    pub default: ReleaseLifecycle,
+    /// Member-path glob -> lifecycle. A member matched by globs resolving to
+    /// different lifecycles is a deterministic error; matches agreeing on the
+    /// same lifecycle are fine. Takes precedence over `exclude.@release`.
+    #[serde(default)]
+    pub packages: BTreeMap<String, ReleaseLifecycle>,
 }
 
 fn default_tag_format() -> String {
@@ -1015,6 +1085,68 @@ mod tests {
                 .iter()
                 .any(|k| k.label == "Dependencies" && k.bump == Bump::Patch)
         );
+    }
+
+    #[test]
+    fn lifecycle_defaults_to_hex_with_no_package_overrides() {
+        let config =
+            ConfigFile::from_gleam_toml("[tools.trellis]\nmembers = [\"packages/*\"]").unwrap();
+        assert_eq!(config.publish.lifecycle.default, ReleaseLifecycle::Hex);
+        assert!(config.publish.lifecycle.packages.is_empty());
+    }
+
+    #[test]
+    fn lifecycle_parses_nested_table_and_inline_map() {
+        let config = ConfigFile::from_gleam_toml(
+            r###"
+            [tools.trellis.publish.lifecycle]
+            default = "hex"
+            packages = { "member/path/**" = "git_only", "examples/**" = "workspace" }
+            "###,
+        )
+        .unwrap();
+        assert_eq!(config.publish.lifecycle.default, ReleaseLifecycle::Hex);
+        assert_eq!(
+            config.publish.lifecycle.packages["member/path/**"],
+            ReleaseLifecycle::GitOnly
+        );
+        assert_eq!(
+            config.publish.lifecycle.packages["examples/**"],
+            ReleaseLifecycle::Workspace
+        );
+        // Glob keys carrying `-`/`/`/`*` are user-chosen, not deprecated spellings.
+        assert!(config.deprecated_keys.is_empty());
+        assert!(config.unknown_keys.is_empty());
+    }
+
+    #[test]
+    fn lifecycle_default_can_be_overridden() {
+        let config = ConfigFile::from_gleam_toml(
+            "[tools.trellis.publish.lifecycle]\ndefault = \"workspace\"\n",
+        )
+        .unwrap();
+        assert_eq!(
+            config.publish.lifecycle.default,
+            ReleaseLifecycle::Workspace
+        );
+    }
+
+    #[test]
+    fn lifecycle_rejects_an_unknown_value() {
+        let err = ConfigFile::from_gleam_toml(
+            "[tools.trellis.publish.lifecycle]\ndefault = \"published\"\n",
+        )
+        .unwrap_err();
+        assert!(format!("{err:#}").contains("published"));
+    }
+
+    #[test]
+    fn lifecycle_package_glob_rejects_an_unknown_value() {
+        let err = ConfigFile::from_gleam_toml(
+            "[tools.trellis.publish.lifecycle]\npackages = { \"pkg/*\" = \"nope\" }\n",
+        )
+        .unwrap_err();
+        assert!(format!("{err:#}").contains("nope"));
     }
 
     #[test]

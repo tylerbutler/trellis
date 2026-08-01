@@ -16,6 +16,7 @@ its major version:
       "name": "lat_core",
       "version": "1.2.0",
       "path": "packages/lat_core",
+      "lifecycle": "hex",
       "releasable": true,
       "dependencies": [],
       "dependents": ["lat_mid", "lat_cli"]
@@ -47,7 +48,7 @@ commands pretty-print, some emit one line for shell-variable capture).
 | Command | Schema and top-level keys |
 | --- | --- |
 | `list --json` | `trellis.list/1`<br />`{schema, packages[]}` |
-| `info <pkg> --json` | `trellis.info/1`<br />`{schema, name, version, path, releasable, dependencies[], dependents[]}` |
+| `info <pkg> --json` | `trellis.info/1`<br />`{schema, name, version, path, lifecycle, releasable, dependencies[], dependents[]}` |
 | `graph --format json` | `trellis.graph/1`<br />`{schema, nodes[], edges[]}` |
 | `run <task> --json` | `trellis.run/1`<br />`{schema, ok, task, target?, results[]}` |
 | `exec -- <cmd> --json` | `trellis.exec/1`<br />`{schema, ok, command[], results[]}` |
@@ -56,11 +57,15 @@ commands pretty-print, some emit one line for shell-variable capture).
 | `version apply --json` | `trellis.version_apply/1`<br />`{schema, bumped[], lockfiles[], adopted[], fragments_retained}` |
 | `tag plan --json` | `trellis.tag_plan/1`<br />`{schema, tags[]}` |
 | `ci tag-package --json` | `trellis.ci_tag_package/1`<br />`{schema, name, path, version, tag_kind, tag_version \| tag_series}` |
-| `doctor --format json` | `trellis.doctor/1`<br />`{schema, ok, packages, configless, auto_members, findings[], fixes[], applied[]}` |
+| `doctor --format json` | `trellis.doctor/1`<br />`{schema, ok, packages, configless, auto_members, findings[], fixes[], applied[], package_lifecycles[]}` |
 
 Notes:
 
 - `list`'s `packages[]` entries and `info`'s top level share a shape.
+  `lifecycle` is the resolved release lifecycle (`workspace`, `git_only`, or
+  `hex`); `releasable` is a derived boolean (`lifecycle != workspace`), kept
+  for compatibility with the git_only+hex meaning `--releasable` has always
+  had. `graph` nodes also carry both.
 - `version plan`/`version apply` share the `bumped[]` shape (`name`,
   `current`, `next`, `fragments`, `updated_dependencies[]`).
   `fragments_retained` is true only under
@@ -84,6 +89,11 @@ Notes:
 </Callout>
 
 ## `doctor` findings
+
+`package_lifecycles` is an array of `{name, lifecycle}`, one per member in
+workspace order, additive alongside the existing numeric `packages` count —
+`doctor`'s text summary renders the same data as compact counts, e.g.
+`ok: 4 package(s) (1 workspace, 0 git_only, 3 hex), 0 warning(s)`.
 
 One entry per problem:
 
@@ -109,8 +119,8 @@ is prose, not stable — branch on `check`:
 | `path_dependency` | a path dependency escapes the workspace or names no package in it |
 | `dependency_cycle` | the graph is cyclic |
 | `workspace_config` | the root `[tools.trellis]` table is itself wrong |
-| `exclusion_glob` | a task-exclusion or tag-mode-override glob matches no member |
-| `release_boundary` | a releasable package depends on one excluded from release |
+| `exclusion_glob` | a task-exclusion, tag-mode-override, or `publish.lifecycle.packages` glob matches no member |
+| `release_boundary` | a package's runtime path dependency is less capable than it is (a `hex` package depending on `git_only`/`workspace`, or `git_only` on `workspace`) |
 | `tag_collision` | two releasable packages produce the same tag |
 | `lockfile_drift` | a `manifest.toml` locks a workspace-internal dep at a stale version |
 | `changelog_missing` | a releasable package has no `CHANGELOG.md` |

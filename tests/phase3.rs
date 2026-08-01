@@ -575,7 +575,9 @@ fn publish_rejects_unreleasable_package() {
         .args(["publish", "package_a"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("excluded from release"));
+        .stderr(predicate::str::contains(
+            "release lifecycle `workspace`, not `hex`",
+        ));
 }
 
 // ---- series tags -----------------------------------------------------------

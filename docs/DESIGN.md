@@ -185,6 +185,11 @@ tag_mode_overrides = { both = ["packages/lattice_cli"] }
 #   exact  → "== X.Y.Z"
 path_dep_requirement = "minor"
 retry = { attempts = 5, initial_delay = "30s", multiplier = 2 }
+# Per-package release lifecycle (§4.1): which of changelog/version, git
+# tags/releases, and Hex publish a member participates in.
+[tools.trellis.publish.lifecycle]
+default = "hex"
+packages = { "packages/experimental/**" = "workspace", "packages/providers/**" = "git_only" }
 
 [tools.trellis.changelog]
 # Native engine (§7): fragments in <dir>/unreleased/, version sections in
@@ -221,6 +226,50 @@ category_format = "### {{ category }}"
 uncategorized_label = "Other"
 ```
 
+### 4.1 Release lifecycle
+
+A member's release lifecycle decides how much of the release pipeline it
+participates in — resolved to one of three states, from least to most
+capable:
+
+| Lifecycle | Changelog/version | Git tags/releases | Hex publish |
+| --- | --- | --- | --- |
+| `workspace` | no | no | no |
+| `git_only` | yes | yes | no |
+| `hex` | yes | yes | yes |
+
+Resolution, per member, in order:
+
+1. Start from `publish.lifecycle.default` (itself defaulting to `hex`).
+2. Apply the legacy `exclude.@release` mapping to `workspace`, when the member
+   matches one of those globs — the same boundary trellis has always drawn,
+   read as the lifecycle model's most restrictive state.
+3. Apply an explicit `publish.lifecycle.packages` glob, when matched — this
+   takes precedence over both of the above, which is what lets a package
+   graduate from `workspace` to `git_only` to `hex` without moving directories
+   or rewriting exclusions. A member matched by explicit globs resolving to
+   more than one distinct lifecycle is a deterministic `doctor` error;
+   matching several globs that agree on the same lifecycle is fine.
+
+`Member.lifecycle` is the resolved value; `Member.releasable` remains a
+derived compatibility boolean (`lifecycle != workspace`) so the existing
+changelog/version/tag/release call sites, and the `--releasable` selection
+filter, need no change — `git_only` and `hex` both count. `publish` alone
+needs the finer distinction, since only `hex` ever reaches Hex; it selects
+`lifecycle == hex` directly, and the path-dependency rewrite's version map is
+built from `hex` members only, so a Hex package referencing a non-Hex runtime
+dependency fails safely rather than publishing something unresolvable.
+
+**Dependency availability** replaces the old binary "no releasable member
+depends on an unreleasable one" rule with an ordered capability check on
+runtime (`[dependencies]`, not `[dev-dependencies]`) path deps: a dependency
+must be at least as capable as its dependent — `hex` may depend only on `hex`;
+`git_only` may depend on `git_only` or `hex`; `workspace` may depend on
+anything. Dev-only path deps are exempt, since a dev dependency never ships in
+any distribution regardless of lifecycle. `doctor`'s `release_boundary` check
+keeps its identifier, reporting both packages' lifecycles and why the
+dependency would be unavailable in the dependent's distribution.
+
 Wildcard discovery honors repository `.gitignore` files at every level and
 `.git/info/exclude`, but only when the workspace is in a Git repository. It
 ignores global `core.excludesFile` rules, for reproducibility, and generic
@@ -245,8 +294,10 @@ trellis info <package> [--json]
 ```
 
 - `list` prints members in topological order — this alone replaces `justfile:18`.
-  `--releasable` filters out `@release` matches, i.e. the set that
-  changelog/tag/publish commands operate on.
+  Text output is two columns, name and resolved lifecycle; `--releasable`
+  filters to `git_only` and `hex` members, i.e. the set that
+  changelog/version/tag commands operate on (`publish` narrows further, to
+  `hex` alone).
 - `--since origin/main` filters to packages owning changed files (diff paths mapped
   to package directories); `--with-dependents` adds the reverse-dependency closure.
   This is the primitive behind "only test what a PR touched."
@@ -407,9 +458,12 @@ Checks, each of which is an unenforced invariant in lattice today:
    and each has a changelog file where expected.
 5. `manifest.toml` locked versions of workspace-internal deps match those deps'
    actual `gleam.toml` versions (catches a missed lockfile patch).
-6. Every task exclusion glob matches at least one member (catches typos), and
-   no releasable member path-depends on a release-excluded member — a published
-   package cannot require a project that will never exist on Hex.
+6. Every task exclusion glob and `publish.lifecycle.packages` glob matches at
+   least one member (catches typos), and every member's runtime
+   (`[dependencies]`) path deps are available at its release lifecycle: a
+   dependency must be at least as capable as its dependent (§4.1) — a `hex`
+   package cannot require a package that will never exist on Hex, and neither
+   `hex` nor `git_only` may depend on a `workspace`-only one.
 7. Tag-format collisions (two members whose names would produce ambiguous tags),
    for series tags as well as exact ones — except a `series_tag_format` without
    `{name}`, which warns instead once the workspace has more than one series
