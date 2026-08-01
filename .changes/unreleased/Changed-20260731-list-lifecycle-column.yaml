@@ -1,5 +1,0 @@
-component: list
-kind: Changed
-body: |-
-  **`trellis list`'s default text output is now two columns, name and resolved release lifecycle, instead of names alone.** `--json` gains an additive `lifecycle` field (`workspace`, `git_only`, or `hex`) on every package alongside the retained `releasable` boolean. Human-readable output was never a stable contract — script against `--json` if you're parsing.
-time: 2026-07-31T23:03:32.015056000-07:00

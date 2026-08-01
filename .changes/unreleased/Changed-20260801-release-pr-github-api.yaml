@@ -1,5 +1,0 @@
-component: release
-kind: Changed
-body: |-
-  **`release pr` drives the GitHub API directly; the gh CLI is no longer required.** The PR is created or updated through api.github.com with a token from `GITHUB_TOKEN` (ambient in GitHub Actions, so CI needs no setup), `GH_TOKEN`, or a logged-in gh CLI as the fallback (`gh auth token`). The repository is read from the `origin` remote; set `TRELLIS_GITHUB_REPO` (`owner/repo`) when the remote URL is not a github.com one.
-time: 2026-08-01T09:06:06.394356583-07:00

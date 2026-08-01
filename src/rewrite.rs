@@ -36,16 +36,15 @@ pub fn hex_requirement(version: &str, mode: PathDepRequirement) -> Result<String
     })
 }
 
-/// Rewrite every path dep in `[dependencies]` (and Hex-published ones in
-/// `[dev-dependencies]`) to its Hex requirement. `hex_versions` maps workspace
-/// member name -> current version, for members whose release lifecycle is
-/// `hex` (see [`crate::config::ReleaseLifecycle`]). A `[dependencies]` path
-/// dep with no entry there is a hard error — the published package could
-/// never resolve it. Dev-only path deps to a non-`hex` member are left alone:
-/// Hex packages don't ship dev deps.
+/// Rewrite every path dep in `[dependencies]` (and releasable ones in
+/// `[dev-dependencies]`) to its Hex requirement. `releasable_versions` maps
+/// workspace member name → current version for members that will exist on
+/// Hex. A `[dependencies]` path dep with no entry there is a hard error —
+/// the published package could never resolve it. Dev-only path deps to
+/// unreleasable members are left alone: Hex packages don't ship dev deps.
 pub fn rewrite_path_deps(
     text: &str,
-    hex_versions: &BTreeMap<String, String>,
+    releasable_versions: &BTreeMap<String, String>,
     mode: PathDepRequirement,
 ) -> Result<(String, Vec<Rewrite>)> {
     let mut doc: DocumentMut = text.parse().context("failed to parse gleam.toml")?;
@@ -70,7 +69,7 @@ pub fn rewrite_path_deps(
             if !is_path_dep {
                 continue;
             }
-            match hex_versions.get(&name) {
+            match releasable_versions.get(&name) {
                 Some(version) => {
                     let requirement = hex_requirement(version, mode)?;
                     let mut value = Value::from(requirement.clone());
@@ -81,10 +80,10 @@ pub fn rewrite_path_deps(
                     rewrites.push(Rewrite { name, requirement });
                 }
                 None if section == "dependencies" => bail!(
-                    "path dependency `{name}` cannot be rewritten: its release lifecycle is not \
-                     `hex`, so the published package could never resolve it on Hex"
+                    "path dependency `{name}` cannot be rewritten: it is not a releasable \
+                     workspace member, so the published package could never resolve it on Hex"
                 ),
-                None => {} // dev-only path dep to a non-`hex` member
+                None => {} // dev-only path dep to an unreleasable member
             }
         }
     }
@@ -155,7 +154,7 @@ mod tests {
     }
 
     #[test]
-    fn dev_only_path_dep_to_a_non_hex_member_is_left_alone() {
+    fn dev_only_path_dep_to_unreleasable_member_is_left_alone() {
         let text = concat!(
             "name = \"lat_cli\"\n",
             "[dependencies]\n",
@@ -175,7 +174,7 @@ mod tests {
     }
 
     #[test]
-    fn regular_path_dep_to_a_non_hex_member_is_an_error() {
+    fn regular_path_dep_to_unreleasable_member_is_an_error() {
         let text = "name = \"app\"\n[dependencies]\nshared = { path = \"../shared\" }\n";
         let err = rewrite_path_deps(text, &versions(&[]), PathDepRequirement::Minor).unwrap_err();
         assert!(err.to_string().contains("shared"));

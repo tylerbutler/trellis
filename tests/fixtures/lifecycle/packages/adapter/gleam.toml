@@ -1,5 +1,0 @@
-name = "adapter"
-version = "0.4.0"
-
-[dependencies]
-core = { path = "../core" }

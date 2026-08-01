@@ -1,8 +1,6 @@
 //! End-to-end tests for `trellis new` (scaffolding), `trellis release pr`
-//! (release-PR management via a mock GitHub API), and doctor's .tool-versions
+//! (release-PR management via a fake gh), and doctor's .tool-versions
 //! advisory.
-
-mod common;
 
 use assert_cmd::Command;
 use predicates::prelude::*;
@@ -209,25 +207,24 @@ fn add_fragment(root: &Path, project: &str, kind: &str, body: &str) {
     }
 }
 
-/// A trellis invocation aimed at the mock GitHub API: base URL and repo
-/// overridden, a token in the environment, and proxy variables stripped so
-/// requests reach the localhost mock.
-fn trellis_github(dir: &Path, api: &str) -> Command {
-    let mut cmd = trellis(dir);
-    cmd.env("TRELLIS_GITHUB_API_URL", api)
-        .env("TRELLIS_GITHUB_REPO", "example/repo")
-        .env("GITHUB_TOKEN", "test-token");
-    for var in [
-        "HTTP_PROXY",
-        "HTTPS_PROXY",
-        "http_proxy",
-        "https_proxy",
-        "ALL_PROXY",
-        "all_proxy",
-    ] {
-        cmd.env_remove(var);
-    }
-    cmd
+/// Fake gh: logs invocations; `pr list` replies with `.fake/pr-list` (or an
+/// empty array), `pr create` prints a PR URL.
+fn install_fake_gh(root: &Path) -> PathBuf {
+    let script = root.join("fake-gh.sh");
+    write(
+        &script,
+        concat!(
+            "#!/bin/sh\n",
+            "printf 'gh %s\\n' \"$*\" >> .fake/gh-log\n",
+            "case \"$1 $2\" in\n",
+            "  'pr list') cat .fake/pr-list 2>/dev/null || echo '[]' ;;\n",
+            "  'pr create') echo 'https://github.com/example/repo/pull/7' ;;\n",
+            "esac\n",
+        ),
+    );
+    make_executable(&script);
+    fs::create_dir_all(root.join(".fake")).unwrap();
+    script
 }
 
 #[test]
@@ -235,7 +232,7 @@ fn release_pr_creates_then_updates_the_pull_request() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
     copy_fixture_to(root);
-    let api = common::mock_github(root);
+    let gh = install_fake_gh(root);
 
     git(root, &["init", "-q", "-b", "main"]);
     git(root, &["add", "."]);
@@ -255,7 +252,8 @@ fn release_pr_creates_then_updates_the_pull_request() {
     git(root, &["add", "."]);
     git(root, &["commit", "-q", "-m", "feature-only"]);
 
-    trellis_github(root, &api)
+    trellis(root)
+        .env("TRELLIS_GH_BIN", &gh)
         .args(["release", "pr", "--base", "main"])
         .assert()
         .success()
@@ -265,18 +263,9 @@ fn release_pr_creates_then_updates_the_pull_request() {
 
     // The PR was created against the right base with the bump in the body,
     // including the changelog section the native engine just rendered.
-    let log = fs::read_to_string(root.join(".fake/github-log")).unwrap();
-    assert!(
-        log.contains("GET /repos/example/repo/pulls?head=example:release/pending&state=open"),
-        "{log}"
-    );
-    assert!(log.contains("POST /repos/example/repo/pulls\n"), "{log}");
-    assert!(log.contains(r#""base": "main""#), "{log}");
-    assert!(log.contains(r#""head": "release/pending""#), "{log}");
-    assert!(
-        log.contains(r#""title": "release: lat_core v1.3.0"#),
-        "{log}"
-    );
+    let log = fs::read_to_string(root.join(".fake/gh-log")).unwrap();
+    assert!(log.contains("pr create --base main --head release/pending"));
+    assert!(log.contains("--title release: lat_core v1.3.0"));
     assert!(log.contains("| lat_core | 1.2.0 | 1.3.0 | 1 |"));
     assert!(
         log.contains("- pending change"),
@@ -327,14 +316,14 @@ fn release_pr_creates_then_updates_the_pull_request() {
     git(root, &["add", "."]);
     git(root, &["commit", "-q", "-m", "more fragments"]);
 
-    trellis_github(root, &api)
+    trellis(root)
+        .env("TRELLIS_GH_BIN", &gh)
         .args(["release", "pr", "--base", "main"])
         .assert()
         .success()
         .stdout(predicate::str::contains("updated release PR #42"));
-    let log = fs::read_to_string(root.join(".fake/github-log")).unwrap();
-    assert!(log.contains("PATCH /repos/example/repo/pulls/42"), "{log}");
-    assert!(log.contains(r#""title": "release: lat_core v"#), "{log}");
+    let log = fs::read_to_string(root.join(".fake/gh-log")).unwrap();
+    assert!(log.contains("pr edit 42 --title release: lat_core v"));
 }
 
 #[test]
@@ -342,13 +331,14 @@ fn release_pr_requires_a_clean_tree_and_pending_fragments() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
     copy_fixture_to(root);
+    let gh = install_fake_gh(root);
     git(root, &["init", "-q", "-b", "main"]);
     git(root, &["add", "."]);
     git(root, &["commit", "-q", "-m", "init"]);
 
-    // No fragments: a clean no-op. Both paths stop before any GitHub call,
-    // so no API mock (or token) is needed.
+    // No fragments: a clean no-op.
     trellis(root)
+        .env("TRELLIS_GH_BIN", &gh)
         .args(["release", "pr"])
         .assert()
         .success()
@@ -357,6 +347,7 @@ fn release_pr_requires_a_clean_tree_and_pending_fragments() {
     // Dirty tree: refuse before touching anything.
     write(&root.join("packages/lat_core/src/wip.gleam"), "// wip\n");
     trellis(root)
+        .env("TRELLIS_GH_BIN", &gh)
         .args(["release", "pr"])
         .assert()
         .failure()

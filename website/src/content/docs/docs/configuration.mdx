@@ -123,8 +123,6 @@ their roots.
 | `publish.tag_mode` | no | Which tags a release creates: `exact` (default), `series`, or `both`. |
 | `publish.tag_mode_overrides` | no | Per-package tag modes: a map of mode name to member-path globs. A package matching globs under two modes is an error. |
 | `publish.retry` | no | Backoff for Hex rate limits: `{ attempts, initial_delay, multiplier }`. |
-| `publish.lifecycle.default` | no | Release lifecycle for a member matched by no `packages` glob and no legacy `exclude.@release` glob: `workspace`, `git_only`, or `hex` (default). |
-| `publish.lifecycle.packages` | no | Per-package lifecycle overrides: a map of member-path glob to lifecycle. Takes precedence over `exclude.@release`. A member matched by globs resolving to different lifecycles is an error; matches agreeing on the same lifecycle are fine. |
 | `changelog.kinds` | no | Change kinds and the version bump each implies. The largest bump among a package's unreleased fragments wins. |
 | `changelog.categories` | no | A second grouping axis, rendered above the kind headings. Carries no version bump. Empty by default, which switches the axis off. |
 | `changelog.uncategorized_label` | no | Heading for entries naming no category, rendered last. Default: `Other`. Read only when `categories` is set. |
@@ -163,80 +161,27 @@ through `--since`.
 | --- | --- |
 | `docs` | Matching packages from `trellis run docs`. Built-in tasks can be filtered without overriding their commands. |
 | Any custom task name | Matching packages from that `trellis run <name>` invocation. |
-| `@release` | Matching packages from changelog, version, tag, publish, and release CI operations — the legacy way to reach the `workspace` [release lifecycle](#release-lifecycle). Explicit changelog creation and publishing are rejected. |
+| `@release` | Matching packages from changelog, version, tag, publish, and release CI operations. Explicit changelog creation and publishing are rejected. |
 | `@members` | Matching directories from workspace membership itself — they are invisible to every command, as if they held no `gleam.toml` at all. |
 
 Release-excluded packages remain in the dependency graph and still participate
 in `list`, `graph`, `exec`, and every task that does not exclude them. `info`
 and JSON output expose `releasable: false`; `list --releasable` returns only
-the `git_only`/`hex` set:
+the release set:
 
 ```console
 $ trellis list --releasable
-lat_core  hex
-lat_mid   hex
-lat_cli   hex
+lat_core
+lat_mid
+lat_cli
 ```
 
 <Callout>
 
-`trellis doctor` catches every exclusion glob that matches no member. It also
-validates dependency availability across the release lifecycle: see
-[Release lifecycle](#release-lifecycle) below.
-
-</Callout>
-
-## Release lifecycle
-
-`exclude.@release` is a single on/off switch: a package either participates in
-the full release pipeline or is invisible to all of it. Real monorepos often
-have packages in between — versioned and tagged in git, but never meant for
-Hex, or not ready to release at all yet. `publish.lifecycle` resolves each
-member to one of three states:
-
-| Lifecycle | Changelog/version | Git tags/releases | Hex publish |
-| --- | --- | --- | --- |
-| `workspace` | no | no | no |
-| `git_only` | yes | yes | no |
-| `hex` (default) | yes | yes | yes |
-
-```toml title="gleam.toml" wrap
-[tools.trellis.publish.lifecycle]
-default = "hex"
-packages = { "packages/experimental/**" = "workspace", "packages/providers/**" = "git_only" }
-```
-
-`default` is the lifecycle for a member matched by no `packages` glob and no
-legacy `exclude.@release` glob. `packages` is a map of member-path glob to
-lifecycle; a member matched by globs resolving to *different* lifecycles is a
-`doctor` error, but matching several globs that agree is fine — that's how a
-directory-wide glob and a narrower one inside it can both claim a member.
-
-Resolution order, so a workspace can adopt `publish.lifecycle` incrementally
-alongside an existing `exclude.@release`:
-
-1. Start from `publish.lifecycle.default`.
-2. Apply the legacy `exclude.@release` mapping to `workspace`, when matched.
-3. Apply an explicit `publish.lifecycle.packages` rule, when matched — this
-   overrides both of the above, which is what lets a package graduate from
-   `workspace` to `git_only` to `hex` over time without moving directories or
-   rewriting `exclude.@release`.
-
-`--releasable` (on `list`, `ci matrix`, and elsewhere) still means `git_only`
-**or** `hex` — the set that changelog, version, and tag commands operate on.
-`publish` alone needs the finer distinction: it selects `hex` members only,
-and the path-dependency rewrite it computes at publish time only ever
-substitutes versions of `hex` members, so a `hex` package referencing a
-`git_only` or `workspace` runtime path dependency fails safely instead of
-publishing something unresolvable.
-
-<Callout>
-
-**A dependency must be at least as capable as its dependent.** `hex` may
-depend only on `hex`; `git_only` may depend on `git_only` or `hex`; `workspace`
-may depend on anything. `doctor`'s `release_boundary` check enforces this for
-runtime (`[dependencies]`) path deps only — a dev-only path dep never ships in
-any distribution, so it is exempt regardless of lifecycle.
+`trellis doctor` catches every exclusion glob that matches no member. For
+release exclusions, it also rejects a releasable package that path-depends on
+an excluded one: a published package cannot depend on a workspace package that
+will never exist on Hex.
 
 </Callout>
 

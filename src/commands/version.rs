@@ -67,7 +67,7 @@ pub fn compute_plan(workspace: &Workspace, overrides: &Overrides) -> Result<Vec<
     let mut plan = Vec::new();
     let mut bumped: BTreeMap<&str, String> = BTreeMap::new();
     for (idx, member) in workspace.members.iter().enumerate() {
-        if !member.releasable() {
+        if !member.releasable {
             continue;
         }
         // Sorted by dependency name so the rendered order does not depend on
@@ -129,12 +129,8 @@ fn validate_named_packages(workspace: &Workspace, overrides: &Overrides) -> Resu
     for name in overrides.named_packages() {
         match workspace.member_index(name) {
             None => bail!("--bump/--set names unknown package `{name}`"),
-            Some(idx) if !workspace.members[idx].releasable() => {
-                bail!(
-                    "--bump/--set names `{name}`, whose release lifecycle is `{}`, so it is \
-                     never versioned",
-                    workspace.members[idx].lifecycle.key()
-                );
+            Some(idx) if !workspace.members[idx].releasable => {
+                bail!("--bump/--set names `{name}`, which is excluded from releases");
             }
             Some(_) => {}
         }

@@ -47,11 +47,9 @@ pub enum Check {
     DependencyCycle,
     /// The root `[tools.trellis]` table itself is wrong.
     WorkspaceConfig,
-    /// A task-exclusion, tag-mode-override, or `publish.lifecycle.packages`
-    /// glob matches no member.
+    /// A task-exclusion or tag-mode-override glob matches no member.
     ExclusionGlob,
-    /// A package's runtime path dependency is less capable than it is —
-    /// see [`crate::config::ReleaseLifecycle`].
+    /// A releasable package depends on one excluded from release.
     ReleaseBoundary,
     /// Two releasable packages produce the same tag.
     TagCollision,
@@ -223,16 +221,6 @@ pub struct FixRecord<'a> {
     pub package: Option<&'a str>,
 }
 
-/// One member's resolved release lifecycle, as `doctor --format json` reports
-/// it — additive alongside the numeric `packages` count, in workspace
-/// (topological) order. Owned so doctor's report can hold it directly.
-#[derive(Serialize)]
-#[serde(rename_all = "snake_case")]
-pub struct PackageLifecycleRecord {
-    pub name: String,
-    pub lifecycle: crate::config::ReleaseLifecycle,
-}
-
 /// `trellis doctor --format json`.
 ///
 /// `configless` and `auto_members` are workspace facts rather than problems —
@@ -256,9 +244,6 @@ pub struct DoctorDocument<'a> {
     pub findings: &'a [Finding],
     pub fixes: Vec<FixRecord<'a>>,
     pub applied: Vec<FixRecord<'a>>,
-    /// Additive: each member's resolved lifecycle, alongside the (retained)
-    /// numeric `packages` count above.
-    pub package_lifecycles: &'a [PackageLifecycleRecord],
 }
 
 impl DoctorDocument<'_> {
@@ -363,11 +348,6 @@ pub struct Package<'a> {
     pub name: &'a str,
     pub version: &'a str,
     pub path: &'a str,
-    /// Resolved release lifecycle: `workspace`, `git_only`, or `hex`. See
-    /// [`crate::config::ReleaseLifecycle`].
-    pub lifecycle: crate::config::ReleaseLifecycle,
-    /// Derived: `lifecycle != workspace`. Kept for compatibility —
-    /// `--releasable` filters on this, not on `lifecycle == hex`.
     pub releasable: bool,
     pub dependencies: Vec<&'a str>,
     pub dependents: Vec<&'a str>,
@@ -380,8 +360,7 @@ impl<'a> Package<'a> {
             name: &member.name,
             version: member.version(),
             path: &member.rel_path,
-            lifecycle: member.lifecycle,
-            releasable: member.releasable(),
+            releasable: member.releasable,
             dependencies: member_names(workspace, workspace.deps_of(idx)),
             dependents: member_names(workspace, workspace.dependents_of(idx)),
         }
@@ -447,7 +426,6 @@ pub struct GraphNode<'a> {
     pub name: &'a str,
     pub version: &'a str,
     pub path: &'a str,
-    pub lifecycle: crate::config::ReleaseLifecycle,
     pub releasable: bool,
 }
 
@@ -479,8 +457,7 @@ impl<'a> GraphDocument<'a> {
                 name: &member.name,
                 version: member.version(),
                 path: &member.rel_path,
-                lifecycle: member.lifecycle,
-                releasable: member.releasable(),
+                releasable: member.releasable,
             })
             .collect();
         let mut edges = Vec::new();

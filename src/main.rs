@@ -3,7 +3,6 @@ mod commands;
 mod completion;
 mod config;
 mod git;
-mod github;
 mod gleam;
 mod hex;
 mod json;
@@ -28,8 +27,8 @@ use term::{ColorChoice, Verbosity};
 use workspace::Workspace;
 
 /// Trellis itself could not run: unparseable config, not a git repository, a
-/// missing `gleam`, no GitHub token, Hex unreachable after retries. Distinct
-/// from 1, which means the command ran and found problems.
+/// missing `gleam`/`gh`, Hex unreachable after retries. Distinct from 1, which
+/// means the command ran and found problems.
 const EXIT_INTERNAL_ERROR: u8 = 3;
 
 /// Crate version, with `git describe` output appended for builds that aren't
@@ -93,7 +92,7 @@ struct Cli {
 enum Command {
     /// List packages in topological order (dependencies first)
     List {
-        /// Emit JSON instead of name/lifecycle columns
+        /// Emit JSON instead of names
         #[arg(long)]
         json: bool,
         /// Only packages owning files changed since this git ref
@@ -102,7 +101,7 @@ enum Command {
         /// Add the reverse-dependency closure of the selection
         #[arg(long)]
         with_dependents: bool,
-        /// Only packages whose release lifecycle is `git_only` or `hex`
+        /// Only packages that participate in releases (excludes `@release` matches)
         #[arg(long)]
         releasable: bool,
     },
@@ -224,12 +223,12 @@ enum Command {
     /// Publish packages to Hex, in dependency order, with path deps rewritten
     Publish {
         /// A single package to publish
-        #[arg(add = completion::hex_packages())]
+        #[arg(add = completion::releasable_packages())]
         package: Option<String>,
         /// Resolve a pushed tag (e.g. lat_core-v1.2.0) to its package
         #[arg(long, conflicts_with = "package")]
         tag: Option<String>,
-        /// Every `hex`-lifecycle package whose version isn't on Hex yet
+        /// Every releasable package whose version isn't on Hex yet
         #[arg(long, conflicts_with_all = ["package", "tag"])]
         all_untagged: bool,
         /// Show what would be published (and rewritten) without doing it
@@ -382,8 +381,7 @@ impl VersionOverrideArgs {
 
 #[derive(Subcommand)]
 enum ReleaseCommand {
-    /// Create or update the release PR: version apply on a branch, push,
-    /// open or refresh the PR via the GitHub API
+    /// Create or update the release PR: version apply on a branch, push, gh pr
     Pr {
         /// Base branch the PR targets
         #[arg(long, default_value = "main")]
@@ -391,16 +389,6 @@ enum ReleaseCommand {
         /// Branch the release commit is force-pushed to
         #[arg(long, default_value = "release/pending")]
         branch: String,
-    },
-    /// Reconcile tags against current manifest versions — no version bump,
-    /// no unreleased changelog fragments required
-    ///
-    /// An alias for `tag create`, for adopting trellis on a repository that
-    /// already has the package versions and changelogs it wants, but no tags
-    /// yet.
-    Bootstrap {
-        #[command(flatten)]
-        args: TagCreateArgs,
     },
 }
 
@@ -414,39 +402,14 @@ enum TagCommand {
     },
     /// Create missing tags in topological order
     Create {
-        #[command(flatten)]
-        args: TagCreateArgs,
+        /// Push each created tag to origin
+        #[arg(long)]
+        push: bool,
+        /// Also create a GitHub Release per tag, with the matching CHANGELOG
+        /// section as the body (implies --push; requires the gh CLI)
+        #[arg(long)]
+        github_release: bool,
     },
-}
-
-/// Flags for `tag create` and its alias `release bootstrap`.
-///
-/// Flattened into both so the alias can't drift: the two must accept exactly
-/// the same flags or `release bootstrap` stops being `tag create`.
-#[derive(clap::Args)]
-struct TagCreateArgs {
-    /// Push each created tag to origin
-    #[arg(long)]
-    push: bool,
-    /// Also create a GitHub Release per exact tag, with the matching CHANGELOG
-    /// section as the body (implies --push; needs a GitHub token from
-    /// GITHUB_TOKEN, GH_TOKEN, or a logged-in gh CLI)
-    #[arg(long)]
-    github_release: bool,
-    /// Report every tag/push/release action without doing anything (a
-    /// conflicting tag still fails the command)
-    #[arg(long)]
-    dry_run: bool,
-}
-
-impl TagCreateArgs {
-    fn options(self) -> commands::tag::CreateOptions {
-        commands::tag::CreateOptions {
-            push: self.push,
-            github_release: self.github_release,
-            dry_run: self.dry_run,
-        }
-    }
 }
 
 #[derive(Subcommand)]
@@ -724,17 +687,23 @@ fn dispatch(cli: Cli) -> Result<bool> {
             ReleaseCommand::Pr { base, branch } => {
                 commands::release::pr(&workspace, &commands::release::PrOptions { base, branch })
             }
-            ReleaseCommand::Bootstrap { args } => {
-                commands::release::bootstrap(&workspace, &args.options())
-            }
         },
         Command::Tag { command } => match command {
             TagCommand::Plan { json } => {
                 commands::tag::plan(&workspace, json)?;
                 Ok(true)
             }
-            TagCommand::Create { args } => {
-                commands::tag::create(&workspace, &args.options())?;
+            TagCommand::Create {
+                push,
+                github_release,
+            } => {
+                commands::tag::create(
+                    &workspace,
+                    &commands::tag::CreateOptions {
+                        push,
+                        github_release,
+                    },
+                )?;
                 Ok(true)
             }
         },

@@ -1,5 +1,0 @@
-component: changelog
-kind: Added
-body: |-
-  **`trellis changelog` now follows each package's resolved release lifecycle.** Packages in `git_only` and `hex` accept fragments and participate in `changelog check`; `workspace` packages do neither. Errors for explicitly selecting a `workspace` package name its lifecycle instead of describing every exclusion as an `exclude.@release` match.
-time: 2026-07-31T23:03:32.015056000-07:00

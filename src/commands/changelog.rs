@@ -21,7 +21,7 @@ pub fn new_fragment(
     let releasable: Vec<&str> = workspace
         .members
         .iter()
-        .filter(|m| m.releasable())
+        .filter(|m| m.releasable)
         .map(|m| m.name.as_str())
         .collect();
     let project = match package {
@@ -29,11 +29,8 @@ pub fn new_fragment(
             let idx = workspace
                 .member_index(name)
                 .with_context(|| format!("unknown package `{name}`"))?;
-            if !workspace.members[idx].releasable() {
-                bail!(
-                    "{}",
-                    changelog::no_changelog_reason(&workspace.members[idx])
-                );
+            if !workspace.members[idx].releasable {
+                bail!("package `{name}` is excluded from release by `@release`");
             }
             name
         }
@@ -127,7 +124,7 @@ pub fn check(workspace: &Workspace, options: &CheckOptions) -> Result<bool> {
         .members
         .iter()
         .enumerate()
-        .filter(|(idx, member)| changed.contains(idx) && member.releasable())
+        .filter(|(idx, member)| changed.contains(idx) && member.releasable)
         .map(|(_, member)| PackageStatus {
             name: member.name.clone(),
             fragments: fragments.count_for(&member.name),

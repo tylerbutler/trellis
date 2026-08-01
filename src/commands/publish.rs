@@ -38,13 +38,8 @@ pub fn run(workspace: &Workspace, options: &PublishOptions) -> Result<bool> {
             let idx = workspace
                 .member_index(name)
                 .with_context(|| format!("unknown package `{name}`"))?;
-            let member = &workspace.members[idx];
-            if !member.publishes_to_hex() {
-                bail!(
-                    "package `{name}` has release lifecycle `{}`, not `hex`, so it is never \
-                     published",
-                    member.lifecycle.key()
-                );
+            if !workspace.members[idx].releasable {
+                bail!("package `{name}` is excluded from release by `@release`");
             }
             vec![idx]
         }
@@ -54,14 +49,6 @@ pub fn run(workspace: &Workspace, options: &PublishOptions) -> Result<bool> {
                 version: tag_version,
             } => {
                 let member = &workspace.members[idx];
-                if !member.publishes_to_hex() {
-                    bail!(
-                        "tag `{tag}` names `{}`, which has release lifecycle `{}`, not `hex`, \
-                         so it is never published",
-                        member.name,
-                        member.lifecycle.key()
-                    );
-                }
                 if tag_version != member.version() {
                     bail!(
                         "tag `{tag}` says version {tag_version} but {}/gleam.toml says {} — \
@@ -89,21 +76,16 @@ pub fn run(workspace: &Workspace, options: &PublishOptions) -> Result<bool> {
         },
         // Member indices are already topological; publish order follows.
         Selector::AllUntagged => (0..workspace.members.len())
-            .filter(|&idx| workspace.members[idx].publishes_to_hex())
+            .filter(|&idx| workspace.members[idx].releasable)
             .collect(),
     };
 
     let hex = HexClient::from_env();
     let retry = &workspace.config.publish.retry;
-    // Path deps are rewritten to Hex requirements derived from the
-    // dependency's *current* version — only meaningful for a dependency that
-    // will actually exist on Hex, so this map is `hex`-lifecycle members only.
-    // A `git_only` or `workspace` runtime path dep has no entry here, and
-    // `rewrite_path_deps` refuses to publish a package that needs one.
-    let hex_versions: BTreeMap<String, String> = workspace
+    let releasable_versions: BTreeMap<String, String> = workspace
         .members
         .iter()
-        .filter(|member| member.publishes_to_hex())
+        .filter(|member| member.releasable)
         .map(|member| (member.name.clone(), member.version().to_string()))
         .collect();
 
@@ -122,14 +104,14 @@ pub fn run(workspace: &Workspace, options: &PublishOptions) -> Result<bool> {
         }
 
         // Compute the rewrite up front — for --dry-run reporting, and so a
-        // package that could never publish (path dep on a non-hex member)
-        // fails before validation wastes time.
+        // package that could never publish (path dep on an unreleasable
+        // member) fails before validation wastes time.
         let manifest_path = member.path.join("gleam.toml");
         let original = std::fs::read_to_string(&manifest_path)
             .with_context(|| format!("failed to read {}", manifest_path.display()))?;
         let (rewritten, rewrites) = rewrite::rewrite_path_deps(
             &original,
-            &hex_versions,
+            &releasable_versions,
             workspace.config.publish.path_dep_requirement,
         )
         .with_context(|| format!("cannot prepare `{name}` for publishing"))?;

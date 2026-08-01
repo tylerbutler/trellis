@@ -9,7 +9,6 @@ expression: "json_output(&fixture(\"basic\"), &[\"info\", \"lat_mid\", \"--json\
   "dependents": [
     "lat_cli"
   ],
-  "lifecycle": "hex",
   "name": "lat_mid",
   "path": "packages/lat_mid",
   "releasable": true,

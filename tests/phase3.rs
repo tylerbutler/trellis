@@ -1,9 +1,6 @@
 //! End-to-end tests for the tag/publish layer, using a fake gleam binary
-//! (TRELLIS_GLEAM_BIN), a mock GitHub API (TRELLIS_GITHUB_API_URL), a mock
-//! Hex API served from a local thread (TRELLIS_HEX_API_URL), and real git
-//! repos.
-
-mod common;
+//! (TRELLIS_GLEAM_BIN), a fake gh (TRELLIS_GH_BIN), a mock Hex API served
+//! from a local thread (TRELLIS_HEX_API_URL), and real git repos.
 
 use assert_cmd::Command;
 use predicates::prelude::*;
@@ -108,14 +105,34 @@ fn install_fake_gleam(root: &Path) -> PathBuf {
     script
 }
 
-/// A trellis invocation aimed at the mock GitHub API: base URL and repo
-/// overridden, and a token in the environment.
-fn trellis_github(dir: &Path, api: &str) -> Command {
-    let mut cmd = trellis(dir);
-    cmd.env("TRELLIS_GITHUB_API_URL", api)
-        .env("TRELLIS_GITHUB_REPO", "example/repo")
-        .env("GITHUB_TOKEN", "test-token");
-    cmd
+/// A fake gh that logs `release create` calls, notes included.
+fn install_fake_gh(root: &Path) -> PathBuf {
+    let script = root.join("fake-gh.sh");
+    write(
+        &script,
+        &format!(
+            concat!(
+                "#!/bin/sh\n",
+                "set -eu\n",
+                "printf 'gh %s\\n---\\n' \"$*\" >> \"{root}/.fake/gh-log\"\n",
+                "case \"$1 $2\" in\n",
+                "  'release view')\n",
+                "    if [ -f \"{root}/.fake/release-$3\" ]; then\n",
+                "      printf '{{\"tagName\":\"%s\"}}\\n' \"$3\"\n",
+                "    else\n",
+                "      echo 'release not found' >&2\n",
+                "      exit 1\n",
+                "    fi\n",
+                "    ;;\n",
+                "  'release create') touch \"{root}/.fake/release-$3\" ;;\n",
+                "esac\n",
+            ),
+            root = root.display()
+        ),
+    );
+    fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
+    fs::create_dir_all(root.join(".fake")).unwrap();
+    script
 }
 
 /// Serve a canned Hex API from a background thread: `versions` maps package
@@ -220,10 +237,16 @@ fn tag_create_github_release_uses_changelog_section() {
     copy_fixture_to(root);
     init_repo(root);
     // A bare remote so the implied push has somewhere to go.
-    let _remote = bare_origin(root);
-    let api = common::mock_github(root);
+    let remote = tempfile::tempdir().unwrap();
+    git(remote.path(), &["init", "-q", "--bare"]);
+    git(
+        root,
+        &["remote", "add", "origin", remote.path().to_str().unwrap()],
+    );
+    let gh = install_fake_gh(root);
 
-    trellis_github(root, &api)
+    trellis(root)
+        .env("TRELLIS_GH_BIN", &gh)
         .args(["tag", "create", "--github-release"])
         .assert()
         .success()
@@ -232,18 +255,14 @@ fn tag_create_github_release_uses_changelog_section() {
             "created GitHub release lat_core-v1.2.0",
         ));
 
-    let log = fs::read_to_string(root.join(".fake/github-log")).unwrap();
-    assert!(log.contains("POST /repos/example/repo/releases\n"), "{log}");
-    assert!(log.contains(r#""tag_name": "lat_core-v1.2.0""#), "{log}");
-    assert!(log.contains(r#""name": "lat_core-v1.2.0""#), "{log}");
+    let log = fs::read_to_string(root.join(".fake/gh-log")).unwrap();
+    assert!(log.contains("release create lat_core-v1.2.0 --title lat_core-v1.2.0 --notes"));
     // The notes body is the CHANGELOG section for 1.2.0.
-    assert!(log.contains("- initial"), "github log:\n{log}");
+    assert!(log.contains("- initial"), "gh log:\n{log}");
 }
 
-/// With no token in the environment, the client falls back to `gh auth
-/// token` — the one job the gh CLI still has.
 #[test]
-fn github_release_token_falls_back_to_gh_auth_token() {
+fn tag_create_reconciles_local_tags_with_remote_and_releases() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
     copy_fixture_to(root);
@@ -254,54 +273,7 @@ fn github_release_token_falls_back_to_gh_auth_token() {
         root,
         &["remote", "add", "origin", remote.path().to_str().unwrap()],
     );
-    let api = common::mock_github(root);
-    let gh = root.join("fake-gh.sh");
-    write(
-        &gh,
-        "#!/bin/sh\nif [ \"$1 $2\" = 'auth token' ]; then echo fake-token; fi\n",
-    );
-    fs::set_permissions(&gh, fs::Permissions::from_mode(0o755)).unwrap();
-
-    trellis(root)
-        .env("TRELLIS_GITHUB_API_URL", &api)
-        .env("TRELLIS_GITHUB_REPO", "example/repo")
-        .env_remove("GITHUB_TOKEN")
-        .env_remove("GH_TOKEN")
-        .env("TRELLIS_GH_BIN", &gh)
-        .args(["tag", "create", "--github-release"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains(
-            "created GitHub release lat_core-v1.2.0",
-        ));
-}
-
-#[test]
-fn github_release_without_any_token_fails_with_guidance() {
-    let tmp = tempfile::tempdir().unwrap();
-    let root = tmp.path();
-    copy_fixture_to(root);
-    init_repo(root);
-
-    trellis(root)
-        .env("TRELLIS_GITHUB_REPO", "example/repo")
-        .env_remove("GITHUB_TOKEN")
-        .env_remove("GH_TOKEN")
-        .env("TRELLIS_GH_BIN", "/nonexistent/gh")
-        .args(["tag", "create", "--github-release"])
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains("GITHUB_TOKEN"));
-}
-
-#[test]
-fn tag_create_reconciles_local_tags_with_remote_and_releases() {
-    let tmp = tempfile::tempdir().unwrap();
-    let root = tmp.path();
-    copy_fixture_to(root);
-    init_repo(root);
-    let remote = bare_origin(root);
-    let api = common::mock_github(root);
+    let gh = install_fake_gh(root);
 
     for (tag, message) in [
         ("lat_core-v1.2.0", "lat_core 1.2.0"),
@@ -311,7 +283,8 @@ fn tag_create_reconciles_local_tags_with_remote_and_releases() {
         git(root, &["tag", "-a", tag, "-m", message]);
     }
 
-    trellis_github(root, &api)
+    trellis(root)
+        .env("TRELLIS_GH_BIN", &gh)
         .args(["tag", "create", "--github-release"])
         .assert()
         .success()
@@ -320,31 +293,30 @@ fn tag_create_reconciles_local_tags_with_remote_and_releases() {
             "created GitHub release lat_core-v1.2.0",
         ));
 
-    let tags = git_stdout(remote.path(), &["tag", "--list"]);
+    let tags = std::process::Command::new("git")
+        .args([
+            "--git-dir",
+            remote.path().to_str().unwrap(),
+            "tag",
+            "--list",
+        ])
+        .output()
+        .unwrap();
+    let tags = String::from_utf8_lossy(&tags.stdout);
     assert!(tags.contains("lat_core-v1.2.0"));
     assert!(tags.contains("lat_mid-v0.5.0"));
     assert!(tags.contains("lat_cli-v0.3.1"));
 
-    let first_log = fs::read_to_string(root.join(".fake/github-log")).unwrap();
-    assert_eq!(
-        first_log
-            .matches("POST /repos/example/repo/releases\n")
-            .count(),
-        3
-    );
+    let first_log = fs::read_to_string(root.join(".fake/gh-log")).unwrap();
+    assert_eq!(first_log.matches("gh release create").count(), 3);
 
-    trellis_github(root, &api)
+    trellis(root)
+        .env("TRELLIS_GH_BIN", &gh)
         .args(["tag", "create", "--github-release"])
         .assert()
         .success();
-    let second_log = fs::read_to_string(root.join(".fake/github-log")).unwrap();
-    assert_eq!(
-        second_log
-            .matches("POST /repos/example/repo/releases\n")
-            .count(),
-        3,
-        "the second run creates no new releases:\n{second_log}"
-    );
+    let second_log = fs::read_to_string(root.join(".fake/gh-log")).unwrap();
+    assert_eq!(second_log.matches("gh release create").count(), 3);
 }
 
 #[test]
@@ -353,7 +325,12 @@ fn tag_create_rejects_divergent_local_and_remote_tags() {
     let root = tmp.path();
     copy_fixture_to(root);
     init_repo(root);
-    let _remote = bare_origin(root);
+    let remote = tempfile::tempdir().unwrap();
+    git(remote.path(), &["init", "-q", "--bare"]);
+    git(
+        root,
+        &["remote", "add", "origin", remote.path().to_str().unwrap()],
+    );
 
     for (tag, message) in [
         ("lat_core-v1.2.0", "lat_core at initial commit"),
@@ -598,24 +575,10 @@ fn publish_rejects_unreleasable_package() {
         .args(["publish", "package_a"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains(
-            "release lifecycle `workspace`, not `hex`",
-        ));
+        .stderr(predicate::str::contains("excluded from release"));
 }
 
 // ---- series tags -----------------------------------------------------------
-
-/// A bare repository added to `root`'s repo as `origin`. The returned remote
-/// must outlive the test.
-fn bare_origin(root: &Path) -> tempfile::TempDir {
-    let remote = tempfile::tempdir().unwrap();
-    git(remote.path(), &["init", "-q", "--bare"]);
-    git(
-        root,
-        &["remote", "add", "origin", remote.path().to_str().unwrap()],
-    );
-    remote
-}
 
 /// The basic fixture with `[tools.trellis.publish]` replaced by `publish`, in
 /// a git repo with a bare origin. The returned remote must outlive the test.
@@ -630,7 +593,13 @@ fn series_repo(root: &Path, publish: &str) -> tempfile::TempDir {
         ),
     );
     init_repo(root);
-    bare_origin(root)
+    let remote = tempfile::tempdir().unwrap();
+    git(remote.path(), &["init", "-q", "--bare"]);
+    git(
+        root,
+        &["remote", "add", "origin", remote.path().to_str().unwrap()],
+    );
+    remote
 }
 
 fn set_version(root: &Path, package: &str, version: &str) {
@@ -790,9 +759,10 @@ fn github_releases_skip_series_tags() {
         root,
         "tag_mode_overrides = { both = [\"packages/lat_cli\"] }",
     );
-    let api = common::mock_github(root);
+    let gh = install_fake_gh(root);
 
-    trellis_github(root, &api)
+    trellis(root)
+        .env("TRELLIS_GH_BIN", &gh)
         .args(["tag", "create", "--github-release"])
         .assert()
         .success()
@@ -800,11 +770,11 @@ fn github_releases_skip_series_tags() {
             "created GitHub release lat_cli-v0.3.1",
         ));
 
-    let log = fs::read_to_string(root.join(".fake/github-log")).unwrap();
-    assert!(log.contains(r#""tag_name": "lat_cli-v0.3.1""#), "{log}");
+    let log = fs::read_to_string(root.join(".fake/gh-log")).unwrap();
+    assert!(log.contains("release create lat_cli-v0.3.1"), "{log}");
     // A release bound to a moving tag would silently retarget on the next move.
-    assert!(!log.contains(r#""tag_name": "lat_cli-v0.3""#), "{log}");
-    assert!(!log.contains("/releases/tags/lat_cli-v0.3\n"), "{log}");
+    assert!(!log.contains("release create lat_cli-v0.3 "), "{log}");
+    assert!(!log.contains("release view lat_cli-v0.3 "), "{log}");
     // The series tag itself is still created and pushed.
     assert_eq!(commit_of(root, "lat_cli-v0.3"), commit_of(root, "HEAD"));
 }
@@ -977,254 +947,6 @@ fn doctor_rejects_a_tag_mode_override_that_matches_nothing() {
         .stdout(predicate::str::contains(
             "`tag_mode_overrides.series` glob `packages/nope` matches no member",
         ));
-}
-
-// ---- release bootstrap -----------------------------------------------------
-
-// Mirrors `version_of` in phase2.rs — the same manifest-version read, kept in
-// step until the test binaries grow a shared support module.
-fn version_of(root: &Path, package: &str) -> String {
-    let manifest = fs::read_to_string(root.join("packages").join(package).join("gleam.toml"))
-        .unwrap_or_else(|err| panic!("no gleam.toml for {package}: {err}"));
-    manifest
-        .lines()
-        .find_map(|line| line.trim().strip_prefix("version = "))
-        .unwrap_or_else(|| panic!("no version in {package}'s gleam.toml"))
-        .trim_matches('"')
-        .to_string()
-}
-
-#[test]
-fn bootstrap_uses_current_versions_with_no_fragments_required() {
-    let tmp = tempfile::tempdir().unwrap();
-    let root = tmp.path();
-    copy_fixture_to(root);
-    init_repo(root);
-    // The fixture ships no `.changes/unreleased` directory at all — bootstrap
-    // must not need one.
-    assert!(!root.join(".changes").exists());
-
-    trellis(root)
-        .args(["release", "bootstrap"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("tagged lat_core-v1.2.0"))
-        .stdout(predicate::str::contains("tagged lat_mid-v0.5.0"))
-        .stdout(predicate::str::contains("tagged lat_cli-v0.3.1"));
-
-    let tags = git_stdout(root, &["tag", "--list"]);
-    assert_eq!(
-        tags.lines().collect::<Vec<_>>(),
-        vec!["lat_cli-v0.3.1", "lat_core-v1.2.0", "lat_mid-v0.5.0"]
-    );
-    // No version bump: bootstrap never runs `version plan`/`version apply`.
-    assert_eq!(version_of(root, "lat_core"), "1.2.0");
-    assert_eq!(version_of(root, "lat_mid"), "0.5.0");
-    assert_eq!(version_of(root, "lat_cli"), "0.3.1");
-}
-
-#[test]
-fn bootstrap_dry_run_reports_every_action_and_mutates_nothing() {
-    let tmp = tempfile::tempdir().unwrap();
-    let root = tmp.path();
-    copy_fixture_to(root);
-    init_repo(root);
-    let remote = bare_origin(root);
-    let api = common::mock_github(root);
-
-    trellis_github(root, &api)
-        .args([
-            "release",
-            "bootstrap",
-            "--dry-run",
-            "--push",
-            "--github-release",
-        ])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("would tag lat_core-v1.2.0"))
-        .stdout(predicate::str::contains("would push lat_core-v1.2.0"))
-        .stdout(predicate::str::contains(
-            "would create GitHub release lat_core-v1.2.0",
-        ))
-        .stdout(predicate::str::contains("would tag lat_mid-v0.5.0"))
-        .stdout(predicate::str::contains(
-            "would create GitHub release lat_cli-v0.3.1",
-        ));
-
-    // Nothing was actually created, locally, on origin, or via the API.
-    assert_eq!(git_stdout(root, &["tag", "--list"]), "");
-    assert_eq!(git_stdout(remote.path(), &["tag", "--list"]), "");
-    let log = fs::read_to_string(root.join(".fake/github-log")).unwrap_or_default();
-    assert!(
-        !log.contains("POST /repos/example/repo/releases\n"),
-        "{log}"
-    );
-}
-
-#[test]
-fn bootstrap_creates_both_exact_and_series_tags() {
-    let tmp = tempfile::tempdir().unwrap();
-    let root = tmp.path();
-    let _remote = series_repo(
-        root,
-        "tag_mode_overrides = { both = [\"packages/lat_cli\"] }",
-    );
-
-    trellis(root)
-        .args(["release", "bootstrap", "--dry-run"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("would tag lat_cli-v0.3.1"))
-        .stdout(predicate::str::contains("would tag lat_cli-v0.3\n"));
-
-    trellis(root)
-        .args(["release", "bootstrap"])
-        .assert()
-        .success();
-    let tags = git_stdout(root, &["tag", "--list"]);
-    assert_eq!(
-        tags.lines().collect::<Vec<_>>(),
-        vec![
-            "lat_cli-v0.3",
-            "lat_cli-v0.3.1",
-            "lat_core-v1.2.0",
-            "lat_mid-v0.5.0"
-        ]
-    );
-}
-
-#[test]
-fn bootstrap_leaves_release_excluded_packages_untagged() {
-    let tmp = tempfile::tempdir().unwrap();
-    let root = tmp.path();
-    copy_fixture_to(root);
-    init_repo(root);
-
-    trellis(root)
-        .args(["release", "bootstrap", "--dry-run"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("package_a").not());
-
-    trellis(root)
-        .args(["release", "bootstrap"])
-        .assert()
-        .success();
-    let tags = git_stdout(root, &["tag", "--list"]);
-    assert!(!tags.contains("package_a"), "{tags}");
-}
-
-#[test]
-fn bootstrap_fetches_a_remote_only_tag_instead_of_recreating_it() {
-    let tmp = tempfile::tempdir().unwrap();
-    let root = tmp.path();
-    copy_fixture_to(root);
-    init_repo(root);
-    let _remote = bare_origin(root);
-    // lat_core is already tagged and pushed by some earlier process; the
-    // local clone bootstrapping now has never seen the tag.
-    git(root, &["tag", "-a", "lat_core-v1.2.0", "-m", "existing"]);
-    git(root, &["push", "origin", "lat_core-v1.2.0"]);
-    let original = commit_of(root, "lat_core-v1.2.0");
-    git(root, &["tag", "-d", "lat_core-v1.2.0"]);
-
-    trellis(root)
-        .args(["release", "bootstrap", "--dry-run", "--push"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("would fetch lat_core-v1.2.0"));
-
-    trellis(root)
-        .args(["release", "bootstrap", "--push"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("fetched lat_core-v1.2.0"));
-    assert_eq!(commit_of(root, "lat_core-v1.2.0"), original);
-}
-
-#[test]
-fn bootstrap_reports_existing_releases_and_reruns_idempotently() {
-    let tmp = tempfile::tempdir().unwrap();
-    let root = tmp.path();
-    copy_fixture_to(root);
-    init_repo(root);
-    let _remote = bare_origin(root);
-    let api = common::mock_github(root);
-
-    trellis_github(root, &api)
-        .args(["release", "bootstrap", "--push", "--github-release"])
-        .assert()
-        .success();
-    let first_log = fs::read_to_string(root.join(".fake/github-log")).unwrap();
-    assert_eq!(
-        first_log
-            .matches("POST /repos/example/repo/releases\n")
-            .count(),
-        3
-    );
-
-    trellis_github(root, &api)
-        .args([
-            "release",
-            "bootstrap",
-            "--dry-run",
-            "--push",
-            "--github-release",
-        ])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains(
-            "GitHub release lat_core-v1.2.0 already exists; skipping",
-        ))
-        .stdout(predicate::str::contains("would").not());
-
-    trellis_github(root, &api)
-        .args(["release", "bootstrap", "--push", "--github-release"])
-        .assert()
-        .success();
-    let second_log = fs::read_to_string(root.join(".fake/github-log")).unwrap();
-    assert_eq!(
-        second_log
-            .matches("POST /repos/example/repo/releases\n")
-            .count(),
-        3
-    );
-}
-
-#[test]
-fn bootstrap_preflights_conflicts_before_mutating_any_package() {
-    let tmp = tempfile::tempdir().unwrap();
-    let root = tmp.path();
-    copy_fixture_to(root);
-    init_repo(root);
-    let _remote = bare_origin(root);
-    // lat_core is tagged and pushed, then the local tag is force-moved to a
-    // later commit — an immutable tag disagreeing with origin.
-    git(root, &["tag", "-a", "lat_core-v1.2.0", "-m", "first"]);
-    git(root, &["push", "origin", "lat_core-v1.2.0"]);
-    write(&root.join("later.txt"), "later\n");
-    git(root, &["add", "."]);
-    git(root, &["commit", "-q", "-m", "later"]);
-    git(root, &["tag", "-f", "-a", "lat_core-v1.2.0", "-m", "moved"]);
-    // lat_mid and lat_cli have no tag yet, and would otherwise be created.
-
-    trellis(root)
-        .args(["release", "bootstrap", "--dry-run", "--push"])
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains("different objects"));
-
-    trellis(root)
-        .args(["release", "bootstrap", "--push"])
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains("different objects"));
-
-    // Neither the dry-run nor the failed real run tagged anything else —
-    // the conflict on lat_core blocks the whole batch.
-    let tags = git_stdout(root, &["tag", "--list"]);
-    assert_eq!(tags.lines().collect::<Vec<_>>(), vec!["lat_core-v1.2.0"]);
 }
 
 // ---- lockfile refresh ------------------------------------------------------

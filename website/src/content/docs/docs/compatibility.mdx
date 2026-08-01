@@ -12,14 +12,14 @@ can bind a workflow to, and what may change under you.
 
 Every command uses the same four codes. Branch on **1 versus 3** to tell a
 workspace that has problems from an environment where trellis could not run at
-all — a missing GitHub token, an unparseable config, or Hex being unreachable.
+all — a missing `gh`, an unparseable config, or Hex being unreachable.
 
 | Code | Meaning | Examples |
 | --- | --- | --- |
 | `0` | Success, no findings | `doctor` found nothing; every task passed |
 | `1` | The command ran correctly and found problems | `doctor` findings, missing changelog fragments, a failed task |
 | `2` | Usage error | Unknown flag, missing argument, bad subcommand |
-| `3` | Trellis itself could not run | Unparseable config, not a git repository, missing `gleam`, no GitHub token, Hex unreachable after retries |
+| `3` | Trellis itself could not run | Unparseable config, not a git repository, missing `gleam`/`gh`, Hex unreachable after retries |
 
 A failed task exits `1`; trellis does not propagate the child's own exit code.
 If `gleam test` exits `3`, trellis still exits `1`.

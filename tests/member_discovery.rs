@@ -63,7 +63,7 @@ fn recursive_member_glob_respects_repository_git_ignores() {
         .arg("list")
         .assert()
         .success()
-        .stdout("chatrooms           hex\ncollab_docs_client  hex\n");
+        .stdout("chatrooms\ncollab_docs_client\n");
 }
 
 #[test]
@@ -83,7 +83,7 @@ fn literal_member_path_includes_an_ignored_package() {
         .arg("list")
         .assert()
         .success()
-        .stdout("generated_package  hex\n");
+        .stdout("generated_package\n");
 }
 
 #[test]

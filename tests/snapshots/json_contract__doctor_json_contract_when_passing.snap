@@ -53,24 +53,6 @@ expression: "json_output(&fixture(\"basic\"), &[\"doctor\", \"--format\", \"json
     }
   ],
   "ok": true,
-  "package_lifecycles": [
-    {
-      "lifecycle": "hex",
-      "name": "lat_core"
-    },
-    {
-      "lifecycle": "hex",
-      "name": "lat_mid"
-    },
-    {
-      "lifecycle": "hex",
-      "name": "lat_cli"
-    },
-    {
-      "lifecycle": "workspace",
-      "name": "package_a"
-    }
-  ],
   "packages": 4,
   "schema": "trellis.doctor/1"
 }

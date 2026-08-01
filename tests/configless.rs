@@ -55,7 +55,7 @@ fn configless_list_discovers_members_from_the_git_root() {
         .arg("list")
         .assert()
         .success()
-        .stdout("core  hex\ncli   hex\n");
+        .stdout("core\ncli\n");
 }
 
 #[test]
@@ -69,7 +69,7 @@ fn configless_works_from_inside_a_package() {
         .arg("list")
         .assert()
         .success()
-        .stdout("core  hex\ncli   hex\n");
+        .stdout("core\ncli\n");
 }
 
 #[test]
@@ -113,7 +113,7 @@ fn configless_skips_gitignored_paths_and_build() {
         .arg("list")
         .assert()
         .success()
-        .stdout("core  hex\ncli   hex\n");
+        .stdout("core\ncli\n");
 }
 
 #[test]
@@ -200,12 +200,12 @@ fn table_without_members_auto_discovers_and_keeps_exclusions() {
         .arg("list")
         .assert()
         .success()
-        .stdout("core  hex\ncli   hex\ndemo  workspace\n");
+        .stdout("core\ncli\ndemo\n");
     trellis(root)
         .args(["list", "--releasable"])
         .assert()
         .success()
-        .stdout("core  hex\ncli   hex\n");
+        .stdout("core\ncli\n");
 }
 
 #[test]
@@ -228,7 +228,7 @@ fn at_members_excludes_directories_from_membership() {
         .arg("list")
         .assert()
         .success()
-        .stdout("core  hex\ncli   hex\n");
+        .stdout("core\ncli\n");
 }
 
 #[test]
@@ -247,7 +247,7 @@ fn at_members_also_filters_explicit_member_globs() {
         .arg("list")
         .assert()
         .success()
-        .stdout("core  hex\n");
+        .stdout("core\n");
 }
 
 #[test]
@@ -266,5 +266,5 @@ fn new_package_is_discovered_without_a_members_glob() {
         .arg("list")
         .assert()
         .success()
-        .stdout(predicate::str::contains("extra"));
+        .stdout(predicate::str::contains("extra\n"));
 }

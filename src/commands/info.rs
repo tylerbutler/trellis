@@ -19,8 +19,7 @@ pub fn run(workspace: &Workspace, name: &str, json: bool) -> Result<()> {
     crate::status!("name:       {}", member.name);
     crate::status!("version:    {}", member.version());
     crate::status!("path:       {}", member.rel_path);
-    crate::status!("lifecycle:  {}", member.lifecycle.key());
-    crate::status!("releasable: {}", member.releasable());
+    crate::status!("releasable: {}", member.releasable);
     // Only the tags this member's mode actually produces — a series-only
     // package has no per-version tag to report.
     if member.tag_mode.includes_exact() {

@@ -23,28 +23,24 @@ expression: "json_output(&fixture(\"basic\"), &[\"graph\", \"--format\", \"json\
   ],
   "nodes": [
     {
-      "lifecycle": "hex",
       "name": "lat_core",
       "path": "packages/lat_core",
       "releasable": true,
       "version": "1.2.0"
     },
     {
-      "lifecycle": "hex",
       "name": "lat_mid",
       "path": "packages/lat_mid",
       "releasable": true,
       "version": "0.5.0"
     },
     {
-      "lifecycle": "hex",
       "name": "lat_cli",
       "path": "packages/lat_cli",
       "releasable": true,
       "version": "0.3.1"
     },
     {
-      "lifecycle": "workspace",
       "name": "package_a",
       "path": "examples/package-a",
       "releasable": false,

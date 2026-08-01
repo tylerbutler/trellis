@@ -181,9 +181,9 @@ fn pick_sibling<'a>(
     workspace
         .members
         .iter()
-        .filter(|m| m.releasable())
+        .filter(|m| m.releasable)
         .find(in_parent)
-        .or_else(|| workspace.members.iter().find(|m| m.releasable()))
+        .or_else(|| workspace.members.iter().find(|m| m.releasable))
         .or_else(|| workspace.members.first())
 }
 

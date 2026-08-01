@@ -126,18 +126,9 @@ pub fn trace_command(program: &str, args: &[impl AsRef<str>], cwd: &Path) {
     eprintln!("+ {line}  ({})", cwd.display());
 }
 
-/// Echo an HTTP request trellis is about to make, on stderr, when `-v` is
-/// set. The API sibling of [`trace_command`]; bodies are elided.
-pub fn trace_http(method: &str, url: &str) {
-    if !verbose() {
-        return;
-    }
-    eprintln!("+ {method} {url}");
-}
-
 /// Quote an argument well enough that the trace can be pasted back into a
 /// shell. Single quotes, since the arguments that need it are prose — a
-/// changelog body passed to `git tag -m`, say.
+/// changelog body in `gh release create --notes`, say.
 fn shell_quote(arg: &str) -> String {
     if !arg.is_empty() && !arg.contains(['\'', ' ', '\t', '\n', '"', '$', '`', '\\']) {
         return arg.to_string();

@@ -1,5 +1,0 @@
-component: tag
-kind: Added
-body: |-
-  **`trellis tag` creates git tags and GitHub Releases for both `git_only` and `hex` packages.** `workspace` packages produce no exact or series tags, while each participating package continues to follow its resolved `tag_mode`.
-time: 2026-07-31T23:03:32.015056000-07:00

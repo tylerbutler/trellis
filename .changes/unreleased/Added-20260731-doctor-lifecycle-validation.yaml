@@ -1,7 +1,0 @@
-component: doctor
-kind: Added
-body: |-
-  **`doctor` validates dependency availability against each package's release lifecycle, not just a binary releasable/excluded split.** The `release_boundary` check now enforces that a runtime (`[dependencies]`, not `[dev-dependencies]`) path dependency is at least as capable as its dependent: a `hex` package may depend only on `hex`; `git_only` may depend on `git_only` or `hex`; `workspace` may depend on anything. The message names both packages' lifecycles and why the dependency would be unavailable.
-
-    `--format json` gains an additive `package_lifecycles` array of `{name, lifecycle}`, one per member in workspace order, alongside the retained numeric `packages` count; text mode prints the same data as compact counts, e.g. `ok: 4 package(s) (1 workspace, 0 git_only, 3 hex), 0 warning(s)`. `publish.lifecycle.packages` globs are checked for typos the same way `exclude` and `tag_mode_overrides` globs already are.
-time: 2026-07-31T23:03:32.015056000-07:00

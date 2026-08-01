@@ -1,5 +1,0 @@
-component: info
-kind: Added
-body: |-
-  **`trellis info` reports a package's resolved release lifecycle.** Text mode gains a `lifecycle:` line alongside `releasable:`; `--json` gains the same additive `lifecycle` field `list --json` carries.
-time: 2026-07-31T23:03:32.015056000-07:00
