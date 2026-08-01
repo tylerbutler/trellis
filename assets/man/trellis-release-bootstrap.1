@@ -1,0 +1,53 @@
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
+.TH trellis-release-bootstrap 1 "" trellis "Trellis Manual"
+.SH NAME
+trellis\-release\-bootstrap \- Reconcile tags against current manifest versions — no version bump, no unreleased changelog fragments required
+.SH SYNOPSIS
+\fBtrellis release bootstrap\fR [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-\-push\fR] [\fB\-\-color\fR] [\fB\-\-github\-release\fR] [\fB\-\-dry\-run\fR] [\fB\-q\fR|\fB\-\-quiet\fR] [\fB\-v\fR|\fB\-\-verbose\fR] [\fB\-\-no\-update\-check\fR] [\fB\-h\fR|\fB\-\-help\fR] 
+.SH DESCRIPTION
+Reconcile tags against current manifest versions — no version bump, no unreleased changelog fragments required
+.PP
+An alias for `tag create`, for adopting trellis on a repository that already has the package versions and changelogs it wants, but no tags yet.
+.SH OPTIONS
+.TP
+\fB\-C\fR, \fB\-\-directory\fR \fI<DIR>\fR
+Run as if started in this directory
+.TP
+\fB\-\-push\fR
+Push each created tag to origin
+.TP
+\fB\-\-color\fR \fI<WHEN>\fR [default: auto]
+When to color output. `auto` follows the terminal, `NO_COLOR`, and `CLICOLOR=0`; the other two override that detection
+.br
+
+.br
+\fIPossible values:\fR
+.RS 14
+.IP \(bu 2
+auto
+.IP \(bu 2
+always
+.IP \(bu 2
+never
+.RE
+.TP
+\fB\-\-github\-release\fR
+Also create a GitHub Release per exact tag, with the matching CHANGELOG section as the body (implies \-\-push; requires the gh CLI)
+.TP
+\fB\-\-dry\-run\fR
+Report every tag/push/release action without doing anything (a conflicting tag still fails the command)
+.TP
+\fB\-q\fR, \fB\-\-quiet\fR
+Suppress normal\-path output; JSON/report payloads and errors still print
+.TP
+\fB\-v\fR, \fB\-\-verbose\fR
+Trace every command trellis shells out to, on stderr
+.TP
+\fB\-\-no\-update\-check\fR
+Don\*(Aqt check whether a newer trellis release is available
+
+The check is also skipped in CI, when not attached to a terminal, and when `TRELLIS_NO_UPDATE_CHECK` or `DO_NOT_TRACK` is set.
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Print help (see a summary with \*(Aq\-h\*(Aq)

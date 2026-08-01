@@ -23,6 +23,7 @@ description: Every trellis command, flag, and argument — generated from the CL
 * [`trellis new`↴](#trellis-new)
 * [`trellis release`↴](#trellis-release)
 * [`trellis release pr`↴](#trellis-release-pr)
+* [`trellis release bootstrap`↴](#trellis-release-bootstrap)
 * [`trellis tag`↴](#trellis-tag)
 * [`trellis tag plan`↴](#trellis-tag-plan)
 * [`trellis tag create`↴](#trellis-tag-create)
@@ -315,6 +316,7 @@ Release orchestration
 ###### **Subcommands:**
 
 * `pr` — Create or update the release PR: version apply on a branch, push, gh pr
+* `bootstrap` — Reconcile tags against current manifest versions — no version bump, no unreleased changelog fragments required
 
 
 
@@ -332,6 +334,22 @@ Create or update the release PR: version apply on a branch, push, gh pr
 * `--branch <BRANCH>` — Branch the release commit is force-pushed to
 
   Default value: `release/pending`
+
+
+
+## `trellis release bootstrap`
+
+Reconcile tags against current manifest versions — no version bump, no unreleased changelog fragments required
+
+An alias for `tag create`, for adopting trellis on a repository that already has the package versions and changelogs it wants, but no tags yet.
+
+**Usage:** `trellis release bootstrap [OPTIONS]`
+
+###### **Options:**
+
+* `--push` — Push each created tag to origin
+* `--github-release` — Also create a GitHub Release per exact tag, with the matching CHANGELOG section as the body (implies --push; requires the gh CLI)
+* `--dry-run` — Report every tag/push/release action without doing anything (a conflicting tag still fails the command)
 
 
 
@@ -369,7 +387,8 @@ Create missing tags in topological order
 ###### **Options:**
 
 * `--push` — Push each created tag to origin
-* `--github-release` — Also create a GitHub Release per tag, with the matching CHANGELOG section as the body (implies --push; requires the gh CLI)
+* `--github-release` — Also create a GitHub Release per exact tag, with the matching CHANGELOG section as the body (implies --push; requires the gh CLI)
+* `--dry-run` — Report every tag/push/release action without doing anything (a conflicting tag still fails the command)
 
 
 

@@ -3,6 +3,10 @@
 //! `version apply` on a release branch, push it, and drive `gh` to open or
 //! refresh the PR. The tool already knows exactly what changed; gh does the
 //! PR mechanics.
+//!
+//! `trellis release bootstrap` — `tag create` for adopting trellis on a
+//! repository that already has the versions and changelogs it wants; see
+//! [`bootstrap`].
 
 use crate::commands::version_override::Overrides;
 use crate::commands::{tag, version};
@@ -54,6 +58,17 @@ pub fn pr(workspace: &Workspace, options: &PrOptions) -> Result<bool> {
         .current_dir(root)
         .output();
     result
+}
+
+/// `trellis release bootstrap` — an alias for `tag create` under the release
+/// umbrella, for the repository *adopting* trellis: versions and changelogs
+/// are already right, only the tags (and GitHub Releases) are missing.
+/// Unlike `release pr`, it never runs `version apply` and requires no
+/// unreleased changelog fragments — `tag::plan_tags` reads versions straight
+/// off `gleam.toml`.
+pub fn bootstrap(workspace: &Workspace, options: &tag::CreateOptions) -> Result<bool> {
+    tag::create(workspace, options)?;
+    Ok(true)
 }
 
 fn build_release_commit_and_pr(
