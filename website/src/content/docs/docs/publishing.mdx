@@ -48,7 +48,9 @@ retry = { attempts = 5, initial_delay = "30s", multiplier = 2 }
 `trellis release pr` turns pending fragments into a release pull request: it
 runs `version apply` on a release branch (default `release/pending`), commits
 the bumps, force-pushes (so the branch is regenerated on each run), and
-creates or updates the PR via the `gh` CLI. The body carries the bump table
+creates or updates the PR via the GitHub API. It needs a token: `GITHUB_TOKEN`
+(ambient in GitHub Actions), `GH_TOKEN`, or a logged-in `gh` CLI as the
+fallback (`gh auth token`). The body carries the bump table
 and each package's new CHANGELOG section. It requires a clean working tree
 and is a no-op when there are no fragments.
 
@@ -56,7 +58,8 @@ and is a no-op when there are no fragments.
 
 `tag plan` lists the tags the current versions call for and don't have yet.
 `tag create` reconciles them in topological order; `--push` pushes them, and
-`--github-release` (which implies `--push` and requires the `gh` CLI) also
+`--github-release` (which implies `--push` and needs the same GitHub token
+as `release pr`) also
 creates a GitHub Release per tag with the matching CHANGELOG section as the
 body.
 

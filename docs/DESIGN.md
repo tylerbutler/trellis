@@ -64,11 +64,12 @@ dependencies). The design principle of this tool is therefore:
   depend on *each other* is a separate question, and an open one — see
   "Deferred" below.
 - **GitHub is the only forge trellis integrates with.** This is a statement of
-  what 1.0 supports, not a closed door. `release pr`, `tag create
-  --github-release`, `ci matrix`, and `ci outputs` shell out to `gh`; the
+  what 1.0 supports, not a closed door. `release pr` and `tag create
+  --github-release` talk to the GitHub REST API (a minimal client in
+  `src/github.rs`; the gh CLI survives only as a fallback token source); the
   workspace, graph, version, and publish layers are forge-agnostic and never
   touch one. The dependency is confined to release orchestration — a single
-  resolver and a handful of call sites — so another forge is a tractable
+  client and a handful of call sites — so another forge is a tractable
   addition rather than a rewrite. No such support is promised at 1.0.
 
 ### Deferred — decided *not yet*, not *no*
@@ -384,17 +385,37 @@ trellis version apply                             # batch + merge + lockfile pat
 ### Release & publish
 
 ```
+trellis release bootstrap [--dry-run] [--push] [--github-release]
 trellis tag plan [--json]        # packages whose gleam.toml version has no tag yet
-trellis tag create [--github-release]
+trellis tag create [--push] [--github-release] [--dry-run]
 trellis publish <pkg | --tag <tag> | --all-untagged> [--dry-run]
 trellis lockfile refresh [--package <pkg>]
 ```
 
+- **`release bootstrap`** is `tag create` under the release umbrella, for the
+  repository *adopting* trellis: versions and CHANGELOGs are already right,
+  only the tags (and, pre-1.0, the accompanying GitHub Releases) are missing.
+  Where `release pr` → `tag create --github-release` is the steady-state loop
+  (bump from fragments, then tag what the PR merged), bootstrap skips straight
+  to the tagging step — no version bump, no unreleased changelog fragments:
+
+  ```sh
+  trellis release bootstrap --dry-run --github-release   # preview every tag + release
+  trellis release bootstrap --github-release             # create and push them
+  ```
+
+  From then on, `release pr` and `tag create --github-release` (§6) take over;
+  bootstrap has nothing left to reconcile once every current version is
+  tagged.
 - `tag plan/create` replaces the auto-tag workflow's core: compare each
   releasable member's
   `gleam.toml` version against existing `{name}-v{version}` tags, create missing
   tags in topological order, optionally create GitHub Releases with the matching
-  CHANGELOG section as the body.
+  CHANGELOG section as the body. `--dry-run` walks the same code path and prints
+  `would tag/push/…` at each mutation point instead of mutating. When pushing,
+  every planned exact tag is checked for a local/remote conflict before any of
+  them are touched — one package's immutable tag disagreeing with origin fails
+  the whole run rather than half-tagging the rest, in dry-run or for real.
 - A member may instead (or also) carry a **series tag** — `{name}-v{series}`,
   where the series is derived from the version: `0.Y` while the major is 0,
   `X` after. It is the one ref trellis rewrites: each release in the series
@@ -509,7 +530,7 @@ With trellis, each workflow keeps its trigger and becomes a few commands:
 ```yaml
 # release.yml (on push to main)
 - run: trellis version apply            # batch, merge, patch lockfiles — no bash
-- run: trellis release pr               # create-or-update the release PR via gh
+- run: trellis release pr               # create-or-update the release PR via the GitHub API
 
 # auto-tag.yml (on release-PR merge)
 - run: trellis tag create --github-release
@@ -655,9 +676,12 @@ end-to-end suite runs against a fixture workspace with a mocked Hex API.
    guard restores `gleam.toml` even when publishing fails. Dev-only path deps
    to unreleasable members are left alone (Hex doesn't ship dev deps); a
    `[dependencies]` path dep to an unreleasable member refuses to publish.
-   `tag create --github-release` implies pushing the tag first and shells out
-   to `gh` (`TRELLIS_GH_BIN` overridable), with the release body extracted
-   from the member's CHANGELOG section for that version. `ci tag-package`
+   `tag create --github-release` implies pushing the tag first and creates
+   the release through the GitHub REST API (token from GITHUB_TOKEN, GH_TOKEN,
+   or `gh auth token`; TRELLIS_GITHUB_API_URL and TRELLIS_GITHUB_REPO
+   overridable, which the e2e suite uses to aim at a local mock), with the
+   release body extracted from the member's CHANGELOG section for that
+   version. `ci tag-package`
    (used in §6's publish workflow sketch) resolves `$GITHUB_REF_NAME` to a
    package name. The retry policy from `[publish] retry` wraps every
    Hex-touching step (`with_retry`, exponential backoff). The gleam binary is
@@ -688,11 +712,17 @@ end-to-end suite runs against a fixture workspace with a mocked Hex API.
 Beyond the numbered phases, the rest of the §5 command surface is also
 implemented: `trellis new` (scaffolding, with metadata copied from a sibling
 member and a members-glob match check so a new package can't be invisible to
-the workspace) and `trellis release pr` (see question 2 in §11). Two
-pre-release revisions of this document's original proposals are recorded in
-place: changie subsumed by the native changelog engine (§7), and the
-separate `workspace.toml` replaced by the `[tools.trellis]` table in the
-root `gleam.toml` (§4).
+the workspace), `trellis release pr` (see question 2 in §11), and `trellis
+release bootstrap` (§5) — added after adoption on a repository with correct
+versions but no tags exposed a gap between `tag create`, which reconciles
+tags, and the fragment-driven `version`/`release pr` path, which assumes a
+bump is wanted. Bootstrap is an alias for `tag create`, which grew `--dry-run`
+and the batch conflict preflight alongside it — one code path, so the preview
+can never show or allow something execution wouldn't do. Two pre-release
+revisions of this
+document's original proposals are recorded in place: changie subsumed by the
+native changelog engine (§7), and the separate `workspace.toml` replaced by
+the `[tools.trellis]` table in the root `gleam.toml` (§4).
 
 ## 11. Open questions — resolved
 
@@ -708,7 +738,8 @@ root `gleam.toml` (§4).
    management in the action, or absorb into `trellis release pr`?~~
    **Resolved: absorbed.** `trellis release pr` computes the plan, runs
    `version apply` on a release branch, force-pushes it (create-or-update
-   semantics), and drives `gh pr create`/`gh pr edit` with a bump table and
+   semantics), and opens or refreshes the PR through the GitHub REST API,
+   with a bump table and
    per-package CHANGELOG sections in the body. (With the native changelog
    engine of §7, `trellis release pr` is the only release-PR path for gleam
    workspaces — the changie-release action drives changie, which trellis no
