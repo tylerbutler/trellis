@@ -494,6 +494,12 @@ pub struct ChangelogPackage<'a> {
 #[serde(rename_all = "snake_case")]
 pub struct ChangelogCheckDocument<'a> {
     pub schema: &'static str,
+    /// The verdict after `changelog.strictness` is applied — the same thing the
+    /// exit code says. `needs_entry` states the fact; this states the gate, so
+    /// a consumer never has to re-derive it from config it cannot see.
+    pub ok: bool,
+    /// Which policy produced `ok`: `error`, `warn`, or `off`.
+    pub strictness: crate::config::Strictness,
     pub has_entries: bool,
     pub needs_entry: bool,
     pub invalid_fragments: &'a [String],

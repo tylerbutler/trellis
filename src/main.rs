@@ -16,9 +16,11 @@ mod workspace;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use commands::changelog::CheckFormat;
 use commands::doctor::DoctorFormat;
 use commands::graph::GraphFormat;
 use commands::run::Target;
+use config::Strictness;
 use std::path::PathBuf;
 use std::process::ExitCode;
 use term::{ColorChoice, Verbosity};
@@ -314,8 +316,17 @@ enum ChangelogCommand {
         /// Head ref of the change range
         #[arg(long, default_value = "HEAD")]
         head: String,
-        /// Emit JSON, including a Markdown `preview` for a PR comment
-        #[arg(long)]
+        /// How to report: prose, the `trellis.changelog_check/1` JSON payload
+        /// (including a Markdown `preview` for a PR comment), or `key=value`
+        /// lines for $GITHUB_OUTPUT
+        #[arg(long, value_enum, default_value = "text")]
+        format: CheckFormat,
+        /// Override the workspace's changelog.strictness for this run: fail on
+        /// a missing entry, report it advisorily, or don't check
+        #[arg(long, value_enum)]
+        strictness: Option<Strictness>,
+        /// Deprecated alias for `--format json`
+        #[arg(long, conflicts_with = "format")]
         json: bool,
     },
 }
@@ -467,6 +478,12 @@ fn main() -> ExitCode {
                 }
                 | Command::Run { json: true, .. }
                 | Command::Exec { json: true, .. }
+                | Command::Changelog {
+                    command: ChangelogCommand::Check {
+                        format: CheckFormat::Json | CheckFormat::Github,
+                        ..
+                    } | ChangelogCommand::Check { json: true, .. },
+                }
         );
     let result = dispatch(cli);
     if notify_update && result.is_ok() {
@@ -621,10 +638,26 @@ fn dispatch(cli: Cli) -> Result<bool> {
                 )?;
                 Ok(true)
             }
-            ChangelogCommand::Check { base, head, json } => commands::changelog::check(
-                &workspace,
-                &commands::changelog::CheckOptions { base, head, json },
-            ),
+            ChangelogCommand::Check {
+                base,
+                head,
+                format,
+                strictness,
+                json,
+            } => {
+                // `--json` predates `--format` and clap rejects the two
+                // together, so this only ever upgrades the default.
+                let format = if json { CheckFormat::Json } else { format };
+                commands::changelog::check(
+                    &workspace,
+                    &commands::changelog::CheckOptions {
+                        base,
+                        head,
+                        format,
+                        strictness,
+                    },
+                )
+            }
         },
         Command::Version { command } => match command {
             VersionCommand::Plan { overrides, json } => {

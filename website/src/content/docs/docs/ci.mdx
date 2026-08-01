@@ -96,14 +96,13 @@ which is why neither carries the `schema` field every other payload does — see
 ## PR gates
 
 Run `doctor` on every PR — it checks every workspace invariant at once and
-exits non-zero on any error. Pair it with `changelog check`, whose
-[JSON payload](/docs/json-output/) (including a markdown `preview`) feeds a
-sticky comment:
+exits non-zero on any error. Pair it with `changelog check`, which fails a PR
+that changes a package without logging it:
 
 ```yaml
 # on: pull_request
 - run: trellis doctor
-- run: trellis changelog check --base "origin/${{ github.base_ref }}" --json
+- run: trellis changelog check --base "origin/${{ github.base_ref }}"
 ```
 
 When the tripwire fires on a mechanical finding, such as a missing
@@ -112,6 +111,72 @@ When the tripwire fires on a mechanical finding, such as a missing
 rest. `--fix` never touches the report-only findings (path-dep escapes, tag
 collisions, versions behind their changelog), so it stays safe to run
 anywhere; keep the bare `trellis doctor` in CI as the gate.
+
+### The changelog comment
+
+A failing gate in a log is easy to miss. `changelog check --format github`
+emits `key=value` lines for `$GITHUB_OUTPUT`, so the same run that gates the PR
+also drives a sticky comment — no `jq`, no second tool:
+
+```yaml
+# on: pull_request
+permissions:
+  pull-requests: write
+
+steps:
+  - uses: actions/checkout@v4
+    with:
+      fetch-depth: 0 # the diff needs the base commit
+  - id: changelog
+    # The gate exits 1 on a missing entry. Let it, but keep going, so the
+    # comment lands before the job fails.
+    continue-on-error: true
+    run: |
+      trellis changelog check \
+        --base "${{ github.event.pull_request.base.sha }}" \
+        --head "${{ github.event.pull_request.head.sha }}" \
+        --format github >> "$GITHUB_OUTPUT"
+  - name: Post the changelog comment
+    if: >-
+      steps.changelog.outputs.has_entries == 'true'
+      || steps.changelog.outputs.needs_entry == 'true'
+      || steps.changelog.outputs.invalid_fragments != '[]'
+    uses: marocchino/sticky-pull-request-comment@v3
+    with:
+      header: changelog
+      message: ${{ steps.changelog.outputs.preview }}
+  - name: Remove it when there is nothing to say
+    if: >-
+      steps.changelog.outputs.has_entries == 'false'
+      && steps.changelog.outputs.needs_entry == 'false'
+      && steps.changelog.outputs.invalid_fragments == '[]'
+    uses: marocchino/sticky-pull-request-comment@v3
+    with:
+      header: changelog
+      delete: true
+  - name: Fail if the check did
+    if: steps.changelog.outputs.ok != 'true'
+    run: exit 1
+```
+
+The comment appears when there is something to say — entries to preview, an
+entry missing, or a fragment that doesn't parse — and is deleted when there
+isn't, so a fixed PR doesn't keep a stale complaint. `ok` carries the verdict
+`continue-on-error` swallowed, and is empty if trellis could not run at all,
+which fails the job either way.
+
+`preview` is already the comment body, rendered from the same data as the
+`--format json` field of that name. `needs_entry_packages` and
+`invalid_fragments` are JSON arrays if you would rather compose your own:
+
+```yaml
+- run: echo "Missing: ${{ join(fromJSON(steps.changelog.outputs.needs_entry_packages), ', ') }}"
+```
+
+A workspace that wants the comment without the gate sets
+[`changelog.strictness`](/docs/configuration/#keys) to `warn`, which makes
+`ok` true even when `needs_entry` is — then drop both the
+`continue-on-error` line and the final step.
 
 ### Annotating the diff
 

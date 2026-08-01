@@ -62,6 +62,71 @@ fn add_fragment(root: &Path, project: &str, kind: &str, body: &str) {
     }
 }
 
+fn git(root: &Path, args: &[&str]) {
+    let status = std::process::Command::new("git")
+        .args(args)
+        .current_dir(root)
+        .env("GIT_AUTHOR_NAME", "t")
+        .env("GIT_AUTHOR_EMAIL", "t@t")
+        .env("GIT_COMMITTER_NAME", "t")
+        .env("GIT_COMMITTER_EMAIL", "t@t")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .unwrap();
+    assert!(status.success(), "git {args:?} failed");
+}
+
+/// Commit the fixture on `main`, branch, then touch two releasable packages and
+/// give only `lat_core` a fragment. Every strictness and `--format github` case
+/// wants the same shape: one package satisfied, one (`lat_mid`) missing.
+fn workspace_with_one_missing_fragment(root: &Path) {
+    copy_fixture_to(root);
+    git(root, &["init", "-q", "-b", "main"]);
+    git(root, &["add", "."]);
+    git(root, &["commit", "-q", "-m", "init"]);
+    git(root, &["checkout", "-q", "-b", "feature"]);
+    write(&root.join("packages/lat_core/src/new.gleam"), "// x\n");
+    write(&root.join("packages/lat_mid/src/new.gleam"), "// x\n");
+    add_fragment(root, "lat_core", "Added", "something");
+    git(root, &["add", "."]);
+    git(root, &["commit", "-q", "-m", "change"]);
+}
+
+/// Append a `[tools.trellis.changelog]` table to the fixture's root manifest.
+fn set_changelog_config(root: &Path, body: &str) {
+    let path = root.join("gleam.toml");
+    let existing = fs::read_to_string(&path).unwrap();
+    write(
+        &path,
+        &format!("{existing}\n[tools.trellis.changelog]\n{body}\n"),
+    );
+}
+
+/// Parse `key=value` / `key<<DELIM` heredoc lines the way GitHub Actions does,
+/// so a test asserts on what the runner would actually put in `outputs`.
+fn parse_github_output(text: &str) -> std::collections::BTreeMap<String, String> {
+    let mut out = std::collections::BTreeMap::new();
+    let mut lines = text.lines();
+    while let Some(line) = lines.next() {
+        if let Some((key, delimiter)) = line.split_once("<<") {
+            let mut value = String::new();
+            for line in lines.by_ref() {
+                if line == delimiter {
+                    break;
+                }
+                value.push_str(line);
+                value.push('\n');
+            }
+            out.insert(key.to_string(), value);
+        } else {
+            let (key, value) = line.split_once('=').expect("key=value line");
+            out.insert(key.to_string(), value.to_string());
+        }
+    }
+    out
+}
+
 // ---- changelog new ---------------------------------------------------------
 
 /// `project` was the pre-1.0 spelling of a fragment's `package` key, inherited
@@ -365,31 +430,17 @@ fn changelog_check_maps_diff_to_missing_fragments() {
     let root = tmp.path();
     copy_fixture_to(root);
 
-    let git = |args: &[&str]| {
-        let status = std::process::Command::new("git")
-            .args(args)
-            .current_dir(root)
-            .env("GIT_AUTHOR_NAME", "t")
-            .env("GIT_AUTHOR_EMAIL", "t@t")
-            .env("GIT_COMMITTER_NAME", "t")
-            .env("GIT_COMMITTER_EMAIL", "t@t")
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .unwrap();
-        assert!(status.success(), "git {args:?} failed");
-    };
-    git(&["init", "-q", "-b", "main"]);
-    git(&["add", "."]);
-    git(&["commit", "-q", "-m", "init"]);
-    git(&["checkout", "-q", "-b", "feature"]);
+    git(root, &["init", "-q", "-b", "main"]);
+    git(root, &["add", "."]);
+    git(root, &["commit", "-q", "-m", "init"]);
+    git(root, &["checkout", "-q", "-b", "feature"]);
     // Change two releasable packages and the example package; add a fragment for one.
     write(&root.join("packages/lat_core/src/new.gleam"), "// x\n");
     write(&root.join("packages/lat_mid/src/new.gleam"), "// x\n");
     write(&root.join("examples/package-a/src/new.gleam"), "// x\n");
     add_fragment(root, "lat_core", "Added", "something");
-    git(&["add", "."]);
-    git(&["commit", "-q", "-m", "change"]);
+    git(root, &["add", "."]);
+    git(root, &["commit", "-q", "-m", "change"]);
 
     let output = trellis(root)
         .args(["changelog", "check", "--base", "main", "--json"])
@@ -415,6 +466,202 @@ fn changelog_check_maps_diff_to_missing_fragments() {
         .assert()
         .success()
         .stdout(predicate::str::contains("lat_mid: 1 fragment(s)"));
+}
+
+// ---- changelog check: strictness ------------------------------------------
+
+#[test]
+fn strictness_warn_reports_a_missing_entry_without_failing() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    workspace_with_one_missing_fragment(root);
+    set_changelog_config(root, "strictness = \"warn\"");
+
+    // Reported, but advisory: the gate does not fail the job.
+    trellis(root)
+        .args(["changelog", "check", "--base", "main"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("lat_mid: needs a changelog entry"));
+
+    let output = trellis(root)
+        .args(["changelog", "check", "--base", "main", "--format", "json"])
+        .output()
+        .unwrap();
+    let payload: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    // `needs_entry` still states the fact; `ok` carries the verdict.
+    assert_eq!(payload["needs_entry"], true);
+    assert_eq!(payload["ok"], true);
+    assert_eq!(payload["strictness"], "warn");
+}
+
+#[test]
+fn strictness_off_drops_the_verdict_but_still_reports_counts() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    workspace_with_one_missing_fragment(root);
+    set_changelog_config(root, "strictness = \"off\"");
+
+    // Nothing is being asked of the contributor, so the prose must not ask.
+    trellis(root)
+        .args(["changelog", "check", "--base", "main"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("lat_mid: no entries"))
+        .stdout(predicate::str::contains("needs a changelog entry").not());
+
+    let output = trellis(root)
+        .args(["changelog", "check", "--base", "main", "--format", "json"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let payload: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["needs_entry"], false);
+    assert_eq!(payload["ok"], true);
+    // The rows survive — `off` means "don't gate", not "don't report".
+    let packages = payload["packages"].as_array().unwrap();
+    assert_eq!(packages.len(), 2);
+    let mid = packages.iter().find(|p| p["name"] == "lat_mid").unwrap();
+    assert_eq!(mid["has_entry"], false);
+    // No call to action, since nothing is being asked of the contributor.
+    assert!(
+        !payload["preview"]
+            .as_str()
+            .unwrap()
+            .contains("changelog new")
+    );
+}
+
+#[test]
+fn the_strictness_flag_overrides_the_configured_value() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    workspace_with_one_missing_fragment(root);
+    set_changelog_config(root, "strictness = \"warn\"");
+
+    // A workflow can gate harder than the workspace's own default.
+    trellis(root)
+        .args([
+            "changelog",
+            "check",
+            "--base",
+            "main",
+            "--strictness",
+            "error",
+        ])
+        .assert()
+        .failure();
+
+    // ...and the other way, over a configured `error`.
+    let strict = tempfile::tempdir().unwrap();
+    let strict_root = strict.path();
+    workspace_with_one_missing_fragment(strict_root);
+    set_changelog_config(strict_root, "strictness = \"error\"");
+    trellis(strict_root)
+        .args([
+            "changelog",
+            "check",
+            "--base",
+            "main",
+            "--strictness",
+            "off",
+        ])
+        .assert()
+        .success();
+}
+
+#[test]
+fn invalid_fragments_fail_at_every_strictness() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    workspace_with_one_missing_fragment(root);
+    set_changelog_config(root, "strictness = \"off\"");
+    write(
+        &root.join(".changes/unreleased/broken-1.toml"),
+        "not toml at all {{{\n",
+    );
+
+    // Strictness is a policy about missing entries. A fragment that does not
+    // parse is malformed input, and no policy setting excuses it.
+    trellis(root)
+        .args(["changelog", "check", "--base", "main"])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("broken-1.toml"));
+}
+
+// ---- changelog check: --format github --------------------------------------
+
+#[test]
+fn github_format_emits_github_output_lines() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    workspace_with_one_missing_fragment(root);
+
+    let output = trellis(root)
+        .args(["changelog", "check", "--base", "main", "--format", "github"])
+        .output()
+        .unwrap();
+    assert!(!output.status.success(), "lat_mid lacks a fragment");
+    let text = String::from_utf8(output.stdout).unwrap();
+    let outputs = parse_github_output(&text);
+
+    assert_eq!(outputs["has_entries"], "true");
+    assert_eq!(outputs["needs_entry"], "true");
+    assert_eq!(outputs["ok"], "false");
+    assert_eq!(outputs["strictness"], "error");
+    assert_eq!(outputs["needs_entry_packages"], "[\"lat_mid\"]");
+    assert_eq!(outputs["invalid_fragments"], "[]");
+
+    // The comment body is the same markdown `--format json` reports, so the
+    // two surfaces can never drift.
+    let json = trellis(root)
+        .args(["changelog", "check", "--base", "main", "--format", "json"])
+        .output()
+        .unwrap();
+    let payload: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();
+    assert_eq!(
+        outputs["preview"].trim_end(),
+        payload["preview"].as_str().unwrap().trim_end()
+    );
+
+    // Machine surface: no prose leaks into the file the runner parses.
+    assert!(!text.contains("needs a changelog entry"));
+}
+
+#[test]
+fn github_format_reports_a_clean_check() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    workspace_with_one_missing_fragment(root);
+    add_fragment(root, "lat_mid", "Fixed", "more");
+
+    let output = trellis(root)
+        .args(["changelog", "check", "--base", "main", "--format", "github"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let outputs = parse_github_output(&String::from_utf8(output.stdout).unwrap());
+    // The workflow's third state: entries exist, nothing is missing.
+    assert_eq!(outputs["has_entries"], "true");
+    assert_eq!(outputs["needs_entry"], "false");
+    assert_eq!(outputs["needs_entry_packages"], "[]");
+    assert_eq!(outputs["ok"], "true");
+}
+
+#[test]
+fn json_stays_an_alias_for_format_json() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    workspace_with_one_missing_fragment(root);
+
+    // Deprecated, but workflows in the wild pass it — it must keep working.
+    let output = trellis(root)
+        .args(["changelog", "check", "--base", "main", "--json"])
+        .output()
+        .unwrap();
+    let payload: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["schema"], "trellis.changelog_check/1");
 }
 
 #[test]

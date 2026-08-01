@@ -85,6 +85,24 @@ fn usage_error_exits_two() {
         .code(2);
 }
 
+#[test]
+fn json_together_with_format_exits_two() {
+    // `--json` is a deprecated alias for `--format json`. Passing both is
+    // ambiguous rather than redundant, so clap rejects it as usage.
+    trellis(&fixture("basic"))
+        .args([
+            "changelog",
+            "check",
+            "--base",
+            "main",
+            "--json",
+            "--format",
+            "github",
+        ])
+        .assert()
+        .code(2);
+}
+
 // ---- 3: trellis itself could not run ---------------------------------
 
 #[test]

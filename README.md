@@ -284,7 +284,8 @@ name — trellis rejects any task named with that prefix.
 
 ```
 trellis changelog new [--package <pkg>] --kind <kind> --body <text>
-trellis changelog check --base <ref> [--head <ref>] [--json]
+trellis changelog check --base <ref> [--head <ref>] [--format text|json|github]
+                       [--strictness error|warn|off]
 trellis version plan  [--bump <level>|<pkg>=<level>] [--set <pkg>=<version>]
                       [--pre <label>|none] [--json]
 trellis version apply [--bump <level>|<pkg>=<level>] [--set <pkg>=<version>]
@@ -296,8 +297,12 @@ to keep in sync. Changes are recorded as TOML fragments in
 `.changes/unreleased/` (`project`, `kind`, `body`); `changelog new` writes
 one, non-interactively, which suits CI and agents as well as shells.
 `changelog check` maps a `base...head` diff to packages and fails if a
-changed releasable package has no unreleased fragment, emitting JSON
-(including a markdown `preview`) for a PR sticky comment.
+changed releasable package has no unreleased fragment. How much that costs is
+configurable — `changelog.strictness` is `error` by default, `warn` to report
+without failing, `off` not to check (an *invalid* fragment fails either way).
+`--format json` emits the payload, including a markdown `preview` for a PR
+sticky comment; `--format github` emits the same facts as `key=value` lines for
+`$GITHUB_OUTPUT`, so a workflow can post that comment without a `jq` pipeline.
 
 `version plan` computes each pending package's next version from its
 fragments' kinds (the largest bump wins; kinds and their bumps are

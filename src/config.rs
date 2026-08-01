@@ -73,8 +73,12 @@ pub struct DeprecatedKey {
     pub replacement: String,
 }
 
-/// What `doctor` does about a check that is a judgment call.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+/// What a check that is a judgment call does about what it finds: fail the
+/// run, report it and carry on, or not look at all. Shared by `doctor` and by
+/// `changelog check`, which differ only in which end they default to.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, serde::Serialize, clap::ValueEnum,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum Strictness {
     #[default]
@@ -411,6 +415,16 @@ pub struct ChangelogConfig {
     /// `change_format`. Context: `dependency`, `dependency_version`, `project`.
     #[serde(default = "default_dependency_body")]
     pub dependency_body: String,
+    /// What `changelog check` does when a changed releasable package owns no
+    /// unreleased fragment: fail (the default), report it advisorily, or not
+    /// check at all. Only that verdict is a judgment call — an *invalid*
+    /// fragment fails at every setting.
+    ///
+    /// Spelled with its own default rather than `#[serde(default)]`: the
+    /// derived [`Strictness::default`] is `warn`, which is right for `doctor`
+    /// and would silently unlatch every existing PR gate here.
+    #[serde(default = "default_changelog_strictness")]
+    pub strictness: Strictness,
 }
 
 impl Default for ChangelogConfig {
@@ -427,6 +441,7 @@ impl Default for ChangelogConfig {
             change_format: default_change_format(),
             dependency_kind: default_dependency_kind(),
             dependency_body: default_dependency_body(),
+            strictness: default_changelog_strictness(),
         }
     }
 }
@@ -470,6 +485,10 @@ pub enum Bump {
 
 fn default_changelog_dir() -> String {
     ".changes".to_string()
+}
+
+fn default_changelog_strictness() -> Strictness {
+    Strictness::Error
 }
 
 fn default_kinds() -> Vec<KindConfig> {
@@ -714,6 +733,36 @@ mod tests {
         assert_eq!(config.changelog.uncategorized_label, "Everything else");
         assert!(config.deprecated_keys.is_empty());
         assert!(config.unknown_keys.is_empty());
+    }
+
+    /// `Strictness::default()` is `warn`, which is right for `doctor` and wrong
+    /// here: inheriting it would turn every existing PR gate advisory on
+    /// upgrade. The changelog axis defaults the other way, on purpose.
+    #[test]
+    fn changelog_strictness_defaults_to_error_and_parses() {
+        let unset = ConfigFile::from_gleam_toml("[tools.trellis]\n").unwrap();
+        assert_eq!(unset.changelog.strictness, Strictness::Error);
+        assert_eq!(ChangelogConfig::default().strictness, Strictness::Error);
+        assert_eq!(
+            DoctorConfig::default().shared_dependencies,
+            Strictness::Warn
+        );
+
+        for (value, expected) in [
+            ("warn", Strictness::Warn),
+            ("error", Strictness::Error),
+            ("off", Strictness::Off),
+        ] {
+            let config = ConfigFile::from_gleam_toml(&format!(
+                "[tools.trellis.changelog]\nstrictness = \"{value}\"\n"
+            ))
+            .unwrap();
+            assert_eq!(config.changelog.strictness, expected);
+            assert!(
+                config.unknown_keys.is_empty(),
+                "`strictness` is a known key"
+            );
+        }
     }
 
     /// Categories are a plain string array, not a table, so `walk_schema_keys`

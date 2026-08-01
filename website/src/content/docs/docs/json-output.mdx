@@ -51,7 +51,7 @@ commands pretty-print, some emit one line for shell-variable capture).
 | `graph --format json` | `trellis.graph/1`<br />`{schema, nodes[], edges[]}` |
 | `run <task> --json` | `trellis.run/1`<br />`{schema, ok, task, target?, results[]}` |
 | `exec -- <cmd> --json` | `trellis.exec/1`<br />`{schema, ok, command[], results[]}` |
-| `changelog check --json` | `trellis.changelog_check/1`<br />`{schema, has_entries, needs_entry, invalid_fragments[], packages[], preview}` |
+| `changelog check --format json` | `trellis.changelog_check/1`<br />`{schema, ok, strictness, has_entries, needs_entry, invalid_fragments[], packages[], preview}` |
 | `version plan --json` | `trellis.version_plan/1`<br />`{schema, bumped[], fragments_retained}` |
 | `version apply --json` | `trellis.version_apply/1`<br />`{schema, bumped[], lockfiles[], adopted[], fragments_retained}` |
 | `tag plan --json` | `trellis.tag_plan/1`<br />`{schema, tags[]}` |
@@ -72,7 +72,10 @@ Notes:
 - `ci tag-package` reports `tag_kind: exact` with `tag_version`, or
   `tag_kind: series` with `tag_series` — the other key is absent, not null.
 - `changelog check`'s `preview` field is always present and a string, but its
-  Markdown prose can change without a version bump.
+  Markdown prose can change without a version bump. `needs_entry` reports
+  whether an entry is missing; `ok` reports what
+  [`changelog.strictness`](/docs/configuration/#keys) made of that, and matches
+  the exit code. `--json` is a deprecated alias for `--format json`.
 
 <Callout>
   **`--json` moves package output to stderr.** `run`/`exec` normally stream
@@ -158,6 +161,11 @@ series_tags=[]
 ```
 
 `projects` duplicates `packages` and is deprecated; it goes away at 1.0.
+
+`changelog check --format github` emits the same style of lines — scalars
+plain, arrays as JSON, and the multi-line `preview` in GitHub's heredoc form.
+It is the `trellis.changelog_check/1` data in a shape the runner parses, not a
+payload of its own, so it carries no `schema` either.
 
 See [CI recipes](/docs/ci/) for how these are consumed.
 
