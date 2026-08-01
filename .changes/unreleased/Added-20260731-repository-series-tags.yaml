@@ -1,5 +1,0 @@
-component: tag
-kind: Added
-body: |-
-  **Repository series tags track one anchor package across a monorepo.** Configure `[tools.trellis.publish.repository_series]` with `package` and `format` to expose a mutable tag for Gleam git path dependencies. It moves only when the anchor manifest version changes, preserves tags from earlier series, creates no GitHub Release, and stays out of package tag resolution.
-time: 2026-07-31T22:57:57.462-07:00

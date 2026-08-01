@@ -5,6 +5,93 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.9.0 - 2026-08-01
+
+
+### list
+
+#### Changed
+
+- **`trellis list`'s default text output is now two columns, name and resolved release lifecycle, instead of names alone.** `--json` gains an additive `lifecycle` field (`workspace`, `git_only`, or `hex`) on every package alongside the retained `releasable` boolean. Human-readable output was never a stable contract — script against `--json` if you're parsing.
+
+### graph
+
+#### Added
+
+- **`trellis graph --format json` nodes carry the resolved release lifecycle.** Each node's additive `lifecycle` field (`workspace`, `git_only`, or `hex`) sits alongside the existing `releasable` boolean, matching `list`/`info`.
+
+### info
+
+#### Added
+
+- **`trellis info` reports a package's resolved release lifecycle.** Text mode gains a `lifecycle:` line alongside `releasable:`; `--json` gains the same additive `lifecycle` field `list --json` carries.
+
+### changelog
+
+#### Added
+
+- **`changelog.strictness` decides what a missing changelog entry costs.** `error` is the default and fails `trellis changelog check` exactly as before; `warn` reports the missing entry and exits 0; `off` skips the verdict while still listing each changed package's fragment count. `--strictness error|warn|off` overrides the configured value for one run, so a workflow can gate harder than the workspace default without editing `gleam.toml`.
+
+  Strictness covers missing entries only. A fragment that doesn't parse, or that names an unknown package or kind, still fails the check at every setting.
+
+- **`trellis changelog check --format github` emits `key=value` lines for `$GITHUB_OUTPUT`.** A workflow reads `ok`, `has_entries`, `needs_entry`, `needs_entry_packages`, `invalid_fragments`, and a ready-to-post markdown `preview`, so a PR comment takes a redirect instead of a `jq` pipeline. See [CI recipes](https://trellis.tylerbutler.com/docs/ci/) for the sticky-comment workflow.
+
+  The `trellis.changelog_check/1` payload gains two fields alongside them: `ok`, the verdict after strictness is applied, which matches the exit code, and the `strictness` that decided it. `--format json` is the new spelling of `--json`, which still works as a deprecated alias; passing both is a usage error.
+
+- **`trellis changelog` now follows each package's resolved release lifecycle.** Packages in `git_only` and `hex` accept fragments and participate in `changelog check`; `workspace` packages do neither. Errors for explicitly selecting a `workspace` package name its lifecycle instead of describing every exclusion as an `exclude.@release` match.
+
+### version
+
+#### Added
+
+- **`trellis version` now plans and applies bumps for `git_only` and `hex` packages while leaving `workspace` packages unchanged.** Dependency ripple still stops at a non-versioned `workspace` boundary, and `--bump` or `--set` reports the resolved lifecycle when a named package cannot participate.
+
+### release
+
+#### Added
+
+- **`trellis release bootstrap` tags existing package versions.** Use it when adopting trellis in a repository whose versions and changelogs are already correct but whose tags are missing. It is an alias for `tag create`: it never runs `version apply` or requires unreleased fragments. `--dry-run` (also new on `tag create`) previews every tag, push, and GitHub Release action; `--push` updates `origin`, and `--github-release` implies `--push`.
+
+  When pushing, every planned tag is checked for a local/remote conflict before any of them are mutated, so one package's immutable tag disagreeing with origin fails the whole run instead of leaving another package half-tagged.
+
+#### Changed
+
+- **`release pr` drives the GitHub API directly; the gh CLI is no longer required.** The PR is created or updated through api.github.com with a token from `GITHUB_TOKEN` (ambient in GitHub Actions, so CI needs no setup), `GH_TOKEN`, or a logged-in gh CLI as the fallback (`gh auth token`). The repository is read from the `origin` remote; set `TRELLIS_GITHUB_REPO` (`owner/repo`) when the remote URL is not a github.com one.
+
+### tag
+
+#### Added
+
+- **Repository series tags track one anchor package across a monorepo.** Configure `[tools.trellis.publish.repository_series]` with `package` and `format` to expose a mutable tag for Gleam git path dependencies. It moves only when the anchor manifest version changes, preserves tags from earlier series, creates no GitHub Release, and stays out of package tag resolution.
+
+- **`trellis tag` creates git tags and GitHub Releases for both `git_only` and `hex` packages.** `workspace` packages produce no exact or series tags, while each participating package continues to follow its resolved `tag_mode`.
+
+#### Changed
+
+- **`tag create --github-release` creates GitHub Releases through the API instead of the gh CLI.** It needs a token from `GITHUB_TOKEN`, `GH_TOKEN`, or a logged-in gh CLI (`gh auth token`), resolved once before any tag is created so a missing token fails the run up front. Existence checks and release bodies are unchanged: one release per immutable tag, with the matching CHANGELOG section as the body.
+
+### publish
+
+#### Added
+
+- **`[tools.trellis.publish.lifecycle]` gives each package a release lifecycle: `workspace`, `git_only`, or `hex` (the default).** `workspace` packages never get a changelog entry, a version bump, a git tag, or a Hex publish; `git_only` packages get all of those except the Hex publish; `hex` packages get the full pipeline. Configure a `default` and per-package `packages = { "glob/**" = "state" }` overrides, matched against member paths — a member matched by globs resolving to different states is a doctor error, but globs agreeing on the same state are fine.
+
+  The legacy `exclude.@release` key keeps working: a match there still resolves to `workspace`, unless an explicit `publish.lifecycle.packages` rule for that member says otherwise, which lets a package graduate from `workspace` to `git_only` to `hex` without moving directories or rewriting the exclusion. `--releasable` keeps meaning `git_only` **or** `hex`; `publish` alone narrows further, since only `hex` packages ever reach Hex — naming a `workspace` or `git_only` package with `--package` or `--tag`, or leaving one out of the path-dependency rewrite map, now fails with a message naming the package's actual lifecycle instead of a generic `@release` exclusion.
+
+### doctor
+
+#### Added
+
+- **`doctor` validates dependency availability against each package's release lifecycle, not just a binary releasable/excluded split.** The `release_boundary` check now enforces that a runtime (`[dependencies]`, not `[dev-dependencies]`) path dependency is at least as capable as its dependent: a `hex` package may depend only on `hex`; `git_only` may depend on `git_only` or `hex`; `workspace` may depend on anything. The message names both packages' lifecycles and why the dependency would be unavailable.
+
+  `--format json` gains an additive `package_lifecycles` array of `{name, lifecycle}`, one per member in workspace order, alongside the retained numeric `packages` count; text mode prints the same data as compact counts, e.g. `ok: 4 package(s) (1 workspace, 0 git_only, 3 hex), 0 warning(s)`. `publish.lifecycle.packages` globs are checked for typos the same way `exclude` and `tag_mode_overrides` globs already are.
+
+### ci
+
+#### Added
+
+- **`trellis ci` treats `git_only` and `hex` packages as releasable and excludes `workspace` packages from release outputs.** `ci matrix --releasable`, `releasable`, `version_files`, exact tags, series tags, and tag-to-package resolution now follow the resolved lifecycle without changing their existing output shapes.
+
 ## v0.8.0 - 2026-07-30
 
 

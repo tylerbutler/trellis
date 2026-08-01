@@ -1,7 +1,0 @@
-component: changelog
-kind: Added
-body: |-
-  **`trellis changelog check --format github` emits `key=value` lines for `$GITHUB_OUTPUT`.** A workflow reads `ok`, `has_entries`, `needs_entry`, `needs_entry_packages`, `invalid_fragments`, and a ready-to-post markdown `preview`, so a PR comment takes a redirect instead of a `jq` pipeline. See [CI recipes](https://trellis.tylerbutler.com/docs/ci/) for the sticky-comment workflow.
-
-    The `trellis.changelog_check/1` payload gains two fields alongside them: `ok`, the verdict after strictness is applied, which matches the exit code, and the `strictness` that decided it. `--format json` is the new spelling of `--json`, which still works as a deprecated alias; passing both is a usage error.
-time: 2026-07-31T18:36:44.000000000-07:00
