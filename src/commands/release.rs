@@ -1,12 +1,12 @@
 //! `trellis release pr` — create or update the release pull request (design
 //! §11 question 2, resolved toward "absorb"): compute the version plan, run
-//! `version apply` on a release branch, push it, and drive `gh` to open or
-//! refresh the PR. The tool already knows exactly what changed; gh does the
-//! PR mechanics.
+//! `version apply` on a release branch, push it, and drive the GitHub API to
+//! open or refresh the PR. The tool already knows exactly what changed; the
+//! API does the PR mechanics.
 
 use crate::commands::version_override::Overrides;
 use crate::commands::{tag, version};
-use crate::tools;
+use crate::github::GitHubClient;
 use crate::workspace::Workspace;
 use anyhow::{Context, Result, bail};
 use std::path::Path;
@@ -87,51 +87,15 @@ fn build_release_commit_and_pr(
         .with_context(|| format!("failed to push branch {}", options.branch))?;
 
     let body = pr_body(workspace, plan);
-    let existing = gh_stdout(
-        root,
-        &[
-            "pr",
-            "list",
-            "--head",
-            &options.branch,
-            "--state",
-            "open",
-            "--json",
-            "number",
-        ],
-    )?;
-    let existing: serde_json::Value =
-        serde_json::from_str(existing.trim()).unwrap_or(serde_json::Value::Null);
-    match existing
-        .as_array()
-        .and_then(|prs| prs.first())
-        .and_then(|pr| pr["number"].as_u64())
-    {
+    let github = GitHubClient::for_repo(root)?;
+    match github.find_open_pr(&options.branch)? {
         Some(number) => {
-            let number = number.to_string();
-            gh_stdout(
-                root,
-                &["pr", "edit", &number, "--title", &title, "--body", &body],
-            )?;
+            github.update_pr(number, &title, &body)?;
             crate::status!("updated release PR #{number}: {title}");
         }
         None => {
-            let url = gh_stdout(
-                root,
-                &[
-                    "pr",
-                    "create",
-                    "--base",
-                    &options.base,
-                    "--head",
-                    &options.branch,
-                    "--title",
-                    &title,
-                    "--body",
-                    &body,
-                ],
-            )?;
-            crate::status!("created release PR: {}", url.trim());
+            let url = github.create_pr(&options.base, &options.branch, &title, &body)?;
+            crate::status!("created release PR: {url}");
         }
     }
     Ok(true)
@@ -168,24 +132,15 @@ fn pr_body(workspace: &Workspace, plan: &[version::PlanEntry]) -> String {
 }
 
 fn git_stdout(cwd: &Path, args: &[&str]) -> Result<String> {
-    run_tool(cwd, "git", args)
-}
-
-fn gh_stdout(cwd: &Path, args: &[&str]) -> Result<String> {
-    let gh = tools::gh_bin();
-    run_tool(cwd, &gh, args)
-}
-
-fn run_tool(cwd: &Path, program: &str, args: &[&str]) -> Result<String> {
-    crate::term::trace_command(program, args, cwd);
-    let output = Command::new(program)
+    crate::term::trace_command("git", args, cwd);
+    let output = Command::new("git")
         .args(args)
         .current_dir(cwd)
         .output()
-        .with_context(|| format!("failed to run `{program}`"))?;
+        .context("failed to run `git`")?;
     if !output.status.success() {
         bail!(
-            "`{program} {}` failed: {}",
+            "`git {}` failed: {}",
             args.join(" "),
             String::from_utf8_lossy(&output.stderr).trim()
         );

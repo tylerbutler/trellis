@@ -10,6 +10,9 @@ pub fn gleam_bin() -> String {
     std::env::var("TRELLIS_GLEAM_BIN").unwrap_or_else(|_| "gleam".to_string())
 }
 
+/// The gh CLI is no longer driven for GitHub operations — those go through
+/// the REST API (`crate::github`) — but a logged-in gh is still the fallback
+/// token source (`gh auth token`) when GITHUB_TOKEN/GH_TOKEN are unset.
 pub fn gh_bin() -> String {
     std::env::var("TRELLIS_GH_BIN").unwrap_or_else(|_| "gh".to_string())
 }

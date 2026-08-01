@@ -314,13 +314,13 @@ Release orchestration
 
 ###### **Subcommands:**
 
-* `pr` — Create or update the release PR: version apply on a branch, push, gh pr
+* `pr` — Create or update the release PR: version apply on a branch, push, open or refresh the PR via the GitHub API
 
 
 
 ## `trellis release pr`
 
-Create or update the release PR: version apply on a branch, push, gh pr
+Create or update the release PR: version apply on a branch, push, open or refresh the PR via the GitHub API
 
 **Usage:** `trellis release pr [OPTIONS]`
 
@@ -369,7 +369,7 @@ Create missing tags in topological order
 ###### **Options:**
 
 * `--push` — Push each created tag to origin
-* `--github-release` — Also create a GitHub Release per tag, with the matching CHANGELOG section as the body (implies --push; requires the gh CLI)
+* `--github-release` — Also create a GitHub Release per tag, with the matching CHANGELOG section as the body (implies --push; needs a GitHub token from GITHUB_TOKEN, GH_TOKEN, or a logged-in gh CLI)
 
 
 
