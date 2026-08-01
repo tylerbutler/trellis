@@ -381,7 +381,7 @@ impl<'a> Package<'a> {
             version: member.version(),
             path: &member.rel_path,
             lifecycle: member.lifecycle,
-            releasable: member.releasable,
+            releasable: member.releasable(),
             dependencies: member_names(workspace, workspace.deps_of(idx)),
             dependents: member_names(workspace, workspace.dependents_of(idx)),
         }
@@ -480,7 +480,7 @@ impl<'a> GraphDocument<'a> {
                 version: member.version(),
                 path: &member.rel_path,
                 lifecycle: member.lifecycle,
-                releasable: member.releasable,
+                releasable: member.releasable(),
             })
             .collect();
         let mut edges = Vec::new();

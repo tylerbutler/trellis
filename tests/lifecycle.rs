@@ -32,27 +32,6 @@ fn write(path: &Path, content: &str) {
     fs::write(path, content).unwrap();
 }
 
-fn copy_fixture_to(root: &Path) {
-    fn walk(dir: &Path, files: &mut Vec<PathBuf>) {
-        for entry in fs::read_dir(dir).unwrap() {
-            let path = entry.unwrap().path();
-            if path.is_dir() {
-                walk(&path, files);
-            } else {
-                files.push(path);
-            }
-        }
-    }
-    let from = fixture("lifecycle");
-    let mut files = Vec::new();
-    walk(&from, &mut files);
-    for file in files {
-        let dest = root.join(file.strip_prefix(&from).unwrap());
-        fs::create_dir_all(dest.parent().unwrap()).unwrap();
-        fs::copy(&file, &dest).unwrap();
-    }
-}
-
 // ---- introspection over the mixed-lifecycle fixture -------------------
 
 #[test]
@@ -208,10 +187,9 @@ fn ci_outputs_releasable_is_git_only_and_hex_only() {
 
 #[test]
 fn changelog_new_rejects_a_workspace_lifecycle_package() {
-    let tmp = tempfile::tempdir().unwrap();
-    let root = tmp.path();
-    copy_fixture_to(root);
-    trellis(root)
+    // Runs against the shared fixture directly: the command fails validation
+    // before it would write anything.
+    trellis(&fixture("lifecycle"))
         .args([
             "changelog",
             "new",

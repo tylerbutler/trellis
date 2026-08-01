@@ -171,25 +171,6 @@ impl Report {
     fn count(&self, severity: Severity) -> usize {
         self.of_severity(severity).count()
     }
-    /// How many members resolved to each lifecycle, in the fixed order
-    /// `workspace, git_only, hex` — the order the text summary prints them.
-    fn lifecycle_counts(&self) -> [(crate::config::ReleaseLifecycle, usize); 3] {
-        use crate::config::ReleaseLifecycle;
-        let count = |lifecycle: ReleaseLifecycle| {
-            self.package_lifecycles
-                .iter()
-                .filter(|(_, l)| *l == lifecycle)
-                .count()
-        };
-        [
-            (
-                ReleaseLifecycle::Workspace,
-                count(ReleaseLifecycle::Workspace),
-            ),
-            (ReleaseLifecycle::GitOnly, count(ReleaseLifecycle::GitOnly)),
-            (ReleaseLifecycle::Hex, count(ReleaseLifecycle::Hex)),
-        ]
-    }
 }
 
 /// Load the workspace and run every check, collecting findings and the fixes
@@ -345,15 +326,24 @@ fn finish(report: &Report, applied: &[Fix], format: DoctorFormat) -> Result<bool
 
 fn print_summary(report: &Report, ok: bool) {
     let warnings = report.count(Severity::Warning);
-    // Compact lifecycle counts, e.g. "3 hex, 1 git_only, 0 workspace" — always
-    // in `workspace, git_only, hex` order, so a reader can scan the same
-    // position across workspaces rather than parsing which label is which.
-    let lifecycles = report
-        .lifecycle_counts()
-        .into_iter()
-        .map(|(lifecycle, count)| format!("{count} {}", lifecycle.key()))
-        .collect::<Vec<_>>()
-        .join(", ");
+    // Compact lifecycle counts, always in `workspace, git_only, hex` order,
+    // so a reader can scan the same position across workspaces rather than
+    // parsing which label is which.
+    use crate::config::ReleaseLifecycle;
+    let lifecycles = [
+        ReleaseLifecycle::Workspace,
+        ReleaseLifecycle::GitOnly,
+        ReleaseLifecycle::Hex,
+    ]
+    .map(|lifecycle| {
+        let count = report
+            .package_lifecycles
+            .iter()
+            .filter(|(_, l)| *l == lifecycle)
+            .count();
+        format!("{count} {}", lifecycle.key())
+    })
+    .join(", ");
     if ok {
         // The JSON field behind this count is still `members` — renaming a
         // stable key would bump `trellis.doctor/1`, so it waits for 1.0.
@@ -632,7 +622,7 @@ fn check_member_glob(workspace: &Workspace, label: &str, pattern: &str, report: 
 /// quiet on exactly the configurations `trellis ci tag-package` still fails on.
 fn check_tag_collisions(workspace: &Workspace, report: &mut Report) {
     let mut seen: std::collections::HashMap<String, &str> = std::collections::HashMap::new();
-    for member in workspace.members.iter().filter(|m| m.releasable) {
+    for member in workspace.members.iter().filter(|m| m.releasable()) {
         if member.tag_mode.includes_exact() {
             let tag = workspace.config.format_tag(&member.name, member.version());
             if let Some(other) = seen.insert(tag.clone(), &member.name) {
@@ -654,7 +644,7 @@ fn check_tag_collisions(workspace: &Workspace, report: &mut Report) {
     let series_members: Vec<&str> = workspace
         .members
         .iter()
-        .filter(|m| m.releasable && m.tag_mode.includes_series())
+        .filter(|m| m.releasable() && m.tag_mode.includes_series())
         .map(|m| m.name.as_str())
         .collect();
     let names = |members: &[&str]| {
@@ -689,7 +679,7 @@ fn check_tag_collisions(workspace: &Workspace, report: &mut Report) {
     for member in workspace
         .members
         .iter()
-        .filter(|m| m.releasable && m.tag_mode.includes_series())
+        .filter(|m| m.releasable() && m.tag_mode.includes_series())
     {
         if let Some(tag) = workspace
             .config
@@ -791,7 +781,7 @@ fn check_lockfiles(workspace: &Workspace, report: &mut Report) {
 /// member should have a CHANGELOG.md, and its gleam.toml version must not be
 /// behind the newest version mentioned in it.
 fn check_changelogs(workspace: &Workspace, report: &mut Report) {
-    for member in workspace.members.iter().filter(|m| m.releasable) {
+    for member in workspace.members.iter().filter(|m| m.releasable()) {
         let changelog = member.path.join("CHANGELOG.md");
         let rel_changelog = format!("{}/CHANGELOG.md", member.rel_path);
         if !changelog.is_file() {

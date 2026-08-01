@@ -28,42 +28,32 @@ fn candidate(value: &str, help: String) -> CompletionCandidate {
     CompletionCandidate::new(value.to_owned()).help(Some(help.into()))
 }
 
-fn member_candidates(releasable_only: bool) -> Vec<CompletionCandidate> {
+fn member_candidates(keep: impl Fn(&crate::workspace::Member) -> bool) -> Vec<CompletionCandidate> {
     let Some(workspace) = workspace() else {
         return Vec::new();
     };
     workspace
         .members
         .iter()
-        .filter(|m| !releasable_only || m.releasable)
+        .filter(|m| keep(m))
         .map(|m| candidate(&m.name, format!("{} v{}", m.rel_path, m.version())))
         .collect()
 }
 
 /// Every workspace member, by name.
 pub fn packages() -> ArgValueCandidates {
-    ArgValueCandidates::new(|| member_candidates(false))
+    ArgValueCandidates::new(|| member_candidates(|_| true))
 }
 
 /// Only members that participate in releases — the ones `changelog new`
 /// accepts (release lifecycle `git_only` or `hex`).
 pub fn releasable_packages() -> ArgValueCandidates {
-    ArgValueCandidates::new(|| member_candidates(true))
+    ArgValueCandidates::new(|| member_candidates(|m| m.releasable()))
 }
 
 /// Only members `publish` will actually accept: release lifecycle `hex`.
 pub fn hex_packages() -> ArgValueCandidates {
-    ArgValueCandidates::new(|| {
-        let Some(workspace) = workspace() else {
-            return Vec::new();
-        };
-        workspace
-            .members
-            .iter()
-            .filter(|m| m.publishes_to_hex())
-            .map(|m| candidate(&m.name, format!("{} v{}", m.rel_path, m.version())))
-            .collect()
-    })
+    ArgValueCandidates::new(|| member_candidates(|m| m.publishes_to_hex()))
 }
 
 /// Built-in verbs plus every `[tools.trellis.tasks]` entry. The built-ins are

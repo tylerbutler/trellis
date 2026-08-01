@@ -142,7 +142,7 @@ pub fn load_fragments(workspace: &Workspace) -> Result<Fragments> {
             package: Some(raw.package.clone()),
         };
         match workspace.member_index(&raw.package) {
-            Some(idx) if workspace.members[idx].releasable => {}
+            Some(idx) if workspace.members[idx].releasable() => {}
             Some(idx) => {
                 result.problems.push(blame(format!(
                     "fragment `{display}`: package `{}` has release lifecycle `{}`, so it \

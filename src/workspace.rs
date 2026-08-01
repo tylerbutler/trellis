@@ -23,10 +23,6 @@ pub struct Member {
     /// a legacy `exclude.@release` match, overridden in turn by an explicit
     /// `publish.lifecycle.packages` match. See [`Workspace::load_with_diagnostics`].
     pub lifecycle: ReleaseLifecycle,
-    /// Derived compatibility field: `lifecycle != workspace`. `true` for both
-    /// `git_only` and `hex` — changelog, version, and tag/release commands
-    /// select on this; `publish` alone needs `lifecycle == hex` specifically.
-    pub releasable: bool,
     /// Which tags a release creates for this member: the workspace
     /// `tag_mode`, unless a `tag_mode_overrides` glob claims it.
     pub tag_mode: TagMode,
@@ -36,6 +32,13 @@ impl Member {
     /// True when this member is published to Hex (`lifecycle == hex`).
     pub fn publishes_to_hex(&self) -> bool {
         self.lifecycle == ReleaseLifecycle::Hex
+    }
+
+    /// `true` for both `git_only` and `hex` — changelog, version, and
+    /// tag/release commands select on this; `publish` alone needs
+    /// `lifecycle == hex` specifically.
+    pub fn releasable(&self) -> bool {
+        self.lifecycle != ReleaseLifecycle::Workspace
     }
 
     pub fn version(&self) -> &str {
@@ -281,10 +284,13 @@ impl Workspace {
         // `tag_mode_overrides`, each key names exactly one glob, so a member
         // can match several with different targets, which is the case
         // `resolve_lifecycle` must reject.
-        let mut lifecycle_overrides: Vec<(&str, ReleaseLifecycle, globset::GlobSet)> = Vec::new();
+        let mut lifecycle_overrides: Vec<(&str, ReleaseLifecycle, globset::GlobMatcher)> =
+            Vec::new();
         for (pattern, lifecycle) in &config.publish.lifecycle.packages {
-            match single_glob(pattern) {
-                Ok(set) => lifecycle_overrides.push((pattern.as_str(), *lifecycle, set)),
+            match globset::Glob::new(pattern) {
+                Ok(glob) => {
+                    lifecycle_overrides.push((pattern.as_str(), *lifecycle, glob.compile_matcher()))
+                }
                 Err(err) => {
                     diagnostics.push(
                         Finding::error(
@@ -354,7 +360,6 @@ impl Workspace {
                         path: dir,
                         rel_path,
                         manifest,
-                        releasable: lifecycle != ReleaseLifecycle::Workspace,
                         lifecycle,
                         tag_mode,
                     });
@@ -579,7 +584,7 @@ impl Workspace {
         }
 
         if filter.releasable_only {
-            selected.retain(|&idx| self.members[idx].releasable);
+            selected.retain(|&idx| self.members[idx].releasable());
         }
 
         let mut ordered: Vec<usize> = selected.into_iter().collect();
@@ -900,7 +905,7 @@ fn resolve_tag_mode(
 /// several rules that agree on the same lifecycle is fine — that's how a
 /// directory and a narrower glob inside it can both claim a member.
 fn resolve_lifecycle(
-    overrides: &[(&str, ReleaseLifecycle, globset::GlobSet)],
+    overrides: &[(&str, ReleaseLifecycle, globset::GlobMatcher)],
     release_excludes: Option<&globset::GlobSet>,
     rel_path: &str,
     default: ReleaseLifecycle,
@@ -922,32 +927,20 @@ fn resolve_lifecycle(
         }
         1 => distinct.into_iter().next().expect("checked len == 1"),
         _ => {
-            let mut by_lifecycle: Vec<(ReleaseLifecycle, Vec<&str>)> = Vec::new();
-            for (pattern, lifecycle) in &matched {
-                match by_lifecycle.iter_mut().find(|(l, _)| l == lifecycle) {
-                    Some((_, patterns)) => patterns.push(pattern),
-                    None => by_lifecycle.push((*lifecycle, vec![pattern])),
-                }
-            }
             diagnostics.push(
                 Finding::error(
                     Check::WorkspaceConfig,
                     format!(
                         "member `{rel_path}` matches `publish.lifecycle.packages` globs for \
                          conflicting lifecycles: {}",
-                        by_lifecycle
+                        matched
                             .iter()
-                            .map(|(lifecycle, patterns)| format!(
-                                "`{}` ({})",
-                                lifecycle.key(),
-                                patterns
-                                    .iter()
-                                    .map(|p| format!("`{p}`"))
-                                    .collect::<Vec<_>>()
-                                    .join(", ")
+                            .map(|(pattern, lifecycle)| format!(
+                                "`{pattern}` => `{}`",
+                                lifecycle.key()
                             ))
                             .collect::<Vec<_>>()
-                            .join(" vs "),
+                            .join(", "),
                     ),
                 )
                 .at(GLEAM_TOML),
@@ -962,15 +955,6 @@ fn build_globset(patterns: &[String]) -> Result<globset::GlobSet> {
     for pattern in patterns {
         builder.add(globset::Glob::new(pattern)?);
     }
-    Ok(builder.build()?)
-}
-
-/// A `GlobSet` of exactly one pattern, for tables like
-/// `publish.lifecycle.packages` where each key is its own single glob rather
-/// than a mode-keyed list of them.
-fn single_glob(pattern: &str) -> Result<globset::GlobSet> {
-    let mut builder = globset::GlobSetBuilder::new();
-    builder.add(globset::Glob::new(pattern)?);
     Ok(builder.build()?)
 }
 
@@ -1091,11 +1075,17 @@ mod tests {
     }
 
     fn lifecycle_overrides<'a>(
-        entries: &[(&'a str, ReleaseLifecycle, &str)],
-    ) -> Vec<(&'a str, ReleaseLifecycle, globset::GlobSet)> {
+        entries: &[(&'a str, ReleaseLifecycle)],
+    ) -> Vec<(&'a str, ReleaseLifecycle, globset::GlobMatcher)> {
         entries
             .iter()
-            .map(|(pattern, lifecycle, glob)| (*pattern, *lifecycle, single_glob(glob).unwrap()))
+            .map(|(pattern, lifecycle)| {
+                (
+                    *pattern,
+                    *lifecycle,
+                    globset::Glob::new(pattern).unwrap().compile_matcher(),
+                )
+            })
             .collect()
     }
 
@@ -1141,8 +1131,7 @@ mod tests {
     fn explicit_lifecycle_rule_overrides_the_legacy_mapping() {
         let mut diagnostics = Diagnostics::default();
         let release_excludes = globs(&["examples/*"]);
-        let overrides =
-            lifecycle_overrides(&[("examples/**", ReleaseLifecycle::GitOnly, "examples/**")]);
+        let overrides = lifecycle_overrides(&[("examples/**", ReleaseLifecycle::GitOnly)]);
         let lifecycle = resolve_lifecycle(
             &overrides,
             Some(&release_excludes),
@@ -1159,12 +1148,8 @@ mod tests {
     fn overlapping_rules_agreeing_on_the_same_lifecycle_are_fine() {
         let mut diagnostics = Diagnostics::default();
         let overrides = lifecycle_overrides(&[
-            ("packages/**", ReleaseLifecycle::GitOnly, "packages/**"),
-            (
-                "packages/providers/**",
-                ReleaseLifecycle::GitOnly,
-                "packages/providers/**",
-            ),
+            ("packages/**", ReleaseLifecycle::GitOnly),
+            ("packages/providers/**", ReleaseLifecycle::GitOnly),
         ]);
         let lifecycle = resolve_lifecycle(
             &overrides,
@@ -1181,12 +1166,8 @@ mod tests {
     fn conflicting_explicit_rules_are_a_deterministic_error() {
         let mut diagnostics = Diagnostics::default();
         let overrides = lifecycle_overrides(&[
-            ("packages/**", ReleaseLifecycle::GitOnly, "packages/**"),
-            (
-                "packages/special/**",
-                ReleaseLifecycle::Workspace,
-                "packages/special/**",
-            ),
+            ("packages/**", ReleaseLifecycle::GitOnly),
+            ("packages/special/**", ReleaseLifecycle::Workspace),
         ]);
         let lifecycle = resolve_lifecycle(
             &overrides,
