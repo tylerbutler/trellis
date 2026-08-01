@@ -23,6 +23,7 @@ description: Every trellis command, flag, and argument — generated from the CL
 * [`trellis new`↴](#trellis-new)
 * [`trellis release`↴](#trellis-release)
 * [`trellis release pr`↴](#trellis-release-pr)
+* [`trellis release bootstrap`↴](#trellis-release-bootstrap)
 * [`trellis tag`↴](#trellis-tag)
 * [`trellis tag plan`↴](#trellis-tag-plan)
 * [`trellis tag create`↴](#trellis-tag-create)
@@ -315,6 +316,7 @@ Release orchestration
 ###### **Subcommands:**
 
 * `pr` — Create or update the release PR: version apply on a branch, push, gh pr
+* `bootstrap` — Reconcile tags against current manifest versions — no version bump, no unreleased changelog fragments required
 
 
 
@@ -332,6 +334,22 @@ Create or update the release PR: version apply on a branch, push, gh pr
 * `--branch <BRANCH>` — Branch the release commit is force-pushed to
 
   Default value: `release/pending`
+
+
+
+## `trellis release bootstrap`
+
+Reconcile tags against current manifest versions — no version bump, no unreleased changelog fragments required
+
+For adopting trellis on a repository that already has the package versions and changelogs it wants, but no tags yet. Reads versions straight off each package's `gleam.toml`, the same reconciliation `tag create` performs, but checks every planned tag for a local/remote conflict before mutating any of them — one package's immutable tag disagreeing with origin fails the whole run rather than leaving another package half-tagged.
+
+**Usage:** `trellis release bootstrap [OPTIONS]`
+
+###### **Options:**
+
+* `--dry-run` — Report every tag/push/release action without doing anything (a conflicting tag still fails the command)
+* `--push` — Push tags to origin
+* `--github-release` — Also create a GitHub Release per exact tag, with the matching CHANGELOG section as the body (implies --push; requires the gh CLI)
 
 
 

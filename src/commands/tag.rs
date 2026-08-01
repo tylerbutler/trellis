@@ -53,7 +53,12 @@ pub struct PlannedTag {
 /// the work it needs. A repository-wide series tag (a `series_tag_format`
 /// without `{name}`) is claimed by the first member that would produce it, so
 /// it is moved once rather than once per package.
-fn plan_tags(workspace: &Workspace) -> Result<Vec<PlannedTag>> {
+///
+/// Local-only and read-only — no git ref is written and no remote is
+/// queried. `tag plan`, `tag create`, and `release bootstrap` all start from
+/// this same reconciliation, so a preview can never disagree with what
+/// execution actually does.
+pub(crate) fn plan_tags(workspace: &Workspace) -> Result<Vec<PlannedTag>> {
     let existing = git_stdout(&workspace.root, &["tag", "--list"])?;
     let existing: HashSet<&str> = existing
         .lines()
@@ -111,6 +116,146 @@ fn plan_tags(workspace: &Workspace) -> Result<Vec<PlannedTag>> {
         }
     }
     Ok(planned)
+}
+
+/// What pushing (or, for an exact tag, fetching) a planned tag would do,
+/// read without mutating anything. Mirrors the decisions
+/// `create_exact_tag`/`move_series_tag` make right before they mutate, so
+/// `release bootstrap`'s preview shows exactly what execution would do.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RemoteAction {
+    /// The tag exists on origin but not locally; fetched rather than
+    /// created, so an exact tag never gets a second, differently-dated
+    /// annotation for the same commit.
+    Fetch,
+    /// Origin doesn't have it yet.
+    Push,
+    /// A series tag whose remote copy already names a different commit.
+    ForcePush,
+    /// Local and remote already agree; nothing to push.
+    UpToDate,
+}
+
+/// The read-only reconciliation for one planned tag: its local object,
+/// its remote object (when `push` is in play), what pushing it would do,
+/// and whether a GitHub Release already exists (when `github_release` is in
+/// play, exact tags only — a series tag never carries one).
+#[derive(Debug, Clone)]
+pub struct TagStatus {
+    pub member: usize,
+    pub tag: String,
+    pub kind: TagKind,
+    pub action: TagAction,
+    pub local_oid: Option<String>,
+    pub remote_oid: Option<String>,
+    pub remote_action: Option<RemoteAction>,
+    pub release_exists: Option<bool>,
+}
+
+/// Query local state, and — gated on `push`/`github_release` exactly like
+/// `tag create` gates its own remote and `gh` calls — remote and GitHub
+/// Release state, for every tag `plan_tags` produced. Nothing here writes
+/// anything; it's the same information `create_exact_tag`/`move_series_tag`
+/// gather immediately before mutating, gathered once so a preview and a
+/// preflight conflict check can both work from it.
+pub fn tag_status(
+    workspace: &Workspace,
+    planned: &[PlannedTag],
+    push: bool,
+    github_release: bool,
+) -> Result<Vec<TagStatus>> {
+    let head = commit_of(&workspace.root, "HEAD")?;
+    planned
+        .iter()
+        .map(|planned| {
+            let local_oid = local_tag_oid(&workspace.root, &planned.tag)?;
+            let remote_oid = if push {
+                remote_tag_oid(&workspace.root, &planned.tag)?
+            } else {
+                None
+            };
+            let remote_action = push.then(|| {
+                remote_action_for(planned.kind, planned.action, &local_oid, &remote_oid, &head)
+            });
+            let release_exists = if github_release && planned.kind == TagKind::Exact {
+                Some(github_release_exists(&workspace.root, &planned.tag)?)
+            } else {
+                None
+            };
+            Ok(TagStatus {
+                member: planned.member,
+                tag: planned.tag.clone(),
+                kind: planned.kind,
+                action: planned.action,
+                local_oid,
+                remote_oid,
+                remote_action,
+                release_exists,
+            })
+        })
+        .collect()
+}
+
+/// An exact tag's remote action follows `create_exact_tag`: missing locally
+/// but present on origin fetches it; otherwise it pushes once origin lacks
+/// it. A series tag's follows `move_series_tag`: local always lands on
+/// `head` once its action isn't `UpToDate` (re-tagging targets `HEAD`, same
+/// as a fresh exact tag), so that — or the already-`UpToDate` local object —
+/// is what gets compared to origin.
+fn remote_action_for(
+    kind: TagKind,
+    action: TagAction,
+    local_oid: &Option<String>,
+    remote_oid: &Option<String>,
+    head: &Option<String>,
+) -> RemoteAction {
+    match kind {
+        TagKind::Exact => match (local_oid, remote_oid) {
+            (None, Some(_)) => RemoteAction::Fetch,
+            (Some(_), Some(_)) => RemoteAction::UpToDate, // divergence is a conflict, filtered separately
+            (_, None) => RemoteAction::Push,
+        },
+        TagKind::Series => {
+            let final_local = if action == TagAction::UpToDate {
+                local_oid.clone()
+            } else {
+                head.clone()
+            };
+            match (&final_local, remote_oid) {
+                (Some(local), Some(remote)) if local == remote => RemoteAction::UpToDate,
+                (_, None) => RemoteAction::Push,
+                _ => RemoteAction::ForcePush,
+            }
+        }
+    }
+}
+
+/// An immutable tag whose local and remote objects disagree — the one
+/// conflict trellis refuses to resolve automatically (see
+/// `create_exact_tag`'s divergence check).
+#[derive(Debug, Clone)]
+pub struct TagConflict {
+    pub tag: String,
+    pub local_oid: String,
+    pub remote_oid: String,
+}
+
+/// Every exact-tag conflict in `statuses`, read straight off the
+/// already-queried object IDs — no further git calls, so this can run as a
+/// preflight before any tag in the batch is mutated.
+pub fn tag_conflicts(statuses: &[TagStatus]) -> Vec<TagConflict> {
+    statuses
+        .iter()
+        .filter(|status| status.kind == TagKind::Exact)
+        .filter_map(|status| match (&status.local_oid, &status.remote_oid) {
+            (Some(local), Some(remote)) if local != remote => Some(TagConflict {
+                tag: status.tag.clone(),
+                local_oid: local.clone(),
+                remote_oid: remote.clone(),
+            }),
+            _ => None,
+        })
+        .collect()
 }
 
 pub fn plan(workspace: &Workspace, json: bool) -> Result<()> {

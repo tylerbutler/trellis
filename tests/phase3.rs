@@ -949,6 +949,277 @@ fn doctor_rejects_a_tag_mode_override_that_matches_nothing() {
         ));
 }
 
+// ---- release bootstrap -----------------------------------------------------
+
+fn read_version(root: &Path, package: &str) -> String {
+    let path = root.join("packages").join(package).join("gleam.toml");
+    let text = fs::read_to_string(path).unwrap();
+    text.lines()
+        .find_map(|line| line.strip_prefix("version = \""))
+        .and_then(|rest| rest.strip_suffix('"'))
+        .unwrap()
+        .to_string()
+}
+
+#[test]
+fn bootstrap_uses_current_versions_with_no_fragments_required() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+    init_repo(root);
+    // The fixture ships no `.changes/unreleased` directory at all — bootstrap
+    // must not need one.
+    assert!(!root.join(".changes").exists());
+
+    trellis(root)
+        .args(["release", "bootstrap"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("tagged lat_core-v1.2.0"))
+        .stdout(predicate::str::contains("tagged lat_mid-v0.5.0"))
+        .stdout(predicate::str::contains("tagged lat_cli-v0.3.1"));
+
+    let tags = git_stdout(root, &["tag", "--list"]);
+    assert_eq!(
+        tags.lines().collect::<Vec<_>>(),
+        vec!["lat_cli-v0.3.1", "lat_core-v1.2.0", "lat_mid-v0.5.0"]
+    );
+    // No version bump: bootstrap never runs `version plan`/`version apply`.
+    assert_eq!(read_version(root, "lat_core"), "1.2.0");
+    assert_eq!(read_version(root, "lat_mid"), "0.5.0");
+    assert_eq!(read_version(root, "lat_cli"), "0.3.1");
+}
+
+#[test]
+fn bootstrap_dry_run_reports_every_action_and_mutates_nothing() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+    init_repo(root);
+    let remote = tempfile::tempdir().unwrap();
+    git(remote.path(), &["init", "-q", "--bare"]);
+    git(
+        root,
+        &["remote", "add", "origin", remote.path().to_str().unwrap()],
+    );
+    let gh = install_fake_gh(root);
+
+    trellis(root)
+        .env("TRELLIS_GH_BIN", &gh)
+        .args([
+            "release",
+            "bootstrap",
+            "--dry-run",
+            "--push",
+            "--github-release",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "lat_core: 1.2.0 tag lat_core-v1.2.0 — create; push; create GitHub release",
+        ))
+        .stdout(predicate::str::contains(
+            "lat_mid: 0.5.0 tag lat_mid-v0.5.0 — create; push; create GitHub release",
+        ))
+        .stdout(predicate::str::contains(
+            "lat_cli: 0.3.1 tag lat_cli-v0.3.1 — create; push; create GitHub release",
+        ));
+
+    // Nothing was actually created, locally, on origin, or via `gh`.
+    assert_eq!(git_stdout(root, &["tag", "--list"]), "");
+    let remote_tags = git_stdout(
+        remote.path(),
+        &[
+            "--git-dir",
+            remote.path().to_str().unwrap(),
+            "tag",
+            "--list",
+        ],
+    );
+    assert_eq!(remote_tags, "");
+    let log = fs::read_to_string(root.join(".fake/gh-log")).unwrap_or_default();
+    assert!(!log.contains("release create"), "{log}");
+}
+
+#[test]
+fn bootstrap_creates_both_exact_and_series_tags() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let _remote = series_repo(
+        root,
+        "tag_mode_overrides = { both = [\"packages/lat_cli\"] }",
+    );
+
+    trellis(root)
+        .args(["release", "bootstrap", "--dry-run"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "lat_cli: 0.3.1 tag lat_cli-v0.3.1 — create",
+        ))
+        .stdout(predicate::str::contains(
+            "lat_cli: 0.3.1 series tag lat_cli-v0.3 — create",
+        ));
+
+    trellis(root)
+        .args(["release", "bootstrap"])
+        .assert()
+        .success();
+    let tags = git_stdout(root, &["tag", "--list"]);
+    assert_eq!(
+        tags.lines().collect::<Vec<_>>(),
+        vec![
+            "lat_cli-v0.3",
+            "lat_cli-v0.3.1",
+            "lat_core-v1.2.0",
+            "lat_mid-v0.5.0"
+        ]
+    );
+}
+
+#[test]
+fn bootstrap_leaves_release_excluded_packages_untagged() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+    init_repo(root);
+
+    trellis(root)
+        .args(["release", "bootstrap", "--dry-run"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("package_a").not());
+
+    trellis(root)
+        .args(["release", "bootstrap"])
+        .assert()
+        .success();
+    let tags = git_stdout(root, &["tag", "--list"]);
+    assert!(!tags.contains("package_a"), "{tags}");
+}
+
+#[test]
+fn bootstrap_fetches_a_remote_only_tag_instead_of_recreating_it() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+    init_repo(root);
+    let remote = tempfile::tempdir().unwrap();
+    git(remote.path(), &["init", "-q", "--bare"]);
+    git(
+        root,
+        &["remote", "add", "origin", remote.path().to_str().unwrap()],
+    );
+    // lat_core is already tagged and pushed by some earlier process; the
+    // local clone bootstrapping now has never seen the tag.
+    git(root, &["tag", "-a", "lat_core-v1.2.0", "-m", "existing"]);
+    git(root, &["push", "origin", "lat_core-v1.2.0"]);
+    let original = commit_of(root, "lat_core-v1.2.0");
+    git(root, &["tag", "-d", "lat_core-v1.2.0"]);
+
+    trellis(root)
+        .args(["release", "bootstrap", "--dry-run", "--push"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "lat_core: 1.2.0 tag lat_core-v1.2.0 — create; fetch from origin",
+        ));
+
+    trellis(root)
+        .args(["release", "bootstrap", "--push"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("fetched lat_core-v1.2.0"));
+    assert_eq!(commit_of(root, "lat_core-v1.2.0"), original);
+}
+
+#[test]
+fn bootstrap_reports_existing_releases_and_reruns_idempotently() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+    init_repo(root);
+    let remote = tempfile::tempdir().unwrap();
+    git(remote.path(), &["init", "-q", "--bare"]);
+    git(
+        root,
+        &["remote", "add", "origin", remote.path().to_str().unwrap()],
+    );
+    let gh = install_fake_gh(root);
+
+    trellis(root)
+        .env("TRELLIS_GH_BIN", &gh)
+        .args(["release", "bootstrap", "--push", "--github-release"])
+        .assert()
+        .success();
+    let first_log = fs::read_to_string(root.join(".fake/gh-log")).unwrap();
+    assert_eq!(first_log.matches("gh release create").count(), 3);
+
+    trellis(root)
+        .env("TRELLIS_GH_BIN", &gh)
+        .args([
+            "release",
+            "bootstrap",
+            "--dry-run",
+            "--push",
+            "--github-release",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "lat_core: 1.2.0 tag lat_core-v1.2.0 — up to date; already on origin; \
+             GitHub release already exists",
+        ));
+
+    trellis(root)
+        .env("TRELLIS_GH_BIN", &gh)
+        .args(["release", "bootstrap", "--push", "--github-release"])
+        .assert()
+        .success();
+    let second_log = fs::read_to_string(root.join(".fake/gh-log")).unwrap();
+    assert_eq!(second_log.matches("gh release create").count(), 3);
+}
+
+#[test]
+fn bootstrap_preflights_conflicts_before_mutating_any_package() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+    init_repo(root);
+    let remote = tempfile::tempdir().unwrap();
+    git(remote.path(), &["init", "-q", "--bare"]);
+    git(
+        root,
+        &["remote", "add", "origin", remote.path().to_str().unwrap()],
+    );
+    // lat_core is tagged and pushed, then the local tag is force-moved to a
+    // later commit — an immutable tag disagreeing with origin.
+    git(root, &["tag", "-a", "lat_core-v1.2.0", "-m", "first"]);
+    git(root, &["push", "origin", "lat_core-v1.2.0"]);
+    write(&root.join("later.txt"), "later\n");
+    git(root, &["add", "."]);
+    git(root, &["commit", "-q", "-m", "later"]);
+    git(root, &["tag", "-f", "-a", "lat_core-v1.2.0", "-m", "moved"]);
+    // lat_mid and lat_cli have no tag yet, and would otherwise be created.
+
+    trellis(root)
+        .args(["release", "bootstrap", "--dry-run", "--push"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("different objects"));
+
+    trellis(root)
+        .args(["release", "bootstrap", "--push"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("different objects"));
+
+    // Neither the dry-run nor the failed real run tagged anything else —
+    // the conflict on lat_core blocks the whole batch.
+    let tags = git_stdout(root, &["tag", "--list"]);
+    assert_eq!(tags.lines().collect::<Vec<_>>(), vec!["lat_core-v1.2.0"]);
+}
+
 // ---- lockfile refresh ------------------------------------------------------
 
 #[test]

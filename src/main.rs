@@ -390,6 +390,30 @@ enum ReleaseCommand {
         #[arg(long, default_value = "release/pending")]
         branch: String,
     },
+    /// Reconcile tags against current manifest versions — no version bump,
+    /// no unreleased changelog fragments required
+    ///
+    /// For adopting trellis on a repository that already has the package
+    /// versions and changelogs it wants, but no tags yet. Reads versions
+    /// straight off each package's `gleam.toml`, the same reconciliation
+    /// `tag create` performs, but checks every planned tag for a
+    /// local/remote conflict before mutating any of them — one package's
+    /// immutable tag disagreeing with origin fails the whole run rather than
+    /// leaving another package half-tagged.
+    Bootstrap {
+        /// Report every tag/push/release action without doing anything (a
+        /// conflicting tag still fails the command)
+        #[arg(long)]
+        dry_run: bool,
+        /// Push tags to origin
+        #[arg(long)]
+        push: bool,
+        /// Also create a GitHub Release per exact tag, with the matching
+        /// CHANGELOG section as the body (implies --push; requires the gh
+        /// CLI)
+        #[arg(long)]
+        github_release: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -687,6 +711,18 @@ fn dispatch(cli: Cli) -> Result<bool> {
             ReleaseCommand::Pr { base, branch } => {
                 commands::release::pr(&workspace, &commands::release::PrOptions { base, branch })
             }
+            ReleaseCommand::Bootstrap {
+                dry_run,
+                push,
+                github_release,
+            } => commands::release::bootstrap(
+                &workspace,
+                &commands::release::BootstrapOptions {
+                    dry_run,
+                    push,
+                    github_release,
+                },
+            ),
         },
         Command::Tag { command } => match command {
             TagCommand::Plan { json } => {

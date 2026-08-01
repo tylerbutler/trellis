@@ -333,12 +333,52 @@ trellis version apply                             # batch + merge + lockfile pat
 ### Release & publish
 
 ```
+trellis release bootstrap [--dry-run] [--push] [--github-release]
 trellis tag plan [--json]        # packages whose gleam.toml version has no tag yet
 trellis tag create [--github-release]
 trellis publish <pkg | --tag <tag> | --all-untagged> [--dry-run]
 trellis lockfile refresh [--package <pkg>]
 ```
 
+- **`release bootstrap`** reconciles tags against the versions already recorded
+  in `gleam.toml` — no version bump, no unreleased changelog fragments. It
+  exists for the repository *adopting* trellis: versions and CHANGELOGs are
+  already right, only the tags (and, pre-1.0, the accompanying GitHub
+  Releases) are missing. Where `release pr` → `tag create --github-release` is
+  the steady-state loop (bump from fragments, then tag what the PR merged),
+  bootstrap skips straight to the tagging step, reading `plan_tags` the same
+  way `tag create` does. Local-only by default; `--push` reaches origin,
+  `--github-release` implies it and creates a release per exact tag once
+  pushed. `--dry-run` reports every package's tag, series tag, remote
+  fetch/push, and release action — computed from the same read-only
+  reconciliation execution mutates from, so the preview cannot promise
+  something execution wouldn't do — and queries remotes/`gh` accordingly
+  without writing anything. Before any tag is touched, every planned exact
+  tag is checked for a local/remote conflict (`tag_conflicts`); one package's
+  immutable tag disagreeing with origin fails the whole run rather than
+  half-tagging the rest, in dry-run or for real.
+
+  Adoption on an existing repository, once each package's `gleam.toml` is at
+  its real released version:
+
+  ```sh
+  trellis release bootstrap --dry-run --github-release   # preview every tag + release
+  trellis release bootstrap --github-release              # create and push them
+  ```
+
+  Pre-1.0, a workspace still on `0.x` everywhere gets its first series tags
+  the same way — bootstrap doesn't special-case the major:
+
+  ```sh
+  trellis release bootstrap --dry-run --github-release
+  # lat_core: 0.4.0 tag lat_core-v0.4.0 — create; push; create GitHub release
+  # lat_core: 0.4.0 series tag lat_core-v0.4 — create; push
+  trellis release bootstrap --github-release
+  ```
+
+  From then on, `release pr` and `tag create --github-release` (§6) take over;
+  bootstrap has nothing left to reconcile once every current version is
+  tagged.
 - `tag plan/create` replaces the auto-tag workflow's core: compare each
   releasable member's
   `gleam.toml` version against existing `{name}-v{version}` tags, create missing
@@ -634,11 +674,18 @@ end-to-end suite runs against a fixture workspace with a mocked Hex API.
 Beyond the numbered phases, the rest of the §5 command surface is also
 implemented: `trellis new` (scaffolding, with metadata copied from a sibling
 member and a members-glob match check so a new package can't be invisible to
-the workspace) and `trellis release pr` (see question 2 in §11). Two
-pre-release revisions of this document's original proposals are recorded in
-place: changie subsumed by the native changelog engine (§7), and the
-separate `workspace.toml` replaced by the `[tools.trellis]` table in the
-root `gleam.toml` (§4).
+the workspace), `trellis release pr` (see question 2 in §11), and `trellis
+release bootstrap` (§5) — added after adoption on a repository with correct
+versions but no tags exposed a gap between `tag create`, which reconciles
+tags, and the fragment-driven `version`/`release pr` path, which assumes a
+bump is wanted. Bootstrap shares `tag`'s `plan_tags` and adds a read-only
+`tag_status`/`tag_conflicts` pass — the same reconciliation `tag create`
+mutates from — so its `--dry-run` preview and its preflight conflict check
+(every planned tag validated before any of them are touched) can never show
+or allow something execution wouldn't do. Two pre-release revisions of this
+document's original proposals are recorded in place: changie subsumed by the
+native changelog engine (§7), and the separate `workspace.toml` replaced by
+the `[tools.trellis]` table in the root `gleam.toml` (§4).
 
 ## 11. Open questions — resolved
 
