@@ -2,6 +2,8 @@
 //! writes a fragment; `check` decides which changed packages still need one.
 
 use crate::changelog;
+use crate::commands::version;
+use crate::commands::version_override::Overrides;
 use crate::config::Strictness;
 use crate::json::{ChangelogCheckDocument, ChangelogPackage};
 use crate::workspace::Workspace;
@@ -153,7 +155,14 @@ pub fn check(workspace: &Workspace, options: &CheckOptions) -> Result<bool> {
     // and stays an array of strings; the structured form exists for `doctor`.
     let invalid = fragments.problem_messages();
     let has_entries = !fragments.fragments.is_empty();
-    let preview = preview(&statuses, &needs_entry, &invalid, strictness);
+    // No plan can be computed over a fragment that does not parse, so the
+    // preview falls back to counts alone — the problems are reported anyway.
+    let releases = if fragments.problems.is_empty() {
+        plan_releases(workspace, &fragments)?
+    } else {
+        Vec::new()
+    };
+    let preview = preview(&statuses, &needs_entry, &invalid, strictness, &releases);
 
     match options.format {
         CheckFormat::Json => {
@@ -264,6 +273,51 @@ fn heredoc_delimiter(value: &str) -> String {
     delimiter
 }
 
+/// A planned release, rendered for the preview: what `version apply` would do
+/// with today's fragments, said in the sticky comment before it happens.
+struct ReleasePreview {
+    name: String,
+    current: String,
+    next: String,
+    /// The exact version section `version apply` would write, ripple entries
+    /// included, so the comment can never drift from the eventual changelog.
+    section: String,
+}
+
+/// Compute the version plan and render each entry's section, exactly as
+/// `version apply` would. The plan reaches beyond the PR's diff on purpose:
+/// a dependent that merely ripples still releases, and the preview says so.
+fn plan_releases(
+    workspace: &Workspace,
+    fragments: &changelog::Fragments,
+) -> Result<Vec<ReleasePreview>> {
+    let plan = version::compute_plan(workspace, &Overrides::default())?;
+    let date = changelog::today();
+    plan.iter()
+        .map(|entry| {
+            let rendered: Vec<&changelog::Fragment> = fragments
+                .for_package(&entry.name)
+                .chain(entry.generated.iter())
+                .collect();
+            let tag = workspace.config.format_tag(&entry.name, &entry.next);
+            let section = changelog::render_section(
+                &workspace.config.changelog,
+                &entry.name,
+                &entry.next,
+                &tag,
+                &date,
+                &rendered,
+            )?;
+            Ok(ReleasePreview {
+                name: entry.name.clone(),
+                current: entry.current.clone(),
+                next: entry.next.clone(),
+                section,
+            })
+        })
+        .collect()
+}
+
 /// Markdown summary for the PR sticky comment. `needs_entry` is passed rather
 /// than re-derived so the comment says exactly what the exit code did — under
 /// `off` there is no ❌ and no call to action.
@@ -272,12 +326,13 @@ fn preview(
     needs_entry: &[&str],
     invalid: &[String],
     strictness: Strictness,
+    releases: &[ReleasePreview],
 ) -> String {
     let mut out = String::from("### Changelog check\n\n");
     if statuses.is_empty() {
         out.push_str("No releasable packages changed.\n");
     } else {
-        out.push_str("| package | fragments |\n| --- | --- |\n");
+        out.push_str("| package | fragments | version |\n| --- | --- | --- |\n");
         for status in statuses {
             let cell = if status.fragments > 0 {
                 format!("✅ {}", status.fragments)
@@ -288,12 +343,26 @@ fn preview(
             } else {
                 "❌ needs an entry".to_string()
             };
-            out.push_str(&format!("| {} | {cell} |\n", status.name));
+            let version = releases
+                .iter()
+                .find(|release| release.name == status.name)
+                .map(|release| format!("{} → {}", release.current, release.next))
+                .unwrap_or_else(|| "—".to_string());
+            out.push_str(&format!("| {} | {cell} | {version} |\n", status.name));
         }
         if !needs_entry.is_empty() {
             out.push_str(
                 "\nAdd one with `trellis changelog new --package <name> --kind <kind> --body <text>`.\n",
             );
+        }
+    }
+    if !releases.is_empty() {
+        out.push_str("\n### Release preview\n");
+        for release in releases {
+            out.push_str(&format!(
+                "\n<details>\n<summary><code>{}</code> {} → {}</summary>\n\n{}\n</details>\n",
+                release.name, release.current, release.next, release.section
+            ));
         }
     }
     for problem in invalid {

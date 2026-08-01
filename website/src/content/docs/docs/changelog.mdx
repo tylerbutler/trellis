@@ -128,7 +128,7 @@ sticky comment:
     { "name": "lat_core", "changed": true, "has_entry": true, "fragments": 2 },
     { "name": "lat_cli", "changed": true, "has_entry": false, "fragments": 0 }
   ],
-  "preview": "### Changelog check\n\n| package | fragments |\n| --- | --- |\n…"
+  "preview": "### Changelog check\n\n| package | fragments | version |\n| --- | --- | --- |\n…"
 }
 ```
 
@@ -160,18 +160,54 @@ invalid_fragments=[]
 preview<<TRELLIS_PREVIEW
 ### Changelog check
 
-| package | fragments |
-| --- | --- |
-| lat_core | ✅ 2 |
-| lat_cli | ❌ needs an entry |
+| package | fragments | version |
+| --- | --- | --- |
+| lat_core | ✅ 2 | 1.2.0 → 1.3.0 |
+| lat_cli | ❌ needs an entry | 0.3.1 → 0.3.2 |
 
 Add one with `trellis changelog new --package <name> --kind <kind> --body <text>`.
+
+### Release preview
+
+<details>
+<summary><code>lat_core</code> 1.2.0 → 1.3.0</summary>
+
+## v1.3.0 - 2026-07-11
+
+### Added
+
+- add a --dry-run flag
+
+### Fixed
+
+- stop truncating long names
+
+</details>
+
+<details>
+<summary><code>lat_cli</code> 0.3.1 → 0.3.2</summary>
+
+## v0.3.2 - 2026-07-11
+
+### Dependencies
+
+- Updated lat_core to 1.3.0
+
+</details>
 TRELLIS_PREVIEW
 ```
 
 `needs_entry_packages` and `invalid_fragments` are JSON arrays, read with
 `fromJSON()`; `preview` uses GitHub's heredoc form because it is multi-line.
 See [CI recipes](/docs/ci/#the-changelog-comment) for the workflow.
+
+The table covers the packages the PR's diff touched; the release preview
+covers every package the release would touch, computed the same way
+`version plan` computes it — so a dependent that merely ripples (like
+`lat_cli` above) appears with its generated `Dependencies` entry. Each
+collapsed section is exactly the version section `version apply` would write.
+When a fragment does not parse, no plan can be computed, so the versions and
+the release preview are omitted and the problem is reported instead.
 
 ## Planning a release
 

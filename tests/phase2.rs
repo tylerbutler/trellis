@@ -650,6 +650,68 @@ fn github_format_reports_a_clean_check() {
 }
 
 #[test]
+fn the_preview_reports_next_versions_and_fragment_contents() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    workspace_with_one_missing_fragment(root);
+    add_fragment(root, "lat_mid", "Fixed", "more");
+
+    let output = trellis(root)
+        .args(["changelog", "check", "--base", "main", "--format", "json"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let payload: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let preview = payload["preview"].as_str().unwrap();
+    // The table carries each package's planned bump alongside its counts.
+    assert!(
+        preview.contains("| lat_core | ✅ 1 | 1.2.0 → 1.3.0 |"),
+        "{preview}"
+    );
+    assert!(
+        preview.contains("| lat_mid | ✅ 1 | 0.5.0 → 0.5.1 |"),
+        "{preview}"
+    );
+    // The release preview renders the exact sections `version apply` would
+    // write: fragment bodies, and generated ripple entries for dependents —
+    // including lat_cli, which did not change in the diff but bumps anyway.
+    assert!(preview.contains("### Release preview"), "{preview}");
+    assert!(preview.contains("- something"), "{preview}");
+    assert!(preview.contains("- more"), "{preview}");
+    assert!(preview.contains("Updated lat_core to 1.3.0"), "{preview}");
+    assert!(preview.contains("lat_cli"), "{preview}");
+    // A ripple is never a demand: lat_cli did not change in the diff, so it
+    // gets no table row and cannot be asked for a fragment.
+    assert!(!preview.contains("| lat_cli"), "{preview}");
+    assert_eq!(payload["needs_entry"], false);
+}
+
+#[test]
+fn invalid_fragments_leave_the_preview_without_versions() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    workspace_with_one_missing_fragment(root);
+    add_fragment(root, "lat_mid", "Fixed", "more");
+    write(
+        &root.join(".changes/unreleased/broken-1.toml"),
+        "not toml at all {{{\n",
+    );
+
+    // A plan cannot be computed over a fragment that does not parse, so the
+    // preview falls back to counts alone — the problem itself is reported.
+    let output = trellis(root)
+        .args(["changelog", "check", "--base", "main", "--format", "json"])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let payload: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let preview = payload["preview"].as_str().unwrap();
+    assert!(!preview.contains("### Release preview"), "{preview}");
+    assert!(preview.contains("| lat_core | ✅ 1 | — |"), "{preview}");
+    assert!(preview.contains("broken-1.toml"), "{preview}");
+}
+
+#[test]
 fn json_stays_an_alias_for_format_json() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
