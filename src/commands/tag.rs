@@ -12,7 +12,7 @@ use crate::tools;
 use crate::workspace::Workspace;
 use anyhow::{Context, Result, bail};
 use serde::Serialize;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::process::Command;
 
@@ -183,6 +183,16 @@ pub fn create(workspace: &Workspace, options: &CreateOptions) -> Result<()> {
         return Ok(());
     }
 
+    // One `ls-remote` answers "what does origin have?" for every planned tag
+    // at once — a single network round trip that the conflict preflight and
+    // the per-tag actions below all read from.
+    let remote_oids = if push {
+        let tags: Vec<&str> = targets.iter().map(|planned| planned.tag.as_str()).collect();
+        remote_tag_oids(&workspace.root, &tags)?
+    } else {
+        HashMap::new()
+    };
+
     // An immutable tag whose local and remote objects disagree is the one
     // conflict trellis refuses to resolve. Check every planned tag before
     // mutating any of them, so one package's conflict fails the whole run
@@ -194,10 +204,9 @@ pub fn create(workspace: &Workspace, options: &CreateOptions) -> Result<()> {
                 continue;
             }
             let tag = &planned.tag;
-            if let (Some(local), Some(remote)) = (
-                local_tag_oid(&workspace.root, tag)?,
-                remote_tag_oid(&workspace.root, tag)?,
-            ) && local != remote
+            if let (Some(local), Some(remote)) =
+                (local_tag_oid(&workspace.root, tag)?, remote_oids.get(tag))
+                && local != *remote
             {
                 conflicts.push(format!(
                     "tag `{tag}` points to different objects locally ({local}) and on origin ({remote})"
@@ -210,9 +219,10 @@ pub fn create(workspace: &Workspace, options: &CreateOptions) -> Result<()> {
     }
 
     for planned in targets {
+        let remote_oid = remote_oids.get(&planned.tag).map(String::as_str);
         match planned.kind {
-            TagKind::Exact => create_exact_tag(workspace, planned, options, push)?,
-            TagKind::Series => move_series_tag(workspace, planned, options, push)?,
+            TagKind::Exact => create_exact_tag(workspace, planned, options, push, remote_oid)?,
+            TagKind::Series => move_series_tag(workspace, planned, options, push, remote_oid)?,
         }
     }
     Ok(())
@@ -226,17 +236,14 @@ fn create_exact_tag(
     planned: &PlannedTag,
     options: &CreateOptions,
     push: bool,
+    remote_oid: Option<&str>,
 ) -> Result<()> {
     let member = &workspace.members[planned.member];
     let tag = &planned.tag;
-    let local_oid = local_tag_oid(&workspace.root, tag)?;
-    let remote_oid = if push {
-        remote_tag_oid(&workspace.root, tag)?
-    } else {
-        None
-    };
-    // Local/remote divergence was already rejected by `create`'s preflight.
-    if local_oid.is_none() {
+    // `plan_tags` already read the local tag list, so `action` says whether
+    // the tag exists here; local/remote divergence was rejected by `create`'s
+    // preflight.
+    if planned.action == TagAction::Create {
         if remote_oid.is_some() {
             if options.dry_run {
                 crate::status!("would fetch {tag}");
@@ -305,15 +312,11 @@ fn move_series_tag(
     planned: &PlannedTag,
     options: &CreateOptions,
     push: bool,
+    remote_oid: Option<&str>,
 ) -> Result<()> {
     let member = &workspace.members[planned.member];
     let tag = &planned.tag;
     let moved = planned.action != TagAction::UpToDate;
-    let remote_oid = if push {
-        remote_tag_oid(&workspace.root, tag)?
-    } else {
-        None
-    };
     if moved {
         let (verb, done) = if planned.action == TagAction::Create {
             ("tag", "tagged")
@@ -343,7 +346,7 @@ fn move_series_tag(
         // the comparison also catches "already where it belongs, but origin
         // disagrees".
         let local_oid = local_tag_oid(&workspace.root, tag)?;
-        if moved || local_oid != remote_oid {
+        if moved || local_oid.as_deref() != remote_oid {
             let verb = if remote_oid.is_none() {
                 "push"
             } else {
@@ -393,29 +396,25 @@ fn rev_parse(root: &Path, reference: &str, subject: &str) -> Result<Option<Strin
     }
 }
 
-fn remote_tag_oid(root: &Path, tag: &str) -> Result<Option<String>> {
-    let reference = format!("refs/tags/{tag}");
-    let args = ["ls-remote", "--exit-code", "--tags", "origin", &reference];
-    crate::term::trace_command("git", &args, root);
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .output()
-        .context("failed to run git")?;
-    match output.status.code() {
-        Some(0) => output
-            .stdout
-            .split(|byte| byte.is_ascii_whitespace())
-            .find(|part| !part.is_empty())
-            .map(|oid| String::from_utf8_lossy(oid).into_owned())
-            .map(Some)
-            .context("git ls-remote returned no object ID"),
-        Some(2) => Ok(None),
-        _ => bail!(
-            "git ls-remote failed while checking tag `{tag}`: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        ),
+/// The object each requested tag names on origin, from one `ls-remote` for
+/// the whole batch. Tags origin doesn't have are absent from the map. Peeled
+/// `^{}` entries are skipped so the oid is the tag object itself — the same
+/// object `local_tag_oid` reports.
+fn remote_tag_oids(root: &Path, tags: &[&str]) -> Result<HashMap<String, String>> {
+    let refs: Vec<String> = tags.iter().map(|tag| format!("refs/tags/{tag}")).collect();
+    let mut args = vec!["ls-remote", "--tags", "origin"];
+    args.extend(refs.iter().map(String::as_str));
+    let stdout = git_stdout(root, &args)?;
+    let mut oids = HashMap::new();
+    for line in stdout.lines() {
+        if let Some((oid, reference)) = line.split_once('\t')
+            && let Some(tag) = reference.strip_prefix("refs/tags/")
+            && !tag.ends_with("^{}")
+        {
+            oids.insert(tag.to_string(), oid.to_string());
+        }
     }
+    Ok(oids)
 }
 
 fn github_release_exists(root: &Path, tag: &str) -> Result<bool> {

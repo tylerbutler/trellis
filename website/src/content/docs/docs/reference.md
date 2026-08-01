@@ -347,9 +347,9 @@ An alias for `tag create`, for adopting trellis on a repository that already has
 
 ###### **Options:**
 
-* `--dry-run` — Report every tag/push/release action without doing anything (a conflicting tag still fails the command)
-* `--push` — Push tags to origin
+* `--push` — Push each created tag to origin
 * `--github-release` — Also create a GitHub Release per exact tag, with the matching CHANGELOG section as the body (implies --push; requires the gh CLI)
+* `--dry-run` — Report every tag/push/release action without doing anything (a conflicting tag still fails the command)
 
 
 
@@ -387,7 +387,7 @@ Create missing tags in topological order
 ###### **Options:**
 
 * `--push` — Push each created tag to origin
-* `--github-release` — Also create a GitHub Release per tag, with the matching CHANGELOG section as the body (implies --push; requires the gh CLI)
+* `--github-release` — Also create a GitHub Release per exact tag, with the matching CHANGELOG section as the body (implies --push; requires the gh CLI)
 * `--dry-run` — Report every tag/push/release action without doing anything (a conflicting tag still fails the command)
 
 

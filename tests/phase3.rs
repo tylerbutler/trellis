@@ -237,12 +237,7 @@ fn tag_create_github_release_uses_changelog_section() {
     copy_fixture_to(root);
     init_repo(root);
     // A bare remote so the implied push has somewhere to go.
-    let remote = tempfile::tempdir().unwrap();
-    git(remote.path(), &["init", "-q", "--bare"]);
-    git(
-        root,
-        &["remote", "add", "origin", remote.path().to_str().unwrap()],
-    );
+    let _remote = bare_origin(root);
     let gh = install_fake_gh(root);
 
     trellis(root)
@@ -267,12 +262,7 @@ fn tag_create_reconciles_local_tags_with_remote_and_releases() {
     let root = tmp.path();
     copy_fixture_to(root);
     init_repo(root);
-    let remote = tempfile::tempdir().unwrap();
-    git(remote.path(), &["init", "-q", "--bare"]);
-    git(
-        root,
-        &["remote", "add", "origin", remote.path().to_str().unwrap()],
-    );
+    let remote = bare_origin(root);
     let gh = install_fake_gh(root);
 
     for (tag, message) in [
@@ -293,16 +283,7 @@ fn tag_create_reconciles_local_tags_with_remote_and_releases() {
             "created GitHub release lat_core-v1.2.0",
         ));
 
-    let tags = std::process::Command::new("git")
-        .args([
-            "--git-dir",
-            remote.path().to_str().unwrap(),
-            "tag",
-            "--list",
-        ])
-        .output()
-        .unwrap();
-    let tags = String::from_utf8_lossy(&tags.stdout);
+    let tags = git_stdout(remote.path(), &["tag", "--list"]);
     assert!(tags.contains("lat_core-v1.2.0"));
     assert!(tags.contains("lat_mid-v0.5.0"));
     assert!(tags.contains("lat_cli-v0.3.1"));
@@ -325,12 +306,7 @@ fn tag_create_rejects_divergent_local_and_remote_tags() {
     let root = tmp.path();
     copy_fixture_to(root);
     init_repo(root);
-    let remote = tempfile::tempdir().unwrap();
-    git(remote.path(), &["init", "-q", "--bare"]);
-    git(
-        root,
-        &["remote", "add", "origin", remote.path().to_str().unwrap()],
-    );
+    let _remote = bare_origin(root);
 
     for (tag, message) in [
         ("lat_core-v1.2.0", "lat_core at initial commit"),
@@ -580,6 +556,18 @@ fn publish_rejects_unreleasable_package() {
 
 // ---- series tags -----------------------------------------------------------
 
+/// A bare repository added to `root`'s repo as `origin`. The returned remote
+/// must outlive the test.
+fn bare_origin(root: &Path) -> tempfile::TempDir {
+    let remote = tempfile::tempdir().unwrap();
+    git(remote.path(), &["init", "-q", "--bare"]);
+    git(
+        root,
+        &["remote", "add", "origin", remote.path().to_str().unwrap()],
+    );
+    remote
+}
+
 /// The basic fixture with `[tools.trellis.publish]` replaced by `publish`, in
 /// a git repo with a bare origin. The returned remote must outlive the test.
 fn series_repo(root: &Path, publish: &str) -> tempfile::TempDir {
@@ -593,13 +581,7 @@ fn series_repo(root: &Path, publish: &str) -> tempfile::TempDir {
         ),
     );
     init_repo(root);
-    let remote = tempfile::tempdir().unwrap();
-    git(remote.path(), &["init", "-q", "--bare"]);
-    git(
-        root,
-        &["remote", "add", "origin", remote.path().to_str().unwrap()],
-    );
-    remote
+    bare_origin(root)
 }
 
 fn set_version(root: &Path, package: &str, version: &str) {
@@ -951,13 +933,16 @@ fn doctor_rejects_a_tag_mode_override_that_matches_nothing() {
 
 // ---- release bootstrap -----------------------------------------------------
 
-fn read_version(root: &Path, package: &str) -> String {
-    let path = root.join("packages").join(package).join("gleam.toml");
-    let text = fs::read_to_string(path).unwrap();
-    text.lines()
-        .find_map(|line| line.strip_prefix("version = \""))
-        .and_then(|rest| rest.strip_suffix('"'))
-        .unwrap()
+// Mirrors `version_of` in phase2.rs — the same manifest-version read, kept in
+// step until the test binaries grow a shared support module.
+fn version_of(root: &Path, package: &str) -> String {
+    let manifest = fs::read_to_string(root.join("packages").join(package).join("gleam.toml"))
+        .unwrap_or_else(|err| panic!("no gleam.toml for {package}: {err}"));
+    manifest
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("version = "))
+        .unwrap_or_else(|| panic!("no version in {package}'s gleam.toml"))
+        .trim_matches('"')
         .to_string()
 }
 
@@ -985,9 +970,9 @@ fn bootstrap_uses_current_versions_with_no_fragments_required() {
         vec!["lat_cli-v0.3.1", "lat_core-v1.2.0", "lat_mid-v0.5.0"]
     );
     // No version bump: bootstrap never runs `version plan`/`version apply`.
-    assert_eq!(read_version(root, "lat_core"), "1.2.0");
-    assert_eq!(read_version(root, "lat_mid"), "0.5.0");
-    assert_eq!(read_version(root, "lat_cli"), "0.3.1");
+    assert_eq!(version_of(root, "lat_core"), "1.2.0");
+    assert_eq!(version_of(root, "lat_mid"), "0.5.0");
+    assert_eq!(version_of(root, "lat_cli"), "0.3.1");
 }
 
 #[test]
@@ -996,12 +981,7 @@ fn bootstrap_dry_run_reports_every_action_and_mutates_nothing() {
     let root = tmp.path();
     copy_fixture_to(root);
     init_repo(root);
-    let remote = tempfile::tempdir().unwrap();
-    git(remote.path(), &["init", "-q", "--bare"]);
-    git(
-        root,
-        &["remote", "add", "origin", remote.path().to_str().unwrap()],
-    );
+    let remote = bare_origin(root);
     let gh = install_fake_gh(root);
 
     trellis(root)
@@ -1027,16 +1007,7 @@ fn bootstrap_dry_run_reports_every_action_and_mutates_nothing() {
 
     // Nothing was actually created, locally, on origin, or via `gh`.
     assert_eq!(git_stdout(root, &["tag", "--list"]), "");
-    let remote_tags = git_stdout(
-        remote.path(),
-        &[
-            "--git-dir",
-            remote.path().to_str().unwrap(),
-            "tag",
-            "--list",
-        ],
-    );
-    assert_eq!(remote_tags, "");
+    assert_eq!(git_stdout(remote.path(), &["tag", "--list"]), "");
     let log = fs::read_to_string(root.join(".fake/gh-log")).unwrap_or_default();
     assert!(!log.contains("release create"), "{log}");
 }
@@ -1100,12 +1071,7 @@ fn bootstrap_fetches_a_remote_only_tag_instead_of_recreating_it() {
     let root = tmp.path();
     copy_fixture_to(root);
     init_repo(root);
-    let remote = tempfile::tempdir().unwrap();
-    git(remote.path(), &["init", "-q", "--bare"]);
-    git(
-        root,
-        &["remote", "add", "origin", remote.path().to_str().unwrap()],
-    );
+    let _remote = bare_origin(root);
     // lat_core is already tagged and pushed by some earlier process; the
     // local clone bootstrapping now has never seen the tag.
     git(root, &["tag", "-a", "lat_core-v1.2.0", "-m", "existing"]);
@@ -1133,12 +1099,7 @@ fn bootstrap_reports_existing_releases_and_reruns_idempotently() {
     let root = tmp.path();
     copy_fixture_to(root);
     init_repo(root);
-    let remote = tempfile::tempdir().unwrap();
-    git(remote.path(), &["init", "-q", "--bare"]);
-    git(
-        root,
-        &["remote", "add", "origin", remote.path().to_str().unwrap()],
-    );
+    let _remote = bare_origin(root);
     let gh = install_fake_gh(root);
 
     trellis(root)
@@ -1180,12 +1141,7 @@ fn bootstrap_preflights_conflicts_before_mutating_any_package() {
     let root = tmp.path();
     copy_fixture_to(root);
     init_repo(root);
-    let remote = tempfile::tempdir().unwrap();
-    git(remote.path(), &["init", "-q", "--bare"]);
-    git(
-        root,
-        &["remote", "add", "origin", remote.path().to_str().unwrap()],
-    );
+    let _remote = bare_origin(root);
     // lat_core is tagged and pushed, then the local tag is force-moved to a
     // later commit — an immutable tag disagreeing with origin.
     git(root, &["tag", "-a", "lat_core-v1.2.0", "-m", "first"]);

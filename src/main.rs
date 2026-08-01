@@ -397,18 +397,8 @@ enum ReleaseCommand {
     /// already has the package versions and changelogs it wants, but no tags
     /// yet.
     Bootstrap {
-        /// Report every tag/push/release action without doing anything (a
-        /// conflicting tag still fails the command)
-        #[arg(long)]
-        dry_run: bool,
-        /// Push tags to origin
-        #[arg(long)]
-        push: bool,
-        /// Also create a GitHub Release per exact tag, with the matching
-        /// CHANGELOG section as the body (implies --push; requires the gh
-        /// CLI)
-        #[arg(long)]
-        github_release: bool,
+        #[command(flatten)]
+        args: TagCreateArgs,
     },
 }
 
@@ -422,18 +412,38 @@ enum TagCommand {
     },
     /// Create missing tags in topological order
     Create {
-        /// Push each created tag to origin
-        #[arg(long)]
-        push: bool,
-        /// Also create a GitHub Release per tag, with the matching CHANGELOG
-        /// section as the body (implies --push; requires the gh CLI)
-        #[arg(long)]
-        github_release: bool,
-        /// Report every tag/push/release action without doing anything (a
-        /// conflicting tag still fails the command)
-        #[arg(long)]
-        dry_run: bool,
+        #[command(flatten)]
+        args: TagCreateArgs,
     },
+}
+
+/// Flags for `tag create` and its alias `release bootstrap`.
+///
+/// Flattened into both so the alias can't drift: the two must accept exactly
+/// the same flags or `release bootstrap` stops being `tag create`.
+#[derive(clap::Args)]
+struct TagCreateArgs {
+    /// Push each created tag to origin
+    #[arg(long)]
+    push: bool,
+    /// Also create a GitHub Release per exact tag, with the matching CHANGELOG
+    /// section as the body (implies --push; requires the gh CLI)
+    #[arg(long)]
+    github_release: bool,
+    /// Report every tag/push/release action without doing anything (a
+    /// conflicting tag still fails the command)
+    #[arg(long)]
+    dry_run: bool,
+}
+
+impl TagCreateArgs {
+    fn options(self) -> commands::tag::CreateOptions {
+        commands::tag::CreateOptions {
+            push: self.push,
+            github_release: self.github_release,
+            dry_run: self.dry_run,
+        }
+    }
 }
 
 #[derive(Subcommand)]
@@ -711,37 +721,17 @@ fn dispatch(cli: Cli) -> Result<bool> {
             ReleaseCommand::Pr { base, branch } => {
                 commands::release::pr(&workspace, &commands::release::PrOptions { base, branch })
             }
-            ReleaseCommand::Bootstrap {
-                dry_run,
-                push,
-                github_release,
-            } => commands::release::bootstrap(
-                &workspace,
-                &commands::tag::CreateOptions {
-                    push,
-                    github_release,
-                    dry_run,
-                },
-            ),
+            ReleaseCommand::Bootstrap { args } => {
+                commands::release::bootstrap(&workspace, &args.options())
+            }
         },
         Command::Tag { command } => match command {
             TagCommand::Plan { json } => {
                 commands::tag::plan(&workspace, json)?;
                 Ok(true)
             }
-            TagCommand::Create {
-                push,
-                github_release,
-                dry_run,
-            } => {
-                commands::tag::create(
-                    &workspace,
-                    &commands::tag::CreateOptions {
-                        push,
-                        github_release,
-                        dry_run,
-                    },
-                )?;
+            TagCommand::Create { args } => {
+                commands::tag::create(&workspace, &args.options())?;
                 Ok(true)
             }
         },

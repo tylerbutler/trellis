@@ -4,7 +4,7 @@
 .SH NAME
 trellis\-release\-bootstrap \- Reconcile tags against current manifest versions — no version bump, no unreleased changelog fragments required
 .SH SYNOPSIS
-\fBtrellis release bootstrap\fR [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-\-dry\-run\fR] [\fB\-\-color\fR] [\fB\-\-push\fR] [\fB\-\-github\-release\fR] [\fB\-q\fR|\fB\-\-quiet\fR] [\fB\-v\fR|\fB\-\-verbose\fR] [\fB\-\-no\-update\-check\fR] [\fB\-h\fR|\fB\-\-help\fR] 
+\fBtrellis release bootstrap\fR [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-\-push\fR] [\fB\-\-color\fR] [\fB\-\-github\-release\fR] [\fB\-\-dry\-run\fR] [\fB\-q\fR|\fB\-\-quiet\fR] [\fB\-v\fR|\fB\-\-verbose\fR] [\fB\-\-no\-update\-check\fR] [\fB\-h\fR|\fB\-\-help\fR] 
 .SH DESCRIPTION
 Reconcile tags against current manifest versions — no version bump, no unreleased changelog fragments required
 .PP
@@ -14,8 +14,8 @@ An alias for `tag create`, for adopting trellis on a repository that already has
 \fB\-C\fR, \fB\-\-directory\fR \fI<DIR>\fR
 Run as if started in this directory
 .TP
-\fB\-\-dry\-run\fR
-Report every tag/push/release action without doing anything (a conflicting tag still fails the command)
+\fB\-\-push\fR
+Push each created tag to origin
 .TP
 \fB\-\-color\fR \fI<WHEN>\fR [default: auto]
 When to color output. `auto` follows the terminal, `NO_COLOR`, and `CLICOLOR=0`; the other two override that detection
@@ -32,11 +32,11 @@ always
 never
 .RE
 .TP
-\fB\-\-push\fR
-Push tags to origin
-.TP
 \fB\-\-github\-release\fR
 Also create a GitHub Release per exact tag, with the matching CHANGELOG section as the body (implies \-\-push; requires the gh CLI)
+.TP
+\fB\-\-dry\-run\fR
+Report every tag/push/release action without doing anything (a conflicting tag still fails the command)
 .TP
 \fB\-q\fR, \fB\-\-quiet\fR
 Suppress normal\-path output; JSON/report payloads and errors still print
