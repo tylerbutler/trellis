@@ -41,6 +41,10 @@ tag_mode_overrides = { both = ["packages/lat_cli"] }
 #   exact  → "== X.Y.Z"
 path_dep_requirement = "minor"
 retry = { attempts = 5, initial_delay = "30s", multiplier = 2 }
+
+[tools.trellis.publish.repository_series]
+package = "lat_cli"                       # anchor package
+format = "repo-v{series}"                 # repo-v0.4
 ```
 
 ## The release PR
@@ -70,6 +74,10 @@ A package tags in one of two lifecycles, chosen by `tag_mode`:
   can pin `lat_cli-v0.4` and follow the series instead of chasing patch tags.
   The series is derived from the version — see
   [series tags](/docs/configuration/#series-tags).
+- **Repository series tags** are independent of `tag_mode`. Trellis moves the
+  configured tag only when the anchor package's manifest version differs from
+  the version at that tag. A series change creates a new tag and leaves the
+  prior series tag intact.
 
 ```console
 $ trellis tag plan
@@ -87,15 +95,18 @@ force-pushed lat_cli-v0.4
 ```
 
 <Callout>
-`--github-release` skips series tags. A release attached to a moving tag would
-silently retarget on the next release, so only the immutable per-version tags
-carry one.
+`--github-release` skips package and repository series tags. A release attached
+to a moving tag would silently retarget on the next release, so only immutable
+per-version tags carry one.
 </Callout>
 
 Under `tag_mode = "series"` a package has no per-version tags at all, so there
 is no tag to trigger a publish from: run `trellis publish --all-untagged` on
 release-PR merge instead. Passing a series tag to `publish --tag` is an error
 — it names a package, but no particular version.
+
+Repository series tags identify repository snapshots rather than package
+releases, so neither `publish --tag` nor `ci tag-package` resolves them.
 
 ## Publishing to Hex
 

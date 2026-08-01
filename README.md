@@ -141,6 +141,11 @@ tag_format = "{name}-v{version}"
 series_tag_format = "{name}-v{series}"
 tag_mode = "exact"
 tag_mode_overrides = { both = ["packages/lat_cli"] }
+
+# Optional repository-wide moving tag, independent of package tag modes.
+[tools.trellis.publish.repository_series]
+package = "lat_cli"
+format = "v{series}"
 ```
 
 Each member is a directory with a `gleam.toml`. Path dependencies between
@@ -440,6 +445,14 @@ release commit and force-pushes it. Because a moving tag names no particular
 version, it never carries a GitHub Release and `publish --tag` refuses it;
 `ci tag-package` still resolves it, and a `series`-only workspace publishes
 with `--all-untagged`.
+
+An optional `[tools.trellis.publish.repository_series]` tag is separate from
+both package lifecycles. Its `package` is the anchor: trellis creates
+`format` for the anchor's stable series and moves it only when the anchor's
+manifest version differs from the version stored at that tag. A new series
+creates a new tag and leaves the old series intact. Repository series tags are
+mutable, never get GitHub Releases, and cannot be passed to `publish --tag` or
+`ci tag-package`.
 
 `publish` runs, per package and in dependency order: an idempotency check
 against the Hex API (already-published versions are skipped, so re-running a

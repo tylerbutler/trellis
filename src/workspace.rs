@@ -343,6 +343,36 @@ impl Workspace {
             }
         }
 
+        if let Some(repository_series) = &config.publish.repository_series {
+            match members
+                .iter()
+                .find(|member| member.name == repository_series.package)
+            {
+                None => diagnostics.push(
+                    Finding::error(
+                        Check::WorkspaceConfig,
+                        format!(
+                            "repository series anchor package `{}` is not a workspace member",
+                            repository_series.package
+                        ),
+                    )
+                    .at(GLEAM_TOML),
+                ),
+                Some(member) if !member.releasable => diagnostics.push(
+                    Finding::error(
+                        Check::ReleaseBoundary,
+                        format!(
+                            "repository series anchor package `{}` is excluded from release",
+                            repository_series.package
+                        ),
+                    )
+                    .at(GLEAM_TOML)
+                    .in_package(&member.name),
+                ),
+                Some(_) => {}
+            }
+        }
+
         // Resolve path dependencies between members into graph edges.
         let path_to_idx: HashMap<PathBuf, usize> = members
             .iter()

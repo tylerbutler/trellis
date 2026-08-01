@@ -3,7 +3,7 @@ source: tests/json_contract.rs
 expression: "json_output(root, &[\"tag\", \"plan\", \"--json\"], true)"
 ---
 {
-  "schema": "trellis.tag_plan/1",
+  "schema": "trellis.tag_plan/2",
   "tags": [
     {
       "action": "create",
@@ -17,6 +17,13 @@ expression: "json_output(root, &[\"tag\", \"plan\", \"--json\"], true)"
       "kind": "exact",
       "name": "lat_cli",
       "tag": "lat_cli-v0.3.1",
+      "version": "0.3.1"
+    },
+    {
+      "action": "create",
+      "kind": "repository_series",
+      "name": "lat_cli",
+      "tag": "repo-v0.3",
       "version": "0.3.1"
     }
   ]

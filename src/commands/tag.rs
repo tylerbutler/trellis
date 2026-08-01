@@ -4,9 +4,11 @@
 //! A member tags in one of two lifecycles, chosen by `tag_mode`: immutable
 //! `{name}-v{version}` tags, created once and never touched again, and moving
 //! `{name}-v{series}` tags, force-moved to the release commit every time that
-//! series releases. Only the immutable ones can carry a GitHub Release — a
-//! release bound to a moving tag would silently retarget.
+//! series releases. An optional repository series tag follows one anchor
+//! package's manifest version independently of those modes. Only immutable
+//! tags can carry a GitHub Release.
 
+use crate::gleam::GleamManifest;
 use crate::json::TagPlanDocument;
 use crate::tools;
 use crate::workspace::Workspace;
@@ -25,6 +27,8 @@ pub enum TagKind {
     Exact,
     /// A moving `series_tag_format` tag naming a release series.
     Series,
+    /// A moving repository tag whose lifecycle is anchored to one package.
+    RepositorySeries,
 }
 
 /// The work `tag create` would do for a planned tag, from local state alone.
@@ -44,15 +48,15 @@ pub enum TagAction {
 pub struct PlannedTag {
     /// Index into `workspace.members`.
     pub member: usize,
+    pub version: String,
     pub tag: String,
     pub kind: TagKind,
     pub action: TagAction,
 }
 
 /// Every tag the current versions call for, in topological order, each with
-/// the work it needs. A repository-wide series tag (a `series_tag_format`
-/// without `{name}`) is claimed by the first member that would produce it, so
-/// it is moved once rather than once per package.
+/// the work it needs. A legacy repository-wide package series tag (a
+/// `series_tag_format` without `{name}`) is still claimed only once.
 fn plan_tags(workspace: &Workspace) -> Result<Vec<PlannedTag>> {
     let existing = git_stdout(&workspace.root, &["tag", "--list"])?;
     let existing: HashSet<&str> = existing
@@ -81,6 +85,7 @@ fn plan_tags(workspace: &Workspace) -> Result<Vec<PlannedTag>> {
             if claimed.insert(tag.clone()) {
                 planned.push(PlannedTag {
                     member: index,
+                    version: member.version().to_string(),
                     tag,
                     kind: TagKind::Exact,
                     action,
@@ -103,6 +108,7 @@ fn plan_tags(workspace: &Workspace) -> Result<Vec<PlannedTag>> {
             if claimed.insert(tag.clone()) {
                 planned.push(PlannedTag {
                     member: index,
+                    version: member.version().to_string(),
                     tag,
                     kind: TagKind::Series,
                     action,
@@ -110,7 +116,103 @@ fn plan_tags(workspace: &Workspace) -> Result<Vec<PlannedTag>> {
             }
         }
     }
+    if let Some(repository_series) = &workspace.config.publish.repository_series {
+        let (index, anchor) = workspace
+            .members
+            .iter()
+            .enumerate()
+            .find(|(_, member)| member.name == repository_series.package)
+            .with_context(|| {
+                format!(
+                    "repository series anchor package `{}` is not a workspace member",
+                    repository_series.package
+                )
+            })?;
+        let anchor_version = manifest_version_at_revision(workspace, anchor, "HEAD")?;
+        if let Some(tag) = workspace
+            .config
+            .format_repository_series_tag(&anchor_version)
+        {
+            reject_repository_tag_package_collision(workspace, &tag)?;
+            let action = if !existing.contains(tag.as_str()) {
+                TagAction::Create
+            } else if manifest_version_at_revision(workspace, anchor, &tag)? == anchor_version {
+                TagAction::UpToDate
+            } else {
+                TagAction::Move
+            };
+            planned.push(PlannedTag {
+                member: index,
+                version: anchor_version,
+                tag,
+                kind: TagKind::RepositorySeries,
+                action,
+            });
+        }
+    }
     Ok(planned)
+}
+
+/// A repository tag must never occupy a package-tag namespace. `doctor`
+/// reports the same configuration mistake, but mutating commands defend the
+/// immutable package tags even when users have not run it first.
+fn reject_repository_tag_package_collision(workspace: &Workspace, tag: &str) -> Result<()> {
+    let all_packages: Vec<(usize, &str)> = workspace
+        .members
+        .iter()
+        .enumerate()
+        .filter(|(_, member)| member.releasable)
+        .map(|(index, member)| (index, member.name.as_str()))
+        .collect();
+    let exact = match_tag_template(
+        &all_packages,
+        tag,
+        &workspace.config.publish.tag_format,
+        "{version}",
+        |captured| semver::Version::parse(captured).is_ok(),
+    )?;
+    let series = match_tag_template(
+        &all_packages,
+        tag,
+        &workspace.config.publish.series_tag_format,
+        "{series}",
+        is_series,
+    )?;
+    if !exact.is_empty() || !series.is_empty() {
+        bail!(
+            "repository series tag `{tag}` collides with a package tag namespace; \
+             choose a distinct `repository_series.format`"
+        );
+    }
+    Ok(())
+}
+
+/// Read the anchor's manifest from the commit named by an existing repository
+/// tag. The version in that file — not package exact tags or `tag_mode` — is
+/// the repository tag's release signal.
+fn manifest_version_at_revision(
+    workspace: &Workspace,
+    anchor: &crate::workspace::Member,
+    revision: &str,
+) -> Result<String> {
+    let manifest = if anchor.rel_path == "." {
+        crate::workspace::GLEAM_TOML.to_string()
+    } else {
+        format!("{}/{}", anchor.rel_path, crate::workspace::GLEAM_TOML)
+    };
+    let object = format!("{revision}:{manifest}");
+    let text = git_stdout(&workspace.root, &["show", &object]).with_context(|| {
+        format!(
+            "cannot read repository series anchor manifest `{manifest}` at revision `{revision}`"
+        )
+    })?;
+    GleamManifest::parse(&text)
+        .with_context(|| {
+            format!(
+                "cannot parse repository series anchor manifest `{manifest}` at revision `{revision}`"
+            )
+        })
+        .map(|manifest| manifest.version)
 }
 
 pub fn plan(workspace: &Workspace, json: bool) -> Result<()> {
@@ -127,7 +229,7 @@ pub fn plan(workspace: &Workspace, json: bool) -> Result<()> {
                     let member = &workspace.members[planned.member];
                     crate::json::PlannedTag {
                         name: &member.name,
-                        version: member.version(),
+                        version: &planned.version,
                         tag: &planned.tag,
                         kind: planned.kind,
                         action: planned.action,
@@ -148,7 +250,7 @@ pub fn plan(workspace: &Workspace, json: bool) -> Result<()> {
             crate::status!(
                 "{}: {} {verb} {}",
                 member.name,
-                member.version(),
+                planned.version,
                 planned.tag
             );
         }
@@ -163,6 +265,9 @@ pub struct CreateOptions {
 
 pub fn create(workspace: &Workspace, options: &CreateOptions) -> Result<()> {
     let push = options.push || options.github_release;
+    if push {
+        reconcile_remote_repository_series_tag(workspace)?;
+    }
     let planned = plan_tags(workspace)?;
     // Without a remote to reconcile, a tag that already points where it
     // should is nothing to do; with one, it may still be missing from origin.
@@ -175,10 +280,76 @@ pub fn create(workspace: &Workspace, options: &CreateOptions) -> Result<()> {
         return Ok(());
     }
 
+    /// Reconcile the repository series tag from origin before planning a push.
+    /// The remote anchor version is authoritative: a stale clone may advance it,
+    /// but may never move it backward.
+    fn reconcile_remote_repository_series_tag(workspace: &Workspace) -> Result<()> {
+        let Some(repository_series) = &workspace.config.publish.repository_series else {
+            return Ok(());
+        };
+        let (_, anchor) = workspace
+            .members
+            .iter()
+            .enumerate()
+            .find(|(_, member)| member.name == repository_series.package)
+            .with_context(|| {
+                format!(
+                    "repository series anchor package `{}` is not a workspace member",
+                    repository_series.package
+                )
+            })?;
+        let anchor_version = manifest_version_at_revision(workspace, anchor, "HEAD")?;
+        let Some(tag) = workspace
+            .config
+            .format_repository_series_tag(&anchor_version)
+        else {
+            return Ok(());
+        };
+        if remote_tag_oid(&workspace.root, &tag)?.is_none() {
+            return Ok(());
+        }
+
+        const REMOTE_REF: &str = "refs/trellis/repository-series";
+        let source = format!("refs/tags/{tag}:{REMOTE_REF}");
+        git_stdout(&workspace.root, &["fetch", "--force", "origin", &source])?;
+        let reconcile = (|| {
+            let remote_version = manifest_version_at_revision(workspace, anchor, REMOTE_REF)?;
+            let head_version = semver::Version::parse(&anchor_version).with_context(|| {
+                format!("invalid anchor package version `{anchor_version}` at HEAD")
+            })?;
+            let remote_version_parsed =
+                semver::Version::parse(&remote_version).with_context(|| {
+                    format!(
+                        "invalid anchor package version `{remote_version}` at remote tag `{tag}`"
+                    )
+                })?;
+            if remote_version_parsed > head_version {
+                bail!(
+                    "repository series tag `{tag}` on origin is anchored at newer {} version \
+                     `{remote_version}`; refusing to move it backward to `{anchor_version}`",
+                    anchor.name
+                );
+            }
+
+            let remote_oid = rev_parse(&workspace.root, REMOTE_REF, REMOTE_REF)?
+                .context("fetched repository series tag has no object ID")?;
+            if local_tag_oid(&workspace.root, &tag)?.as_deref() != Some(remote_oid.as_str()) {
+                let local_ref = format!("refs/tags/{tag}");
+                git_stdout(&workspace.root, &["update-ref", &local_ref, &remote_oid])?;
+                crate::status!("fetched {tag}");
+            }
+            Ok(())
+        })();
+        let cleanup = git_stdout(&workspace.root, &["update-ref", "-d", REMOTE_REF]);
+        reconcile.and(cleanup.map(|_| ()))
+    }
+
     for planned in targets {
         match planned.kind {
             TagKind::Exact => create_exact_tag(workspace, planned, options, push)?,
-            TagKind::Series => move_series_tag(workspace, planned, push)?,
+            TagKind::Series | TagKind::RepositorySeries => {
+                move_series_tag(workspace, planned, push)?
+            }
         }
     }
     Ok(())
@@ -217,7 +388,7 @@ fn create_exact_tag(
                 "-a".into(),
                 tag.clone(),
                 "-m".into(),
-                format!("{} {}", member.name, member.version()),
+                format!("{} {}", member.name, planned.version),
             ]);
             let args: Vec<&str> = args.iter().map(String::as_str).collect();
             git_stdout(&workspace.root, &args)?;
@@ -274,7 +445,7 @@ fn move_series_tag(workspace: &Workspace, planned: &PlannedTag, push: bool) -> R
             "-a".into(),
             tag.clone(),
             "-m".into(),
-            format!("{} {}", member.name, member.version()),
+            format!("{} {}", member.name, planned.version),
         ]);
         let args: Vec<&str> = args.iter().map(String::as_str).collect();
         git_stdout(&workspace.root, &args)?;
@@ -289,8 +460,17 @@ fn move_series_tag(workspace: &Workspace, planned: &PlannedTag, push: bool) -> R
         // this also catches "already where it belongs, but origin disagrees".
         let local_oid = local_tag_oid(&workspace.root, tag)?;
         if local_oid != remote_oid {
-            git_stdout(&workspace.root, &["push", "--force", "origin", tag])
-                .with_context(|| format!("failed to push tag {tag}"))?;
+            if planned.kind == TagKind::RepositorySeries {
+                let lease = format!(
+                    "--force-with-lease=refs/tags/{tag}:{}",
+                    remote_oid.as_deref().unwrap_or("")
+                );
+                git_stdout(&workspace.root, &["push", &lease, "origin", tag])
+                    .with_context(|| format!("failed to push tag {tag}"))?;
+            } else {
+                git_stdout(&workspace.root, &["push", "--force", "origin", tag])
+                    .with_context(|| format!("failed to push tag {tag}"))?;
+            }
             if remote_oid.is_none() {
                 crate::status!("pushed {tag}");
             } else {
@@ -445,6 +625,26 @@ impl ResolvedTag {
 /// if what the template captured is actually a version (or, for series tags, a
 /// series), so `lat_core-v0.3` doesn't resolve as version "0.3".
 pub fn resolve_tag(workspace: &Workspace, tag: &str) -> Result<ResolvedTag> {
+    if let Some(repository_series) = &workspace.config.publish.repository_series {
+        let anchor = workspace
+            .members
+            .iter()
+            .enumerate()
+            .find(|(_, member)| member.name == repository_series.package)
+            .map(|(index, member)| vec![(index, member.name.as_str())])
+            .unwrap_or_default();
+        if !match_tag_template(
+            &anchor,
+            tag,
+            &repository_series.format,
+            "{series}",
+            is_series,
+        )?
+        .is_empty()
+        {
+            bail!("tag `{tag}` is a repository series tag and does not identify a package release");
+        }
+    }
     let exact = match_tag_template(
         &candidates(workspace, |mode| mode.includes_exact()),
         tag,

@@ -595,7 +595,7 @@ pub struct TagPlanDocument<'a> {
 }
 
 impl TagPlanDocument<'_> {
-    pub const SCHEMA: &'static str = "trellis.tag_plan/1";
+    pub const SCHEMA: &'static str = "trellis.tag_plan/2";
 }
 
 /// `trellis ci tag-package --json`.
