@@ -64,11 +64,12 @@ dependencies). The design principle of this tool is therefore:
   depend on *each other* is a separate question, and an open one — see
   "Deferred" below.
 - **GitHub is the only forge trellis integrates with.** This is a statement of
-  what 1.0 supports, not a closed door. `release pr`, `tag create
-  --github-release`, `ci matrix`, and `ci outputs` shell out to `gh`; the
+  what 1.0 supports, not a closed door. `release pr` and `tag create
+  --github-release` talk to the GitHub REST API (a minimal client in
+  `src/github.rs`; the gh CLI survives only as a fallback token source); the
   workspace, graph, version, and publish layers are forge-agnostic and never
   touch one. The dependency is confined to release orchestration — a single
-  resolver and a handful of call sites — so another forge is a tractable
+  client and a handful of call sites — so another forge is a tractable
   addition rather than a rewrite. No such support is promised at 1.0.
 
 ### Deferred — decided *not yet*, not *no*
@@ -475,7 +476,7 @@ With trellis, each workflow keeps its trigger and becomes a few commands:
 ```yaml
 # release.yml (on push to main)
 - run: trellis version apply            # batch, merge, patch lockfiles — no bash
-- run: trellis release pr               # create-or-update the release PR via gh
+- run: trellis release pr               # create-or-update the release PR via the GitHub API
 
 # auto-tag.yml (on release-PR merge)
 - run: trellis tag create --github-release
@@ -621,9 +622,12 @@ end-to-end suite runs against a fixture workspace with a mocked Hex API.
    guard restores `gleam.toml` even when publishing fails. Dev-only path deps
    to unreleasable members are left alone (Hex doesn't ship dev deps); a
    `[dependencies]` path dep to an unreleasable member refuses to publish.
-   `tag create --github-release` implies pushing the tag first and shells out
-   to `gh` (`TRELLIS_GH_BIN` overridable), with the release body extracted
-   from the member's CHANGELOG section for that version. `ci tag-package`
+   `tag create --github-release` implies pushing the tag first and creates
+   the release through the GitHub REST API (token from GITHUB_TOKEN, GH_TOKEN,
+   or `gh auth token`; TRELLIS_GITHUB_API_URL and TRELLIS_GITHUB_REPO
+   overridable, which the e2e suite uses to aim at a local mock), with the
+   release body extracted from the member's CHANGELOG section for that
+   version. `ci tag-package`
    (used in §6's publish workflow sketch) resolves `$GITHUB_REF_NAME` to a
    package name. The retry policy from `[publish] retry` wraps every
    Hex-touching step (`with_retry`, exponential backoff). The gleam binary is
@@ -680,7 +684,8 @@ the `[tools.trellis]` table in the root `gleam.toml` (§4).
    management in the action, or absorb into `trellis release pr`?~~
    **Resolved: absorbed.** `trellis release pr` computes the plan, runs
    `version apply` on a release branch, force-pushes it (create-or-update
-   semantics), and drives `gh pr create`/`gh pr edit` with a bump table and
+   semantics), and opens or refreshes the PR through the GitHub REST API,
+   with a bump table and
    per-package CHANGELOG sections in the body. (With the native changelog
    engine of §7, `trellis release pr` is the only release-PR path for gleam
    workspaces — the changie-release action drives changie, which trellis no

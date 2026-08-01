@@ -7,8 +7,8 @@
 //! series releases. Only the immutable ones can carry a GitHub Release — a
 //! release bound to a moving tag would silently retarget.
 
+use crate::github::GitHubClient;
 use crate::json::TagPlanDocument;
-use crate::tools;
 use crate::workspace::Workspace;
 use anyhow::{Context, Result, bail};
 use serde::Serialize;
@@ -183,6 +183,14 @@ pub fn create(workspace: &Workspace, options: &CreateOptions) -> Result<()> {
         return Ok(());
     }
 
+    // Resolved once, up front: a missing token or non-GitHub origin should
+    // fail before any tag is created or pushed, not between two of them.
+    let github = if options.github_release {
+        Some(GitHubClient::for_repo(&workspace.root)?)
+    } else {
+        None
+    };
+
     // One `ls-remote` answers "what does origin have?" for every planned tag
     // at once — a single network round trip that the conflict preflight and
     // the per-tag actions below all read from.
@@ -221,7 +229,14 @@ pub fn create(workspace: &Workspace, options: &CreateOptions) -> Result<()> {
     for planned in targets {
         let remote_oid = remote_oids.get(&planned.tag).map(String::as_str);
         match planned.kind {
-            TagKind::Exact => create_exact_tag(workspace, planned, options, push, remote_oid)?,
+            TagKind::Exact => create_exact_tag(
+                workspace,
+                planned,
+                options,
+                github.as_ref(),
+                push,
+                remote_oid,
+            )?,
             TagKind::Series => move_series_tag(workspace, planned, options, push, remote_oid)?,
         }
     }
@@ -235,6 +250,7 @@ fn create_exact_tag(
     workspace: &Workspace,
     planned: &PlannedTag,
     options: &CreateOptions,
+    github: Option<&GitHubClient>,
     push: bool,
     remote_oid: Option<&str>,
 ) -> Result<()> {
@@ -276,27 +292,14 @@ fn create_exact_tag(
             crate::status!("pushed {tag}");
         }
     }
-    if options.github_release {
-        if github_release_exists(&workspace.root, tag)? {
+    if let Some(github) = github {
+        if github.release_exists(tag)? {
             crate::status!("GitHub release {tag} already exists; skipping");
         } else if options.dry_run {
             crate::status!("would create GitHub release {tag}");
         } else {
             let notes = release_notes(workspace, planned.member);
-            let gh = tools::gh_bin();
-            let args = ["release", "create", tag, "--title", tag, "--notes", &notes];
-            crate::term::trace_command(&gh, &args, &workspace.root);
-            let output = Command::new(&gh)
-                .args(args)
-                .current_dir(&workspace.root)
-                .output()
-                .with_context(|| format!("failed to run `{gh}` — is the GitHub CLI installed?"))?;
-            if !output.status.success() {
-                bail!(
-                    "`{gh} release create {tag}` failed: {}",
-                    String::from_utf8_lossy(&output.stderr).trim()
-                );
-            }
+            github.create_release(tag, tag, &notes)?;
             crate::status!("created GitHub release {tag}");
         }
     }
@@ -415,25 +418,6 @@ fn remote_tag_oids(root: &Path, tags: &[&str]) -> Result<HashMap<String, String>
         }
     }
     Ok(oids)
-}
-
-fn github_release_exists(root: &Path, tag: &str) -> Result<bool> {
-    let gh = tools::gh_bin();
-    let args = ["release", "view", tag, "--json", "tagName"];
-    crate::term::trace_command(&gh, &args, root);
-    let output = Command::new(&gh)
-        .args(args)
-        .current_dir(root)
-        .output()
-        .with_context(|| format!("failed to run `{gh}` — is the GitHub CLI installed?"))?;
-    if output.status.success() {
-        return Ok(true);
-    }
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    if stderr.contains("release not found") {
-        return Ok(false);
-    }
-    bail!("`{gh} release view {tag}` failed: {}", stderr.trim())
 }
 
 /// The member's CHANGELOG section for its current version, or a minimal

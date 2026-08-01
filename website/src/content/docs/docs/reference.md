@@ -315,14 +315,14 @@ Release orchestration
 
 ###### **Subcommands:**
 
-* `pr` — Create or update the release PR: version apply on a branch, push, gh pr
+* `pr` — Create or update the release PR: version apply on a branch, push, open or refresh the PR via the GitHub API
 * `bootstrap` — Reconcile tags against current manifest versions — no version bump, no unreleased changelog fragments required
 
 
 
 ## `trellis release pr`
 
-Create or update the release PR: version apply on a branch, push, gh pr
+Create or update the release PR: version apply on a branch, push, open or refresh the PR via the GitHub API
 
 **Usage:** `trellis release pr [OPTIONS]`
 
@@ -348,7 +348,7 @@ An alias for `tag create`, for adopting trellis on a repository that already has
 ###### **Options:**
 
 * `--push` — Push each created tag to origin
-* `--github-release` — Also create a GitHub Release per exact tag, with the matching CHANGELOG section as the body (implies --push; requires the gh CLI)
+* `--github-release` — Also create a GitHub Release per exact tag, with the matching CHANGELOG section as the body (implies --push; needs a GitHub token from GITHUB_TOKEN, GH_TOKEN, or a logged-in gh CLI)
 * `--dry-run` — Report every tag/push/release action without doing anything (a conflicting tag still fails the command)
 
 
@@ -387,7 +387,7 @@ Create missing tags in topological order
 ###### **Options:**
 
 * `--push` — Push each created tag to origin
-* `--github-release` — Also create a GitHub Release per exact tag, with the matching CHANGELOG section as the body (implies --push; requires the gh CLI)
+* `--github-release` — Also create a GitHub Release per exact tag, with the matching CHANGELOG section as the body (implies --push; needs a GitHub token from GITHUB_TOKEN, GH_TOKEN, or a logged-in gh CLI)
 * `--dry-run` — Report every tag/push/release action without doing anything (a conflicting tag still fails the command)
 
 

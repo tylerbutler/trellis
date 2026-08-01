@@ -3,6 +3,7 @@ mod commands;
 mod completion;
 mod config;
 mod git;
+mod github;
 mod gleam;
 mod hex;
 mod json;
@@ -27,8 +28,8 @@ use term::{ColorChoice, Verbosity};
 use workspace::Workspace;
 
 /// Trellis itself could not run: unparseable config, not a git repository, a
-/// missing `gleam`/`gh`, Hex unreachable after retries. Distinct from 1, which
-/// means the command ran and found problems.
+/// missing `gleam`, no GitHub token, Hex unreachable after retries. Distinct
+/// from 1, which means the command ran and found problems.
 const EXIT_INTERNAL_ERROR: u8 = 3;
 
 /// Crate version, with `git describe` output appended for builds that aren't
@@ -381,7 +382,8 @@ impl VersionOverrideArgs {
 
 #[derive(Subcommand)]
 enum ReleaseCommand {
-    /// Create or update the release PR: version apply on a branch, push, gh pr
+    /// Create or update the release PR: version apply on a branch, push,
+    /// open or refresh the PR via the GitHub API
     Pr {
         /// Base branch the PR targets
         #[arg(long, default_value = "main")]
@@ -427,7 +429,8 @@ struct TagCreateArgs {
     #[arg(long)]
     push: bool,
     /// Also create a GitHub Release per exact tag, with the matching CHANGELOG
-    /// section as the body (implies --push; requires the gh CLI)
+    /// section as the body (implies --push; needs a GitHub token from
+    /// GITHUB_TOKEN, GH_TOKEN, or a logged-in gh CLI)
     #[arg(long)]
     github_release: bool,
     /// Report every tag/push/release action without doing anything (a
