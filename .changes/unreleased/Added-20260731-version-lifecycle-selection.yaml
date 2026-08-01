@@ -1,5 +1,0 @@
-component: version
-kind: Added
-body: |-
-  **`trellis version` now plans and applies bumps for `git_only` and `hex` packages while leaving `workspace` packages unchanged.** Dependency ripple still stops at a non-versioned `workspace` boundary, and `--bump` or `--set` reports the resolved lifecycle when a named package cannot participate.
-time: 2026-07-31T23:03:32.015056000-07:00
