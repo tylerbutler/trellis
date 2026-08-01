@@ -3,7 +3,7 @@
 
 use crate::config::Strictness;
 use crate::gleam::Requirement;
-use crate::json::{Check, DoctorDocument, Finding, FixRecord, Severity};
+use crate::json::{Check, DoctorDocument, Finding, FixRecord, PackageLifecycleRecord, Severity};
 use crate::lockfile;
 use crate::workspace::Workspace;
 use anyhow::{Context, Result};
@@ -144,11 +144,14 @@ struct Report {
     /// severity when printing; the JSON payload preserves this order.
     findings: Vec<Finding>,
     fixes: Vec<Fix>,
-    packages: usize,
     /// No [tools.trellis] anywhere; the root was inferred from git.
     configless: bool,
     /// `members` is not configured; the member list came from git.
     auto_members: bool,
+    /// Every member's resolved lifecycle, in workspace (topological) order —
+    /// the source for the text summary's counts, the JSON payload's
+    /// `package_lifecycles`, and the package count.
+    package_lifecycles: Vec<PackageLifecycleRecord>,
 }
 
 impl Report {
@@ -167,6 +170,9 @@ impl Report {
     fn count(&self, severity: Severity) -> usize {
         self.of_severity(severity).count()
     }
+    fn packages(&self) -> usize {
+        self.package_lifecycles.len()
+    }
 }
 
 /// Load the workspace and run every check, collecting findings and the fixes
@@ -179,9 +185,16 @@ fn inspect(root: &Path) -> Result<Report> {
     };
 
     if let Some(workspace) = &workspace {
-        report.packages = workspace.members.len();
         report.configless = workspace.configless;
         report.auto_members = workspace.config.members.is_none();
+        report.package_lifecycles = workspace
+            .members
+            .iter()
+            .map(|member| PackageLifecycleRecord {
+                name: member.name.clone(),
+                lifecycle: member.lifecycle,
+            })
+            .collect();
         check_exclusions(workspace, &mut report);
         check_tag_collisions(workspace, &mut report);
         check_lockfiles(workspace, &mut report);
@@ -200,7 +213,7 @@ pub fn run(root: &Path, options: &DoctorOptions) -> Result<bool> {
         let checked = [
             "member globs resolve and every package has a parseable gleam.toml",
             "path dependencies stay inside the workspace; graph is acyclic",
-            "task exclusion globs match members; no releasable package depends on an unreleasable one",
+            "task exclusion globs match members; no package depends on one unavailable at its release lifecycle",
             "tag format produces a unique tag per releasable package",
             "manifest.toml locked versions match workspace-internal gleam.toml versions",
             "each releasable package's version is not behind its CHANGELOG",
@@ -267,12 +280,12 @@ fn print_findings(report: &Report) {
         crate::status!(
             "note: no [tools.trellis] configuration found; workspace root inferred from git, \
              {} member(s) auto-discovered",
-            report.packages
+            report.packages()
         );
     } else if report.auto_members {
         crate::status!(
             "note: `members` is not configured; {} member(s) auto-discovered from git",
-            report.packages
+            report.packages()
         );
     }
     for warning in report.of_severity(Severity::Warning) {
@@ -293,12 +306,13 @@ fn finish(report: &Report, applied: &[Fix], format: DoctorFormat) -> Result<bool
             let document = DoctorDocument {
                 schema: DoctorDocument::SCHEMA,
                 ok,
-                packages: report.packages,
+                packages: report.packages(),
                 configless: report.configless,
                 auto_members: report.auto_members,
                 findings: &report.findings,
                 fixes: report.fixes.iter().map(Fix::record).collect(),
                 applied: applied.iter().map(Fix::record).collect(),
+                package_lifecycles: &report.package_lifecycles,
             };
             println!("{}", serde_json::to_string_pretty(&document)?);
         }
@@ -309,10 +323,26 @@ fn finish(report: &Report, applied: &[Fix], format: DoctorFormat) -> Result<bool
 
 fn print_summary(report: &Report, ok: bool) {
     let warnings = report.count(Severity::Warning);
+    // Compact lifecycle counts, always in `ReleaseLifecycle::ALL` order, so a
+    // reader can scan the same position across workspaces rather than parsing
+    // which label is which.
+    let lifecycles = crate::config::ReleaseLifecycle::ALL
+        .map(|lifecycle| {
+            let count = report
+                .package_lifecycles
+                .iter()
+                .filter(|record| record.lifecycle == lifecycle)
+                .count();
+            format!("{count} {}", lifecycle.key())
+        })
+        .join(", ");
     if ok {
         // The JSON field behind this count is still `members` — renaming a
         // stable key would bump `trellis.doctor/1`, so it waits for 1.0.
-        crate::status!("ok: {} package(s), {warnings} warning(s)", report.packages);
+        crate::status!(
+            "ok: {} package(s) ({lifecycles}), {warnings} warning(s)",
+            report.packages()
+        );
     } else {
         crate::status!(
             "FAILED: {} error(s), {warnings} warning(s)",
@@ -480,7 +510,8 @@ fn check_tool_versions(workspace: &Workspace, report: &mut Report) {
 }
 
 /// Check 6: every exclusion glob matches at least one member (catches typos),
-/// and no releasable member path-depends on a release-excluded member.
+/// and no member's runtime distribution would depend on a package unavailable
+/// in it — see [`crate::config::ReleaseLifecycle::available_to`].
 fn check_exclusions(workspace: &Workspace, report: &mut Report) {
     for (task, patterns) in &workspace.config.exclude {
         for pattern in patterns {
@@ -504,21 +535,31 @@ fn check_exclusions(workspace: &Workspace, report: &mut Report) {
             );
         }
     }
+    // And again for `publish.lifecycle.packages`: a glob matching nothing
+    // silently leaves its packages on the legacy mapping or the default.
+    for pattern in workspace.config.publish.lifecycle.packages.keys() {
+        check_member_glob(
+            workspace,
+            "`publish.lifecycle.packages` glob",
+            pattern,
+            report,
+        );
+    }
 
     for (idx, member) in workspace.members.iter().enumerate() {
-        if !member.releasable {
-            continue;
-        }
-        for &dep in workspace.deps_of(idx) {
+        for &dep in workspace.runtime_deps_of(idx) {
             let dep = &workspace.members[dep];
-            if !dep.releasable {
+            if !dep.lifecycle.available_to(member.lifecycle) {
                 report.push(
                     Finding::error(
                         Check::ReleaseBoundary,
                         format!(
-                            "releasable package `{}` path-depends on `{}`, which is excluded \
-                             from release and will never exist on Hex",
-                            member.name, dep.name
+                            "package `{0}` (lifecycle `{1}`) path-depends on `{2}` (lifecycle \
+                             `{3}`), which is unavailable in `{0}`'s distribution",
+                            member.name,
+                            member.lifecycle.key(),
+                            dep.name,
+                            dep.lifecycle.key(),
                         ),
                     )
                     .at(format!("{}/gleam.toml", member.rel_path))
@@ -594,7 +635,7 @@ fn check_tag_collisions(workspace: &Workspace, report: &mut Report) {
 
     let mut seen: std::collections::HashMap<String, String> = std::collections::HashMap::new();
 
-    for member in workspace.members.iter().filter(|m| m.releasable) {
+    for member in workspace.members.iter().filter(|m| m.releasable()) {
         if member.tag_mode.includes_exact() {
             let tag = workspace.config.format_tag(&member.name, member.version());
             insert(
@@ -610,7 +651,7 @@ fn check_tag_collisions(workspace: &Workspace, report: &mut Report) {
     let series_members: Vec<&str> = workspace
         .members
         .iter()
-        .filter(|m| m.releasable && m.tag_mode.includes_series())
+        .filter(|m| m.releasable() && m.tag_mode.includes_series())
         .map(|m| m.name.as_str())
         .collect();
     let names = |members: &[&str]| {
@@ -644,7 +685,7 @@ fn check_tag_collisions(workspace: &Workspace, report: &mut Report) {
     for member in workspace
         .members
         .iter()
-        .filter(|m| m.releasable && m.tag_mode.includes_series())
+        .filter(|m| m.releasable() && m.tag_mode.includes_series())
     {
         if let Some(tag) = workspace
             .config
@@ -768,7 +809,7 @@ fn check_lockfiles(workspace: &Workspace, report: &mut Report) {
 /// member should have a CHANGELOG.md, and its gleam.toml version must not be
 /// behind the newest version mentioned in it.
 fn check_changelogs(workspace: &Workspace, report: &mut Report) {
-    for member in workspace.members.iter().filter(|m| m.releasable) {
+    for member in workspace.members.iter().filter(|m| m.releasable()) {
         let changelog = member.path.join("CHANGELOG.md");
         let rel_changelog = format!("{}/CHANGELOG.md", member.rel_path);
         if !changelog.is_file() {

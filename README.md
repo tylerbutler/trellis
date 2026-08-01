@@ -280,10 +280,37 @@ docs = ["examples/*", "packages/internal-*"]
 ```
 
 The reserved `@release` key defines the package set used by changelog,
-version, tag, and publish commands, and `@members` removes directories from
-workspace membership entirely (in both auto-discovered and explicit-members
-modes). Special keys use a `@` prefix so they can never collide with a task
-name — trellis rejects any task named with that prefix.
+version, tag, and publish commands — read as the `workspace` state of the
+finer-grained release lifecycle described next — and `@members` removes
+directories from workspace membership entirely (in both auto-discovered and
+explicit-members modes). Special keys use a `@` prefix so they can never
+collide with a task name — trellis rejects any task named with that prefix.
+
+### Release lifecycle
+
+```toml
+[tools.trellis.publish.lifecycle]
+default = "hex"
+packages = { "packages/experimental/**" = "workspace", "packages/providers/**" = "git_only" }
+```
+
+Each member resolves to one of three lifecycles: `workspace` (build and test
+only — no changelog, version, tag, or publish), `git_only` (changelog,
+version, and git tags/releases, but never published to Hex), or `hex` (the
+full pipeline, and the default). `default` sets the workspace-wide fallback;
+`packages` overrides it per member, keyed by member-path glob — a member
+matched by globs resolving to different lifecycles is a `doctor` error, but
+globs agreeing on the same lifecycle are fine. `exclude.@release` keeps
+resolving matching packages to `workspace`, but an explicit `packages` rule
+for the same member takes precedence, so a package can graduate from
+`workspace` to `git_only` to `hex` without moving directories.
+
+`--releasable` (on `list`, `ci matrix`, and elsewhere) still means `git_only`
+**or** `hex`; `publish` narrows further, since only `hex` packages ever reach
+Hex. `doctor` additionally enforces that a runtime path dependency is at
+least as capable as its dependent — `hex` may depend only on `hex`, `git_only`
+may depend on `git_only` or `hex`, and `workspace` may depend on anything —
+exempting dev-only path deps, which never ship in any distribution.
 
 ### Changelog & versioning
 
@@ -481,8 +508,8 @@ trellis doctor [--fix] [--dry-run] [--format text|json|github]
 
 Checks every workspace invariant and reports all problems at once: member
 globs resolve and parse, path deps stay inside the workspace, the graph is
-acyclic, task exclusion globs match real members, no releasable package
-depends on an unreleasable one, tag formats don't collide, `manifest.toml`
+acyclic, task exclusion globs match real members, every package's runtime
+path deps are available at its release lifecycle, tag formats don't collide, `manifest.toml`
 locked versions match workspace-internal `gleam.toml` versions, no package's
 version is behind its CHANGELOG, and every unreleased changelog fragment
 parses and references a valid package and kind. When `.tool-versions` pins

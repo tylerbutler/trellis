@@ -23,6 +23,7 @@ description: Every trellis command, flag, and argument — generated from the CL
 * [`trellis new`↴](#trellis-new)
 * [`trellis release`↴](#trellis-release)
 * [`trellis release pr`↴](#trellis-release-pr)
+* [`trellis release bootstrap`↴](#trellis-release-bootstrap)
 * [`trellis tag`↴](#trellis-tag)
 * [`trellis tag plan`↴](#trellis-tag-plan)
 * [`trellis tag create`↴](#trellis-tag-create)
@@ -86,10 +87,10 @@ List packages in topological order (dependencies first)
 
 ###### **Options:**
 
-* `--json` — Emit JSON instead of names
+* `--json` — Emit JSON instead of name/lifecycle columns
 * `--since <REF>` — Only packages owning files changed since this git ref
 * `--with-dependents` — Add the reverse-dependency closure of the selection
-* `--releasable` — Only packages that participate in releases (excludes `@release` matches)
+* `--releasable` — Only packages whose release lifecycle is `git_only` or `hex`
 
 
 
@@ -314,13 +315,14 @@ Release orchestration
 
 ###### **Subcommands:**
 
-* `pr` — Create or update the release PR: version apply on a branch, push, gh pr
+* `pr` — Create or update the release PR: version apply on a branch, push, open or refresh the PR via the GitHub API
+* `bootstrap` — Reconcile tags against current manifest versions — no version bump, no unreleased changelog fragments required
 
 
 
 ## `trellis release pr`
 
-Create or update the release PR: version apply on a branch, push, gh pr
+Create or update the release PR: version apply on a branch, push, open or refresh the PR via the GitHub API
 
 **Usage:** `trellis release pr [OPTIONS]`
 
@@ -332,6 +334,22 @@ Create or update the release PR: version apply on a branch, push, gh pr
 * `--branch <BRANCH>` — Branch the release commit is force-pushed to
 
   Default value: `release/pending`
+
+
+
+## `trellis release bootstrap`
+
+Reconcile tags against current manifest versions — no version bump, no unreleased changelog fragments required
+
+An alias for `tag create`, for adopting trellis on a repository that already has the package versions and changelogs it wants, but no tags yet.
+
+**Usage:** `trellis release bootstrap [OPTIONS]`
+
+###### **Options:**
+
+* `--push` — Push each created tag to origin
+* `--github-release` — Also create a GitHub Release per exact tag, with the matching CHANGELOG section as the body (implies --push; needs a GitHub token from GITHUB_TOKEN, GH_TOKEN, or a logged-in gh CLI)
+* `--dry-run` — Report every tag/push/release action without doing anything (a conflicting tag still fails the command)
 
 
 
@@ -369,7 +387,8 @@ Create missing tags in topological order
 ###### **Options:**
 
 * `--push` — Push each created tag to origin
-* `--github-release` — Also create a GitHub Release per tag, with the matching CHANGELOG section as the body (implies --push; requires the gh CLI)
+* `--github-release` — Also create a GitHub Release per exact tag, with the matching CHANGELOG section as the body (implies --push; needs a GitHub token from GITHUB_TOKEN, GH_TOKEN, or a logged-in gh CLI)
+* `--dry-run` — Report every tag/push/release action without doing anything (a conflicting tag still fails the command)
 
 
 
@@ -386,7 +405,7 @@ Publish packages to Hex, in dependency order, with path deps rewritten
 ###### **Options:**
 
 * `--tag <TAG>` — Resolve a pushed tag (e.g. lat_core-v1.2.0) to its package
-* `--all-untagged` — Every releasable package whose version isn't on Hex yet
+* `--all-untagged` — Every `hex`-lifecycle package whose version isn't on Hex yet
 * `--dry-run` — Show what would be published (and rewritten) without doing it
 
 

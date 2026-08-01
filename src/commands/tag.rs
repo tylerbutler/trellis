@@ -8,13 +8,13 @@
 //! package's manifest version independently of those modes. Only immutable
 //! tags can carry a GitHub Release.
 
+use crate::github::GitHubClient;
 use crate::gleam::GleamManifest;
 use crate::json::TagPlanDocument;
-use crate::tools;
 use crate::workspace::Workspace;
 use anyhow::{Context, Result, bail};
 use serde::Serialize;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::process::Command;
 
@@ -56,8 +56,15 @@ pub struct PlannedTag {
 
 /// Every tag the current versions call for, in topological order, each with
 /// the work it needs. A legacy repository-wide package series tag (a
-/// `series_tag_format` without `{name}`) is still claimed only once.
-fn plan_tags(workspace: &Workspace) -> Result<Vec<PlannedTag>> {
+/// `series_tag_format` without `{name}`) is still claimed only once, by the
+/// first member that would produce it, so it is moved once rather than once
+/// per package.
+///
+/// Local-only and read-only — no git ref is written and no remote is
+/// queried. `tag plan`, `tag create`, and `release bootstrap` all start from
+/// this same reconciliation, so a preview can never disagree with what
+/// execution actually does.
+pub(crate) fn plan_tags(workspace: &Workspace) -> Result<Vec<PlannedTag>> {
     let existing = git_stdout(&workspace.root, &["tag", "--list"])?;
     let existing: HashSet<&str> = existing
         .lines()
@@ -73,7 +80,7 @@ fn plan_tags(workspace: &Workspace) -> Result<Vec<PlannedTag>> {
         .members
         .iter()
         .zip(0..)
-        .filter(|(member, _)| member.releasable)
+        .filter(|(member, _)| member.releasable())
     {
         if member.tag_mode.includes_exact() {
             let tag = workspace.config.format_tag(&member.name, member.version());
@@ -260,6 +267,9 @@ pub fn plan(workspace: &Workspace, json: bool) -> Result<()> {
 pub struct CreateOptions {
     pub push: bool,
     pub github_release: bool,
+    /// Report every planned action without doing anything (a conflicting tag
+    /// still fails the command).
+    pub dry_run: bool,
 }
 
 pub fn create(workspace: &Workspace, options: &CreateOptions) -> Result<()> {
@@ -279,11 +289,62 @@ pub fn create(workspace: &Workspace, options: &CreateOptions) -> Result<()> {
         return Ok(());
     }
 
+    // Resolved once, up front: a missing token or non-GitHub origin should
+    // fail before any tag is created or pushed, not between two of them.
+    let github = if options.github_release {
+        Some(GitHubClient::for_repo(&workspace.root)?)
+    } else {
+        None
+    };
+
+    // One `ls-remote` answers "what does origin have?" for every planned tag
+    // at once — a single network round trip that the conflict preflight and
+    // the per-tag actions below all read from.
+    let remote_oids = if push {
+        let tags: Vec<&str> = targets.iter().map(|planned| planned.tag.as_str()).collect();
+        remote_tag_oids(&workspace.root, &tags)?
+    } else {
+        HashMap::new()
+    };
+
+    // An immutable tag whose local and remote objects disagree is the one
+    // conflict trellis refuses to resolve. Check every planned tag before
+    // mutating any of them, so one package's conflict fails the whole run
+    // rather than leaving an earlier package half-tagged.
+    if push {
+        let mut conflicts = Vec::new();
+        for planned in &targets {
+            if planned.kind != TagKind::Exact {
+                continue;
+            }
+            let tag = &planned.tag;
+            if let (Some(local), Some(remote)) =
+                (local_tag_oid(&workspace.root, tag)?, remote_oids.get(tag))
+                && local != *remote
+            {
+                conflicts.push(format!(
+                    "tag `{tag}` points to different objects locally ({local}) and on origin ({remote})"
+                ));
+            }
+        }
+        if !conflicts.is_empty() {
+            bail!("{}", conflicts.join("; "));
+        }
+    }
+
     for planned in targets {
+        let remote_oid = remote_oids.get(&planned.tag).map(String::as_str);
         match planned.kind {
-            TagKind::Exact => create_exact_tag(workspace, planned, options, push)?,
+            TagKind::Exact => create_exact_tag(
+                workspace,
+                planned,
+                options,
+                github.as_ref(),
+                push,
+                remote_oid,
+            )?,
             TagKind::Series | TagKind::RepositorySeries => {
-                move_series_tag(workspace, planned, push)?
+                move_series_tag(workspace, planned, options, push, remote_oid)?
             }
         }
     }
@@ -333,25 +394,25 @@ fn create_exact_tag(
     workspace: &Workspace,
     planned: &PlannedTag,
     options: &CreateOptions,
+    github: Option<&GitHubClient>,
     push: bool,
+    remote_oid: Option<&str>,
 ) -> Result<()> {
     let member = &workspace.members[planned.member];
     let tag = &planned.tag;
-    let local_oid = local_tag_oid(&workspace.root, tag)?;
-    let remote_oid = if push {
-        remote_tag_oid(&workspace.root, tag)?
-    } else {
-        None
-    };
-    if let (Some(local), Some(remote)) = (&local_oid, &remote_oid)
-        && local != remote
-    {
-        bail!("tag `{tag}` points to different objects locally ({local}) and on origin ({remote})");
-    }
-    if local_oid.is_none() {
+    // `plan_tags` already read the local tag list, so `action` says whether
+    // the tag exists here; local/remote divergence was rejected by `create`'s
+    // preflight.
+    if planned.action == TagAction::Create {
         if remote_oid.is_some() {
-            git_stdout(&workspace.root, &["fetch", "origin", "tag", tag])?;
-            crate::status!("fetched {tag}");
+            if options.dry_run {
+                crate::status!("would fetch {tag}");
+            } else {
+                git_stdout(&workspace.root, &["fetch", "origin", "tag", tag])?;
+                crate::status!("fetched {tag}");
+            }
+        } else if options.dry_run {
+            crate::status!("would tag {tag}");
         } else {
             let mut args = crate::git::identity_fallback_args(&workspace.root);
             args.extend([
@@ -367,29 +428,22 @@ fn create_exact_tag(
         }
     }
     if push && remote_oid.is_none() {
-        git_stdout(&workspace.root, &["push", "origin", tag])
-            .with_context(|| format!("failed to push tag {tag}"))?;
-        crate::status!("pushed {tag}");
+        if options.dry_run {
+            crate::status!("would push {tag}");
+        } else {
+            git_stdout(&workspace.root, &["push", "origin", tag])
+                .with_context(|| format!("failed to push tag {tag}"))?;
+            crate::status!("pushed {tag}");
+        }
     }
-    if options.github_release {
-        if github_release_exists(&workspace.root, tag)? {
+    if let Some(github) = github {
+        if github.release_exists(tag)? {
             crate::status!("GitHub release {tag} already exists; skipping");
+        } else if options.dry_run {
+            crate::status!("would create GitHub release {tag}");
         } else {
             let notes = release_notes(workspace, planned.member);
-            let gh = tools::gh_bin();
-            let args = ["release", "create", tag, "--title", tag, "--notes", &notes];
-            crate::term::trace_command(&gh, &args, &workspace.root);
-            let output = Command::new(&gh)
-                .args(args)
-                .current_dir(&workspace.root)
-                .output()
-                .with_context(|| format!("failed to run `{gh}` — is the GitHub CLI installed?"))?;
-            if !output.status.success() {
-                bail!(
-                    "`{gh} release create {tag}` failed: {}",
-                    String::from_utf8_lossy(&output.stderr).trim()
-                );
-            }
+            github.create_release(tag, tag, &notes)?;
             crate::status!("created GitHub release {tag}");
         }
     }
@@ -400,52 +454,66 @@ fn create_exact_tag(
 /// release commit and force-pushed. Local and remote pointing at different
 /// objects is the normal state between releases, not an error, and no GitHub
 /// Release is ever attached — it would silently retarget on the next move.
-fn move_series_tag(workspace: &Workspace, planned: &PlannedTag, push: bool) -> Result<()> {
+fn move_series_tag(
+    workspace: &Workspace,
+    planned: &PlannedTag,
+    options: &CreateOptions,
+    push: bool,
+    remote_oid: Option<&str>,
+) -> Result<()> {
     let member = &workspace.members[planned.member];
     let tag = &planned.tag;
-    let remote_oid = if push {
-        remote_tag_oid(&workspace.root, tag)?
-    } else {
-        None
-    };
-    if planned.action != TagAction::UpToDate {
-        let mut args = crate::git::identity_fallback_args(&workspace.root);
-        args.extend([
-            "tag".into(),
-            "-f".into(),
-            "-a".into(),
-            tag.clone(),
-            "-m".into(),
-            format!("{} {}", member.name, planned.version),
-        ]);
-        let args: Vec<&str> = args.iter().map(String::as_str).collect();
-        git_stdout(&workspace.root, &args)?;
-        if planned.action == TagAction::Create {
-            crate::status!("tagged {tag}");
+    let moved = planned.action != TagAction::UpToDate;
+    if moved {
+        let (verb, done) = if planned.action == TagAction::Create {
+            ("tag", "tagged")
         } else {
-            crate::status!("moved {tag}");
+            ("move", "moved")
+        };
+        if options.dry_run {
+            crate::status!("would {verb} {tag}");
+        } else {
+            let mut args = crate::git::identity_fallback_args(&workspace.root);
+            args.extend([
+                "tag".into(),
+                "-f".into(),
+                "-a".into(),
+                tag.clone(),
+                "-m".into(),
+                format!("{} {}", member.name, member.version()),
+            ]);
+            let args: Vec<&str> = args.iter().map(String::as_str).collect();
+            git_stdout(&workspace.root, &args)?;
+            crate::status!("{done} {tag}");
         }
     }
     if push {
         // Re-read after any move: a re-tag writes a fresh annotated object, so
-        // this also catches "already where it belongs, but origin disagrees".
+        // it never matches origin (in a dry run `moved` stands in for that);
+        // the comparison also catches "already where it belongs, but origin
+        // disagrees".
         let local_oid = local_tag_oid(&workspace.root, tag)?;
-        if local_oid != remote_oid {
-            if planned.kind == TagKind::RepositorySeries {
-                let lease = format!(
-                    "--force-with-lease=refs/tags/{tag}:{}",
-                    remote_oid.as_deref().unwrap_or("")
-                );
-                git_stdout(&workspace.root, &["push", &lease, "origin", tag])
-                    .with_context(|| format!("failed to push tag {tag}"))?;
+        if moved || local_oid.as_deref() != remote_oid {
+            let verb = if remote_oid.is_none() {
+                "push"
             } else {
-                git_stdout(&workspace.root, &["push", "--force", "origin", tag])
-                    .with_context(|| format!("failed to push tag {tag}"))?;
-            }
-            if remote_oid.is_none() {
-                crate::status!("pushed {tag}");
+                "force-push"
+            };
+            if options.dry_run {
+                crate::status!("would {verb} {tag}");
             } else {
-                crate::status!("force-pushed {tag}");
+                if planned.kind == TagKind::RepositorySeries {
+                    let lease = format!(
+                        "--force-with-lease=refs/tags/{tag}:{}",
+                        remote_oid.unwrap_or("")
+                    );
+                    git_stdout(&workspace.root, &["push", &lease, "origin", tag])
+                        .with_context(|| format!("failed to push tag {tag}"))?;
+                } else {
+                    git_stdout(&workspace.root, &["push", "--force", "origin", tag])
+                        .with_context(|| format!("failed to push tag {tag}"))?;
+                }
+                crate::status!("{verb}ed {tag}");
             }
         }
     }
@@ -484,6 +552,30 @@ fn rev_parse(root: &Path, reference: &str, subject: &str) -> Result<Option<Strin
     }
 }
 
+/// The object each requested tag names on origin, from one `ls-remote` for
+/// the whole batch. Tags origin doesn't have are absent from the map. Peeled
+/// `^{}` entries are skipped so the oid is the tag object itself — the same
+/// object `local_tag_oid` reports.
+fn remote_tag_oids(root: &Path, tags: &[&str]) -> Result<HashMap<String, String>> {
+    let refs: Vec<String> = tags.iter().map(|tag| format!("refs/tags/{tag}")).collect();
+    let mut args = vec!["ls-remote", "--tags", "origin"];
+    args.extend(refs.iter().map(String::as_str));
+    let stdout = git_stdout(root, &args)?;
+    let mut oids = HashMap::new();
+    for line in stdout.lines() {
+        if let Some((oid, reference)) = line.split_once('\t')
+            && let Some(tag) = reference.strip_prefix("refs/tags/")
+            && !tag.ends_with("^{}")
+        {
+            oids.insert(tag.to_string(), oid.to_string());
+        }
+    }
+    Ok(oids)
+}
+
+/// The object a single tag names on origin, or `None` when origin doesn't have
+/// it. Used by the repository-series reconciliation, which fetches and
+/// compares one specific tag rather than a planned batch.
 fn remote_tag_oid(root: &Path, tag: &str) -> Result<Option<String>> {
     let reference = format!("refs/tags/{tag}");
     let args = ["ls-remote", "--exit-code", "--tags", "origin", &reference];
@@ -507,25 +599,6 @@ fn remote_tag_oid(root: &Path, tag: &str) -> Result<Option<String>> {
             String::from_utf8_lossy(&output.stderr).trim()
         ),
     }
-}
-
-fn github_release_exists(root: &Path, tag: &str) -> Result<bool> {
-    let gh = tools::gh_bin();
-    let args = ["release", "view", tag, "--json", "tagName"];
-    crate::term::trace_command(&gh, &args, root);
-    let output = Command::new(&gh)
-        .args(args)
-        .current_dir(root)
-        .output()
-        .with_context(|| format!("failed to run `{gh}` — is the GitHub CLI installed?"))?;
-    if output.status.success() {
-        return Ok(true);
-    }
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    if stderr.contains("release not found") {
-        return Ok(false);
-    }
-    bail!("`{gh} release view {tag}` failed: {}", stderr.trim())
 }
 
 /// The member's CHANGELOG section for its current version, or a minimal
@@ -661,7 +734,7 @@ fn candidates(
         .members
         .iter()
         .zip(0..)
-        .filter(|(member, _)| member.releasable && wanted(member.tag_mode))
+        .filter(|(member, _)| member.releasable() && wanted(member.tag_mode))
         .map(|(member, index)| (index, member.name.as_str()))
         .collect()
 }

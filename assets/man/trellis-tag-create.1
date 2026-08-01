@@ -4,7 +4,7 @@
 .SH NAME
 trellis\-tag\-create \- Create missing tags in topological order
 .SH SYNOPSIS
-\fBtrellis tag create\fR [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-\-push\fR] [\fB\-\-color\fR] [\fB\-\-github\-release\fR] [\fB\-q\fR|\fB\-\-quiet\fR] [\fB\-v\fR|\fB\-\-verbose\fR] [\fB\-\-no\-update\-check\fR] [\fB\-h\fR|\fB\-\-help\fR] 
+\fBtrellis tag create\fR [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-\-push\fR] [\fB\-\-color\fR] [\fB\-\-github\-release\fR] [\fB\-\-dry\-run\fR] [\fB\-q\fR|\fB\-\-quiet\fR] [\fB\-v\fR|\fB\-\-verbose\fR] [\fB\-\-no\-update\-check\fR] [\fB\-h\fR|\fB\-\-help\fR] 
 .SH DESCRIPTION
 Create missing tags in topological order
 .SH OPTIONS
@@ -31,7 +31,10 @@ never
 .RE
 .TP
 \fB\-\-github\-release\fR
-Also create a GitHub Release per tag, with the matching CHANGELOG section as the body (implies \-\-push; requires the gh CLI)
+Also create a GitHub Release per exact tag, with the matching CHANGELOG section as the body (implies \-\-push; needs a GitHub token from GITHUB_TOKEN, GH_TOKEN, or a logged\-in gh CLI)
+.TP
+\fB\-\-dry\-run\fR
+Report every tag/push/release action without doing anything (a conflicting tag still fails the command)
 .TP
 \fB\-q\fR, \fB\-\-quiet\fR
 Suppress normal\-path output; JSON/report payloads and errors still print

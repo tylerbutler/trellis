@@ -1,0 +1,5 @@
+component: graph
+kind: Added
+body: |-
+  **`trellis graph --format json` nodes carry the resolved release lifecycle.** Each node's additive `lifecycle` field (`workspace`, `git_only`, or `hex`) sits alongside the existing `releasable` boolean, matching `list`/`info`.
+time: 2026-07-31T23:03:32.015056000-07:00

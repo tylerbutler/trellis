@@ -52,7 +52,9 @@ format = "repo-v{series}"                 # repo-v0.4
 `trellis release pr` turns pending fragments into a release pull request: it
 runs `version apply` on a release branch (default `release/pending`), commits
 the bumps, force-pushes (so the branch is regenerated on each run), and
-creates or updates the PR via the `gh` CLI. The body carries the bump table
+creates or updates the PR via the GitHub API. It needs a token: `GITHUB_TOKEN`
+(ambient in GitHub Actions), `GH_TOKEN`, or a logged-in `gh` CLI as the
+fallback (`gh auth token`). The body carries the bump table
 and each package's new CHANGELOG section. It requires a clean working tree
 and is a no-op when there are no fragments.
 
@@ -60,7 +62,8 @@ and is a no-op when there are no fragments.
 
 `tag plan` lists the tags the current versions call for and don't have yet.
 `tag create` reconciles them in topological order; `--push` pushes them, and
-`--github-release` (which implies `--push` and requires the `gh` CLI) also
+`--github-release` (which implies `--push` and needs the same GitHub token
+as `release pr`) also
 creates a GitHub Release per tag with the matching CHANGELOG section as the
 body.
 
@@ -110,7 +113,10 @@ releases, so neither `publish --tag` nor `ci tag-package` resolves them.
 
 ## Publishing to Hex
 
-`publish` runs, per package and in dependency order:
+`publish` selects members whose [release lifecycle](/docs/configuration/#release-lifecycle)
+is `hex` — `--package <name>` and `--tag <tag>` refuse a `workspace` or
+`git_only` package by name, and `--all-untagged` only ever considers `hex`
+members. It runs, per package and in dependency order:
 
 1. **Idempotency check** — one Hex API query; versions already published are
    skipped.
@@ -118,7 +124,10 @@ releases, so neither `publish --tag` nor `ci tag-package` resolves them.
    `gleam test`, run against the original manifest with path deps intact.
 3. **Path-dep rewrite** — computed from the graph, never hand-listed: each
    workspace path dependency becomes the Hex requirement derived from that
-   dep's current version, per `path_dep_requirement`.
+   dep's current version, per `path_dep_requirement`. The version map only
+   ever holds `hex` members, so a path dependency on a `git_only` or
+   `workspace` member fails the rewrite rather than publishing something Hex
+   could never resolve.
 4. **Publish** — `gleam publish --yes`.
 5. **Restore** — the original `gleam.toml` comes back even when publishing
    fails; the repo never shows rewritten files.
@@ -143,9 +152,11 @@ release instead of one per tag.
 
 <Callout>
 
-Dev-only path deps to unreleasable packages are left alone — Hex doesn't ship
-dev dependencies. A regular `[dependencies]` path dep to an unreleasable
-package refuses to publish, and `doctor` catches that boundary on every PR.
+Dev-only path deps to a non-`hex` package are left alone — Hex doesn't ship
+dev dependencies. A regular `[dependencies]` path dep to a package whose
+lifecycle is less capable than its dependent's refuses to publish, and
+`doctor` catches that boundary on every PR — see
+[Release lifecycle](/docs/configuration/#release-lifecycle).
 
 </Callout>
 
