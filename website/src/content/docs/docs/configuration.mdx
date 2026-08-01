@@ -121,7 +121,7 @@ their roots.
 | `publish.tag_format` | no | Template for per-package git tags. Default: `{name}-v{version}`. |
 | `publish.series_tag_format` | no | Template for the moving series tag, substituting `{name}` and `{series}`. Omit `{name}` for one repository-wide tag. Default: `{name}-v{series}`. |
 | `publish.repository_series.package` | no | Anchor package for one repository-wide moving series tag. The anchor must be releasable. |
-| `publish.repository_series.format` | with `package` | Repository tag template; must contain `{series}`. |
+| `publish.repository_series.format` | with `package` | Repository tag template; must contain `{series}` and no `{name}`. |
 | `publish.tag_mode` | no | Which tags a release creates: `exact` (default), `series`, or `both`. |
 | `publish.tag_mode_overrides` | no | Per-package tag modes: a map of mode name to member-path globs. A package matching globs under two modes is an error. |
 | `publish.retry` | no | Backoff for Hex rate limits: `{ attempts, initial_delay, multiplier }`. |

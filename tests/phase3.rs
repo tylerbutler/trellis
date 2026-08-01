@@ -580,6 +580,11 @@ fn publish_rejects_unreleasable_package() {
 
 // ---- series tags -----------------------------------------------------------
 
+/// The repository-series config the tag tests share: `lat_cli` anchoring
+/// `repo-v{series}`.
+const REPO_SERIES: &str = "[tools.trellis.publish.repository_series]\n\
+     package = \"lat_cli\"\nformat = \"repo-v{series}\"";
+
 /// The basic fixture with `[tools.trellis.publish]` replaced by `publish`, in
 /// a git repo with a bare origin. The returned remote must outlive the test.
 fn series_repo(root: &Path, publish: &str) -> tempfile::TempDir {
@@ -913,12 +918,7 @@ fn doctor_warns_about_a_repo_wide_series_tag_whatever_the_versions() {
 fn repository_series_moves_only_when_the_anchor_manifest_version_changes() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
-    let _remote = series_repo(
-        root,
-        "tag_mode = \"exact\"\n\
-         [tools.trellis.publish.repository_series]\n\
-         package = \"lat_cli\"\nformat = \"repo-v{series}\"",
-    );
+    let _remote = series_repo(root, &format!("tag_mode = \"exact\"\n{REPO_SERIES}"));
 
     trellis(root)
         .args(["tag", "create"])
@@ -961,11 +961,7 @@ fn repository_series_moves_only_when_the_anchor_manifest_version_changes() {
 fn repository_series_transition_keeps_the_old_tag_and_skips_prereleases() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
-    let _remote = series_repo(
-        root,
-        "[tools.trellis.publish.repository_series]\n\
-         package = \"lat_cli\"\nformat = \"repo-v{series}\"",
-    );
+    let _remote = series_repo(root, REPO_SERIES);
     trellis(root).args(["tag", "create"]).assert().success();
     let old = commit_of(root, "repo-v0.3");
 
@@ -985,11 +981,7 @@ fn repository_series_transition_keeps_the_old_tag_and_skips_prereleases() {
 fn repository_series_uses_committed_anchor_version_not_worktree_edits() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
-    let _remote = series_repo(
-        root,
-        "[tools.trellis.publish.repository_series]\n\
-         package = \"lat_cli\"\nformat = \"repo-v{series}\"",
-    );
+    let _remote = series_repo(root, REPO_SERIES);
     trellis(root).args(["tag", "create"]).assert().success();
     let tagged = commit_of(root, "repo-v0.3");
 
@@ -1006,11 +998,7 @@ fn repository_series_uses_committed_anchor_version_not_worktree_edits() {
 fn repository_series_fetches_a_remote_only_tag_before_planning_a_push() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
-    let remote = series_repo(
-        root,
-        "[tools.trellis.publish.repository_series]\n\
-         package = \"lat_cli\"\nformat = \"repo-v{series}\"",
-    );
+    let remote = series_repo(root, REPO_SERIES);
     trellis(root)
         .args(["tag", "create", "--push"])
         .assert()
@@ -1039,11 +1027,7 @@ fn repository_series_fetches_a_remote_only_tag_before_planning_a_push() {
 fn repository_series_refuses_to_move_a_newer_remote_tag_backward() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
-    let _remote = series_repo(
-        root,
-        "[tools.trellis.publish.repository_series]\n\
-         package = \"lat_cli\"\nformat = \"repo-v{series}\"",
-    );
+    let _remote = series_repo(root, REPO_SERIES);
     trellis(root)
         .args(["tag", "create", "--push"])
         .assert()
@@ -1161,11 +1145,7 @@ fn repository_series_anchor_and_namespace_are_validated_by_doctor() {
 fn repository_series_is_force_pushed_and_gets_no_github_release() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
-    let _remote = series_repo(
-        root,
-        "[tools.trellis.publish.repository_series]\n\
-         package = \"lat_cli\"\nformat = \"repo-v{series}\"",
-    );
+    let _remote = series_repo(root, REPO_SERIES);
     let gh = install_fake_gh(root);
     trellis(root)
         .env("TRELLIS_GH_BIN", &gh)
@@ -1196,11 +1176,7 @@ fn repository_series_is_force_pushed_and_gets_no_github_release() {
 fn repository_series_reports_an_unreadable_historical_anchor_manifest() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
-    let _remote = series_repo(
-        root,
-        "[tools.trellis.publish.repository_series]\n\
-         package = \"lat_cli\"\nformat = \"repo-v{series}\"",
-    );
+    let _remote = series_repo(root, REPO_SERIES);
     git(root, &["checkout", "-q", "-b", "missing-anchor"]);
     git(root, &["rm", "-q", "packages/lat_cli/gleam.toml"]);
     git(root, &["commit", "-qm", "remove anchor manifest"]);

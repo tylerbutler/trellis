@@ -641,13 +641,22 @@ impl ConfigFile {
                 self.publish.series_tag_format
             );
         }
-        if let Some(repository_series) = &self.publish.repository_series
-            && !repository_series.format.contains("{series}")
-        {
-            bail!(
-                "`repository_series.format` `{}` has no {{series}} placeholder",
-                repository_series.format
-            );
+        if let Some(repository_series) = &self.publish.repository_series {
+            if !repository_series.format.contains("{series}") {
+                bail!(
+                    "`repository_series.format` `{}` has no {{series}} placeholder",
+                    repository_series.format
+                );
+            }
+            // `{series}` is the template's only placeholder; a `{name}` would
+            // be written into the tag literally.
+            if repository_series.format.contains("{name}") {
+                bail!(
+                    "`repository_series.format` `{}` cannot contain {{name}}; \
+                     the tag is repository-wide, not per-package",
+                    repository_series.format
+                );
+            }
         }
         let dependency_kind = &self.changelog.dependency_kind;
         if !self
@@ -1282,6 +1291,21 @@ mod tests {
         let message = format!("{err:#}");
         assert!(message.contains("`repository_series.format`"), "{message}");
         assert!(message.contains("{series}"), "{message}");
+    }
+
+    #[test]
+    fn repository_series_format_rejects_the_name_placeholder() {
+        let err = ConfigFile::from_gleam_toml(
+            r#"
+            [tools.trellis.publish.repository_series]
+            package = "core"
+            format = "{name}-v{series}"
+            "#,
+        )
+        .unwrap_err();
+        let message = format!("{err:#}");
+        assert!(message.contains("`repository_series.format`"), "{message}");
+        assert!(message.contains("{name}"), "{message}");
     }
 
     #[test]

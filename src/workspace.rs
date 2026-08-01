@@ -41,6 +41,11 @@ pub struct Workspace {
     pub configless: bool,
     /// Members in topological order (dependencies before dependents).
     pub members: Vec<Member>,
+    /// Index of the repository series anchor member. `None` when the feature
+    /// is unconfigured — or, under doctor's lenient load, when the configured
+    /// anchor is missing or unreleasable (an error diagnostic either way, so
+    /// strict-loading commands never run without it).
+    pub repository_series_anchor: Option<usize>,
     /// Direct workspace dependencies, indexed like `members`.
     deps: Vec<Vec<usize>>,
     /// Direct workspace dependents, indexed like `members`.
@@ -459,11 +464,22 @@ impl Workspace {
             list.sort_unstable();
         }
 
+        let repository_series_anchor =
+            config
+                .publish
+                .repository_series
+                .as_ref()
+                .and_then(|series| {
+                    members
+                        .iter()
+                        .position(|member| member.name == series.package && member.releasable)
+                });
         let workspace = Workspace {
             root: root.to_path_buf(),
             config,
             configless,
             members,
+            repository_series_anchor,
             deps,
             dependents,
         };
