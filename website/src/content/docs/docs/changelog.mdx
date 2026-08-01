@@ -15,7 +15,7 @@ managed workspace needs no second binary in CI.
 
 ```txt wrap
 trellis changelog new [--package <pkg>] --kind <kind> --body <text>
-trellis changelog check --base <ref> [--head <ref>] [--json]
+trellis changelog check --base <ref> [--head <ref>] [--format text|json|github] [--strictness error|warn|off]
 trellis version plan [--json]
 trellis version apply [--json]
 ```
@@ -71,13 +71,56 @@ $ trellis changelog new --package lat_cli --kind Added --category build \
 ## Enforcing entries on PRs
 
 `changelog check` maps a `base...head` diff to packages and fails (non-zero
-exit) if a changed releasable package has no unreleased fragment. `--json`
-emits a payload (including a markdown `preview`) ready for a PR sticky
-comment:
+exit) if a changed releasable package has no unreleased fragment.
+
+```console
+$ trellis changelog check --base origin/main
+lat_core: 2 fragment(s)
+lat_cli: needs a changelog entry
+```
+
+A package counts as changed when the diff touches *any* file under its
+directory — a README edit trips the same gate as a behavior change. That is
+deliberate (the alternative is a heuristic that guesses wrong quietly), but it
+means the gate is sometimes stricter than a repository wants.
+
+### Strictness
+
+`changelog.strictness` sets what a missing entry costs:
+
+| Value | Effect |
+| --- | --- |
+| `error` | Default. A missing entry fails the run. |
+| `warn` | Reported, exit 0 — advisory, so the comment still appears but the check stays green. |
+| `off` | Not checked. Packages and fragment counts are still reported. |
+
+```toml title="gleam.toml"
+[tools.trellis.changelog]
+strictness = "warn"
+```
+
+`--strictness error|warn|off` overrides it for one run, so a workflow can
+gate harder on ready-for-review PRs than the workspace default without editing
+the manifest.
+
+<Callout>
+
+**Strictness governs missing entries, not broken ones.** A fragment that does
+not parse, or that names an unknown package or kind, fails `check` at every
+setting including `off` — that is malformed input, not a policy call.
+
+</Callout>
+
+### The JSON payload
+
+`--format json` emits a payload (including a markdown `preview`) ready for a PR
+sticky comment:
 
 ```json
 {
   "schema": "trellis.changelog_check/1",
+  "ok": false,
+  "strictness": "error",
   "has_entries": true,
   "needs_entry": true,
   "invalid_fragments": [],
@@ -85,14 +128,50 @@ comment:
     { "name": "lat_core", "changed": true, "has_entry": true, "fragments": 2 },
     { "name": "lat_cli", "changed": true, "has_entry": false, "fragments": 0 }
   ],
-  "preview": "| package | status |\n| --- | --- |\n…"
+  "preview": "### Changelog check\n\n| package | fragments |\n| --- | --- |\n…"
 }
 ```
 
-The `schema` field is there so a workflow can assert on the shape it expects;
-the [JSON output](/docs/json-output/) page covers what it promises. Note
-that `preview` is guaranteed to be present and a string, but its Markdown is
-prose — render it rather than parsing it.
+`needs_entry` states the fact; `ok` states the verdict after strictness is
+applied, and matches the exit code. The `schema` field is there so a workflow
+can assert on the shape it expects; the [JSON output](/docs/json-output/) page
+covers what it promises. Note that `preview` is guaranteed to be present and a
+string, but its Markdown is prose — render it rather than parsing it.
+
+<Callout>
+
+`--json` is a deprecated alias for `--format json`. It still works; passing it
+alongside `--format` is a usage error.
+
+</Callout>
+
+### Driving a PR comment
+
+`--format github` emits the same facts as `key=value` lines for
+`$GITHUB_OUTPUT`, so a workflow can post the comment without a `jq` pipeline:
+
+```
+ok=false
+strictness=error
+has_entries=true
+needs_entry=true
+needs_entry_packages=["lat_cli"]
+invalid_fragments=[]
+preview<<TRELLIS_PREVIEW
+### Changelog check
+
+| package | fragments |
+| --- | --- |
+| lat_core | ✅ 2 |
+| lat_cli | ❌ needs an entry |
+
+Add one with `trellis changelog new --package <name> --kind <kind> --body <text>`.
+TRELLIS_PREVIEW
+```
+
+`needs_entry_packages` and `invalid_fragments` are JSON arrays, read with
+`fromJSON()`; `preview` uses GitHub's heredoc form because it is multi-line.
+See [CI recipes](/docs/ci/#the-changelog-comment) for the workflow.
 
 ## Planning a release
 

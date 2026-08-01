@@ -4,7 +4,7 @@
 .SH NAME
 trellis\-changelog\-check \- Verify changed packages have changelog fragments; non\-zero exit if not
 .SH SYNOPSIS
-\fBtrellis changelog check\fR <\fB\-\-base\fR> [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-\-color\fR] [\fB\-\-head\fR] [\fB\-\-json\fR] [\fB\-q\fR|\fB\-\-quiet\fR] [\fB\-v\fR|\fB\-\-verbose\fR] [\fB\-\-no\-update\-check\fR] [\fB\-h\fR|\fB\-\-help\fR] 
+\fBtrellis changelog check\fR <\fB\-\-base\fR> [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-\-color\fR] [\fB\-\-head\fR] [\fB\-\-format\fR] [\fB\-q\fR|\fB\-\-quiet\fR] [\fB\-\-strictness\fR] [\fB\-v\fR|\fB\-\-verbose\fR] [\fB\-\-json\fR] [\fB\-\-no\-update\-check\fR] [\fB\-h\fR|\fB\-\-help\fR] 
 .SH DESCRIPTION
 Verify changed packages have changelog fragments; non\-zero exit if not
 .SH OPTIONS
@@ -33,14 +33,44 @@ never
 \fB\-\-head\fR \fI<HEAD>\fR [default: HEAD]
 Head ref of the change range
 .TP
-\fB\-\-json\fR
-Emit JSON, including a Markdown `preview` for a PR comment
+\fB\-\-format\fR \fI<FORMAT>\fR [default: text]
+How to report: prose, the `trellis.changelog_check/1` JSON payload (including a Markdown `preview` for a PR comment), or `key=value` lines for $GITHUB_OUTPUT
+.br
+
+.br
+\fIPossible values:\fR
+.RS 14
+.IP \(bu 2
+text
+.IP \(bu 2
+json: The `trellis.changelog_check/1` payload
+.IP \(bu 2
+github: `key=value` lines for `$GITHUB_OUTPUT`, so a workflow can post, update, or delete a PR comment without a `jq` pipeline
+.RE
 .TP
 \fB\-q\fR, \fB\-\-quiet\fR
 Suppress normal\-path output; JSON/report payloads and errors still print
 .TP
+\fB\-\-strictness\fR \fI<STRICTNESS>\fR
+Override the workspace\*(Aqs changelog.strictness for this run: fail on a missing entry, report it advisorily, or don\*(Aqt check
+.br
+
+.br
+\fIPossible values:\fR
+.RS 14
+.IP \(bu 2
+warn
+.IP \(bu 2
+error
+.IP \(bu 2
+off
+.RE
+.TP
 \fB\-v\fR, \fB\-\-verbose\fR
 Trace every command trellis shells out to, on stderr
+.TP
+\fB\-\-json\fR
+Deprecated alias for `\-\-format json`
 .TP
 \fB\-\-no\-update\-check\fR
 Don\*(Aqt check whether a newer trellis release is available

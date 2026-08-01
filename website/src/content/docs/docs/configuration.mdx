@@ -129,6 +129,7 @@ their roots.
 | `changelog.*-format` | no | Minijinja templates for rendered changelog sections: `version_format`, `category_format`, `kind_format`, `change_format`. |
 | `changelog.dependency_kind` | no | Kind used for the entries generated when a workspace dependency bumps. Must name one of `kinds`. |
 | `changelog.dependency_body` | no | Minijinja template for one such entry's body. Context: `dependency`, `dependency_version`, `package` (also as `project`, deprecated). |
+| `changelog.strictness` | no | How `changelog check` treats a changed releasable package with no unreleased fragment: `error` (default, fails the run), `warn`, or `off`. An *invalid* fragment fails at every setting. |
 | `doctor.shared_dependencies` | no | How `doctor` treats packages disagreeing on a shared external dependency: `warn` (default), `error`, or `off`. |
 
 ## Package exclusions

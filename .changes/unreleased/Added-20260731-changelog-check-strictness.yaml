@@ -1,0 +1,7 @@
+component: changelog
+kind: Added
+body: |-
+  **`changelog.strictness` decides what a missing changelog entry costs.** `error` is the default and fails `trellis changelog check` exactly as before; `warn` reports the missing entry and exits 0; `off` skips the verdict while still listing each changed package's fragment count. `--strictness error|warn|off` overrides the configured value for one run, so a workflow can gate harder than the workspace default without editing `gleam.toml`.
+
+    Strictness covers missing entries only. A fragment that doesn't parse, or that names an unknown package or kind, still fails the check at every setting.
+time: 2026-07-31T18:36:43.348571273-07:00
