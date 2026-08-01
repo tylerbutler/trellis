@@ -341,7 +341,7 @@ Create or update the release PR: version apply on a branch, push, gh pr
 
 Reconcile tags against current manifest versions — no version bump, no unreleased changelog fragments required
 
-For adopting trellis on a repository that already has the package versions and changelogs it wants, but no tags yet. Reads versions straight off each package's `gleam.toml`, the same reconciliation `tag create` performs, but checks every planned tag for a local/remote conflict before mutating any of them — one package's immutable tag disagreeing with origin fails the whole run rather than leaving another package half-tagged.
+An alias for `tag create`, for adopting trellis on a repository that already has the package versions and changelogs it wants, but no tags yet.
 
 **Usage:** `trellis release bootstrap [OPTIONS]`
 
@@ -388,6 +388,7 @@ Create missing tags in topological order
 
 * `--push` — Push each created tag to origin
 * `--github-release` — Also create a GitHub Release per tag, with the matching CHANGELOG section as the body (implies --push; requires the gh CLI)
+* `--dry-run` — Report every tag/push/release action without doing anything (a conflicting tag still fails the command)
 
 
 

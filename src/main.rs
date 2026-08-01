@@ -393,13 +393,9 @@ enum ReleaseCommand {
     /// Reconcile tags against current manifest versions — no version bump,
     /// no unreleased changelog fragments required
     ///
-    /// For adopting trellis on a repository that already has the package
-    /// versions and changelogs it wants, but no tags yet. Reads versions
-    /// straight off each package's `gleam.toml`, the same reconciliation
-    /// `tag create` performs, but checks every planned tag for a
-    /// local/remote conflict before mutating any of them — one package's
-    /// immutable tag disagreeing with origin fails the whole run rather than
-    /// leaving another package half-tagged.
+    /// An alias for `tag create`, for adopting trellis on a repository that
+    /// already has the package versions and changelogs it wants, but no tags
+    /// yet.
     Bootstrap {
         /// Report every tag/push/release action without doing anything (a
         /// conflicting tag still fails the command)
@@ -433,6 +429,10 @@ enum TagCommand {
         /// section as the body (implies --push; requires the gh CLI)
         #[arg(long)]
         github_release: bool,
+        /// Report every tag/push/release action without doing anything (a
+        /// conflicting tag still fails the command)
+        #[arg(long)]
+        dry_run: bool,
     },
 }
 
@@ -717,10 +717,10 @@ fn dispatch(cli: Cli) -> Result<bool> {
                 github_release,
             } => commands::release::bootstrap(
                 &workspace,
-                &commands::release::BootstrapOptions {
-                    dry_run,
+                &commands::tag::CreateOptions {
                     push,
                     github_release,
+                    dry_run,
                 },
             ),
         },
@@ -732,12 +732,14 @@ fn dispatch(cli: Cli) -> Result<bool> {
             TagCommand::Create {
                 push,
                 github_release,
+                dry_run,
             } => {
                 commands::tag::create(
                     &workspace,
                     &commands::tag::CreateOptions {
                         push,
                         github_release,
+                        dry_run,
                     },
                 )?;
                 Ok(true)

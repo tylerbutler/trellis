@@ -1015,14 +1015,14 @@ fn bootstrap_dry_run_reports_every_action_and_mutates_nothing() {
         ])
         .assert()
         .success()
+        .stdout(predicate::str::contains("would tag lat_core-v1.2.0"))
+        .stdout(predicate::str::contains("would push lat_core-v1.2.0"))
         .stdout(predicate::str::contains(
-            "lat_core: 1.2.0 tag lat_core-v1.2.0 — create; push; create GitHub release",
+            "would create GitHub release lat_core-v1.2.0",
         ))
+        .stdout(predicate::str::contains("would tag lat_mid-v0.5.0"))
         .stdout(predicate::str::contains(
-            "lat_mid: 0.5.0 tag lat_mid-v0.5.0 — create; push; create GitHub release",
-        ))
-        .stdout(predicate::str::contains(
-            "lat_cli: 0.3.1 tag lat_cli-v0.3.1 — create; push; create GitHub release",
+            "would create GitHub release lat_cli-v0.3.1",
         ));
 
     // Nothing was actually created, locally, on origin, or via `gh`.
@@ -1054,12 +1054,8 @@ fn bootstrap_creates_both_exact_and_series_tags() {
         .args(["release", "bootstrap", "--dry-run"])
         .assert()
         .success()
-        .stdout(predicate::str::contains(
-            "lat_cli: 0.3.1 tag lat_cli-v0.3.1 — create",
-        ))
-        .stdout(predicate::str::contains(
-            "lat_cli: 0.3.1 series tag lat_cli-v0.3 — create",
-        ));
+        .stdout(predicate::str::contains("would tag lat_cli-v0.3.1"))
+        .stdout(predicate::str::contains("would tag lat_cli-v0.3\n"));
 
     trellis(root)
         .args(["release", "bootstrap"])
@@ -1121,9 +1117,7 @@ fn bootstrap_fetches_a_remote_only_tag_instead_of_recreating_it() {
         .args(["release", "bootstrap", "--dry-run", "--push"])
         .assert()
         .success()
-        .stdout(predicate::str::contains(
-            "lat_core: 1.2.0 tag lat_core-v1.2.0 — create; fetch from origin",
-        ));
+        .stdout(predicate::str::contains("would fetch lat_core-v1.2.0"));
 
     trellis(root)
         .args(["release", "bootstrap", "--push"])
@@ -1167,9 +1161,9 @@ fn bootstrap_reports_existing_releases_and_reruns_idempotently() {
         .assert()
         .success()
         .stdout(predicate::str::contains(
-            "lat_core: 1.2.0 tag lat_core-v1.2.0 — up to date; already on origin; \
-             GitHub release already exists",
-        ));
+            "GitHub release lat_core-v1.2.0 already exists; skipping",
+        ))
+        .stdout(predicate::str::contains("would").not());
 
     trellis(root)
         .env("TRELLIS_GH_BIN", &gh)

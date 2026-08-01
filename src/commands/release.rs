@@ -4,8 +4,7 @@
 //! refresh the PR. The tool already knows exactly what changed; gh does the
 //! PR mechanics.
 //!
-//! `trellis release bootstrap` — reconcile tags against current manifest
-//! versions with no version bump involved, for adopting trellis on a
+//! `trellis release bootstrap` — `tag create` for adopting trellis on a
 //! repository that already has the versions and changelogs it wants; see
 //! [`bootstrap`].
 
@@ -61,116 +60,15 @@ pub fn pr(workspace: &Workspace, options: &PrOptions) -> Result<bool> {
     result
 }
 
-pub struct BootstrapOptions {
-    /// Report every planned action without doing anything.
-    pub dry_run: bool,
-    /// Push tags to origin.
-    pub push: bool,
-    /// Create a GitHub Release per exact tag (implies `push`).
-    pub github_release: bool,
-}
-
-/// `trellis release bootstrap` — reconcile tags (and, with `--github-release`,
-/// GitHub Releases) against the workspace's *current* manifest versions. A
-/// repository adopting trellis with correct package versions and changelogs
-/// already in place, but no tags yet, needs exactly this: unlike `release
-/// pr`, bootstrap never runs `version apply` and requires no unreleased
-/// changelog fragments — `tag::plan_tags` reads versions straight off
-/// `gleam.toml`.
-///
-/// Every planned tag is checked for a local/remote conflict before any of
-/// them are mutated (`tag::tag_conflicts`, itself computed from the same
-/// read-only `tag::tag_status` a `--dry-run` preview reports from) — one
-/// package's immutable tag disagreeing with origin fails the whole run
-/// rather than leaving an earlier package half-tagged. `--dry-run` runs this
-/// same preflight, so a conflict is reported (and the command still exits
-/// non-zero) without needing `--push` for real.
-pub fn bootstrap(workspace: &Workspace, options: &BootstrapOptions) -> Result<bool> {
-    let push = options.push || options.github_release;
-    let planned = tag::plan_tags(workspace)?;
-    if planned.is_empty() {
-        crate::status!("no releasable packages to bootstrap");
-        return Ok(true);
-    }
-
-    let statuses = tag::tag_status(workspace, &planned, push, options.github_release)?;
-    let conflicts = tag::tag_conflicts(&statuses);
-    if !conflicts.is_empty() {
-        let details = conflicts
-            .iter()
-            .map(|conflict| {
-                format!(
-                    "`{}` points to different objects locally ({}) and on origin ({})",
-                    conflict.tag, conflict.local_oid, conflict.remote_oid
-                )
-            })
-            .collect::<Vec<_>>()
-            .join("; ");
-        bail!("bootstrap refused: conflicting tags found: {details}");
-    }
-
-    if options.dry_run {
-        report_bootstrap_plan(workspace, &statuses, push, options.github_release);
-        return Ok(true);
-    }
-
-    tag::create(
-        workspace,
-        &tag::CreateOptions {
-            push: options.push,
-            github_release: options.github_release,
-        },
-    )?;
+/// `trellis release bootstrap` — an alias for `tag create` under the release
+/// umbrella, for the repository *adopting* trellis: versions and changelogs
+/// are already right, only the tags (and GitHub Releases) are missing.
+/// Unlike `release pr`, it never runs `version apply` and requires no
+/// unreleased changelog fragments — `tag::plan_tags` reads versions straight
+/// off `gleam.toml`.
+pub fn bootstrap(workspace: &Workspace, options: &tag::CreateOptions) -> Result<bool> {
+    tag::create(workspace, options)?;
     Ok(true)
-}
-
-/// One status line per planned tag: its local action, plus (when queried)
-/// what pushing it would do and whether a GitHub Release already exists.
-/// Deterministic and mutation-free — every value comes straight out of
-/// `statuses`, itself gathered read-only.
-fn report_bootstrap_plan(
-    workspace: &Workspace,
-    statuses: &[tag::TagStatus],
-    push: bool,
-    github_release: bool,
-) {
-    for status in statuses {
-        let member = &workspace.members[status.member];
-        let kind = match status.kind {
-            tag::TagKind::Exact => "tag",
-            tag::TagKind::Series => "series tag",
-        };
-        let local = match status.action {
-            tag::TagAction::Create => "create",
-            tag::TagAction::Move => "move",
-            tag::TagAction::UpToDate => "up to date",
-        };
-        let mut line = format!(
-            "{}: {} {kind} {} — {local}",
-            member.name,
-            member.version(),
-            status.tag
-        );
-        if push {
-            let remote = match status.remote_action {
-                Some(tag::RemoteAction::Fetch) => "fetch from origin",
-                Some(tag::RemoteAction::Push) => "push",
-                Some(tag::RemoteAction::ForcePush) => "force-push",
-                Some(tag::RemoteAction::UpToDate) => "already on origin",
-                None => "not checked",
-            };
-            line.push_str(&format!("; {remote}"));
-        }
-        if github_release && status.kind == tag::TagKind::Exact {
-            let release = match status.release_exists {
-                Some(true) => "GitHub release already exists",
-                Some(false) => "create GitHub release",
-                None => "GitHub release not checked",
-            };
-            line.push_str(&format!("; {release}"));
-        }
-        crate::status!("{line}");
-    }
 }
 
 fn build_release_commit_and_pr(

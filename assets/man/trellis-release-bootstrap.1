@@ -8,7 +8,7 @@ trellis\-release\-bootstrap \- Reconcile tags against current manifest versions 
 .SH DESCRIPTION
 Reconcile tags against current manifest versions — no version bump, no unreleased changelog fragments required
 .PP
-For adopting trellis on a repository that already has the package versions and changelogs it wants, but no tags yet. Reads versions straight off each package\*(Aqs `gleam.toml`, the same reconciliation `tag create` performs, but checks every planned tag for a local/remote conflict before mutating any of them — one package\*(Aqs immutable tag disagreeing with origin fails the whole run rather than leaving another package half\-tagged.
+An alias for `tag create`, for adopting trellis on a repository that already has the package versions and changelogs it wants, but no tags yet.
 .SH OPTIONS
 .TP
 \fB\-C\fR, \fB\-\-directory\fR \fI<DIR>\fR

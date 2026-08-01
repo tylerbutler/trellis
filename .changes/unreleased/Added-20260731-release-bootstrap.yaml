@@ -1,7 +1,7 @@
 component: release
 kind: Added
 body: |-
-  **`trellis release bootstrap` tags existing package versions.** Use it when adopting trellis in a repository whose versions and changelogs are already correct but whose tags are missing. It never runs `version apply` or requires unreleased fragments. `--dry-run` previews exact tags, series tags, remote operations, and GitHub Releases; `--push` updates `origin`, and `--github-release` implies `--push`.
+  **`trellis release bootstrap` tags existing package versions.** Use it when adopting trellis in a repository whose versions and changelogs are already correct but whose tags are missing. It is an alias for `tag create`: it never runs `version apply` or requires unreleased fragments. `--dry-run` (also new on `tag create`) previews every tag, push, and GitHub Release action; `--push` updates `origin`, and `--github-release` implies `--push`.
 
-    Every planned tag is checked for a local/remote conflict before any of them are mutated, so one package's immutable tag disagreeing with origin fails the whole run instead of leaving another package half-tagged.
+    When pushing, every planned tag is checked for a local/remote conflict before any of them are mutated, so one package's immutable tag disagreeing with origin fails the whole run instead of leaving another package half-tagged.
 time: 2026-07-31T22:49:14.000000000-07:00

@@ -335,45 +335,21 @@ trellis version apply                             # batch + merge + lockfile pat
 ```
 trellis release bootstrap [--dry-run] [--push] [--github-release]
 trellis tag plan [--json]        # packages whose gleam.toml version has no tag yet
-trellis tag create [--github-release]
+trellis tag create [--push] [--github-release] [--dry-run]
 trellis publish <pkg | --tag <tag> | --all-untagged> [--dry-run]
 trellis lockfile refresh [--package <pkg>]
 ```
 
-- **`release bootstrap`** reconciles tags against the versions already recorded
-  in `gleam.toml` — no version bump, no unreleased changelog fragments. It
-  exists for the repository *adopting* trellis: versions and CHANGELOGs are
-  already right, only the tags (and, pre-1.0, the accompanying GitHub
-  Releases) are missing. Where `release pr` → `tag create --github-release` is
-  the steady-state loop (bump from fragments, then tag what the PR merged),
-  bootstrap skips straight to the tagging step, reading `plan_tags` the same
-  way `tag create` does. Local-only by default; `--push` reaches origin,
-  `--github-release` implies it and creates a release per exact tag once
-  pushed. `--dry-run` reports every package's tag, series tag, remote
-  fetch/push, and release action — computed from the same read-only
-  reconciliation execution mutates from, so the preview cannot promise
-  something execution wouldn't do — and queries remotes/`gh` accordingly
-  without writing anything. Before any tag is touched, every planned exact
-  tag is checked for a local/remote conflict (`tag_conflicts`); one package's
-  immutable tag disagreeing with origin fails the whole run rather than
-  half-tagging the rest, in dry-run or for real.
-
-  Adoption on an existing repository, once each package's `gleam.toml` is at
-  its real released version:
+- **`release bootstrap`** is `tag create` under the release umbrella, for the
+  repository *adopting* trellis: versions and CHANGELOGs are already right,
+  only the tags (and, pre-1.0, the accompanying GitHub Releases) are missing.
+  Where `release pr` → `tag create --github-release` is the steady-state loop
+  (bump from fragments, then tag what the PR merged), bootstrap skips straight
+  to the tagging step — no version bump, no unreleased changelog fragments:
 
   ```sh
   trellis release bootstrap --dry-run --github-release   # preview every tag + release
-  trellis release bootstrap --github-release              # create and push them
-  ```
-
-  Pre-1.0, a workspace still on `0.x` everywhere gets its first series tags
-  the same way — bootstrap doesn't special-case the major:
-
-  ```sh
-  trellis release bootstrap --dry-run --github-release
-  # lat_core: 0.4.0 tag lat_core-v0.4.0 — create; push; create GitHub release
-  # lat_core: 0.4.0 series tag lat_core-v0.4 — create; push
-  trellis release bootstrap --github-release
+  trellis release bootstrap --github-release             # create and push them
   ```
 
   From then on, `release pr` and `tag create --github-release` (§6) take over;
@@ -383,7 +359,11 @@ trellis lockfile refresh [--package <pkg>]
   releasable member's
   `gleam.toml` version against existing `{name}-v{version}` tags, create missing
   tags in topological order, optionally create GitHub Releases with the matching
-  CHANGELOG section as the body.
+  CHANGELOG section as the body. `--dry-run` walks the same code path and prints
+  `would tag/push/…` at each mutation point instead of mutating. When pushing,
+  every planned exact tag is checked for a local/remote conflict before any of
+  them are touched — one package's immutable tag disagreeing with origin fails
+  the whole run rather than half-tagging the rest, in dry-run or for real.
 - A member may instead (or also) carry a **series tag** — `{name}-v{series}`,
   where the series is derived from the version: `0.Y` while the major is 0,
   `X` after. It is the one ref trellis rewrites: each release in the series
@@ -678,11 +658,10 @@ the workspace), `trellis release pr` (see question 2 in §11), and `trellis
 release bootstrap` (§5) — added after adoption on a repository with correct
 versions but no tags exposed a gap between `tag create`, which reconciles
 tags, and the fragment-driven `version`/`release pr` path, which assumes a
-bump is wanted. Bootstrap shares `tag`'s `plan_tags` and adds a read-only
-`tag_status`/`tag_conflicts` pass — the same reconciliation `tag create`
-mutates from — so its `--dry-run` preview and its preflight conflict check
-(every planned tag validated before any of them are touched) can never show
-or allow something execution wouldn't do. Two pre-release revisions of this
+bump is wanted. Bootstrap is an alias for `tag create`, which grew `--dry-run`
+and the batch conflict preflight alongside it — one code path, so the preview
+can never show or allow something execution wouldn't do. Two pre-release
+revisions of this
 document's original proposals are recorded in place: changie subsumed by the
 native changelog engine (§7), and the separate `workspace.toml` replaced by
 the `[tools.trellis]` table in the root `gleam.toml` (§4).
