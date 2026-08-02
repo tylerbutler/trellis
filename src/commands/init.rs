@@ -42,17 +42,17 @@ pub fn run(start: &Path) -> Result<bool> {
     let document = render_config(existing.as_deref())?;
     std::fs::write(&manifest_path, document)
         .with_context(|| format!("failed to write {}", manifest_path.display()))?;
-    crate::status!(
-        "{} {}",
-        if existing.is_some() {
-            "added [tools.trellis] to"
-        } else {
-            // A root that is not itself a package still needs a manifest to
-            // carry the table; a config-only gleam.toml is a supported shape.
-            "created"
-        },
-        manifest_path.display()
-    );
+    if existing.is_some() {
+        crate::status!(
+            "{} [tools.trellis] to {}",
+            crate::term::ok("added"),
+            manifest_path.display()
+        );
+    } else {
+        // A root that is not itself a package still needs a manifest to
+        // carry the table; a config-only gleam.toml is a supported shape.
+        crate::status!("{} {}", crate::term::ok("created"), manifest_path.display());
+    }
 
     // Reported rather than written: seeing the derived list is what tells the
     // user whether it needs narrowing, and printing it costs nothing.

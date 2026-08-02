@@ -79,7 +79,8 @@ pub fn new_fragment(
 
     let path = changelog::write_fragment(workspace, project, kind, category, body.trim())?;
     crate::status!(
-        "created {}",
+        "{} {}",
+        crate::term::ok("created"),
         path.strip_prefix(&workspace.root)
             .unwrap_or(&path)
             .display()
@@ -216,18 +217,18 @@ pub fn check(workspace: &Workspace, options: &CheckOptions) -> Result<bool> {
                     format!("{} fragment(s)", status.fragments)
                 } else if !needs_entry.contains(&status.name.as_str()) {
                     // `off`: report the fact, ask for nothing.
-                    "no entries".to_string()
+                    crate::term::dim("no entries")
                 } else if strictness == Strictness::Warn {
                     // Named as advisory, so a green exit code doesn't read as
                     // the line having been ignored.
-                    "needs a changelog entry (warning)".to_string()
+                    crate::term::warn("needs a changelog entry (warning)")
                 } else {
-                    "needs a changelog entry".to_string()
+                    crate::term::err("needs a changelog entry")
                 };
-                crate::status!("{}: {state}", status.name);
+                crate::status!("{}: {state}", crate::term::package(&status.name));
             }
             for problem in &invalid {
-                crate::status!("invalid: {problem}");
+                crate::status!("{} {problem}", crate::term::err("invalid:"));
             }
         }
     }

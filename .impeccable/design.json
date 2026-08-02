@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-07-11T00:00:00Z",
+  "generatedAt": "2026-08-02T15:52:02-07:00",
   "title": "Design System: Trellis",
   "extensions": {
     "colorMeta": {
@@ -28,6 +28,12 @@
         "canonical": "oklch(0.45 0.086 230)",
         "tonalRamp": ["oklch(0.15 0.06 230)", "oklch(0.25 0.07 230)", "oklch(0.33 0.06 230)", "oklch(0.45 0.086 230)", "oklch(0.55 0.086 230)", "oklch(0.68 0.07 230)", "oklch(0.82 0.05 230)", "oklch(0.95 0.02 230)"]
       },
+      "cobalt-deep": {
+        "role": "primary",
+        "displayName": "Cobalt Deep",
+        "canonical": "oklch(0.33 0.06 230)",
+        "tonalRamp": ["oklch(0.15 0.06 230)", "oklch(0.24 0.06 230)", "oklch(0.33 0.06 230)", "oklch(0.44 0.06 230)", "oklch(0.55 0.06 230)", "oklch(0.68 0.05 230)", "oklch(0.82 0.04 230)", "oklch(0.95 0.02 230)"]
+      },
       "cobalt-band": {
         "role": "primary",
         "displayName": "Cobalt Band",
@@ -40,11 +46,23 @@
         "canonical": "oklch(0.8 0.128 80)",
         "tonalRamp": ["oklch(0.2 0.06 80)", "oklch(0.32 0.08 80)", "oklch(0.45 0.1 80)", "oklch(0.58 0.12 80)", "oklch(0.7 0.128 80)", "oklch(0.8 0.128 80)", "oklch(0.86 0.11 85)", "oklch(0.94 0.06 85)"]
       },
+      "brass-bright": {
+        "role": "secondary",
+        "displayName": "Brass Bright",
+        "canonical": "oklch(0.86 0.11 85)",
+        "tonalRamp": ["oklch(0.2 0.06 85)", "oklch(0.32 0.08 85)", "oklch(0.45 0.1 85)", "oklch(0.58 0.11 85)", "oklch(0.7 0.11 85)", "oklch(0.78 0.11 85)", "oklch(0.86 0.11 85)", "oklch(0.94 0.06 85)"]
+      },
       "ink": {
         "role": "neutral",
         "displayName": "Chart Ink",
         "canonical": "oklch(0.94 0.012 230)",
         "tonalRamp": ["oklch(0.16 0.012 230)", "oklch(0.3 0.012 230)", "oklch(0.45 0.012 230)", "oklch(0.6 0.012 230)", "oklch(0.72 0.012 230)", "oklch(0.82 0.012 230)", "oklch(0.88 0.012 230)", "oklch(0.94 0.012 230)"]
+      },
+      "ink-soft": {
+        "role": "neutral",
+        "displayName": "Ink Soft",
+        "canonical": "oklch(0.88 0.02 230)",
+        "tonalRamp": ["oklch(0.15 0.02 230)", "oklch(0.28 0.02 230)", "oklch(0.4 0.02 230)", "oklch(0.52 0.02 230)", "oklch(0.64 0.02 230)", "oklch(0.76 0.02 230)", "oklch(0.88 0.02 230)", "oklch(0.95 0.015 230)"]
       },
       "muted": {
         "role": "neutral",
@@ -57,12 +75,28 @@
         "displayName": "Ink Dark",
         "canonical": "oklch(0.18 0.03 240)",
         "tonalRamp": ["oklch(0.12 0.03 240)", "oklch(0.18 0.03 240)", "oklch(0.28 0.03 240)", "oklch(0.4 0.03 240)", "oklch(0.52 0.03 240)", "oklch(0.66 0.025 240)", "oklch(0.8 0.02 240)", "oklch(0.93 0.012 240)"]
+      },
+      "line": {
+        "role": "neutral",
+        "displayName": "Line",
+        "canonical": "oklch(0.34 0.03 230)",
+        "tonalRamp": ["oklch(0.15 0.03 230)", "oklch(0.24 0.03 230)", "oklch(0.34 0.03 230)", "oklch(0.45 0.03 230)", "oklch(0.56 0.03 230)", "oklch(0.68 0.03 230)", "oklch(0.82 0.025 230)", "oklch(0.95 0.015 230)"]
+      },
+      "line-soft": {
+        "role": "neutral",
+        "displayName": "Line Soft",
+        "canonical": "oklch(0.27 0.028 230)",
+        "tonalRamp": ["oklch(0.15 0.028 230)", "oklch(0.21 0.028 230)", "oklch(0.27 0.028 230)", "oklch(0.38 0.028 230)", "oklch(0.5 0.028 230)", "oklch(0.64 0.028 230)", "oklch(0.8 0.024 230)", "oklch(0.94 0.015 230)"]
       }
     },
     "typographyMeta": {
       "display": { "displayName": "Display", "purpose": "Hero headline only; Archivo stretched to 'wdth' 118. The brass em inside it is the page's one color-emphasis moment." },
       "headline": { "displayName": "Headline", "purpose": "Section headings, 'wdth' 114." },
       "title": { "displayName": "Title", "purpose": "Phase and panel headings." },
+      "docs-h1": { "displayName": "Docs H1", "purpose": "Docs page titles, 'wdth' 114; docs get the same display care as the landing page." },
+      "docs-h2": { "displayName": "Docs H2", "purpose": "Docs section headings." },
+      "docs-h3": { "displayName": "Docs H3", "purpose": "Docs sub-headings." },
+      "wordmark": { "displayName": "Wordmark", "purpose": "Lowercase 'trellis' beside the lattice glyph in the header, 'wdth' 118." },
       "body": { "displayName": "Body", "purpose": "Prose at 68ch max measure." },
       "label": { "displayName": "Label", "purpose": "Mono: table headers, terminal title bars, fine print." },
       "code": { "displayName": "Code", "purpose": "Mono: code samples and real terminal output; ligatures disabled." }
@@ -103,9 +137,16 @@
     {
       "name": "Terminal Figure",
       "kind": "custom",
-      "description": "Signature: real CLI output with mono title bar; semantic minimal coloring (names 560, structure gray, success brass).",
+      "description": "Signature: real CLI output with mono title bar; semantic minimal coloring (names 560, structure gray, success brass). No traffic-light dots; the brass $ prompt is the frame's only ornament.",
       "html": "<figure class=\"ds-term\"><figcaption class=\"ds-term-bar\"><span class=\"ds-prompt\">$</span>trellis graph</figcaption><pre class=\"ds-term-out\"><code><span class=\"ds-name\">lat_core</span> <span class=\"ds-dim\">(1.2.0)</span>\n<span class=\"ds-name\">lat_mid</span> <span class=\"ds-dim\">(0.5.0)</span>\n<span class=\"ds-dim\">  └─</span> lat_core\n<span class=\"ds-ok\">ok: 2 member(s), 0 warning(s)</span></code></pre></figure>",
       "css": ".ds-term { margin: 0; background: var(--surface, oklch(0.205 0.026 230)); border: 1px solid var(--line, oklch(0.34 0.03 230)); border-radius: 8px; overflow: hidden; max-width: 30rem; } .ds-term-bar { display: flex; align-items: baseline; gap: 0.5ch; padding: 0.5rem 1rem; border-bottom: 1px solid var(--line-soft, oklch(0.27 0.028 230)); font-family: 'Martian Mono Variable', ui-monospace, monospace; font-size: 0.8125rem; color: var(--ink-soft, oklch(0.88 0.02 230)); background: var(--surface-2, oklch(0.25 0.03 230)); } .ds-term .ds-prompt { color: var(--brass, oklch(0.8 0.128 80)); font-weight: 600; } .ds-term-out { margin: 0; padding: 1rem 1rem 1.5rem; overflow-x: auto; font-family: 'Martian Mono Variable', ui-monospace, monospace; font-size: 0.875rem; line-height: 1.7; color: var(--ink, oklch(0.94 0.012 230)); } .ds-name { font-weight: 560; } .ds-dim { color: var(--muted, oklch(0.76 0.022 230)); } .ds-ok { color: var(--brass, oklch(0.8 0.128 80)); font-weight: 600; }"
+    },
+    {
+      "name": "Ledger Table",
+      "kind": "custom",
+      "description": "The proof surface: mono Fog Gray headers on Steel Raised, brass first column for file/key names, Line Soft row dividers, no zebra striping.",
+      "html": "<div class=\"ds-ledger\"><table><thead><tr><th>file</th><th>what it hand-maintained</th></tr></thead><tbody><tr><td class=\"ds-key\">justfile</td><td>bash loop over a hand-kept package list</td></tr><tr><td class=\"ds-key\">.changie.yaml</td><td>one project block per package</td></tr><tr><td class=\"ds-key\">release.yml</td><td>inline sed over workflow files</td></tr></tbody></table></div>",
+      "css": ".ds-ledger { border: 1px solid var(--line, oklch(0.34 0.03 230)); border-radius: 8px; overflow-x: auto; max-width: 40rem; background: var(--surface, oklch(0.205 0.026 230)); } .ds-ledger table { width: 100%; border-collapse: collapse; font-family: 'Archivo Variable', sans-serif; font-size: 0.9375rem; color: var(--ink, oklch(0.94 0.012 230)); } .ds-ledger th { font-family: 'Martian Mono Variable', ui-monospace, monospace; font-size: 0.8125rem; font-weight: 560; text-align: left; color: var(--muted, oklch(0.76 0.022 230)); background: var(--surface-2, oklch(0.25 0.03 230)); padding: 0.6rem 1rem; } .ds-ledger td { padding: 0.6rem 1rem; border-top: 1px solid var(--line-soft, oklch(0.27 0.028 230)); } .ds-ledger .ds-key { font-family: 'Martian Mono Variable', ui-monospace, monospace; font-size: 0.8125rem; color: var(--brass, oklch(0.8 0.128 80)); white-space: nowrap; }"
     },
     {
       "name": "Nav Link",
@@ -124,7 +165,7 @@
   ],
   "narrative": {
     "northStar": "The Calibrated Instrument",
-    "overview": "Trellis is a tool you trust the way you trust a well-made instrument: it derives its answers instead of asking you to declare them, and it verifies everything it cannot derive. The site carries the same character — brass dials on oxidized steel. The page surface is a deep harbor-steel blue, structural panels step up through tonal cobalt layers, and a single warm brass voice marks what matters. Typography pairs Archivo (stretched wide for display) with Martian Mono, which has a register reason: the product IS a CLI, and its real, unretouched output is the site's primary imagery.",
+    "overview": "Trellis is a tool you trust the way you trust a well-made instrument: it derives its answers instead of asking you to declare them, and it verifies everything it cannot derive. The site carries the same character — brass dials on oxidized steel. The page surface is a deep harbor-steel blue, structural panels step up through tonal cobalt layers, and a single warm brass voice marks what matters: the primary action, the active nav item, the $ prompt, the ok: line in real terminal output. Typography pairs Archivo (stretched wide for display, plain for prose) with Martian Mono, which has a register reason: the product IS a CLI, and its real, unretouched output is the site's primary imagery.\n\nDensity is calm but committed. Sections hold one idea each; ledger tables and terminal figures do the persuading; motion is limited to state changes with one exponential ease. The system explicitly rejects the generic SaaS landing page (gradient heroes, floating product screenshots, pricing-page energy), the sterile default docs theme (out-of-the-box Starlight with no identity), and the Linear/Vercel dark-glow lane (near-black surfaces, glowing gradients, luminous blur). Its living references are gleam.run's hand-made friendliness and axo.dev's proof that a small CLI tool can have a real designed identity.",
     "keyCharacteristics": [
       "Committed color: steel cobalt carries the surface; brass is the single accent voice",
       "Real terminal output as imagery — never fabricated, never prettified",
@@ -147,8 +188,8 @@
       "Do give docs pages landing-page-level craft; the docs are the pitch."
     ],
     "donts": [
-      "Don't build a generic SaaS landing page: no gradient heroes, no floating product screenshots, no pricing-page energy.",
-      "Don't ship a sterile default docs theme — an out-of-the-box Starlight/Docusaurus look with no identity.",
+      "Don't build a generic SaaS landing page: no gradient heroes, no floating product screenshots, no pricing-page energy (PRODUCT.md anti-reference).",
+      "Don't ship a sterile default docs theme — an out-of-the-box Starlight/Docusaurus look with no identity (PRODUCT.md anti-reference).",
       "Don't drift into Linear/Vercel dark-glow: glowing gradients, luminous blur, floating UI (The No-Glow Rule).",
       "Don't put Fog Gray text on cobalt fills — it fails contrast at 3.4:1 (The Ink-on-Cobalt Rule).",
       "Don't claim 'simple' or 'powerful' in the abstract; show the lattice before/after ledger and real config instead.",

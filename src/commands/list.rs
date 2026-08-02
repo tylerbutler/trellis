@@ -35,7 +35,12 @@ pub fn run(workspace: &Workspace, options: &ListOptions) -> Result<()> {
             .unwrap_or(0);
         for idx in selected {
             let member = &workspace.members[idx];
-            crate::status!("{:width$}  {}", member.name, member.lifecycle.key());
+            let padded = format!("{:width$}", member.name);
+            crate::status!(
+                "{}  {}",
+                crate::term::package_padded(&member.name, &padded),
+                member.lifecycle.key()
+            );
         }
     }
     Ok(())

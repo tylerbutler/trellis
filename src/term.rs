@@ -1,4 +1,5 @@
-//! Process-wide presentation settings, resolved once from the global flags.
+//! Process-wide presentation settings, resolved once from the global flags,
+//! and the color vocabulary every command paints with.
 //!
 //! Color and verbosity are decided in `main` and read from anywhere, rather
 //! than threaded through every call. The alternative — passing a settings
@@ -8,6 +9,26 @@
 //!
 //! [`init`] is called once, before anything prints. A reader that runs first
 //! (a unit test, say) gets the same auto-detection a bare invocation would.
+//!
+//! # The color system
+//!
+//! Color is semantic, never decorative, and the words always carry the
+//! meaning on their own — a `--color never` transcript says everything the
+//! colored one does. Six roles, in the cargo/rustc vernacular:
+//!
+//! - [`err`]: `error:`, `FAILED:`, `invalid:` — bold red
+//! - [`warn`]: `warning:` — bold yellow
+//! - [`note`]: `note:` and other advisories — bold cyan
+//! - [`ok`]: `ok:` and completed-action verbs (`tagged`, `published`,
+//!   `bumped`, …) — bold green
+//! - [`package`]: member names, bold in a stable hash-picked color, so one
+//!   package keeps one color across `run`, `list`, `graph`, `version`, …
+//! - [`dim`]: structure and metadata — tree glyphs, `$ command` echoes,
+//!   versions-in-parens, field labels — and entire dry-run `would …` lines,
+//!   so a plan never reads as an action
+//!
+//! Only the 16 named ANSI colors, so output follows the user's terminal
+//! theme; bold for meaning, faint for structure, nothing else.
 
 use std::io::IsTerminal;
 use std::path::Path;
@@ -93,6 +114,75 @@ pub fn verbose() -> bool {
     settings().verbosity == Verbosity::Verbose
 }
 
+/// The hash-picked palette for [`package`]: every named ANSI color except
+/// the ones that read as pure state (plain red/green stay, since bold-on-name
+/// is visually distinct from the status words), across normal and bright.
+const NAME_COLOR_CODES: &[u8] = &[31, 32, 33, 34, 35, 36, 91, 92, 93, 94, 95, 96];
+
+/// Wrap `text` in one SGR sequence, or return it untouched when color is off.
+fn paint(text: &str, sgr: &str, enabled: bool) -> String {
+    if enabled {
+        format!("\x1b[{sgr}m{text}\x1b[0m")
+    } else {
+        text.to_string()
+    }
+}
+
+/// `error:` / `FAILED:` / `invalid:` — bold red.
+pub fn err(text: &str) -> String {
+    paint(text, "1;31", colors_enabled())
+}
+
+/// `warning:` — bold yellow.
+pub fn warn(text: &str) -> String {
+    paint(text, "1;33", colors_enabled())
+}
+
+/// `note:` and other advisories — bold cyan.
+pub fn note(text: &str) -> String {
+    paint(text, "1;36", colors_enabled())
+}
+
+/// `ok:` and completed-action verbs (`tagged`, `published`, `bumped`) — bold
+/// green.
+pub fn ok(text: &str) -> String {
+    paint(text, "1;32", colors_enabled())
+}
+
+/// Structure and metadata: tree glyphs, `$ command` echoes, field labels,
+/// and whole dry-run `would …` lines — faint.
+pub fn dim(text: &str) -> String {
+    paint(text, "2", colors_enabled())
+}
+
+/// A member name, bold in its stable hash-picked color.
+pub fn package(name: &str) -> String {
+    package_padded(name, name)
+}
+
+/// A member name padded to column width: the color is picked from `name`,
+/// but `display` (name plus trailing spaces) is what gets painted — ANSI
+/// codes inside a `{:width$}` would defeat the padding.
+pub fn package_padded(name: &str, display: &str) -> String {
+    paint(
+        display,
+        &format!("1;{}", name_color_code(name)),
+        colors_enabled(),
+    )
+}
+
+fn name_color_code(name: &str) -> u8 {
+    let index = stable_name_hash(name) as usize % NAME_COLOR_CODES.len();
+    NAME_COLOR_CODES[index]
+}
+
+/// FNV-1a, so a package keeps its color across runs, machines, and releases.
+fn stable_name_hash(name: &str) -> u64 {
+    name.bytes().fold(0xcbf29ce484222325, |hash, byte| {
+        (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3)
+    })
+}
+
 /// Print a line of human-facing narration, unless `-q` suppressed it.
 ///
 /// Every command's normal-path prose goes through this — progress lines,
@@ -123,7 +213,7 @@ pub fn trace_command(program: &str, args: &[impl AsRef<str>], cwd: &Path) {
         line.push(' ');
         line.push_str(&shell_quote(arg.as_ref()));
     }
-    eprintln!("+ {line}  ({})", cwd.display());
+    eprintln!("{}", dim(&format!("+ {line}  ({})", cwd.display())));
 }
 
 /// Echo an HTTP request trellis is about to make, on stderr, when `-v` is
@@ -132,7 +222,7 @@ pub fn trace_http(method: &str, url: &str) {
     if !verbose() {
         return;
     }
-    eprintln!("+ {method} {url}");
+    eprintln!("{}", dim(&format!("+ {method} {url}")));
 }
 
 /// Quote an argument well enough that the trace can be pasted back into a
@@ -161,6 +251,32 @@ mod tests {
     fn auto_is_off_when_not_a_terminal() {
         // The test harness pipes stdout, so auto-detection must say no.
         assert!(!resolve_colors(ColorChoice::Auto));
+    }
+
+    #[test]
+    fn painting_wraps_in_one_sgr_sequence() {
+        assert_eq!(paint("error:", "1;31", true), "\x1b[1;31merror:\x1b[0m");
+    }
+
+    #[test]
+    fn painting_disabled_is_a_passthrough() {
+        assert_eq!(paint("error:", "1;31", false), "error:");
+        assert_eq!(paint("lat_core", "1;35", false), "lat_core");
+    }
+
+    #[test]
+    fn package_name_colors_are_stable_and_hash_based() {
+        assert_eq!(name_color_code("lat_core"), 35);
+        assert_eq!(name_color_code("lat_core"), name_color_code("lat_core"));
+        assert_ne!(name_color_code("lat_core"), name_color_code("lat_mid"));
+    }
+
+    #[test]
+    fn padded_names_paint_the_display_with_the_name_color() {
+        // The test harness pipes stdout, so the public functions are the
+        // colors-off path; the invariant they must keep is returning the
+        // padded display untouched.
+        assert_eq!(package_padded("lat_core", "lat_core   "), "lat_core   ");
     }
 
     #[test]

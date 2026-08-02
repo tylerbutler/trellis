@@ -17,7 +17,11 @@ pub fn run(workspace: &Workspace, format: GraphFormat) -> Result<()> {
     match format {
         GraphFormat::Text => {
             for (idx, member) in workspace.members.iter().enumerate() {
-                crate::status!("{} ({})", member.name, member.version());
+                crate::status!(
+                    "{} {}",
+                    crate::term::package(&member.name),
+                    crate::term::dim(&format!("({})", member.version()))
+                );
                 let deps = workspace.deps_of(idx);
                 for (pos, &dep) in deps.iter().enumerate() {
                     let branch = if pos + 1 == deps.len() {
@@ -25,7 +29,11 @@ pub fn run(workspace: &Workspace, format: GraphFormat) -> Result<()> {
                     } else {
                         "├─"
                     };
-                    crate::status!("  {branch} {}", workspace.members[dep].name);
+                    crate::status!(
+                        "  {} {}",
+                        crate::term::dim(branch),
+                        crate::term::package(&workspace.members[dep].name)
+                    );
                 }
             }
         }

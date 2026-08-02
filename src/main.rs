@@ -533,7 +533,7 @@ fn main() -> ExitCode {
         Ok(true) => ExitCode::SUCCESS,
         Ok(false) => ExitCode::FAILURE,
         Err(err) => {
-            eprintln!("error: {err:#}");
+            eprintln!("{} {err:#}", term::err("error:"));
             ExitCode::from(EXIT_INTERNAL_ERROR)
         }
     }

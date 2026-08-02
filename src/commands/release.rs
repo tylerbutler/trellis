@@ -106,11 +106,14 @@ fn build_release_commit_and_pr(
     match github.find_open_pr(&options.branch)? {
         Some(number) => {
             github.update_pr(number, &title, &body)?;
-            crate::status!("updated release PR #{number}: {title}");
+            crate::status!(
+                "{} release PR #{number}: {title}",
+                crate::term::ok("updated")
+            );
         }
         None => {
             let url = github.create_pr(&options.base, &options.branch, &title, &body)?;
-            crate::status!("created release PR: {url}");
+            crate::status!("{} release PR: {url}", crate::term::ok("created"));
         }
     }
     Ok(true)
