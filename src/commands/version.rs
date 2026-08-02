@@ -59,6 +59,18 @@ pub fn compute_plan(workspace: &Workspace, overrides: &Overrides) -> Result<Vec<
             fragments.problem_messages().join("\n  - ")
         );
     }
+    compute_plan_from(workspace, overrides, &fragments)
+}
+
+/// [`compute_plan`] over a caller-supplied fragment set, for the callers that
+/// plan a release from something other than everything on disk — the sticky
+/// comment previews the release *this PR* would add to, not the one the base
+/// branch has been accumulating.
+pub fn compute_plan_from(
+    workspace: &Workspace,
+    overrides: &Overrides,
+    fragments: &changelog::Fragments,
+) -> Result<Vec<PlanEntry>> {
     // Before anything is computed, so a typo'd package name fails immediately
     // rather than being silently ignored.
     validate_named_packages(workspace, overrides)?;

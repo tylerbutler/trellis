@@ -533,7 +533,7 @@ pub struct ChangelogCheckDocument<'a> {
 }
 
 impl ChangelogCheckDocument<'_> {
-    pub const SCHEMA: &'static str = "trellis.changelog_check/1";
+    pub const SCHEMA: &'static str = "trellis.changelog_check/2";
 }
 
 /// A workspace dependency that bumped in the same plan. Its dependents bump

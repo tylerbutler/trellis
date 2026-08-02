@@ -687,6 +687,164 @@ fn the_preview_reports_next_versions_and_fragment_contents() {
 }
 
 #[test]
+fn the_release_preview_ignores_fragments_already_on_the_base_branch() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+    // Unreleased on `main` already: an earlier PR's fragment, which this PR
+    // neither added nor is answerable for.
+    add_fragment(root, "lat_mid", "Fixed", "from an earlier pr");
+    git(root, &["init", "-q", "-b", "main"]);
+    git(root, &["add", "."]);
+    git(root, &["commit", "-q", "-m", "init"]);
+    git(root, &["checkout", "-q", "-b", "feature"]);
+    write(&root.join("packages/lat_core/src/new.gleam"), "// x\n");
+    add_fragment(root, "lat_core", "Added", "from this pr");
+    git(root, &["add", "."]);
+    git(root, &["commit", "-q", "-m", "change"]);
+
+    let output = trellis(root)
+        .args(["changelog", "check", "--base", "main", "--format", "json"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let payload: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let preview = payload["preview"].as_str().unwrap();
+    assert!(preview.contains("- from this pr"), "{preview}");
+    assert!(!preview.contains("from an earlier pr"), "{preview}");
+    // lat_mid still appears — this PR ripples it — but only with the entry
+    // this PR is responsible for.
+    assert!(preview.contains("Updated lat_core to 1.3.0"), "{preview}");
+    assert!(
+        preview.contains("| lat_core | ✅ 1 | 1.2.0 → 1.3.0 |"),
+        "{preview}"
+    );
+}
+
+/// The base branch carries an unreleased `lat_core` fragment; this PR changes
+/// `lat_core` and adds nothing. The earlier PR's entry documents the earlier
+/// PR, so it cannot answer for this one.
+fn workspace_with_a_base_branch_fragment(root: &Path) {
+    copy_fixture_to(root);
+    add_fragment(root, "lat_core", "Added", "from an earlier pr");
+    git(root, &["init", "-q", "-b", "main"]);
+    git(root, &["add", "."]);
+    git(root, &["commit", "-q", "-m", "init"]);
+    git(root, &["checkout", "-q", "-b", "feature"]);
+    write(&root.join("packages/lat_core/src/new.gleam"), "// x\n");
+    git(root, &["add", "."]);
+    git(root, &["commit", "-q", "-m", "change"]);
+}
+
+#[test]
+fn a_base_branch_fragment_does_not_satisfy_a_later_pr() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    workspace_with_a_base_branch_fragment(root);
+
+    let output = trellis(root)
+        .args(["changelog", "check", "--base", "main", "--format", "json"])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let payload: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["needs_entry"], true);
+    assert_eq!(payload["ok"], false);
+    // `has_entries` follows the counts: this PR wrote nothing, so the CI recipe
+    // deletes the comment rather than posting an empty preview.
+    assert_eq!(payload["has_entries"], false);
+    assert_eq!(payload["packages"][0]["fragments"], 0);
+    assert_eq!(payload["packages"][0]["has_entry"], false);
+    let preview = payload["preview"].as_str().unwrap();
+    assert!(
+        preview.contains("| lat_core | ❌ needs an entry | — |"),
+        "{preview}"
+    );
+    assert!(!preview.contains("### Release preview"), "{preview}");
+}
+
+#[test]
+fn editing_a_base_branch_fragment_counts_as_this_prs_entry() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    workspace_with_a_base_branch_fragment(root);
+    // A PR that rewrites an existing entry has documented its change; asking
+    // it for a second fragment would be a false alarm.
+    write(
+        &root.join(".changes/unreleased/lat_core-1.toml"),
+        "project = \"lat_core\"\nkind = \"Added\"\nbody = \"reworded by this pr\"\n",
+    );
+    git(root, &["add", "."]);
+    git(root, &["commit", "-q", "-m", "reword"]);
+
+    let output = trellis(root)
+        .args(["changelog", "check", "--base", "main", "--format", "json"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let payload: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["needs_entry"], false);
+    let preview = payload["preview"].as_str().unwrap();
+    assert!(preview.contains("- reworded by this pr"), "{preview}");
+    assert!(
+        preview.contains("| lat_core | ✅ 1 | 1.2.0 → 1.3.0 |"),
+        "{preview}"
+    );
+}
+
+#[test]
+fn an_uncommitted_fragment_satisfies_the_check_before_it_is_committed() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    workspace_with_a_base_branch_fragment(root);
+    // Written but not committed: running the check locally has to give the
+    // answer CI will give once it is.
+    add_fragment(root, "lat_core", "Fixed", "not committed yet");
+
+    let output = trellis(root)
+        .args(["changelog", "check", "--base", "main", "--format", "json"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let payload: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["needs_entry"], false);
+    let preview = payload["preview"].as_str().unwrap();
+    assert!(preview.contains("- not committed yet"), "{preview}");
+    assert!(!preview.contains("from an earlier pr"), "{preview}");
+}
+
+#[test]
+fn an_invalid_base_branch_fragment_still_fails_the_check() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+    // Unlike the counts, problems are not scoped: this one blocks the next
+    // release whoever committed it, so every check reports it.
+    write(
+        &root.join(".changes/unreleased/broken-1.toml"),
+        "not toml at all {{{\n",
+    );
+    git(root, &["init", "-q", "-b", "main"]);
+    git(root, &["add", "."]);
+    git(root, &["commit", "-q", "-m", "init"]);
+    git(root, &["checkout", "-q", "-b", "feature"]);
+    write(&root.join("packages/lat_core/src/new.gleam"), "// x\n");
+    add_fragment(root, "lat_core", "Added", "from this pr");
+    git(root, &["add", "."]);
+    git(root, &["commit", "-q", "-m", "change"]);
+
+    let output = trellis(root)
+        .args(["changelog", "check", "--base", "main", "--format", "json"])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let payload: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["needs_entry"], false);
+    assert_eq!(payload["ok"], false);
+    assert_eq!(payload["invalid_fragments"].as_array().unwrap().len(), 1);
+}
+
+#[test]
 fn invalid_fragments_leave_the_preview_without_versions() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
@@ -723,7 +881,7 @@ fn json_stays_an_alias_for_format_json() {
         .output()
         .unwrap();
     let payload: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(payload["schema"], "trellis.changelog_check/1");
+    assert_eq!(payload["schema"], "trellis.changelog_check/2");
 }
 
 #[test]

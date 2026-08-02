@@ -84,6 +84,42 @@ directory — a README edit trips the same gate as a behavior change. That is
 deliberate (the alternative is a heuristic that guesses wrong quietly), but it
 means the gate is sometimes stricter than a repository wants.
 
+### Scope
+
+`check` counts only the fragments the branch itself wrote: those whose contents
+differ from the merge base of `base...head`, whether the branch added them
+outright or edited what the base branch already had. Fragments the branch left
+untouched document the PRs that added them.
+
+This is what makes the gate per-PR. A package with an unreleased fragment from
+an earlier PR does not satisfy the check for a *later* PR that touches the same
+package — otherwise one entry excuses every change until the next release. It
+also keeps the [PR comment](#driving-a-pr-comment) honest: `version` is the bump
+this PR causes rather than what the accumulated backlog adds up to, and a
+package whose only unreleased fragment came from the base branch shows `—`.
+
+Comparing contents rather than reading the diff means an uncommitted fragment
+counts too, so running `check` locally before committing gives the same answer
+CI gives afterwards.
+
+<Callout>
+
+**Invalid fragments are not scoped.** A fragment that does not parse fails
+`check` wherever it came from, because it blocks the next release for everyone
+— scoping it would leave every PR green while the release stayed stuck.
+
+</Callout>
+
+<Callout>
+
+**Upgrading from v0.9.0 or earlier.** The counts were previously unscoped, so a
+PR touching a package that already had an unreleased fragment passed without
+adding its own. Those PRs now report a missing entry, and the payload advanced
+to `trellis.changelog_check/2`. Set [`strictness`](#strictness) to `warn` to
+land the reporting without failing builds while the open PRs catch up.
+
+</Callout>
+
 ### Strictness
 
 `changelog.strictness` sets what a missing entry costs:
@@ -118,7 +154,7 @@ sticky comment:
 
 ```json
 {
-  "schema": "trellis.changelog_check/1",
+  "schema": "trellis.changelog_check/2",
   "ok": false,
   "strictness": "error",
   "has_entries": true,
@@ -133,7 +169,9 @@ sticky comment:
 ```
 
 `needs_entry` states the fact; `ok` states the verdict after strictness is
-applied, and matches the exit code. The `schema` field is there so a workflow
+applied, and matches the exit code. `fragments`, `has_entry`, and `has_entries`
+count only the fragments this branch wrote (see [Scope](#scope)). The `schema`
+field is there so a workflow
 can assert on the shape it expects; the [JSON output](/docs/json-output/) page
 covers what it promises. Note that `preview` is guaranteed to be present and a
 string, but its Markdown is prose — render it rather than parsing it.
@@ -201,13 +239,13 @@ TRELLIS_PREVIEW
 `fromJSON()`; `preview` uses GitHub's heredoc form because it is multi-line.
 See [CI recipes](/docs/ci/#the-changelog-comment) for the workflow.
 
-The table covers the packages the PR's diff touched; the release preview
-covers every package the release would touch, computed the same way
-`version plan` computes it — so a dependent that merely ripples (like
-`lat_cli` above) appears with its generated `Dependencies` entry. Each
-collapsed section is exactly the version section `version apply` would write.
-When a fragment does not parse, no plan can be computed, so the versions and
-the release preview are omitted and the problem is reported instead.
+The table covers the packages the PR's diff touched; the release preview covers
+every package this PR's fragments would release, computed the same way
+`version plan` computes it — so a dependent that merely ripples (like `lat_cli`
+above) appears with its generated `Dependencies` entry. Each collapsed section
+is the version section `version apply` would write for these fragments. When a
+fragment does not parse, no plan can be computed, so the versions and the
+release preview are omitted and the problem is reported instead.
 
 ## Planning a release
 

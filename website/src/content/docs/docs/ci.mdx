@@ -164,8 +164,11 @@ The comment appears when there is something to say — entries to preview, an
 entry missing, or a fragment that doesn't parse — and is deleted when there
 isn't, so a fixed PR doesn't keep a stale complaint. It shows each changed
 package's fragment count and planned next version, plus a collapsible release
-preview of the exact changelog sections `version apply` would write, ripple
-bumps included. `ok` carries the verdict
+preview of the changelog sections this PR's own fragments would produce, ripple
+bumps included. Everything it counts is
+[scoped to the branch](/docs/changelog/#scope) — fragments already unreleased on
+the base branch answer for the PRs that added them, not this one. `ok` carries
+the verdict
 `continue-on-error` swallowed, and is empty if trellis could not run at all,
 which fails the job either way.
 
