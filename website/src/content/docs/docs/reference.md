@@ -216,14 +216,14 @@ Verify changed packages have changelog fragments; non-zero exit if not
 * `--head <HEAD>` — Head ref of the change range
 
   Default value: `HEAD`
-* `--format <FORMAT>` — How to report: prose, the `trellis.changelog_check/1` JSON payload (including a Markdown `preview` for a PR comment), or `key=value` lines for $GITHUB_OUTPUT
+* `--format <FORMAT>` — How to report: prose, the `trellis.changelog_check/2` JSON payload (including a Markdown `preview` for a PR comment), or `key=value` lines for $GITHUB_OUTPUT
 
   Default value: `text`
 
   Possible values:
   - `text`
   - `json`:
-    The `trellis.changelog_check/1` payload
+    The `trellis.changelog_check/2` payload
   - `github`:
     `key=value` lines for `$GITHUB_OUTPUT`, so a workflow can post, update, or delete a PR comment without a `jq` pipeline
 

@@ -22,6 +22,6 @@ expression: payload
     }
   ],
   "preview": "[markdown]",
-  "schema": "trellis.changelog_check/1",
+  "schema": "trellis.changelog_check/2",
   "strictness": "error"
 }

@@ -317,7 +317,7 @@ enum ChangelogCommand {
         /// Head ref of the change range
         #[arg(long, default_value = "HEAD")]
         head: String,
-        /// How to report: prose, the `trellis.changelog_check/1` JSON payload
+        /// How to report: prose, the `trellis.changelog_check/2` JSON payload
         /// (including a Markdown `preview` for a PR comment), or `key=value`
         /// lines for $GITHUB_OUTPUT
         #[arg(long, value_enum, default_value = "text")]

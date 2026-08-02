@@ -2,10 +2,13 @@
 //! writes a fragment; `check` decides which changed packages still need one.
 
 use crate::changelog;
+use crate::commands::version;
+use crate::commands::version_override::Overrides;
 use crate::config::Strictness;
 use crate::json::{ChangelogCheckDocument, ChangelogPackage};
 use crate::workspace::Workspace;
 use anyhow::{Context, Result, bail};
+use std::path::PathBuf;
 
 // ---- new ---------------------------------------------------------------
 
@@ -93,7 +96,7 @@ pub fn new_fragment(
 pub enum CheckFormat {
     #[default]
     Text,
-    /// The `trellis.changelog_check/1` payload.
+    /// The `trellis.changelog_check/2` payload.
     Json,
     /// `key=value` lines for `$GITHUB_OUTPUT`, so a workflow can post, update,
     /// or delete a PR comment without a `jq` pipeline.
@@ -116,12 +119,18 @@ struct PackageStatus {
 /// Map the base...head diff to releasable packages and decide which still
 /// need a changelog fragment. Returns false (non-zero exit) when one does and
 /// strictness is `error`, or when any fragment is invalid.
+///
+/// Everything the check counts is scoped to the branch: a fragment the base
+/// branch was already carrying documents the PR that added it, and letting it
+/// answer for this one is how a change ships undocumented. Invalid fragments
+/// are the deliberate exception — see `all.problems` below.
 pub fn check(workspace: &Workspace, options: &CheckOptions) -> Result<bool> {
     let strictness = options
         .strictness
         .unwrap_or(workspace.config.changelog.strictness);
     let changed = crate::git::changed_members_between(workspace, &options.base, &options.head)?;
-    let fragments = changelog::load_fragments(workspace)?;
+    let all = changelog::load_fragments(workspace)?;
+    let fragments = fragments_changed_by(workspace, &all, options)?;
 
     let statuses: Vec<PackageStatus> = workspace
         .members
@@ -146,14 +155,23 @@ pub fn check(workspace: &Workspace, options: &CheckOptions) -> Result<bool> {
             .collect(),
     };
     // A fragment that does not parse is malformed input, not a judgment call,
-    // so it fails at every strictness.
-    let ok = (strictness != Strictness::Error || needs_entry.is_empty())
-        && fragments.problems.is_empty();
-    // `invalid_fragments` is a contract field of `trellis.changelog_check/1`
+    // so it fails at every strictness — and unlike the counts it is *not*
+    // scoped to the branch. A broken fragment on the base branch blocks the
+    // next release for everyone; scoping it would leave every PR green while
+    // the release stayed stuck.
+    let ok = (strictness != Strictness::Error || needs_entry.is_empty()) && all.problems.is_empty();
+    // `invalid_fragments` is a contract field of `trellis.changelog_check/2`
     // and stays an array of strings; the structured form exists for `doctor`.
-    let invalid = fragments.problem_messages();
+    let invalid = all.problem_messages();
     let has_entries = !fragments.fragments.is_empty();
-    let preview = preview(&statuses, &needs_entry, &invalid, strictness);
+    // No plan can be computed over a fragment that does not parse, so the
+    // preview falls back to counts alone — the problems are reported anyway.
+    let releases = if all.problems.is_empty() {
+        plan_releases(workspace, &fragments)?
+    } else {
+        Vec::new()
+    };
+    let preview = preview(&statuses, &needs_entry, &invalid, strictness, &releases);
 
     match options.format {
         CheckFormat::Json => {
@@ -264,6 +282,99 @@ fn heredoc_delimiter(value: &str) -> String {
     delimiter
 }
 
+/// The subset of `fragments` this branch wrote — added outright, or edited from
+/// what the base branch had. Fragments the branch left untouched document the
+/// PRs that added them; counting them here would let one PR's entry excuse the
+/// next PR's undocumented change, which is the whole failure the check exists
+/// to catch.
+///
+/// Editing counts as writing on purpose: a PR that corrects an existing
+/// fragment's body has documented its change, and demanding a second entry for
+/// it would be a false alarm.
+///
+/// Problems are dropped rather than carried over: they are reported unscoped by
+/// the caller, and a scoped set that kept them would invite double-counting.
+fn fragments_changed_by(
+    workspace: &Workspace,
+    fragments: &changelog::Fragments,
+    options: &CheckOptions,
+) -> Result<changelog::Fragments> {
+    // Generated fragments never come from disk; `load_fragments` does not
+    // produce them, but nothing here depends on that.
+    let candidates: Vec<PathBuf> = fragments
+        .fragments
+        .iter()
+        .filter_map(|fragment| fragment.path.clone())
+        .collect();
+    let untouched = crate::git::unchanged_since_merge_base(
+        workspace,
+        &options.base,
+        &options.head,
+        &changelog::unreleased_dir(workspace),
+        &candidates,
+    )?;
+    Ok(changelog::Fragments {
+        fragments: fragments
+            .fragments
+            .iter()
+            .filter(|fragment| match &fragment.path {
+                Some(path) => !untouched.contains(path),
+                None => true,
+            })
+            .cloned()
+            .collect(),
+        problems: Vec::new(),
+    })
+}
+
+/// A planned release, rendered for the preview: what this PR's fragments would
+/// do, said in the sticky comment before it happens.
+struct ReleasePreview {
+    name: String,
+    current: String,
+    next: String,
+    /// The exact version section `version apply` would write, ripple entries
+    /// included, so the comment can never drift from the eventual changelog.
+    section: String,
+}
+
+/// Compute the version plan and render each entry's section, the way
+/// `version apply` would render it. `fragments` is scoped to what this PR
+/// added, so the comment answers "what does merging this release" rather than
+/// republishing whatever the base branch has been accumulating. The plan still
+/// reaches beyond the PR's diff on purpose: a dependent that merely ripples off
+/// one of these fragments still releases, and the preview says so.
+fn plan_releases(
+    workspace: &Workspace,
+    fragments: &changelog::Fragments,
+) -> Result<Vec<ReleasePreview>> {
+    let plan = version::compute_plan_from(workspace, &Overrides::default(), fragments)?;
+    let date = changelog::today();
+    plan.iter()
+        .map(|entry| {
+            let rendered: Vec<&changelog::Fragment> = fragments
+                .for_package(&entry.name)
+                .chain(entry.generated.iter())
+                .collect();
+            let tag = workspace.config.format_tag(&entry.name, &entry.next);
+            let section = changelog::render_section(
+                &workspace.config.changelog,
+                &entry.name,
+                &entry.next,
+                &tag,
+                &date,
+                &rendered,
+            )?;
+            Ok(ReleasePreview {
+                name: entry.name.clone(),
+                current: entry.current.clone(),
+                next: entry.next.clone(),
+                section,
+            })
+        })
+        .collect()
+}
+
 /// Markdown summary for the PR sticky comment. `needs_entry` is passed rather
 /// than re-derived so the comment says exactly what the exit code did — under
 /// `off` there is no ❌ and no call to action.
@@ -272,12 +383,13 @@ fn preview(
     needs_entry: &[&str],
     invalid: &[String],
     strictness: Strictness,
+    releases: &[ReleasePreview],
 ) -> String {
     let mut out = String::from("### Changelog check\n\n");
     if statuses.is_empty() {
         out.push_str("No releasable packages changed.\n");
     } else {
-        out.push_str("| package | fragments |\n| --- | --- |\n");
+        out.push_str("| package | fragments | version |\n| --- | --- | --- |\n");
         for status in statuses {
             let cell = if status.fragments > 0 {
                 format!("✅ {}", status.fragments)
@@ -288,12 +400,26 @@ fn preview(
             } else {
                 "❌ needs an entry".to_string()
             };
-            out.push_str(&format!("| {} | {cell} |\n", status.name));
+            let version = releases
+                .iter()
+                .find(|release| release.name == status.name)
+                .map(|release| format!("{} → {}", release.current, release.next))
+                .unwrap_or_else(|| "—".to_string());
+            out.push_str(&format!("| {} | {cell} | {version} |\n", status.name));
         }
         if !needs_entry.is_empty() {
             out.push_str(
                 "\nAdd one with `trellis changelog new --package <name> --kind <kind> --body <text>`.\n",
             );
+        }
+    }
+    if !releases.is_empty() {
+        out.push_str("\n### Release preview\n");
+        for release in releases {
+            out.push_str(&format!(
+                "\n<details>\n<summary><code>{}</code> {} → {}</summary>\n\n{}\n</details>\n",
+                release.name, release.current, release.next, release.section
+            ));
         }
     }
     for problem in invalid {

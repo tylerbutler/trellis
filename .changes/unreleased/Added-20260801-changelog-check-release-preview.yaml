@@ -1,0 +1,5 @@
+component: changelog
+kind: Added
+body: |-
+  **`changelog check`'s PR comment previews the release itself.** The sticky-comment `preview` now adds a version column (`1.2.0 → 1.3.0`) to the package table and a collapsible "Release preview" section rendering the changelog sections `version apply` would write — fragment bodies, generated ripple entries, and rippled-only dependents included. Like the rest of the check it is scoped to the branch, so the comment shows what merging this branch releases and `version` is the bump this PR causes rather than what the base branch's backlog adds up to. When a fragment does not parse, the versions and preview are omitted and the problem is reported as before.
+time: 2026-08-01T00:00:00.000-07:00

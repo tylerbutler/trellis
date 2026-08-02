@@ -34,7 +34,7 @@ never
 Head ref of the change range
 .TP
 \fB\-\-format\fR \fI<FORMAT>\fR [default: text]
-How to report: prose, the `trellis.changelog_check/1` JSON payload (including a Markdown `preview` for a PR comment), or `key=value` lines for $GITHUB_OUTPUT
+How to report: prose, the `trellis.changelog_check/2` JSON payload (including a Markdown `preview` for a PR comment), or `key=value` lines for $GITHUB_OUTPUT
 .br
 
 .br
@@ -43,7 +43,7 @@ How to report: prose, the `trellis.changelog_check/1` JSON payload (including a 
 .IP \(bu 2
 text
 .IP \(bu 2
-json: The `trellis.changelog_check/1` payload
+json: The `trellis.changelog_check/2` payload
 .IP \(bu 2
 github: `key=value` lines for `$GITHUB_OUTPUT`, so a workflow can post, update, or delete a PR comment without a `jq` pipeline
 .RE
