@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.10.0 - 2026-08-03
+
+
+### trellis
+
+#### Added
+
+- **Command output now uses color.** Errors, warnings, notes, and completed actions (`ok:`, `tagged`, `published`, `bumped`, and similar verbs) are colored consistently across every command, and package names carry the same per-package color already used by `run`'s live output through `list`, `graph`, `version`, `tag`, `publish`, `changelog check`, `info`, and the run summary table. Structural and metadata text — tree glyphs, `$ command` echoes, versions, field labels, `-v` traces, and dry-run `would …` lines — is dimmed so it reads as background rather than action. Color follows the existing `--color`/`NO_COLOR`/TTY resolution, so piped output and `--color never` are unchanged.
+
+### changelog
+
+#### Breaking
+
+- **`changelog check` counts only the fragments the branch wrote.** A fragment is the branch's own when its contents differ from the merge base of `base...head` — added outright, or edited from what the base branch already had. Unreleased fragments the branch left untouched document the PRs that added them, and no longer satisfy the check for a later PR touching the same package: one entry can no longer excuse every change until the next release. Comparing contents rather than reading the diff means an uncommitted fragment counts too, so a local run answers the way CI will. Invalid fragments are deliberately not scoped — a fragment that does not parse blocks the next release whoever committed it. `packages[].fragments`, `packages[].has_entry`, and `has_entries` narrow with the count, advancing the payload from `trellis.changelog_check/1` to `trellis.changelog_check/2`. PRs that relied on a base-branch fragment now report a missing entry; set `changelog.strictness = "warn"` to land the reporting without failing builds.
+
+#### Added
+
+- **`changelog check`'s PR comment previews the release itself.** The sticky-comment `preview` now adds a version column (`1.2.0 → 1.3.0`) to the package table and a collapsible "Release preview" section rendering the changelog sections `version apply` would write — fragment bodies, generated ripple entries, and rippled-only dependents included. Like the rest of the check it is scoped to the branch, so the comment shows what merging this branch releases and `version` is the bump this PR causes rather than what the base branch's backlog adds up to. When a fragment does not parse, the versions and preview are omitted and the problem is reported as before.
+
 ## v0.9.0 - 2026-08-01
 
 
