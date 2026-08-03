@@ -168,17 +168,19 @@ pub fn plan(workspace: &Workspace, overrides: &Overrides, json: bool) -> Result<
     } else {
         for entry in &plan {
             crate::status!(
-                "{}: {} -> {} ({})",
-                entry.name,
+                "{}: {} {} {} {}",
+                crate::term::package(&entry.name),
                 entry.current,
+                crate::term::dim("->"),
                 entry.next,
-                entry.why()
+                crate::term::dim(&format!("({})", entry.why()))
             );
         }
         if overrides.retains_fragments() {
             crate::status!(
-                "note: prerelease — fragments stay unreleased and will be released again \
-                 by the final version"
+                "{} prerelease — fragments stay unreleased and will be released again \
+                 by the final version",
+                crate::term::note("note:")
             );
         }
     }
@@ -400,13 +402,23 @@ pub fn apply(workspace: &Workspace, overrides: &Overrides, json: bool) -> Result
         println!("{}", serde_json::to_string_pretty(&document)?);
     } else {
         for entry in &plan {
-            crate::status!("bumped {}: {} -> {}", entry.name, entry.current, entry.next);
+            crate::status!(
+                "{} {}: {} {} {}",
+                crate::term::ok("bumped"),
+                crate::term::package(&entry.name),
+                entry.current,
+                crate::term::dim("->"),
+                entry.next
+            );
         }
         for file in &patched_files {
-            crate::status!("patched {file}");
+            crate::status!("{} {file}", crate::term::ok("patched"));
         }
         for file in &adopted_files {
-            crate::status!("adopted existing changelog history as {file}");
+            crate::status!(
+                "{} existing changelog history as {file}",
+                crate::term::ok("adopted")
+            );
         }
         if overrides.retains_fragments() {
             crate::status!("kept fragments unreleased for the final version");

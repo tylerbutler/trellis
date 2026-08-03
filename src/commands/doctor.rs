@@ -223,7 +223,7 @@ pub fn run(root: &Path, options: &DoctorOptions) -> Result<bool> {
             "gleam on PATH matches the .tool-versions pin (advisory)",
         ];
         for check in checked {
-            crate::status!("checked: {check}");
+            crate::status!("{}", crate::term::dim(&format!("checked: {check}")));
         }
         crate::status!();
     }
@@ -236,7 +236,10 @@ pub fn run(root: &Path, options: &DoctorOptions) -> Result<bool> {
         if text {
             print_findings(&report);
             for fix in &report.fixes {
-                crate::status!("would fix: {}", fix.describe());
+                crate::status!(
+                    "{}",
+                    crate::term::dim(&format!("would fix: {}", fix.describe()))
+                );
             }
         }
         return finish(&report, &[], options.format);
@@ -249,7 +252,7 @@ pub fn run(root: &Path, options: &DoctorOptions) -> Result<bool> {
         for fix in &report.fixes {
             fix.apply()?;
             if text {
-                crate::status!("fixed: {}", fix.describe());
+                crate::status!("{} {}", crate::term::ok("fixed:"), fix.describe());
             }
         }
         if text {
@@ -265,7 +268,8 @@ pub fn run(root: &Path, options: &DoctorOptions) -> Result<bool> {
         print_findings(&report);
         if !options.fix && !report.fixes.is_empty() {
             crate::status!(
-                "note: {} finding(s) are auto-fixable; rerun with --fix",
+                "{} {} finding(s) are auto-fixable; rerun with --fix",
+                crate::term::note("note:"),
                 report.fixes.len()
             );
         }
@@ -278,21 +282,23 @@ fn print_findings(report: &Report) {
     // states the inference instead of leaving it invisible.
     if report.configless {
         crate::status!(
-            "note: no [tools.trellis] configuration found; workspace root inferred from git, \
+            "{} no [tools.trellis] configuration found; workspace root inferred from git, \
              {} member(s) auto-discovered",
+            crate::term::note("note:"),
             report.packages()
         );
     } else if report.auto_members {
         crate::status!(
-            "note: `members` is not configured; {} member(s) auto-discovered from git",
+            "{} `members` is not configured; {} member(s) auto-discovered from git",
+            crate::term::note("note:"),
             report.packages()
         );
     }
     for warning in report.of_severity(Severity::Warning) {
-        crate::status!("warning: {}", warning.message);
+        crate::status!("{} {}", crate::term::warn("warning:"), warning.message);
     }
     for error in report.of_severity(Severity::Error) {
-        crate::status!("error: {}", error.message);
+        crate::status!("{} {}", crate::term::err("error:"), error.message);
     }
 }
 
@@ -340,12 +346,14 @@ fn print_summary(report: &Report, ok: bool) {
         // The JSON field behind this count is still `members` — renaming a
         // stable key would bump `trellis.doctor/1`, so it waits for 1.0.
         crate::status!(
-            "ok: {} package(s) ({lifecycles}), {warnings} warning(s)",
+            "{} {} package(s) ({lifecycles}), {warnings} warning(s)",
+            crate::term::ok("ok:"),
             report.packages()
         );
     } else {
         crate::status!(
-            "FAILED: {} error(s), {warnings} warning(s)",
+            "{} {} error(s), {warnings} warning(s)",
+            crate::term::err("FAILED:"),
             report.count(Severity::Error)
         );
     }

@@ -14,7 +14,6 @@ use std::process::{Command, Stdio};
 use std::sync::{Arc, mpsc};
 use std::time::{Duration, Instant};
 
-const NAME_COLOR_CODES: &[u8] = &[31, 32, 33, 34, 35, 36, 91, 92, 93, 94, 95, 96];
 const SPINNER_TICKS: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
 #[derive(Debug, Clone)]
@@ -83,7 +82,6 @@ pub struct RunOptions {
 #[derive(Clone)]
 struct Output {
     progress: Option<Arc<MultiProgress>>,
-    colors: bool,
     /// `-q`: drop the package stream and the summary table entirely.
     quiet: bool,
     /// `--json`: keep the package stream, but off stdout.
@@ -103,7 +101,6 @@ impl Output {
         Self {
             progress: live
                 .then(|| Arc::new(MultiProgress::with_draw_target(ProgressDrawTarget::stdout()))),
-            colors: crate::term::colors_enabled(),
             quiet,
             to_stderr: json,
         }
@@ -119,15 +116,12 @@ impl Output {
                 .expect("progress template is valid")
                 .tick_strings(SPINNER_TICKS),
             );
-            progress.set_prefix(self.format_name(name, name));
+            progress.set_prefix(crate::term::package(name));
             progress.set_message("starting");
             progress.enable_steady_tick(Duration::from_millis(80));
             progress
         });
-        JobDisplay {
-            progress,
-            colors: self.colors,
-        }
+        JobDisplay { progress }
     }
 
     fn emit(&self, name: &str, width: usize, line: &str) {
@@ -135,8 +129,8 @@ impl Output {
             return;
         }
         let padded = format!("{name:width$}");
-        let name = self.format_name(name, &padded);
-        self.println(format!("{name} ▏ {line}"));
+        let name = crate::term::package_padded(name, &padded);
+        self.println(format!("{name} {} {line}", crate::term::dim("▏")));
     }
 
     fn println(&self, line: String) {
@@ -151,10 +145,6 @@ impl Output {
         }
     }
 
-    fn format_name(&self, name: &str, display: &str) -> String {
-        colorize_name(name, display, self.colors)
-    }
-
     fn clear_live(&self) {
         if let Some(progress) = &self.progress {
             progress.clear().expect("failed to clear progress output");
@@ -165,7 +155,6 @@ impl Output {
 #[derive(Clone)]
 struct JobDisplay {
     progress: Option<ProgressBar>,
-    colors: bool,
 }
 
 impl JobDisplay {
@@ -182,12 +171,11 @@ impl JobDisplay {
         progress.set_style(
             ProgressStyle::with_template("{prefix}  {msg}").expect("progress template is valid"),
         );
-        let (symbol, label, color) = match status {
-            JobStatus::Success => ("✓", "ok", 32),
-            JobStatus::Failed(_) => ("✗", "FAILED", 31),
-            JobStatus::Skipped => ("-", "skipped", 33),
+        let status = match status {
+            JobStatus::Success => crate::term::ok("✓ ok"),
+            JobStatus::Failed(_) => crate::term::err("✗ FAILED"),
+            JobStatus::Skipped => crate::term::warn("- skipped"),
         };
-        let status = colorize_text(&format!("{symbol} {label}"), color, self.colors);
         progress.finish_with_message(format!("{status}  {:.1}s", duration.as_secs_f64()));
     }
 }
@@ -458,29 +446,6 @@ fn run_streaming(
     Ok(child.wait()?)
 }
 
-fn stable_name_hash(name: &str) -> u64 {
-    name.bytes().fold(0xcbf29ce484222325, |hash, byte| {
-        (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3)
-    })
-}
-
-fn colorize_name(name: &str, display: &str, enabled: bool) -> String {
-    colorize_text(display, name_color_code(name), enabled)
-}
-
-fn name_color_code(name: &str) -> u8 {
-    let index = stable_name_hash(name) as usize % NAME_COLOR_CODES.len();
-    NAME_COLOR_CODES[index]
-}
-
-fn colorize_text(text: &str, color: u8, enabled: bool) -> String {
-    if enabled {
-        format!("\x1b[1;{color}m{text}\x1b[0m")
-    } else {
-        text.to_string()
-    }
-}
-
 fn print_summary(workspace: &Workspace, results: &[JobResult], output: &Output) {
     // `-q` drops it; `--json` replaces it with the payload the caller prints.
     if output.quiet || output.to_stderr {
@@ -493,43 +458,36 @@ fn print_summary(workspace: &Workspace, results: &[JobResult], output: &Output) 
         .unwrap_or(0)
         .max("package".len());
     println!();
-    println!("{:width$}  {:8}  time", "package", "status");
+    println!(
+        "{}",
+        crate::term::dim(&format!("{:width$}  {:8}  time", "package", "status"))
+    );
     for result in results {
         let name = &workspace.members[result.member].name;
         let padded_name = format!("{name:width$}");
-        let display_name = output.format_name(name, &padded_name);
+        let display_name = crate::term::package_padded(name, &padded_name);
         let (status, detail) = match &result.status {
             JobStatus::Success => ("ok", String::new()),
             JobStatus::Failed(reason) => ("FAILED", format!("  {reason}")),
             JobStatus::Skipped => ("skipped", String::new()),
+        };
+        // Padded before painting: ANSI codes inside `{:8}` would defeat it.
+        let status = format!("{status:8}");
+        let status = match &result.status {
+            JobStatus::Success => crate::term::ok(&status),
+            JobStatus::Failed(_) => crate::term::err(&status),
+            JobStatus::Skipped => crate::term::warn(&status),
         };
         let time = if result.status == JobStatus::Skipped {
             String::new()
         } else {
             format!("{:.1}s", result.duration.as_secs_f64())
         };
-        println!("{display_name}  {status:8}  {time}{detail}");
+        println!("{display_name}  {status}  {time}{detail}");
     }
 }
 
 /// True when every job succeeded (skipped counts as failure for exit codes).
 pub fn all_succeeded(results: &[JobResult]) -> bool {
     results.iter().all(|r| r.status == JobStatus::Success)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn package_name_colors_are_stable_and_hash_based() {
-        assert_eq!(name_color_code("lat_core"), 35);
-        assert_eq!(name_color_code("lat_core"), name_color_code("lat_core"));
-        assert_ne!(name_color_code("lat_core"), name_color_code("lat_mid"));
-    }
-
-    #[test]
-    fn package_name_colors_can_be_disabled() {
-        assert_eq!(colorize_name("lat_core", "lat_core", false), "lat_core");
-    }
 }

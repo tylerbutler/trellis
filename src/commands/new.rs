@@ -138,7 +138,11 @@ pub fn run(workspace: &Workspace, options: &NewOptions) -> Result<()> {
     )?;
     write(&dir.join("README.md"), &format!("# {name}\n"))?;
 
-    crate::status!("created {rel_path}/ (gleam.toml, src, test, CHANGELOG.md, README.md)");
+    crate::status!(
+        "{} {rel_path}/ {}",
+        crate::term::ok("created"),
+        crate::term::dim("(gleam.toml, src, test, CHANGELOG.md, README.md)")
+    );
     if let Some(sibling) = sibling {
         crate::status!("metadata copied from {}", sibling.rel_path);
     }

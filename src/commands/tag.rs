@@ -255,7 +255,7 @@ pub fn plan(workspace: &Workspace, json: bool) -> Result<()> {
             };
             crate::status!(
                 "{}: {} {verb} {}",
-                member.name,
+                crate::term::package(&member.name),
                 planned.version,
                 planned.tag
             );
@@ -382,7 +382,7 @@ fn reconcile_remote_repository_series_tag(workspace: &Workspace) -> Result<()> {
     }
     if local_tag_oid(&workspace.root, &tag)?.as_deref() != Some(remote_oid.as_str()) {
         git_stdout(&workspace.root, &["update-ref", &reference, &remote_oid])?;
-        crate::status!("fetched {tag}");
+        crate::status!("{} {tag}", crate::term::ok("fetched"));
     }
     Ok(())
 }
@@ -406,13 +406,13 @@ fn create_exact_tag(
     if planned.action == TagAction::Create {
         if remote_oid.is_some() {
             if options.dry_run {
-                crate::status!("would fetch {tag}");
+                crate::status!("{}", crate::term::dim(&format!("would fetch {tag}")));
             } else {
                 git_stdout(&workspace.root, &["fetch", "origin", "tag", tag])?;
-                crate::status!("fetched {tag}");
+                crate::status!("{} {tag}", crate::term::ok("fetched"));
             }
         } else if options.dry_run {
-            crate::status!("would tag {tag}");
+            crate::status!("{}", crate::term::dim(&format!("would tag {tag}")));
         } else {
             let mut args = crate::git::identity_fallback_args(&workspace.root);
             args.extend([
@@ -424,27 +424,33 @@ fn create_exact_tag(
             ]);
             let args: Vec<&str> = args.iter().map(String::as_str).collect();
             git_stdout(&workspace.root, &args)?;
-            crate::status!("tagged {tag}");
+            crate::status!("{} {tag}", crate::term::ok("tagged"));
         }
     }
     if push && remote_oid.is_none() {
         if options.dry_run {
-            crate::status!("would push {tag}");
+            crate::status!("{}", crate::term::dim(&format!("would push {tag}")));
         } else {
             git_stdout(&workspace.root, &["push", "origin", tag])
                 .with_context(|| format!("failed to push tag {tag}"))?;
-            crate::status!("pushed {tag}");
+            crate::status!("{} {tag}", crate::term::ok("pushed"));
         }
     }
     if let Some(github) = github {
         if github.release_exists(tag)? {
-            crate::status!("GitHub release {tag} already exists; skipping");
+            crate::status!(
+                "{}",
+                crate::term::dim(&format!("GitHub release {tag} already exists; skipping"))
+            );
         } else if options.dry_run {
-            crate::status!("would create GitHub release {tag}");
+            crate::status!(
+                "{}",
+                crate::term::dim(&format!("would create GitHub release {tag}"))
+            );
         } else {
             let notes = release_notes(workspace, planned.member);
             github.create_release(tag, tag, &notes)?;
-            crate::status!("created GitHub release {tag}");
+            crate::status!("{} GitHub release {tag}", crate::term::ok("created"));
         }
     }
     Ok(())
@@ -471,7 +477,7 @@ fn move_series_tag(
             ("move", "moved")
         };
         if options.dry_run {
-            crate::status!("would {verb} {tag}");
+            crate::status!("{}", crate::term::dim(&format!("would {verb} {tag}")));
         } else {
             let mut args = crate::git::identity_fallback_args(&workspace.root);
             args.extend([
@@ -484,7 +490,7 @@ fn move_series_tag(
             ]);
             let args: Vec<&str> = args.iter().map(String::as_str).collect();
             git_stdout(&workspace.root, &args)?;
-            crate::status!("{done} {tag}");
+            crate::status!("{} {tag}", crate::term::ok(done));
         }
     }
     if push {
@@ -500,7 +506,7 @@ fn move_series_tag(
                 "force-push"
             };
             if options.dry_run {
-                crate::status!("would {verb} {tag}");
+                crate::status!("{}", crate::term::dim(&format!("would {verb} {tag}")));
             } else {
                 if planned.kind == TagKind::RepositorySeries {
                     let lease = format!(
@@ -513,7 +519,7 @@ fn move_series_tag(
                     git_stdout(&workspace.root, &["push", "--force", "origin", tag])
                         .with_context(|| format!("failed to push tag {tag}"))?;
                 }
-                crate::status!("{verb}ed {tag}");
+                crate::status!("{} {tag}", crate::term::ok(&format!("{verb}ed")));
             }
         }
     }
