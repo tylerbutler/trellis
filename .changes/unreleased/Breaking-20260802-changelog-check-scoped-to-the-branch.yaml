@@ -1,5 +1,0 @@
-component: changelog
-kind: Breaking
-body: |-
-  **`changelog check` counts only the fragments the branch wrote.** A fragment is the branch's own when its contents differ from the merge base of `base...head` — added outright, or edited from what the base branch already had. Unreleased fragments the branch left untouched document the PRs that added them, and no longer satisfy the check for a later PR touching the same package: one entry can no longer excuse every change until the next release. Comparing contents rather than reading the diff means an uncommitted fragment counts too, so a local run answers the way CI will. Invalid fragments are deliberately not scoped — a fragment that does not parse blocks the next release whoever committed it. `packages[].fragments`, `packages[].has_entry`, and `has_entries` narrow with the count, advancing the payload from `trellis.changelog_check/1` to `trellis.changelog_check/2`. PRs that relied on a base-branch fragment now report a missing entry; set `changelog.strictness = "warn"` to land the reporting without failing builds.
-time: 2026-08-02T00:00:00.000-07:00

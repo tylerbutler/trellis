@@ -1,5 +1,0 @@
-component: trellis
-kind: Added
-body: |-
-  **Command output now uses color.** Errors, warnings, notes, and completed actions (`ok:`, `tagged`, `published`, `bumped`, and similar verbs) are colored consistently across every command, and package names carry the same per-package color already used by `run`'s live output through `list`, `graph`, `version`, `tag`, `publish`, `changelog check`, `info`, and the run summary table. Structural and metadata text — tree glyphs, `$ command` echoes, versions, field labels, `-v` traces, and dry-run `would …` lines — is dimmed so it reads as background rather than action. Color follows the existing `--color`/`NO_COLOR`/TTY resolution, so piped output and `--color never` are unchanged.
-time: 2026-08-02T00:00:00.000-07:00
