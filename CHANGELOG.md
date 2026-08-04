@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.10.1 - 2026-08-04
+
+
+### version
+
+#### Fixed
+
+- **`trellis version` no longer ripples dependency bumps outside the published requirement.** A dependent now bumps only when its existing `path_dep_requirement` can select the dependency's new version, so a default `minor` requirement does not ripple across a major-version boundary.
+
 ## v0.10.0 - 2026-08-03
 
 
