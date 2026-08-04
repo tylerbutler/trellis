@@ -32,10 +32,6 @@ expression: "json_output(root, &[\"version\", \"plan\", \"--json\"], true)"
         {
           "name": "lat_core",
           "version": "1.3.0"
-        },
-        {
-          "name": "lat_mid",
-          "version": "1.0.0"
         }
       ]
     }

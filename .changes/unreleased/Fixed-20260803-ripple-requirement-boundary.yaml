@@ -1,0 +1,5 @@
+component: version
+kind: Fixed
+body: |-
+  **`trellis version` no longer ripples dependency bumps outside the published requirement.** A dependent now bumps only when its existing `path_dep_requirement` can select the dependency's new version, so a default `minor` requirement does not ripple across a major-version boundary.
+time: 2026-08-03T22:25:06.539-07:00
