@@ -37,15 +37,22 @@ pub struct UpdatedDep {
     pub version: String,
 }
 
+struct BumpedDep {
+    current: semver::Version,
+    next: semver::Version,
+}
+
 /// One entry per releasable member that either owns unreleased fragments or
-/// depends on something that bumped, in topological order. Any invalid
-/// fragment is a hard error — silently dropping one is exactly the drift this
-/// tool exists to prevent.
+/// depends on something that bumped within its published requirement, in
+/// topological order. Any invalid fragment is a hard error — silently dropping
+/// one is exactly the drift this tool exists to prevent.
 ///
 /// Dependents ripple because a path dep's Hex requirement is derived from the
 /// dependency's version at publish time (`crate::rewrite`). Leaving a dependent
 /// unbumped would let one published version resolve to two different dependency
-/// sets, depending on whether it was fetched before or after the bump.
+/// sets when the new dependency version is inside that requirement. A version
+/// outside the requirement cannot change what the existing release resolves,
+/// so it does not ripple.
 ///
 /// `workspace.members` is topologically ordered, so one forward sweep is enough:
 /// by the time it reaches a member, every dependency's final version is settled.
@@ -77,19 +84,28 @@ pub fn compute_plan_from(
 
     let config = &workspace.config.changelog;
     let mut plan = Vec::new();
-    let mut bumped: BTreeMap<&str, String> = BTreeMap::new();
+    let mut bumped: BTreeMap<&str, BumpedDep> = BTreeMap::new();
     for (idx, member) in workspace.members.iter().enumerate() {
         if !member.releasable() {
             continue;
         }
         // Sorted by dependency name so the rendered order does not depend on
         // the graph's internal indexing.
-        let mut rippled: Vec<(&str, &String)> = workspace
+        let mut rippled: Vec<(&str, String)> = workspace
             .deps_of(idx)
             .iter()
             .filter_map(|&dep| {
                 let dep_name = workspace.members[dep].name.as_str();
-                bumped.get(dep_name).map(|version| (dep_name, version))
+                bumped
+                    .get(dep_name)
+                    .filter(|bump| {
+                        workspace
+                            .config
+                            .publish
+                            .path_dep_requirement
+                            .allows(&bump.current, &bump.next)
+                    })
+                    .map(|bump| (dep_name, bump.next.to_string()))
             })
             .collect();
         rippled.sort_unstable_by_key(|(name, _)| *name);
@@ -103,7 +119,7 @@ pub fn compute_plan_from(
             .into_iter()
             .map(|(name, version)| UpdatedDep {
                 name: name.to_string(),
-                version: version.clone(),
+                version,
             })
             .collect();
 
@@ -118,7 +134,13 @@ pub fn compute_plan_from(
         let current = semver::Version::parse(member.version())
             .with_context(|| format!("`{}` has an invalid version", member.name))?;
         let next = overrides.resolve(&member.name, &current, derived)?;
-        bumped.insert(&member.name, next.to_string());
+        bumped.insert(
+            &member.name,
+            BumpedDep {
+                current: current.clone(),
+                next: next.clone(),
+            },
+        );
         plan.push(PlanEntry {
             name: member.name.clone(),
             current: member.version().to_string(),

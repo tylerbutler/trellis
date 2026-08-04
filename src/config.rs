@@ -423,6 +423,30 @@ pub enum PathDepRequirement {
     Exact,
 }
 
+impl PathDepRequirement {
+    /// Whether the requirement generated from `current` can select `candidate`.
+    pub fn allows(self, current: &semver::Version, candidate: &semver::Version) -> bool {
+        if candidate < current {
+            return false;
+        }
+        match self {
+            Self::Minor => {
+                let Some(major) = current.major.checked_add(1) else {
+                    return true;
+                };
+                candidate < &semver::Version::new(major, 0, 0)
+            }
+            Self::Patch => {
+                let Some(minor) = current.minor.checked_add(1) else {
+                    return true;
+                };
+                candidate < &semver::Version::new(current.major, minor, 0)
+            }
+            Self::Exact => candidate == current,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct RetryConfig {
@@ -809,6 +833,22 @@ impl ConfigFile {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn path_dep_requirement_allows_only_versions_inside_its_range() {
+        let current = semver::Version::parse("1.2.3").unwrap();
+        let patch = semver::Version::parse("1.2.4").unwrap();
+        let minor = semver::Version::parse("1.3.0").unwrap();
+        let major = semver::Version::parse("2.0.0").unwrap();
+
+        assert!(PathDepRequirement::Minor.allows(&current, &patch));
+        assert!(PathDepRequirement::Minor.allows(&current, &minor));
+        assert!(!PathDepRequirement::Minor.allows(&current, &major));
+        assert!(PathDepRequirement::Patch.allows(&current, &patch));
+        assert!(!PathDepRequirement::Patch.allows(&current, &minor));
+        assert!(!PathDepRequirement::Exact.allows(&current, &patch));
+        assert!(PathDepRequirement::Exact.allows(&current, &current));
+    }
 
     #[test]
     fn parses_full_config_from_tools_trellis() {

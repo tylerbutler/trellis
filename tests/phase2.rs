@@ -931,8 +931,8 @@ fn version_plan_bumps_by_the_largest_kind() {
         .unwrap();
     assert!(output.status.success());
     let plan: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    // lat_cli owns no fragment, but both of its workspace deps bumped, so it
-    // ripples by a patch. Entries stay in topological order.
+    // lat_cli owns no fragment. lat_core's minor bump is inside its requirement
+    // and ripples; lat_mid's major bump is outside and does not.
     assert_eq!(
         plan,
         serde_json::json!({
@@ -945,12 +945,38 @@ fn version_plan_bumps_by_the_largest_kind() {
                 {"name": "lat_cli", "current": "0.3.1", "next": "0.3.2", "fragments": 0,
                  "updated_dependencies": [
                      {"name": "lat_core", "version": "1.3.0"},
-                     {"name": "lat_mid", "version": "1.0.0"},
                  ]},
             ],
             // An ordinary release retires its fragments.
             "fragments_retained": false,
         })
+    );
+}
+
+#[test]
+fn major_bump_outside_path_dep_requirement_does_not_ripple() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+    add_fragment(root, "lat_core", "Breaking", "major-level change");
+
+    let output = trellis(root)
+        .args(["version", "plan", "--json"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let plan: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        plan["bumped"],
+        serde_json::json!([
+            {
+                "name": "lat_core",
+                "current": "1.2.0",
+                "next": "2.0.0",
+                "fragments": 1,
+                "updated_dependencies": [],
+            },
+        ])
     );
 }
 
