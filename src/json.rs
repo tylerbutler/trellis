@@ -500,13 +500,15 @@ impl<'a> GraphDocument<'a> {
     }
 }
 
-/// One changed package in `trellis changelog check --json`.
+/// One package `trellis changelog check --json` has something to say about:
+/// the diff touched it, the branch wrote it a fragment, or both.
 #[derive(Serialize)]
 #[serde(rename_all = "snake_case")]
 pub struct ChangelogPackage<'a> {
     pub name: &'a str,
-    /// Always true — the list only contains packages the diff touched. Kept so
-    /// a future `--all` can report unchanged packages without a schema bump.
+    /// Whether the diff touched this package's own files. False for a package
+    /// listed only because the branch documented it — which is the release it
+    /// still gets — and such a package is never asked for an entry.
     pub changed: bool,
     pub has_entry: bool,
     pub fragments: usize,

@@ -115,6 +115,12 @@ pub struct CheckOptions {
 struct PackageStatus {
     name: String,
     fragments: usize,
+    /// Whether the diff touched this package's own files. False for a package
+    /// the branch documented without editing — a break that propagates to a
+    /// dependent, say. Such a package is only here because it has a fragment,
+    /// so `changed == false` implies `fragments > 0`; nothing is ever asked of
+    /// it, and `needs_entry` says so explicitly rather than leaning on that.
+    changed: bool,
 }
 
 /// Map the base...head diff to releasable packages and decide which still
@@ -133,14 +139,24 @@ pub fn check(workspace: &Workspace, options: &CheckOptions) -> Result<bool> {
     let all = changelog::load_fragments(workspace)?;
     let fragments = fragments_changed_by(workspace, &all, options)?;
 
+    // Rowed for either reason: the diff touched the package, or the branch
+    // wrote it a fragment. A fragment without a code change is a real release —
+    // a break propagating to a dependent is documented where it lands, not
+    // where it originated — and reporting only the diff left that package out
+    // of the table while the release preview happily listed the bump.
     let statuses: Vec<PackageStatus> = workspace
         .members
         .iter()
         .enumerate()
-        .filter(|(idx, member)| changed.contains(idx) && member.releasable())
-        .map(|(_, member)| PackageStatus {
-            name: member.name.clone(),
-            fragments: fragments.count_for(&member.name),
+        .filter(|(_, member)| member.releasable())
+        .filter_map(|(idx, member)| {
+            let count = fragments.count_for(&member.name);
+            let touched = changed.contains(&idx);
+            (touched || count > 0).then(|| PackageStatus {
+                name: member.name.clone(),
+                fragments: count,
+                changed: touched,
+            })
         })
         .collect();
 
@@ -151,7 +167,7 @@ pub fn check(workspace: &Workspace, options: &CheckOptions) -> Result<bool> {
         Strictness::Off => Vec::new(),
         Strictness::Warn | Strictness::Error => statuses
             .iter()
-            .filter(|status| status.fragments == 0)
+            .filter(|status| status.changed && status.fragments == 0)
             .map(|status| status.name.as_str())
             .collect(),
     };
@@ -187,7 +203,7 @@ pub fn check(workspace: &Workspace, options: &CheckOptions) -> Result<bool> {
                     .iter()
                     .map(|status| ChangelogPackage {
                         name: &status.name,
-                        changed: true,
+                        changed: status.changed,
                         has_entry: status.fragments > 0,
                         fragments: status.fragments,
                     })
