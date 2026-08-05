@@ -468,6 +468,53 @@ fn changelog_check_maps_diff_to_missing_fragments() {
         .stdout(predicate::str::contains("lat_mid: 1 fragment(s)"));
 }
 
+#[test]
+fn changelog_check_rows_a_package_the_branch_wrote_a_fragment_for() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+
+    git(root, &["init", "-q", "-b", "main"]);
+    git(root, &["add", "."]);
+    git(root, &["commit", "-q", "-m", "init"]);
+    git(root, &["checkout", "-q", "-b", "feature"]);
+    // Only `lat_core` has changed files. `lat_mid` is documented by a fragment
+    // this branch wrote — a break that propagates to it without touching its
+    // source — so it releases, and the check must say so rather than leaving it
+    // to be discovered in the release preview alone.
+    write(&root.join("packages/lat_core/src/new.gleam"), "// x\n");
+    add_fragment(root, "lat_core", "Added", "something");
+    add_fragment(root, "lat_mid", "Fixed", "propagated");
+    git(root, &["add", "."]);
+    git(root, &["commit", "-q", "-m", "change"]);
+
+    let output = trellis(root)
+        .args(["changelog", "check", "--base", "main", "--format", "json"])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "both packages are documented");
+    let payload: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let packages = payload["packages"].as_array().unwrap();
+    assert_eq!(packages.len(), 2);
+    let core = packages.iter().find(|p| p["name"] == "lat_core").unwrap();
+    assert_eq!(core["changed"], true);
+    assert_eq!(core["fragments"], 1);
+    let mid = packages.iter().find(|p| p["name"] == "lat_mid").unwrap();
+    // Rowed on the strength of its fragment, and honestly marked as untouched.
+    assert_eq!(mid["changed"], false);
+    assert_eq!(mid["has_entry"], true);
+    assert_eq!(mid["fragments"], 1);
+    // The comment's table and its release preview now agree on the package set.
+    let preview = payload["preview"].as_str().unwrap();
+    assert!(preview.contains("| lat_mid | ✅ 1 |"), "preview: {preview}");
+
+    trellis(root)
+        .args(["changelog", "check", "--base", "main"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("lat_mid: 1 fragment(s)"));
+}
+
 // ---- changelog check: strictness ------------------------------------------
 
 #[test]
