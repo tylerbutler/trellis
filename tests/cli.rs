@@ -545,6 +545,52 @@ fn doctor_reports_all_problems_at_once() {
 }
 
 #[test]
+fn doctor_accepts_working_at_members_exclusion_glob() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    write(
+        &root.join("gleam.toml"),
+        "[tools.trellis]\nmembers = [\"packages/*\"]\nexclude = { \"@members\" = [\"packages/excluded\"] }\n",
+    );
+    write(
+        &root.join("packages/a/gleam.toml"),
+        "name = \"a\"\nversion = \"1.0.0\"\n",
+    );
+    write(
+        &root.join("packages/excluded/gleam.toml"),
+        "name = \"excluded\"\nversion = \"1.0.0\"\n",
+    );
+
+    trellis(root)
+        .arg("doctor")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("matches no member").not());
+}
+
+#[test]
+fn doctor_reports_at_members_exclusion_glob_typo() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    write(
+        &root.join("gleam.toml"),
+        "[tools.trellis]\nmembers = [\"packages/*\"]\nexclude = { \"@members\" = [\"packages/nonexistent\"] }\n",
+    );
+    write(
+        &root.join("packages/a/gleam.toml"),
+        "name = \"a\"\nversion = \"1.0.0\"\n",
+    );
+
+    trellis(root)
+        .arg("doctor")
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains(
+            "`@members` exclusion glob `packages/nonexistent` matches no member",
+        ));
+}
+
+#[test]
 fn doctor_detects_dependency_cycles() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();

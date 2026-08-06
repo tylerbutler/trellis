@@ -1,0 +1,4 @@
+component: doctor
+kind: Fixed
+body: '**`trellis doctor` no longer flags a working `@members` exclusion glob as a typo.** The check compared the glob against the already-filtered member list, so any glob that successfully excluded a directory could never appear to match — every real `@members` exclusion was reported as `matches no member (typo?)`. The typo check now runs against the pre-filter candidate set, before `@members` removes anything, so a working exclusion is never flagged while a genuine typo still is.'
+time: 2026-08-05T17:24:20.994499-07:00
