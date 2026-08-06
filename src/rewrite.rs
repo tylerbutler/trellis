@@ -63,10 +63,12 @@ pub fn rewrite_path_deps(
             let Some(item) = table.get_mut(&name) else {
                 continue;
             };
+            // A `path` key alongside `git` selects a subdirectory of the
+            // remote repo (Gleam 1.18+), not a workspace-local path dep.
             let is_path_dep = item
                 .as_value()
                 .and_then(|value| value.as_inline_table())
-                .is_some_and(|dep| dep.contains_key("path"));
+                .is_some_and(|dep| dep.contains_key("path") && !dep.contains_key("git"));
             if !is_path_dep {
                 continue;
             }
@@ -172,6 +174,34 @@ mod tests {
         assert_eq!(rewrites.len(), 1);
         assert!(rewritten.contains("lat_core = \"== 1.2.0\""));
         assert!(rewritten.contains("test_helpers = { path = \"../test_helpers\" }"));
+    }
+
+    #[test]
+    fn git_dep_with_subdirectory_path_is_never_rewritten() {
+        // Gleam 1.18+ git deps may carry a `path` subdirectory key. They are
+        // external: not rewritten even when the name matches a hex member,
+        // and not an error when it doesn't.
+        let text = concat!(
+            "name = \"gp_app\"\n",
+            "[dependencies]\n",
+            "gp_core = { path = \"../gp_core\" }\n",
+            "remote_lib = { git = \"https://github.com/example/monorepo.git\", ref = \"main\", path = \"packages/remote_lib\" }\n",
+            "gp_core_fork = { git = \"https://github.com/example/fork.git\", ref = \"v2\", path = \"../gp_core_fork\" }\n",
+        );
+        let (rewritten, rewrites) = rewrite_path_deps(
+            text,
+            &versions(&[("gp_core", "1.0.0"), ("gp_core_fork", "2.0.0")]),
+            PathDepRequirement::Minor,
+        )
+        .unwrap();
+        assert_eq!(rewrites.len(), 1);
+        assert!(rewritten.contains("gp_core = \">= 1.0.0 and < 2.0.0\""));
+        assert!(rewritten.contains(
+            "remote_lib = { git = \"https://github.com/example/monorepo.git\", ref = \"main\", path = \"packages/remote_lib\" }"
+        ));
+        assert!(rewritten.contains(
+            "gp_core_fork = { git = \"https://github.com/example/fork.git\", ref = \"v2\", path = \"../gp_core_fork\" }"
+        ));
     }
 
     #[test]

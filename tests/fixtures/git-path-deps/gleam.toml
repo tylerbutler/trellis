@@ -1,0 +1,5 @@
+# Workspace exercising Gleam 1.18 git dependencies that carry a `path`
+# subdirectory key. Git deps are external regardless of the `path` key.
+
+[tools.trellis]
+members = ["packages/*"]
