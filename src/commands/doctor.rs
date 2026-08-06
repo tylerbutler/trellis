@@ -522,6 +522,13 @@ fn check_tool_versions(workspace: &Workspace, report: &mut Report) {
 /// in it — see [`crate::config::ReleaseLifecycle::available_to`].
 fn check_exclusions(workspace: &Workspace, report: &mut Report) {
     for (task, patterns) in &workspace.config.exclude {
+        // `@members` is validated in `Workspace::load_with_diagnostics`,
+        // against the pre-filter candidate set — by the time `workspace`
+        // exists here, a working exclusion has already removed its own
+        // evidence from `workspace.members`.
+        if task == crate::config::MEMBERS_EXCLUDE_KEY {
+            continue;
+        }
         for pattern in patterns {
             check_member_glob(
                 workspace,

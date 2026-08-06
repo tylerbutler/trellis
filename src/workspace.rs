@@ -229,11 +229,14 @@ impl Workspace {
         }
 
         // `@members` removes directories from membership entirely, before
-        // their manifests are even parsed.
-        if let Some(patterns) = config.exclude.get(crate::config::MEMBERS_EXCLUDE_KEY)
-            && let Ok(excludes) = build_globset(patterns)
-        {
-            member_dirs.retain(|dir| !excludes.is_match(rel_path_string(root, dir)));
+        // their manifests are even parsed. A working exclusion glob can never
+        // match anything once it's done its job, so the typo check has to run
+        // here, against the pre-filter candidates, not against the survivors.
+        if let Some(patterns) = config.exclude.get(crate::config::MEMBERS_EXCLUDE_KEY) {
+            check_members_exclude_globs(root, &member_dirs, patterns, &mut diagnostics);
+            if let Ok(excludes) = build_globset(patterns) {
+                member_dirs.retain(|dir| !excludes.is_match(rel_path_string(root, dir)));
+            }
         }
         if member_dirs.is_empty() && !diagnostics.has_errors() {
             diagnostics.push(
@@ -741,6 +744,47 @@ fn report_unknown_config_keys(config: &ConfigFile, diagnostics: &mut Diagnostics
             )
             .at(GLEAM_TOML),
         );
+    }
+}
+
+/// Validates `@members` exclusion globs against the pre-filter candidate set
+/// — the same globs are applied as a `retain` right after this runs, so
+/// checking them afterward against the survivors would mean a working
+/// exclusion could never appear to match anything.
+fn check_members_exclude_globs(
+    root: &Path,
+    member_dirs: &[PathBuf],
+    patterns: &[String],
+    diagnostics: &mut Diagnostics,
+) {
+    let rel_paths: Vec<String> = member_dirs
+        .iter()
+        .map(|dir| rel_path_string(root, dir))
+        .collect();
+    for pattern in patterns {
+        match globset::Glob::new(pattern) {
+            Ok(glob) => {
+                let matcher = glob.compile_matcher();
+                if !rel_paths.iter().any(|rel| matcher.is_match(rel)) {
+                    diagnostics.push(
+                        Finding::error(
+                            Check::ExclusionGlob,
+                            format!(
+                                "`@members` exclusion glob `{pattern}` matches no member (typo?)"
+                            ),
+                        )
+                        .at(GLEAM_TOML),
+                    );
+                }
+            }
+            Err(_) => diagnostics.push(
+                Finding::error(
+                    Check::ExclusionGlob,
+                    format!("`@members` exclusion glob `{pattern}` is invalid"),
+                )
+                .at(GLEAM_TOML),
+            ),
+        }
     }
 }
 
