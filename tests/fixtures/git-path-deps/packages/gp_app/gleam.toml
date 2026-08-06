@@ -1,0 +1,15 @@
+name = "gp_app"
+version = "0.2.0"
+
+[dependencies]
+gleam_stdlib = ">= 0.34.0 and < 2.0.0"
+gp_core = { path = "../gp_core" }
+# Gleam 1.18+: git dependency pointing at a subdirectory of an external
+# monorepo. External to the workspace — must not join the path-dep graph.
+remote_lib = { git = "https://github.com/example/monorepo.git", ref = "main", path = "packages/remote_lib" }
+
+[dev-dependencies]
+gleeunit = ">= 1.2.0 and < 2.0.0"
+# Subdirectory path that coincidentally resolves to a workspace member —
+# still external; the `git` key wins.
+gp_core_fork = { git = "https://github.com/example/fork.git", ref = "v2", path = "../gp_core" }

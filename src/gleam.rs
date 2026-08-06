@@ -79,6 +79,10 @@ impl GleamManifest {
             for (name, dep) in deps {
                 let requirement = match dep {
                     RawDep::Requirement(req) => Requirement::Hex(req.clone()),
+                    // `git` wins over `path`: since Gleam 1.18 a git dep may
+                    // carry a `path` key selecting a subdirectory of the
+                    // remote repo, which is not a workspace-local path.
+                    RawDep::Detailed { git: Some(git), .. } => Requirement::Git(git.clone()),
                     RawDep::Detailed {
                         path: Some(path), ..
                     } => Requirement::Path(path.clone()),
@@ -86,7 +90,6 @@ impl GleamManifest {
                         version: Some(version),
                         ..
                     } => Requirement::Hex(version.clone()),
-                    RawDep::Detailed { git: Some(git), .. } => Requirement::Git(git.clone()),
                     RawDep::Detailed { .. } => {
                         anyhow::bail!(
                             "dependency `{name}` has neither a version, a path, nor a git source"
@@ -185,6 +188,34 @@ mod tests {
         // Git deps are external: they never join the path-dependency graph.
         let paths: Vec<_> = manifest.path_deps().collect();
         assert_eq!(paths, vec![("beryl", "../beryl", false)]);
+    }
+
+    #[test]
+    fn git_dep_with_subdirectory_path_is_still_external() {
+        // Gleam 1.18+: git deps may carry a `path` key selecting a
+        // subdirectory of the remote repository. The `git` key wins.
+        let manifest = GleamManifest::parse(
+            r#"
+            name = "gp_app"
+            version = "0.2.0"
+
+            [dependencies]
+            gp_core = { path = "../gp_core" }
+            remote_lib = { git = "https://github.com/example/monorepo.git", ref = "main", path = "packages/remote_lib" }
+            "#,
+        )
+        .unwrap();
+        let git_dep = manifest
+            .dependencies
+            .iter()
+            .find(|dep| dep.name == "remote_lib")
+            .unwrap();
+        assert_eq!(
+            git_dep.requirement,
+            Requirement::Git("https://github.com/example/monorepo.git".to_string())
+        );
+        let paths: Vec<_> = manifest.path_deps().collect();
+        assert_eq!(paths, vec![("gp_core", "../gp_core", false)]);
     }
 
     #[test]

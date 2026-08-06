@@ -29,6 +29,19 @@ fn list_prints_members_in_topological_order() {
 }
 
 #[test]
+fn list_treats_git_deps_with_subdirectory_paths_as_external() {
+    // Gleam 1.18+ git deps may carry a `path` key selecting a subdirectory
+    // of the remote repo. They must not join the workspace path-dep graph
+    // (regression: they were misread as workspace path deps, making every
+    // command fail with "workspace is invalid").
+    trellis(&fixture("git-path-deps"))
+        .arg("list")
+        .assert()
+        .success()
+        .stdout("gp_core  hex\ngp_app   hex\n");
+}
+
+#[test]
 fn list_works_from_inside_a_package() {
     trellis(&fixture("basic").join("packages/lat_mid"))
         .arg("list")
