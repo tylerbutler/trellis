@@ -1,5 +1,0 @@
-component: changelog
-kind: Fixed
-body: |-
-  **`trellis changelog check` now rows every package the branch documented, not just the ones whose files it changed.** A fragment written for a package the diff never touched — a break propagating to a dependent, documented where it lands — still bumps that package, and the release preview said so while the table above it did not. Such a package now gets its own row, is reported as `changed: false` in the `--json` payload, and is never asked for a changelog entry of its own.
-time: 2026-08-04T00:00:00.000-07:00
