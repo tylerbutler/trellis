@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.10.3 - 2026-08-07
+
+
+### trellis
+
+#### Fixed
+
+- **Git dependencies with a `path` subdirectory (Gleam 1.18+) are treated as external.** Gleam 1.18.0 added an optional `path` key on git dependencies that selects a subdirectory of the remote repository. Trellis classified any dependency carrying a `path` key as a workspace path dependency, so a git dependency into an external monorepo made every command fail with `workspace is invalid` — or, when the dependency shared a member's name, invented a phantom graph edge that could report a false dependency cycle. The `git` key now wins: such dependencies stay out of the workspace graph, and `trellis publish` leaves them untouched instead of rewriting them to Hex requirements.
+
 ## v0.10.2 - 2026-08-06
 
 
