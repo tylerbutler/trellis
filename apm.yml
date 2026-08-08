@@ -1,6 +1,6 @@
-name: levee
+name: trellis
 version: 1.0.0
-description: APM project for levee
+description: APM project for trellis
 author: Tyler Butler
 targets:
   - copilot
