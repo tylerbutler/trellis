@@ -60,10 +60,9 @@ members are auto-discovered; found 2:
   packages/b
 ```
 
-What it writes is nearly empty, and that is the point. The table's *presence*
-is what marks the workspace root; everything else trellis derives, so
-`members` is not written. In its place are comments pointing at the keys you
-might want.
+What it writes is nearly empty. The table's *presence* is what marks the
+workspace root, and everything else trellis derives, so `members` is not
+written — in its place are comments pointing at the keys you might want.
 
 `init` reports the members it discovered so you can see whether they need
 narrowing, refuses to run if the repository is already a trellis workspace (or
@@ -124,13 +123,15 @@ their roots.
 | `publish.repository_series.format` | with `package` | Repository tag template; must contain `{series}` and no `{name}`. |
 | `publish.tag_mode` | no | Which tags a release creates: `exact` (default), `series`, or `both`. |
 | `publish.tag_mode_overrides` | no | Per-package tag modes: a map of mode name to member-path globs. A package matching globs under two modes is an error. |
-| `publish.retry` | no | Backoff for Hex rate limits: `{ attempts, initial_delay, multiplier }`. |
+| `publish.path_dep_requirement` | no | How a workspace path dependency becomes a Hex requirement at publish time, from the dependency's current version `X.Y.Z`: `minor` (default, `>= X.Y.Z and < (X+1).0.0`), `patch` (`>= X.Y.Z and < X.(Y+1).0`), or `exact` (`== X.Y.Z`). |
+| `publish.retry` | no | Backoff for Hex rate limits: `{ attempts, initial_delay, multiplier }`. Defaults: 5 attempts, `30s`, multiplier 2. |
 | `publish.lifecycle.default` | no | Release lifecycle for a member matched by no `packages` glob and no legacy `exclude.@release` glob: `workspace`, `git_only`, or `hex` (default). |
 | `publish.lifecycle.packages` | no | Per-package lifecycle overrides: a map of member-path glob to lifecycle. Takes precedence over `exclude.@release`. A member matched by globs resolving to different lifecycles is an error; matches agreeing on the same lifecycle are fine. |
-| `changelog.kinds` | no | Change kinds and the version bump each implies. The largest bump among a package's unreleased fragments wins. |
+| `changelog.dir` | no | Where fragments and batched version sections live. Default: `.changes`. |
+| `changelog.kinds` | no | Change kinds and the version bump each implies. The largest bump among a package's unreleased fragments wins. Replacing the list replaces it entirely. |
 | `changelog.categories` | no | A second grouping axis, rendered above the kind headings. Carries no version bump. Empty by default, which switches the axis off. |
 | `changelog.uncategorized_label` | no | Heading for entries naming no category, rendered last. Default: `Other`. Read only when `categories` is set. |
-| `changelog.*-format` | no | Minijinja templates for rendered changelog sections: `version_format`, `category_format`, `kind_format`, `change_format`. |
+| `changelog.*_format` | no | Minijinja templates for the rendered changelog: `header_format`, `version_format`, `category_format`, `kind_format`, `change_format`. |
 | `changelog.dependency_kind` | no | Kind used for the entries generated when a workspace dependency bumps. Must name one of `kinds`. |
 | `changelog.dependency_body` | no | Minijinja template for one such entry's body. Context: `dependency`, `dependency_version`, `package` (also as `project`, deprecated). |
 | `changelog.strictness` | no | How `changelog check` treats a changed releasable package with no unreleased fragment: `error` (default, fails the run), `warn`, or `off`. An *invalid* fragment fails at every setting. |
@@ -287,13 +288,10 @@ force-pushed lat_cli-v0.4
 ```
 
 Setting `series_tag_format = "v{series}"` drops `{name}` and gives the whole
-repository one shared series tag, which is exactly right for a single-package
-repo. With more than one package it is still allowed, but it costs something:
-the tag no longer identifies a package, so `trellis ci tag-package` cannot
-resolve it. That holds for every such tag regardless of how the packages are
-versioned, since there is no `{name}` to tell them apart. `doctor` therefore
-warns as soon as a second package moves one, rather than waiting for two
-packages to land in the same series.
+repository one shared series tag — exactly right for a single-package
+repository. With more than one package it is still allowed, but the tag no
+longer identifies a package, so `trellis ci tag-package` cannot resolve it.
+`doctor` warns as soon as a second package moves one.
 
 <Callout>
 
@@ -342,14 +340,23 @@ rendering is controlled by small minijinja templates, each with a context of
 
 ```toml wrap
 [tools.trellis.changelog]
+header_format = "# {{ name }} changelog"              # default
 version_format = "## v{{ version }} - {{ date }}"     # default
 kind_format = "### {{ kind }}"                        # default
 change_format = "- {{ body }}"                        # default
+
+# The default kinds, in full. Setting `kinds` replaces the whole list, so
+# copy this before trimming it — a kind you drop becomes an invalid fragment.
 kinds = [
   { label = "Initial Release", bump = "major" },
   { label = "Breaking", bump = "major" },
+  { label = "Removed", bump = "major" },
   { label = "Added", bump = "minor" },
+  { label = "Changed", bump = "minor" },
+  { label = "Deprecated", bump = "minor" },
   { label = "Fixed", bump = "patch" },
+  { label = "Performance", bump = "patch" },
+  { label = "Security", bump = "patch" },
   { label = "Dependencies", bump = "patch" },
 ]
 
@@ -447,10 +454,9 @@ warning: packages disagree on `gleam_stdlib`: `>= 0.44.0` (lat_core) vs
 counts
 ```
 
-Requirements are compared **as written**, never parsed as ranges: trellis
-stores them verbatim, so `>= 1.0` and `>=1.0` read as divergent. Path
-dependencies are out of scope. They carry no requirement to agree on, and
-lockfile drift already covers them.
+Requirements are compared **as written**, never parsed as ranges, so `>= 1.0`
+and `>=1.0` read as divergent. Path dependencies are out of scope — they carry
+no requirement to agree on, and lockfile drift already covers them.
 
 Divergence is sometimes intended, so this warns rather than failing by
 default:
@@ -460,8 +466,8 @@ default:
 shared_dependencies = "error"   # warn (default), error, or off
 ```
 
-There is no `doctor --fix` for it: unifying to the highest requirement is a
-judgment call, not a mechanical remedy.
+There is no `doctor --fix` for it — which requirement to unify on is a judgment
+call.
 
 ## Deprecated and unrecognized keys
 
@@ -475,13 +481,11 @@ warning: [tools.trellis] key `publish.tag-format` is deprecated; rename it to
 `publish.tag_format` (trellis config keys are snake_case)
 ```
 
-A warning, not an error: the key still configures what it always did, so failing
-would break working repositories over a spelling. Plan on the aliases going away
-at 1.0.
+A warning, not an error — the old spelling still configures what it always did.
+Plan on the aliases going away at 1.0.
 
-A key that is not recognized in *any* spelling is also a warning. It may belong
-to a newer trellis, and erroring would make the workspace unloadable under a
-pinned older one — a bad failure for a tool CI pins:
+A key that is not recognized in *any* spelling is also a warning, since it may
+belong to a newer trellis than the one CI has pinned:
 
 ```console
 $ trellis doctor

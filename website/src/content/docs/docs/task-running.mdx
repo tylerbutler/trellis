@@ -7,8 +7,7 @@ import Callout from "../../../components/Callout.astro";
 
 `trellis run` fans a task out across workspace packages; `trellis exec` does
 the same for an arbitrary command. Both work from anywhere inside the
-workspace and replace the hand-written `for pkg in …` bash loops that
-multi-package Gleam repos otherwise accumulate.
+workspace.
 
 ```txt wrap
 trellis run <task> [pkgs...] [--since <ref>] [--with-dependents]
@@ -32,8 +31,7 @@ Built-in tasks map 1:1 onto gleam verbs — no declaration needed:
 | `clean` | `gleam clean` |
 
 `--target erlang|javascript` selects the compile target; `--target all` runs
-the task once per target, replacing the `test-js`/`build-js` recipe
-duplication.
+the task once per target.
 
 ## Custom tasks
 

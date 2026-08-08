@@ -78,9 +78,7 @@ Notes:
   `tag_kind: series` with `tag_series` — the other key is absent, not null.
 - `tag plan` entries use `kind: repository_series` for an anchored repository
   tag. The entry retains the anchor package's `name` and `version`; this kind
-  is never returned by package-oriented `ci tag-package`. Adding this
-  documented enum value advanced the payload from `trellis.tag_plan/1` to
-  `trellis.tag_plan/2`.
+  is never returned by package-oriented `ci tag-package`.
 - `changelog check`'s `preview` field is always present and a string, but its
   Markdown prose can change without a version bump. `needs_entry` reports
   whether an entry is missing; `ok` reports what
@@ -96,11 +94,11 @@ Notes:
 ## `doctor` findings
 
 `package_lifecycles` is an array of `{name, lifecycle}`, one per member in
-workspace order, additive alongside the existing numeric `packages` count —
-`doctor`'s text summary renders the same data as compact counts, e.g.
+workspace order, alongside the numeric `packages` count. `doctor`'s text
+summary renders the same data as compact counts:
 `ok: 4 package(s) (1 workspace, 0 git_only, 3 hex), 0 warning(s)`.
 
-One entry per problem:
+`findings[]` carries one entry per problem:
 
 ```json
 {
@@ -186,5 +184,5 @@ See [CI recipes](/docs/ci/) for how these are consumed.
 
 ## Enforcement
 
-Every payload is defined once, in one file, and snapshotted in trellis's test
-suite. A change to a stable shape fails CI before it can ship.
+Every payload is snapshotted in trellis's test suite, so a change to a stable
+shape fails CI before it can ship.
