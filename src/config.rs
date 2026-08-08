@@ -115,15 +115,16 @@ fn deserialize_collecting_unknown(trellis: &toml::Value) -> Result<(ConfigFile, 
 }
 
 /// Tables under `[tools.trellis]` whose *keys* are chosen by the user rather
-/// than by trellis: task names, `exclude` selectors, tag-mode names, and
-/// `publish.lifecycle.packages` globs. A hyphen in one of those is the user's
-/// own naming (or a directory name inside a glob), not a stale spelling.
-/// Entries are full snake-cased dotted paths, so a schema table that happens
-/// to share a segment name (`packages`, say) is not silently exempted.
+/// than by trellis: task names, `exclude` selectors, and the member-path globs
+/// of `publish.package_tags_overrides` and `publish.lifecycle.packages`. A
+/// hyphen in one of those is the user's own naming (or a directory name inside
+/// a glob), not a stale spelling. Entries are full snake-cased dotted paths,
+/// so a schema table that happens to share a segment name (`packages`, say) is
+/// not silently exempted.
 const FREE_FORM_TABLES: [&str; 4] = [
     "exclude",
     "tasks",
-    "publish.tag_mode_overrides",
+    "publish.package_tags_overrides",
     "publish.lifecycle.packages",
 ];
 
@@ -217,24 +218,36 @@ pub struct TaskConfig {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct PublishConfig {
-    /// Tag naming scheme; `{name}` and `{version}` are substituted.
-    #[serde(default = "default_tag_format", alias = "tag-format")]
-    pub tag_format: String,
-    /// Naming scheme for the moving series tag; `{name}` and `{series}` are
-    /// substituted. Omit `{name}` for a single repository-wide series tag.
+    /// Naming scheme for the immutable per-version tag — the format
+    /// [`TagLevel::Exact`] substitutes into. `{name}` and `{version}`.
+    #[serde(default = "default_exact_tag_format")]
+    pub exact_tag_format: String,
+    /// Naming scheme for the moving series tags — the format every series
+    /// [`TagLevel`] substitutes into. `{name}` and `{series}`.
     #[serde(default = "default_series_tag_format", alias = "series-tag-format")]
     pub series_tag_format: String,
-    /// Which tags a release creates, for members without an override.
-    #[serde(default, alias = "tag-mode")]
-    pub tag_mode: TagMode,
-    /// Per-member overrides of [`PublishConfig::tag_mode`], keyed by mode name
-    /// ([`TagMode::key`]); values are globs matched against member paths. A
-    /// member matching globs under two different modes is an error.
-    #[serde(default, alias = "tag-mode-overrides")]
-    pub tag_mode_overrides: BTreeMap<String, Vec<String>>,
-    /// One moving repository tag, with its series and release signal taken
-    /// from the named package. Independent of package tag modes.
-    pub repository_series: Option<RepositorySeriesConfig>,
+    /// Which tags a release maintains for each package, one entry per tag, for
+    /// members without an override. See [`TagLevel`].
+    #[serde(default = "default_package_tags")]
+    pub package_tags: Vec<TagLevel>,
+    /// Per-member overrides of [`PublishConfig::package_tags`], keyed by a
+    /// member-path glob. A member matched by globs resolving to different
+    /// lists is an error; matches agreeing on the same list are fine.
+    #[serde(default)]
+    pub package_tags_overrides: BTreeMap<String, Vec<TagLevel>>,
+    /// Package whose manifest version drives the repository tag, enabling it.
+    #[serde(default)]
+    pub repository_tag_package: Option<String>,
+    /// Repository tag template; `{series}` is substituted, and `{name}` would
+    /// be written literally, so it is rejected.
+    #[serde(default)]
+    pub repository_tag_format: Option<String>,
+    /// Which repository tags to maintain. Empty by default and required
+    /// alongside the other two repository keys: the repository tag is opt-in,
+    /// and inferring its levels from `package_tags` would mean a list written
+    /// for packages silently deciding what the repository publishes.
+    #[serde(default)]
+    pub repository_tags: Vec<TagLevel>,
     /// How a path dep is rewritten to a Hex requirement at publish time.
     #[serde(default, alias = "path-dep-requirement")]
     pub path_dep_requirement: PathDepRequirement,
@@ -251,25 +264,18 @@ pub struct PublishConfig {
 impl Default for PublishConfig {
     fn default() -> Self {
         Self {
-            tag_format: default_tag_format(),
+            exact_tag_format: default_exact_tag_format(),
             series_tag_format: default_series_tag_format(),
-            tag_mode: TagMode::default(),
-            tag_mode_overrides: BTreeMap::new(),
-            repository_series: None,
+            package_tags: default_package_tags(),
+            package_tags_overrides: BTreeMap::new(),
+            repository_tag_package: None,
+            repository_tag_format: None,
+            repository_tags: Vec::new(),
             path_dep_requirement: PathDepRequirement::default(),
             retry: RetryConfig::default(),
             lifecycle: LifecycleConfig::default(),
         }
     }
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub struct RepositorySeriesConfig {
-    /// Package whose stable manifest version determines the repository series.
-    pub package: String,
-    /// Repository tag template; `{series}` is substituted.
-    pub format: String,
 }
 
 /// How much of the release pipeline a member participates in.
@@ -347,7 +353,7 @@ pub struct LifecycleConfig {
     pub packages: BTreeMap<String, ReleaseLifecycle>,
 }
 
-fn default_tag_format() -> String {
+fn default_exact_tag_format() -> String {
     "{name}-v{version}".to_string()
 }
 
@@ -355,60 +361,75 @@ fn default_series_tag_format() -> String {
     "{name}-v{series}".to_string()
 }
 
-/// Which git tags a release creates for a member.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum TagMode {
-    /// Immutable per-version tags only (`{name}-v1.2.0`).
-    #[default]
-    Exact,
-    /// Moving series tags only (`{name}-v0.0`, re-pointed at each release).
-    Series,
-    /// Both an immutable per-version tag and a moving series tag.
-    Both,
+fn default_package_tags() -> Vec<TagLevel> {
+    vec![TagLevel::Exact]
 }
 
-impl TagMode {
-    /// Every mode, in the order error messages list them.
-    pub const ALL: [TagMode; 3] = [TagMode::Exact, TagMode::Series, TagMode::Both];
+/// One tag a release maintains, named by how much of the version it keeps.
+///
+/// [`TagLevel::Exact`] keeps the whole version and names one immutable tag;
+/// the rest truncate it and name a moving series tag. That split is also which
+/// format the entry substitutes into — `exact_tag_format` for `Exact`,
+/// `series_tag_format` for every other level — and which lifecycle it gets:
+/// exact tags are written once and never rewritten, series tags are
+/// force-moved on each release in the series.
+///
+/// Values are levels, not templates: a closed vocabulary is what keeps a tag
+/// invertible back to its package ([`crate::commands::tag::resolve_tag`]) and
+/// two entries from colliding at a version nobody has released yet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TagLevel {
+    /// `X` — one moving tag per major version: `v1`, `v0`.
+    Major,
+    /// `X.Y` — one moving tag per minor version: `v1.2`, `v0.10`.
+    Minor,
+    /// The whole version — one immutable tag per release: `v1.2.3`,
+    /// `v1.0.0-rc.1`. The only level that tags a prerelease.
+    Exact,
+}
 
-    /// The configuration key naming this mode.
+impl TagLevel {
+    /// Every level, coarsest first — the order error messages list them.
+    pub const ALL: [TagLevel; 3] = [TagLevel::Major, TagLevel::Minor, TagLevel::Exact];
+
+    /// The configuration spelling naming this level.
     pub fn key(self) -> &'static str {
         match self {
-            TagMode::Exact => "exact",
-            TagMode::Series => "series",
-            TagMode::Both => "both",
+            TagLevel::Major => "major",
+            TagLevel::Minor => "minor",
+            TagLevel::Exact => "exact",
         }
     }
 
-    pub fn from_key(key: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|mode| mode.key() == key)
+    /// The levels quoted for an error message that lists the vocabulary.
+    pub fn all_keys() -> String {
+        Self::ALL
+            .map(|level| format!("`{}`", level.key()))
+            .join(", ")
     }
 
-    /// True when releases create an immutable `tag_format` tag.
-    pub fn includes_exact(self) -> bool {
-        matches!(self, TagMode::Exact | TagMode::Both)
+    /// True for the levels that name a moving series tag — everything but
+    /// [`TagLevel::Exact`].
+    pub fn is_series(self) -> bool {
+        !matches!(self, TagLevel::Exact)
     }
 
-    /// True when releases move a `series_tag_format` tag.
-    pub fn includes_series(self) -> bool {
-        matches!(self, TagMode::Series | TagMode::Both)
+    /// The series `version` belongs to at this level, or `None` for
+    /// [`TagLevel::Exact`] (which names a version, not a series). Prereleases
+    /// belong to no series — a release candidate must never move the tag
+    /// consumers pin — and neither does an unparseable version.
+    pub fn series_of(self, version: &str) -> Option<String> {
+        let parsed = semver::Version::parse(version).ok()?;
+        if !parsed.pre.is_empty() {
+            return None;
+        }
+        match self {
+            TagLevel::Major => Some(parsed.major.to_string()),
+            TagLevel::Minor => Some(format!("{}.{}", parsed.major, parsed.minor)),
+            TagLevel::Exact => None,
+        }
     }
-}
-
-/// The moving series a version belongs to: `0.Y` while the major is 0 (where
-/// every minor bump is a breaking change), `X` afterward. Prereleases belong
-/// to no series — a release candidate must never move the tag consumers pin.
-pub fn series_of(version: &str) -> Option<String> {
-    let version = semver::Version::parse(version).ok()?;
-    if !version.pre.is_empty() {
-        return None;
-    }
-    Some(if version.major == 0 {
-        format!("0.{}", version.minor)
-    } else {
-        version.major.to_string()
-    })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
@@ -738,15 +759,12 @@ impl ConfigFile {
                 );
             }
         }
-        for key in self.publish.tag_mode_overrides.keys() {
-            if TagMode::from_key(key).is_none() {
-                bail!(
-                    "unknown `tag_mode_overrides` key `{key}`; the tag modes are {}",
-                    TagMode::ALL
-                        .map(|mode| format!("`{}`", mode.key()))
-                        .join(", ")
-                );
-            }
+        self.reject_removed_keys()?;
+        if !self.publish.exact_tag_format.contains("{version}") {
+            bail!(
+                "`exact_tag_format` `{}` has no {{version}} placeholder",
+                self.publish.exact_tag_format
+            );
         }
         if !self.publish.series_tag_format.contains("{series}") {
             bail!(
@@ -754,22 +772,71 @@ impl ConfigFile {
                 self.publish.series_tag_format
             );
         }
-        if let Some(repository_series) = &self.publish.repository_series {
-            if !repository_series.format.contains("{series}") {
-                bail!(
-                    "`repository_series.format` `{}` has no {{series}} placeholder",
-                    repository_series.format
-                );
+        if self.publish.package_tags.is_empty() {
+            bail!(
+                "`package_tags` is empty; list at least one of {}, or set the package's \
+                 `publish.lifecycle` to `workspace` so it is not released at all",
+                TagLevel::all_keys()
+            );
+        }
+        for (glob, levels) in &self.publish.package_tags_overrides {
+            if levels.is_empty() {
+                bail!("`package_tags_overrides` entry `{glob}` is empty; see `package_tags`");
+            }
+        }
+        // All three or none. The repository tag is opt-in and each key answers
+        // a question the other two cannot: which package signals a release,
+        // what the tag is called, and which series it tracks. Defaulting any
+        // of them would let a half-written config publish a tag nobody asked
+        // for, or configure one that silently produces nothing.
+        let declared: Vec<&str> = [
+            self.publish
+                .repository_tag_package
+                .is_some()
+                .then_some("repository_tag_package"),
+            self.publish
+                .repository_tag_format
+                .is_some()
+                .then_some("repository_tag_format"),
+            (!self.publish.repository_tags.is_empty()).then_some("repository_tags"),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+        if !declared.is_empty() && declared.len() < 3 {
+            let missing: Vec<String> = [
+                "repository_tag_package",
+                "repository_tag_format",
+                "repository_tags",
+            ]
+            .into_iter()
+            .filter(|key| !declared.contains(key))
+            .map(|key| format!("`{key}`"))
+            .collect();
+            bail!(
+                "the repository tag needs `repository_tag_package`, `repository_tag_format`, \
+                 and a non-empty `repository_tags`; missing {}",
+                missing.join(" and ")
+            );
+        }
+        if let Some(format) = &self.publish.repository_tag_format {
+            if !format.contains("{series}") {
+                bail!("`repository_tag_format` `{format}` has no {{series}} placeholder");
             }
             // `{series}` is the template's only placeholder; a `{name}` would
             // be written into the tag literally.
-            if repository_series.format.contains("{name}") {
+            if format.contains("{name}") {
                 bail!(
-                    "`repository_series.format` `{}` cannot contain {{name}}; \
-                     the tag is repository-wide, not per-package",
-                    repository_series.format
+                    "`repository_tag_format` `{format}` cannot contain {{name}}; \
+                     the tag is repository-wide, not per-package"
                 );
             }
+        }
+        if self.publish.repository_tags.contains(&TagLevel::Exact) {
+            bail!(
+                "`repository_tags` cannot contain `exact`; the repository tag names a \
+                 series, not one version"
+            );
         }
         let dependency_kind = &self.changelog.dependency_kind;
         if !self
@@ -798,36 +865,112 @@ impl ConfigFile {
         Ok(())
     }
 
-    pub fn format_tag(&self, name: &str, version: &str) -> String {
+    /// The immutable tag naming `version`, from `exact_tag_format`.
+    pub fn exact_tag(&self, name: &str, version: &str) -> String {
         self.publish
-            .tag_format
+            .exact_tag_format
             .replace("{name}", name)
             .replace("{version}", version)
     }
 
-    /// The moving tag for `version`'s series, or `None` when the version has
-    /// no series (a prerelease, or an unparseable version).
-    pub fn format_series_tag(&self, name: &str, version: &str) -> Option<String> {
-        series_of(version).map(|series| {
+    /// Every moving tag `version` calls for at `levels`, in the order given.
+    /// Empty when the version has no series (a prerelease, or an unparseable
+    /// version) or `levels` holds no series level.
+    pub fn series_tags(&self, name: &str, version: &str, levels: &[TagLevel]) -> Vec<String> {
+        format_series_tags(levels, version, |series| {
             self.publish
                 .series_tag_format
                 .replace("{name}", name)
-                .replace("{series}", &series)
+                .replace("{series}", series)
         })
     }
 
     /// True when the series tag is repository-wide — one tag shared by every
-    /// series-mode member rather than one per package.
+    /// series-mode member rather than one per package. Deprecated; see
+    /// `doctor`'s tag checks.
     pub fn series_tag_is_repo_wide(&self) -> bool {
         !self.publish.series_tag_format.contains("{name}")
     }
 
-    /// The anchored repository tag for `version`, or `None` when the feature
-    /// is unconfigured or the anchor is on a prerelease.
-    pub fn format_repository_series_tag(&self, version: &str) -> Option<String> {
-        let repository_series = self.publish.repository_series.as_ref()?;
-        series_of(version).map(|series| repository_series.format.replace("{series}", &series))
+    /// The anchored repository tags for `version`. Empty when the feature is
+    /// unconfigured or the anchor is on a prerelease.
+    pub fn repository_tags(&self, version: &str) -> Vec<String> {
+        let Some(format) = self.publish.repository_tag_format.as_ref() else {
+            return Vec::new();
+        };
+        format_series_tags(&self.publish.repository_tags, version, |series| {
+            format.replace("{series}", series)
+        })
     }
+}
+
+/// Keys removed by the tag-config redesign, each with the replacement its
+/// error names.
+///
+/// These are rejected rather than reported as unrecognized. Trellis is lenient
+/// about unknown keys on purpose — one may belong to a newer trellis — but
+/// leniency is wrong here: silently ignoring a workspace's `tag_format` or
+/// `tag_mode` falls back to a default that writes *different tags*, and a
+/// series tag that stops moving or an exact tag under a new name is not
+/// something to discover after the release.
+const REMOVED_KEYS: [(&str, &str); 4] = [
+    (
+        "publish.tag_format",
+        "renamed to `exact_tag_format`, to pair with `series_tag_format`",
+    ),
+    (
+        "publish.tag_mode",
+        "replaced by `package_tags`, which lists the tags directly — \
+         `exact` becomes package_tags = [\"exact\"], `series` becomes \
+         [\"minor\"], `both` becomes [\"exact\", \"minor\"]",
+    ),
+    (
+        "publish.tag_mode_overrides",
+        "replaced by `package_tags_overrides`, keyed by member-path glob \
+         rather than by mode: { 'packages/cli' = ['exact', 'major'] }",
+    ),
+    (
+        "publish.repository_series",
+        "flattened into `repository_tag_package`, `repository_tag_format`, \
+         and `repository_tags` alongside the other publish keys",
+    ),
+];
+
+impl ConfigFile {
+    /// Fail on any key the redesign removed, naming its replacement.
+    ///
+    /// Reads `unknown_keys`, which is where a removed key lands once no field
+    /// claims it — including a nested one under a removed table, matched by
+    /// prefix, and a pre-0.8 kebab spelling, matched after snake-casing.
+    fn reject_removed_keys(&self) -> Result<()> {
+        for path in &self.unknown_keys {
+            let path = snake_case(path);
+            for (removed, replacement) in REMOVED_KEYS {
+                if path == removed || path.starts_with(&format!("{removed}.")) {
+                    bail!("`{removed}` has been removed; it is {replacement}");
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Render one tag per level, skipping levels that name no series. `major` and
+/// `minor` never name the same series, so the dedup only absorbs a level
+/// listed twice.
+fn format_series_tags(
+    levels: &[TagLevel],
+    version: &str,
+    format: impl Fn(&str) -> String,
+) -> Vec<String> {
+    let mut tags: Vec<String> = Vec::new();
+    for series in levels.iter().filter_map(|level| level.series_of(version)) {
+        let tag = format(&series);
+        if !tags.contains(&tag) {
+            tags.push(tag);
+        }
+    }
+    tags
 }
 
 #[cfg(test)]
@@ -867,7 +1010,7 @@ mod tests {
             needs_deps = true
 
             [tools.trellis.publish]
-            tag_format = "{name}-v{version}"
+            exact_tag_format = "{name}-v{version}"
             path_dep_requirement = "minor"
             retry = { attempts = 5, initial_delay = "30s", multiplier = 2 }
 
@@ -1002,10 +1145,7 @@ mod tests {
             needs-deps = true
 
             [tools.trellis.publish]
-            tag-format = "{name}@{version}"
             series-tag-format = "{name}@{series}"
-            tag-mode = "both"
-            tag-mode-overrides = { exact = ["packages/old"] }
             path-dep-requirement = "patch"
             retry = { attempts = 3, initial-delay = "10ms", multiplier = 4 }
 
@@ -1017,13 +1157,7 @@ mod tests {
         "####;
         let config = ConfigFile::from_gleam_toml(text).unwrap();
         assert!(config.tasks["lint"].needs_deps);
-        assert_eq!(config.publish.tag_format, "{name}@{version}");
         assert_eq!(config.publish.series_tag_format, "{name}@{series}");
-        assert_eq!(config.publish.tag_mode, TagMode::Both);
-        assert_eq!(
-            config.publish.tag_mode_overrides["exact"],
-            vec!["packages/old"]
-        );
         assert_eq!(
             config.publish.path_dep_requirement,
             PathDepRequirement::Patch
@@ -1033,7 +1167,9 @@ mod tests {
         assert_eq!(config.changelog.version_format, "## {{ version }}");
         assert_eq!(config.changelog.kind_format(), "### {{ kind }}");
         assert_eq!(config.changelog.change_format, "* {{ body }}");
-        // Nothing was dropped, and every old spelling is reported once.
+        // Nothing was dropped, and every old spelling is reported once. The
+        // pre-0.8 `tag-*` keys are absent because the keys they aliased were
+        // removed outright — see `removed_tag_keys_fail_with_their_replacement`.
         assert!(config.unknown_keys.is_empty());
         let deprecated = deprecated_paths(&config);
         assert_eq!(
@@ -1046,9 +1182,6 @@ mod tests {
                 "publish.path-dep-requirement",
                 "publish.retry.initial-delay",
                 "publish.series-tag-format",
-                "publish.tag-format",
-                "publish.tag-mode",
-                "publish.tag-mode-overrides",
                 "tasks.lint.needs-deps",
             ]
         );
@@ -1057,7 +1190,7 @@ mod tests {
     #[test]
     fn a_deprecated_key_names_its_replacement() {
         let config = ConfigFile::from_gleam_toml(
-            "[tools.trellis]\n[tools.trellis.publish]\ntag-format = \"v{version}\"\n",
+            "[tools.trellis]\n[tools.trellis.publish]\nseries-tag-format = \"v{series}\"\n",
         )
         .unwrap();
         let [key] = &config.deprecated_keys[..] else {
@@ -1066,8 +1199,28 @@ mod tests {
                 config.deprecated_keys
             );
         };
-        assert_eq!(key.path, "publish.tag-format");
-        assert_eq!(key.replacement, "publish.tag_format");
+        assert_eq!(key.path, "publish.series-tag-format");
+        assert_eq!(key.replacement, "publish.series_tag_format");
+    }
+
+    /// Kebab aliases exist only for keys that predate the 0.8 rename. A key
+    /// introduced after it has no stale spelling to keep loading, so
+    /// `series-tags` is an unknown key rather than a deprecated one — quietly
+    /// accepting it would invent a migration for a key with no history.
+    #[test]
+    fn keys_added_after_the_rename_have_no_kebab_spelling() {
+        let config = ConfigFile::from_gleam_toml(
+            "[tools.trellis]\n[tools.trellis.publish]\nseries-tags = [\"major\"]\n",
+        )
+        .unwrap();
+        assert!(
+            config.deprecated_keys.is_empty(),
+            "{:?}",
+            config.deprecated_keys
+        );
+        assert_eq!(config.unknown_keys, ["publish.series-tags"]);
+        // The typo did not silently configure anything.
+        assert_eq!(config.publish.package_tags, [TagLevel::Exact]);
     }
 
     /// The keys of `exclude`, `tasks`, and `tag_mode_overrides` are the user's
@@ -1149,12 +1302,12 @@ mod tests {
         let config =
             ConfigFile::from_gleam_toml("[tools.trellis]\nmembers = [\"packages/*\"]").unwrap();
         assert!(config.exclude.is_empty());
-        assert_eq!(config.publish.tag_format, "{name}-v{version}");
+        assert_eq!(config.publish.exact_tag_format, "{name}-v{version}");
         assert_eq!(
             config.publish.path_dep_requirement,
             PathDepRequirement::Minor
         );
-        assert_eq!(config.format_tag("core", "1.2.3"), "core-v1.2.3");
+        assert_eq!(config.exact_tag("core", "1.2.3"), "core-v1.2.3");
         assert_eq!(config.changelog.dir, ".changes");
         assert!(config.changelog.kinds.iter().any(|k| k.label == "Added"));
         assert!(
@@ -1310,7 +1463,7 @@ mod tests {
         assert!(config.members.is_none());
         assert!(config.exclude.is_empty());
         assert!(config.tasks.is_empty());
-        assert_eq!(config.format_tag("core", "1.2.3"), "core-v1.2.3");
+        assert_eq!(config.exact_tag("core", "1.2.3"), "core-v1.2.3");
     }
 
     #[test]
@@ -1348,89 +1501,88 @@ mod tests {
     }
 
     #[test]
-    fn series_is_derived_from_the_version() {
-        // Pre-1.0 packages get a major.minor series; 1.0 and later get the
-        // major alone.
-        assert_eq!(series_of("0.0.1").as_deref(), Some("0.0"));
-        assert_eq!(series_of("0.0.17").as_deref(), Some("0.0"));
-        assert_eq!(series_of("0.1.0").as_deref(), Some("0.1"));
-        assert_eq!(series_of("0.12.3").as_deref(), Some("0.12"));
-        assert_eq!(series_of("1.2.3").as_deref(), Some("1"));
-        assert_eq!(series_of("10.0.0").as_deref(), Some("10"));
+    fn a_series_is_the_version_truncated_at_its_level() {
+        let major = |v| TagLevel::Major.series_of(v);
+        let minor = |v| TagLevel::Minor.series_of(v);
+        assert_eq!(major("0.10.3").as_deref(), Some("0"));
+        assert_eq!(minor("0.10.3").as_deref(), Some("0.10"));
+        assert_eq!(major("1.2.3").as_deref(), Some("1"));
+        assert_eq!(minor("1.2.3").as_deref(), Some("1.2"));
+        assert_eq!(major("10.0.0").as_deref(), Some("10"));
+        assert_eq!(minor("0.0.17").as_deref(), Some("0.0"));
         // A prerelease belongs to no series, and so never moves a tag.
-        assert_eq!(series_of("0.0.1-rc.1"), None);
-        assert_eq!(series_of("1.0.0-beta"), None);
+        assert_eq!(major("1.0.0-beta"), None);
+        assert_eq!(minor("0.0.1-rc.1"), None);
         // Build metadata is not a prerelease.
-        assert_eq!(series_of("1.0.0+build.5").as_deref(), Some("1"));
-        assert_eq!(series_of("not-a-version"), None);
+        assert_eq!(major("1.0.0+build.5").as_deref(), Some("1"));
+        assert_eq!(minor("not-a-version"), None);
     }
 
     #[test]
     fn formats_series_tags() {
+        let minor = [TagLevel::Minor];
         let config =
             ConfigFile::from_gleam_toml("[tools.trellis]\nmembers = [\"packages/*\"]").unwrap();
         assert_eq!(config.publish.series_tag_format, "{name}-v{series}");
-        assert_eq!(
-            config.format_series_tag("core", "0.0.3").as_deref(),
-            Some("core-v0.0")
+        assert_eq!(config.series_tags("core", "0.0.3", &minor), ["core-v0.0"]);
+        assert!(config.series_tags("core", "0.0.3-rc.1", &minor).is_empty());
+        // `exact` names a version, not a series, so it contributes no tag here.
+        assert!(
+            config
+                .series_tags("core", "0.0.3", &[TagLevel::Exact])
+                .is_empty()
         );
-        assert_eq!(config.format_series_tag("core", "0.0.3-rc.1"), None);
 
         let repo_wide = ConfigFile::from_gleam_toml(
             "[tools.trellis]\n[tools.trellis.publish]\nseries_tag_format = \"v{series}\"\n",
         )
         .unwrap();
-        assert_eq!(
-            repo_wide.format_series_tag("core", "0.0.3").as_deref(),
-            Some("v0.0")
-        );
+        assert_eq!(repo_wide.series_tags("core", "0.0.3", &minor), ["v0.0"]);
     }
 
     #[test]
-    fn parses_tag_modes_and_overrides() {
+    fn parses_package_tags_and_overrides() {
         let config = ConfigFile::from_gleam_toml(
             r###"
             [tools.trellis]
             members = ["packages/*"]
 
             [tools.trellis.publish]
-            tag_mode = "series"
-            tag_mode_overrides = { both = ["packages/lat_*"], exact = ["packages/old"] }
+            package_tags = ["minor"]
+            package_tags_overrides = { "packages/lat_*" = ["exact", "minor"], "packages/old" = ["exact"] }
         "###,
         )
         .unwrap();
-        assert_eq!(config.publish.tag_mode, TagMode::Series);
+        assert_eq!(config.publish.package_tags, [TagLevel::Minor]);
         assert_eq!(
-            config.publish.tag_mode_overrides["both"],
-            vec!["packages/lat_*"]
+            config.publish.package_tags_overrides["packages/lat_*"],
+            [TagLevel::Exact, TagLevel::Minor]
         );
         assert_eq!(
-            config.publish.tag_mode_overrides["exact"],
-            vec!["packages/old"]
+            config.publish.package_tags_overrides["packages/old"],
+            [TagLevel::Exact]
         );
     }
 
+    /// The pre-redesign default was `tag_mode = "exact"` — no series tag
+    /// unless asked for — and `package_tags` has to preserve it.
     #[test]
-    fn tag_mode_defaults_to_exact_only() {
+    fn package_tags_default_to_exact_only() {
         let config =
             ConfigFile::from_gleam_toml("[tools.trellis]\nmembers = [\"packages/*\"]").unwrap();
-        assert_eq!(config.publish.tag_mode, TagMode::Exact);
-        assert!(config.publish.tag_mode_overrides.is_empty());
-        assert!(config.publish.tag_mode.includes_exact());
-        assert!(!config.publish.tag_mode.includes_series());
-        assert!(TagMode::Both.includes_exact() && TagMode::Both.includes_series());
-        assert!(TagMode::Series.includes_series() && !TagMode::Series.includes_exact());
+        assert_eq!(config.publish.package_tags, [TagLevel::Exact]);
+        assert!(config.publish.package_tags_overrides.is_empty());
+        assert!(!TagLevel::Exact.is_series());
+        assert!(TagLevel::Major.is_series() && TagLevel::Minor.is_series());
     }
 
     #[test]
-    fn unknown_tag_mode_override_key_is_a_clear_error() {
+    fn an_empty_override_list_is_rejected() {
         let err = ConfigFile::from_gleam_toml(
-            "[tools.trellis]\n[tools.trellis.publish]\ntag_mode_overrides = { seires = [\"x\"] }\n",
+            "[tools.trellis.publish]\npackage_tags_overrides = { \"packages/x\" = [] }\n",
         )
         .unwrap_err();
-        let message = format!("{err:#}");
-        assert!(message.contains("seires"), "{message}");
-        assert!(message.contains("series"), "{message}");
+        assert!(format!("{err:#}").contains("packages/x"), "{err:#}");
     }
 
     #[test]
@@ -1443,60 +1595,202 @@ mod tests {
     }
 
     #[test]
-    fn parses_and_formats_repository_series() {
+    fn parses_and_formats_the_repository_tag() {
         let config = ConfigFile::from_gleam_toml(
-            r#"
-            [tools.trellis.publish.repository_series]
-            package = "core"
-            format = "v{series}"
-            "#,
+            "[tools.trellis.publish]\n\
+             repository_tag_package = \"core\"\nrepository_tag_format = \"v{series}\"\n\
+             repository_tags = [\"minor\"]\n",
         )
         .unwrap();
-        let repository_series = config.publish.repository_series.as_ref().unwrap();
-        assert_eq!(repository_series.package, "core");
-        assert_eq!(repository_series.format, "v{series}");
         assert_eq!(
-            config.format_repository_series_tag("0.4.3").as_deref(),
-            Some("v0.4")
+            config.publish.repository_tag_package.as_deref(),
+            Some("core")
         );
-        assert_eq!(config.format_repository_series_tag("0.4.3-rc.1"), None);
+        assert_eq!(config.repository_tags("0.4.3"), ["v0.4"]);
+        assert!(config.repository_tags("0.4.3-rc.1").is_empty());
     }
 
     #[test]
-    fn repository_series_is_optional() {
+    fn the_repository_tag_is_optional() {
         let config = ConfigFile::from_gleam_toml("[tools.trellis]").unwrap();
-        assert!(config.publish.repository_series.is_none());
-        assert_eq!(config.format_repository_series_tag("1.2.3"), None);
+        assert!(config.publish.repository_tag_package.is_none());
+        assert!(config.repository_tags("1.2.3").is_empty());
+    }
+
+    /// A partly-written repository tag is always a mistake, and the error
+    /// names the keys that are missing rather than defaulting them.
+    #[test]
+    fn the_repository_tag_needs_all_three_keys_or_none() {
+        for (partial, missing) in [
+            (
+                "repository_tag_package = \"core\"",
+                ["repository_tag_format", "repository_tags"],
+            ),
+            (
+                "repository_tag_format = \"v{series}\"",
+                ["repository_tag_package", "repository_tags"],
+            ),
+            (
+                "repository_tags = [\"minor\"]",
+                ["repository_tag_package", "repository_tag_format"],
+            ),
+        ] {
+            let err = ConfigFile::from_gleam_toml(&format!("[tools.trellis.publish]\n{partial}\n"))
+                .unwrap_err();
+            let message = format!("{err:#}");
+            for key in missing {
+                assert!(message.contains(key), "{partial} -> {message}");
+            }
+        }
+        // None of the three is the ordinary case: the feature is off.
+        let off = ConfigFile::from_gleam_toml("[tools.trellis]").unwrap();
+        assert!(off.publish.repository_tags.is_empty());
+        assert!(off.repository_tags("1.2.3").is_empty());
     }
 
     #[test]
-    fn repository_series_format_must_carry_the_series_placeholder() {
+    fn both_levels_produce_two_tags_at_every_major() {
+        let both = [TagLevel::Major, TagLevel::Minor];
+        let config = ConfigFile::from_gleam_toml("[tools.trellis]").unwrap();
+        assert_eq!(
+            config.series_tags("core", "0.10.3", &both),
+            ["core-v0", "core-v0.10"]
+        );
+        assert_eq!(
+            config.series_tags("core", "1.2.3", &both),
+            ["core-v1", "core-v1.2"]
+        );
+        assert!(config.series_tags("core", "1.2.3-rc.1", &both).is_empty());
+        // A level listed twice is still one tag.
+        assert_eq!(
+            config.series_tags("core", "1.2.3", &[TagLevel::Major, TagLevel::Major]),
+            ["core-v1"]
+        );
+    }
+
+    /// The repository tag is independent of what packages publish, so its
+    /// levels are stated rather than inferred from `package_tags`.
+    #[test]
+    fn the_repository_tag_takes_its_own_levels() {
+        let config = ConfigFile::from_gleam_toml(
+            "[tools.trellis.publish]\npackage_tags = [\"exact\", \"major\", \"minor\"]\n\
+             repository_tag_package = \"core\"\nrepository_tag_format = \"v{series}\"\n\
+             repository_tags = [\"major\"]\n",
+        )
+        .unwrap();
+        assert_eq!(config.publish.package_tags.len(), 3);
+        assert_eq!(config.repository_tags("0.4.3"), ["v0"], "not inherited");
+    }
+
+    #[test]
+    fn empty_package_tags_are_rejected_and_the_error_lists_the_levels() {
+        let err = ConfigFile::from_gleam_toml("[tools.trellis.publish]\npackage_tags = []\n")
+            .unwrap_err();
+        let message = format!("{err:#}");
+        assert!(message.contains("package_tags"), "{message}");
+        assert!(message.contains("`major`, `minor`, `exact`"), "{message}");
+
         let err = ConfigFile::from_gleam_toml(
-            r#"
-            [tools.trellis.publish.repository_series]
-            package = "core"
-            format = "latest"
-            "#,
+            "[tools.trellis.publish]\n\
+             repository_tag_package = \"core\"\nrepository_tag_format = \"v{series}\"\n\
+             repository_tags = []\n",
+        )
+        .unwrap_err();
+        assert!(format!("{err:#}").contains("repository_tags"), "{err:#}");
+    }
+
+    /// The repository tag names a series; `exact` would ask it to name one
+    /// version, which is what package exact tags are for.
+    #[test]
+    fn the_repository_tag_rejects_the_exact_level() {
+        let err = ConfigFile::from_gleam_toml(
+            "[tools.trellis.publish]\n\
+             repository_tag_package = \"core\"\nrepository_tag_format = \"v{series}\"\n\
+             repository_tags = [\"exact\"]\n",
+        )
+        .unwrap_err();
+        assert!(
+            format!("{err:#}").contains("cannot contain `exact`"),
+            "{err:#}"
+        );
+    }
+
+    /// Ignoring a removed key would fall back to a default that writes
+    /// different tags, so each one fails the load and names its replacement.
+    #[test]
+    fn removed_tag_keys_fail_with_their_replacement() {
+        let cases = [
+            ("tag_format = \"v{version}\"", "exact_tag_format"),
+            ("tag_mode = \"both\"", "package_tags"),
+            (
+                "tag_mode_overrides = { both = [\"packages/x\"] }",
+                "package_tags_overrides",
+            ),
+        ];
+        for (removed, replacement) in cases {
+            let err = ConfigFile::from_gleam_toml(&format!("[tools.trellis.publish]\n{removed}\n"))
+                .unwrap_err();
+            let message = format!("{err:#}");
+            assert!(message.contains("has been removed"), "{message}");
+            assert!(message.contains(replacement), "{message}");
+        }
+        // The old sub-table is matched by prefix, through its nested keys.
+        let err = ConfigFile::from_gleam_toml(
+            "[tools.trellis.publish.repository_series]\npackage = \"core\"\nformat = \"v{series}\"\n",
         )
         .unwrap_err();
         let message = format!("{err:#}");
-        assert!(message.contains("`repository_series.format`"), "{message}");
+        assert!(message.contains("publish.repository_series"), "{message}");
+        assert!(message.contains("repository_tag_package"), "{message}");
+        // A pre-0.8 kebab spelling of a removed key reports the same way.
+        let err = ConfigFile::from_gleam_toml("[tools.trellis.publish]\ntag-mode = \"series\"\n")
+            .unwrap_err();
+        assert!(format!("{err:#}").contains("package_tags"), "{err:#}");
+    }
+
+    #[test]
+    fn an_unknown_series_level_names_the_vocabulary() {
+        let err =
+            ConfigFile::from_gleam_toml("[tools.trellis.publish]\npackage_tags = [\"patch\"]\n")
+                .unwrap_err();
+        let message = format!("{err:#}");
+        assert!(message.contains("major"), "{message}");
+        assert!(message.contains("minor"), "{message}");
+    }
+
+    #[test]
+    fn repository_tag_format_must_carry_the_series_placeholder() {
+        let err = ConfigFile::from_gleam_toml(
+            "[tools.trellis.publish]\n\
+             repository_tag_package = \"core\"\nrepository_tag_format = \"latest\"\n\
+             repository_tags = [\"minor\"]\n",
+        )
+        .unwrap_err();
+        let message = format!("{err:#}");
+        assert!(message.contains("`repository_tag_format`"), "{message}");
         assert!(message.contains("{series}"), "{message}");
     }
 
     #[test]
-    fn repository_series_format_rejects_the_name_placeholder() {
+    fn repository_tag_format_rejects_the_name_placeholder() {
         let err = ConfigFile::from_gleam_toml(
-            r#"
-            [tools.trellis.publish.repository_series]
-            package = "core"
-            format = "{name}-v{series}"
-            "#,
+            "[tools.trellis.publish]\n\
+             repository_tag_package = \"core\"\nrepository_tag_format = \"{name}-v{series}\"\n\
+             repository_tags = [\"minor\"]\n",
         )
         .unwrap_err();
         let message = format!("{err:#}");
-        assert!(message.contains("`repository_series.format`"), "{message}");
+        assert!(message.contains("`repository_tag_format`"), "{message}");
         assert!(message.contains("{name}"), "{message}");
+    }
+
+    #[test]
+    fn exact_tag_format_must_carry_the_version_placeholder() {
+        let err = ConfigFile::from_gleam_toml(
+            "[tools.trellis.publish]\nexact_tag_format = \"{name}-latest\"\n",
+        )
+        .unwrap_err();
+        assert!(format!("{err:#}").contains("{version}"), "{err:#}");
     }
 
     #[test]

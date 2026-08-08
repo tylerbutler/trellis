@@ -1,5 +1,6 @@
 //! `trellis info <package>` — details for a single member.
 
+use crate::config::TagLevel;
 use crate::gleam::Requirement;
 use crate::json::InfoDocument;
 use crate::workspace::Workspace;
@@ -30,19 +31,20 @@ pub fn run(workspace: &Workspace, name: &str, json: bool) -> Result<()> {
     crate::status!("{} {}", label("releasable:"), member.releasable());
     // Only the tags this member's mode actually produces — a series-only
     // package has no per-version tag to report.
-    if member.tag_mode.includes_exact() {
+    if member.tags.contains(&TagLevel::Exact) {
         crate::status!(
             "{}        {}",
             label("tag:"),
-            workspace.config.format_tag(&member.name, member.version())
+            workspace.config.exact_tag(&member.name, member.version())
         );
     }
-    if member.tag_mode.includes_series()
-        && let Some(tag) = workspace
+    if member.tags.iter().any(|level| level.is_series()) {
+        for tag in workspace
             .config
-            .format_series_tag(&member.name, member.version())
-    {
-        crate::status!("{} {tag}", label("series tag:"));
+            .series_tags(&member.name, member.version(), &member.tags)
+        {
+            crate::status!("{} {tag}", label("series tag:"));
+        }
     }
     let format_names = |indices: &[usize]| -> String {
         if indices.is_empty() {

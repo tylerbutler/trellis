@@ -36,9 +36,9 @@ command = "gleam run -m glinter"
 needs_deps = true            # run `gleam deps download` first if not cached
 
 [tools.trellis.publish]
-tag_format = "{name}-v{version}"
+exact_tag_format = "{name}-v{version}"
 series_tag_format = "{name}-v{series}"
-tag_mode = "exact"
+package_tags = ["exact"]
 ```
 
 A **member** is a directory with its own `gleam.toml`: one Gleam package, plus
@@ -117,12 +117,13 @@ their roots.
 | `exclude.@release` | no | The shared package set omitted from changelog, versioning, tagging, publishing, and release CI. The `@` prefix is reserved for special keys like this one, so it can never collide with a task name — task names may not start with `@`. |
 | `exclude.@members` | no | Directories removed from workspace membership entirely — never parsed, graphed, or touched by any command. Useful for committed test fixtures that auto-discovery would otherwise sweep in; also filters explicit `members` globs. |
 | `tasks.<name>` | no | Custom tasks for `trellis run`. A task with a built-in's name (`build`, `test`, …) overrides it. `needs_deps = true` downloads dependencies first. |
-| `publish.tag_format` | no | Template for per-package git tags. Default: `{name}-v{version}`. |
-| `publish.series_tag_format` | no | Template for the moving series tag, substituting `{name}` and `{series}`. Omit `{name}` for one repository-wide tag. Default: `{name}-v{series}`. |
-| `publish.repository_series.package` | no | Anchor package for one repository-wide moving series tag. The anchor must be releasable. |
-| `publish.repository_series.format` | with `package` | Repository tag template; must contain `{series}` and no `{name}`. |
-| `publish.tag_mode` | no | Which tags a release creates: `exact` (default), `series`, or `both`. |
-| `publish.tag_mode_overrides` | no | Per-package tag modes: a map of mode name to member-path globs. A package matching globs under two modes is an error. |
+| `publish.package_tags` | no | Which tags a release maintains per package, one entry per tag: `exact` (the whole version — `v1.2.3`), `major` (`v1`), `minor` (`v1.2`). Default: `["exact"]`. Must not be empty. |
+| `publish.package_tags_overrides` | no | Per-package overrides: a map of member-path glob to tag list. A member matched by globs resolving to different lists is an error; matches agreeing on the same list are fine. |
+| `publish.exact_tag_format` | no | Template the `exact` level substitutes into; `{name}` and `{version}`. Default: `{name}-v{version}`. |
+| `publish.series_tag_format` | no | Template every series level substitutes into; `{name}` and `{series}`. Default: `{name}-v{series}`. Omitting `{name}` is deprecated and removed at 1.0 — use the repository tag keys below. |
+| `publish.repository_tag_package` | with the other two | Anchor package whose manifest version drives one repository-wide moving tag. Must be releasable. |
+| `publish.repository_tag_format` | with the other two | Repository tag template; must contain `{series}` and no `{name}`. |
+| `publish.repository_tags` | with the other two | Which repository tags to maintain, from the same vocabulary minus `exact`. Required alongside `repository_tag_package` and `repository_tag_format`; declare all three or none. |
 | `publish.path_dep_requirement` | no | How a workspace path dependency becomes a Hex requirement at publish time, from the dependency's current version `X.Y.Z`: `minor` (default, `>= X.Y.Z and < (X+1).0.0`), `patch` (`>= X.Y.Z and < X.(Y+1).0`), or `exact` (`== X.Y.Z`). |
 | `publish.retry` | no | Backoff for Hex rate limits: `{ attempts, initial_delay, multiplier }`. Defaults: 5 attempts, `30s`, multiplier 2. |
 | `publish.lifecycle.default` | no | Release lifecycle for a member matched by no `packages` glob and no legacy `exclude.@release` glob: `workspace`, `git_only`, or `hex` (default). |
@@ -243,55 +244,71 @@ any distribution, so it is exempt regardless of lifecycle.
 
 </Callout>
 
-## Series tags
+## Tags
 
-A package has a second tag lifecycle available. Alongside the immutable
-`{name}-v{version}` tag a release creates, it can move a **series tag** that
-always points at the newest release in its series — so consumers pin
-`lat_cli-v0.4` once instead of chasing `0.4.1`, `0.4.2`, `0.4.3`.
+`package_tags` lists the tags a release maintains for each package, one entry
+per tag. An entry names how much of the version the tag keeps:
 
-The series is derived from the version, never configured. While the major is
-0, every minor bump is a breaking change, so the series is `major.minor`;
-afterward it is the major alone:
+| Level | `0.10.3` | `1.2.3` | Lifecycle |
+| --- | --- | --- | --- |
+| `exact` (default) | `lat_cli-v0.10.3` | `lat_cli-v1.2.3` | immutable — written once, never rewritten |
+| `major` | `lat_cli-v0` | `lat_cli-v1` | moving — re-pointed at each release in the series |
+| `minor` | `lat_cli-v0.10` | `lat_cli-v1.2` | moving |
 
-| Version | Series tag |
-| --- | --- |
-| `0.4.1`, `0.4.2`, `0.4.3` | `lat_cli-v0.4` |
-| `0.5.0`, `0.5.4` | `lat_cli-v0.5` |
-| `1.2.1`, `1.9.0` | `lat_cli-v1` |
-| `0.4.3-rc.1` | none — a prerelease belongs to no series and moves no tag |
+The moving ones are what let a consumer pin `lat_cli-v0.10` once instead of
+chasing `0.10.1`, `0.10.2`, `0.10.3`. `exact` substitutes into
+`exact_tag_format`, the series levels into `series_tag_format` — the entry name
+tells you which. A prerelease belongs to no series, so it gets an `exact` tag
+and moves nothing.
 
-`tag_mode` picks the lifecycle for the workspace, and `tag_mode_overrides`
-picks it per package, as globs matched against member paths:
+`package_tags` sets the workspace default and `package_tags_overrides` sets it
+per package, as globs matched against member paths:
 
 ```toml title="gleam.toml"
 [tools.trellis.publish]
-tag_mode = "exact"                                    # workspace default
-tag_mode_overrides = { both = ["packages/lat_cli"] }  # lat_cli also moves a series tag
+package_tags = ["exact"]                                        # workspace default
+package_tags_overrides = { "packages/lat_cli" = ["exact", "major", "minor"] }
 ```
 
-Releasing `lat_cli` twice then leaves the exact tags where they were and the
-series tag on the newest release:
+Releasing `lat_cli` twice then leaves the exact tags where they were and moves
+the series tags onto the newest release:
 
 ```console
 $ trellis tag create --push        # releasing 0.4.2
 tagged lat_cli-v0.4.2
 pushed lat_cli-v0.4.2
+tagged lat_cli-v0
 tagged lat_cli-v0.4
-pushed lat_cli-v0.4
 
 $ trellis tag create --push        # releasing 0.4.3
 tagged lat_cli-v0.4.3
 pushed lat_cli-v0.4.3
+moved lat_cli-v0
 moved lat_cli-v0.4
 force-pushed lat_cli-v0.4
 ```
 
-Setting `series_tag_format = "v{series}"` drops `{name}` and gives the whole
-repository one shared series tag — exactly right for a single-package
-repository. With more than one package it is still allowed, but the tag no
-longer identifies a package, so `trellis ci tag-package` cannot resolve it.
-`doctor` warns as soon as a second package moves one.
+A series tag moves only when its own package releases. A commit that does not
+change the package's version — another package's release, a docs change —
+leaves its tags alone.
+
+<Callout>
+
+Entries name levels rather than templates deliberately. The closed vocabulary
+is what keeps a series tag invertible — `trellis ci tag-package` splits
+`series_tag_format` on `{series}` to recover the package a pushed tag names —
+and what makes it impossible for two entries to collide at a version nobody
+has released yet. Free-form templates could pass a uniqueness check at today's
+versions and still write one tag over another later, and series tags are
+force-pushed.
+
+</Callout>
+
+Keep `{name}` in `series_tag_format`. Dropping it — `series_tag_format =
+"v{series}"` — gives the whole repository one shared series tag, which is
+deprecated and removed at 1.0; see [Repository tags](#repository-tags) for what
+replaces it. `doctor` warns on it whether or not a second package has yet made
+it ambiguous.
 
 <Callout>
 
@@ -302,22 +319,24 @@ Release: the release would silently retarget on the next move. See
 
 </Callout>
 
-### Repository series tags
+### Repository tags
 
-For a multi-package repository consumed through Gleam 1.18 git path
-dependencies, configure one first-class repository tag instead of overloading
-the legacy `{name}`-less package format:
+For a repository consumed through Gleam 1.18 git path dependencies, configure
+one first-class repository tag rather than overloading the package format:
 
 ```toml title="gleam.toml"
-[tools.trellis.publish.repository_series]
-package = "vestibule"
-format = "v{series}"
+[tools.trellis.publish]
+repository_tag_package = "vestibule"
+repository_tag_format = "v{series}"
+# Required alongside the other two: the repository tag's levels are stated,
+# not inferred from package_tags.
+repository_tags = ["major", "minor"]
 ```
 
 The anchor package determines both the series and whether the tag moves.
 Trellis compares the anchor's manifest version at `HEAD` with its manifest
 version at the existing repository tag. Changes to other packages do not move
-the tag, and package exact tags and `tag_mode` do not affect that decision. A
+the tag, and package tags do not affect that decision. A
 series transition creates the new tag while preserving the old one;
 prereleases create no repository tag.
 
@@ -328,8 +347,36 @@ vestibule = { git = "https://github.com/example/monorepo.git", ref = "v0.4", pat
 
 Repository series tags are mutable repository metadata. They are force-pushed,
 never receive GitHub Releases, and never resolve through `publish --tag` or
-`ci tag-package`. The legacy `{name}`-less `series_tag_format` remains
-supported with its ambiguity warning.
+`ci tag-package`.
+
+<Callout>
+
+**A `{name}`-less `series_tag_format` is deprecated and will be removed at
+1.0.** It was the way to get a repository-wide moving tag before the
+repository tag keys existed, but it is a *package* template with the
+discriminator removed: every package's series tag then matches every member,
+so `trellis ci tag-package` cannot resolve one to a package, and a second
+series-mode package turns a working config ambiguous with no edit to the
+format. `doctor` warns on the shape whether or not that has happened yet.
+
+To migrate, restore `{name}` in `series_tag_format` and declare the repository
+tag explicitly:
+
+```diff lang="toml" title="gleam.toml"
+  [tools.trellis.publish]
+- series_tag_format = "v{series}"
++ series_tag_format = "{name}-v{series}"
++ repository_tag_package = "vestibule"
++ repository_tag_format = "v{series}"
+```
+
+One difference is deliberate: the repository tag is repository metadata, so
+unlike the old shared package tag it does not resolve through `ci tag-package`
+or `publish --tag`. A single-package repository that routed CI on its
+`{name}`-less tag should keep a `{name}`-ful package series tag for that and
+use the repository tag only for git path-dep consumers.
+
+</Callout>
 
 ## Changelog configuration
 
@@ -493,8 +540,9 @@ warning: [tools.trellis] key `publish.tag_frmat` is not recognized and is being
 ignored; it may belong to a newer trellis
 ```
 
-The free-form tables — `exclude`, `tasks`, and `publish.tag_mode_overrides` —
-take keys you choose, hyphens and all, and are never reported.
+The free-form tables — `exclude`, `tasks`, `publish.package_tags_overrides`,
+and `publish.lifecycle.packages` — take keys you choose, hyphens and all, and
+are never reported.
 
 ## Verifying it
 

@@ -134,18 +134,23 @@ command = "gleam run -m glinter"
 needs_deps = true            # run `gleam deps download` first if not cached
 
 [tools.trellis.publish]
-tag_format = "{name}-v{version}"
-# A moving tag per release series, for consumers who pin a series instead of
-# chasing patch tags. {series} is derived from the version: `0.Y` while the
-# major is 0, `X` after. `tag_mode` is exact (default), series, or both.
+# Which tags a release maintains for each package, one entry per tag:
+#   exact → the whole version (v1.2.3), immutable   (the default)
+#   major → v1, minor → v1.2, both moving, for consumers who pin a series
+#           instead of chasing patch tags
+package_tags = ["exact"]
+# Per-package overrides, keyed by a member-path glob.
+package_tags_overrides = { "packages/lat_cli" = ["exact", "major", "minor"] }
+# `exact` substitutes into the first, every series level into the second.
+# {version} and {series} are derived, never written by hand.
+exact_tag_format = "{name}-v{version}"
 series_tag_format = "{name}-v{series}"
-tag_mode = "exact"
-tag_mode_overrides = { both = ["packages/lat_cli"] }
 
-# Optional repository-wide moving tag, independent of package tag modes.
-[tools.trellis.publish.repository_series]
-package = "lat_cli"
-format = "v{series}"
+# Optional repository-wide moving tag, independent of any package's list.
+# All three keys are required together, or leave all three out.
+repository_tag_package = "lat_cli"
+repository_tag_format = "v{series}"
+repository_tags = ["major", "minor"]
 ```
 
 Each member is a directory with a `gleam.toml`. Path dependencies between
@@ -465,21 +470,40 @@ tree; a no-op when there are no fragments.
 creating GitHub Releases (via the `gh` CLI) with the matching CHANGELOG
 section as the body.
 
-A package tags in one of two lifecycles, per `tag_mode`. Exact tags
-(`{name}-v{version}`) are immutable — created once, never rewritten. Series
-tags (`{name}-v{series}`) move: each release force-moves the tag to the
-release commit and force-pushes it. Because a moving tag names no particular
-version, it never carries a GitHub Release and `publish --tag` refuses it;
-`ci tag-package` still resolves it, and a `series`-only workspace publishes
-with `--all-untagged`.
+`package_tags` lists the tags a release maintains per package, one entry per
+tag, each naming how much of the version it keeps: `exact` keeps the whole
+thing (`{name}-v1.2.3`), `major` truncates to one part (`{name}-v1`), `minor`
+to two (`{name}-v1.2`). It defaults to `["exact"]`, and
+`package_tags_overrides` sets it per package by member-path glob. Entries name
+levels rather than templates so that `ci tag-package` can resolve a pushed tag
+back to its package.
 
-An optional `[tools.trellis.publish.repository_series]` tag is separate from
-both package lifecycles. Its `package` is the anchor: trellis creates
-`format` for the anchor's stable series and moves it only when the anchor's
-manifest version differs from the version stored at that tag. A new series
-creates a new tag and leaves the old series intact. Repository series tags are
-mutable, never get GitHub Releases, and cannot be passed to `publish --tag` or
-`ci tag-package`.
+The level also picks the lifecycle. `exact` tags are immutable — created once,
+never rewritten — and substitute into `exact_tag_format`. Series levels move:
+releasing a new version in the series force-moves the tag to the release commit
+and force-pushes it, substituting into `series_tag_format`. A commit that does
+not change the package's version leaves its series tags where they are, so one
+package's release never drags another's forward. Because a moving tag names no
+particular version, it never carries a GitHub Release and `publish --tag`
+refuses it; `ci tag-package` still resolves it, and a workspace with no `exact`
+entry publishes with `--all-untagged`.
+
+An optional repository tag is separate from every package's list.
+`repository_tag_package` is the anchor: trellis creates `repository_tag_format`
+for the anchor's stable series and moves it only when the anchor's manifest
+version differs from the version stored at that tag. Its `repository_tags` is
+stated rather than inherited from `package_tags`, and all three keys are
+required together — a partly-written repository tag is an error, not a default.
+A new series creates a new tag and leaves the old series intact.
+Repository tags are mutable, never get GitHub Releases, and cannot be passed to
+`publish --tag` or `ci tag-package`.
+
+It replaces the older way of reaching a repository-wide tag: dropping `{name}`
+from `series_tag_format`. That form is deprecated and removed at 1.0, because
+a package template with the discriminator taken out matches every member — so
+`ci tag-package` cannot resolve it, and adding a second series-mode package
+turns a working config ambiguous without touching the format. `doctor` warns
+on it whether or not that has happened yet.
 
 `publish` runs, per package and in dependency order: an idempotency check
 against the Hex API (already-published versions are skipped, so re-running a

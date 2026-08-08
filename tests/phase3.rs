@@ -607,8 +607,8 @@ fn publish_rejects_unreleasable_package() {
 
 /// The repository-series config the tag tests share: `lat_cli` anchoring
 /// `repo-v{series}`.
-const REPO_SERIES: &str = "[tools.trellis.publish.repository_series]\n\
-     package = \"lat_cli\"\nformat = \"repo-v{series}\"";
+const REPO_SERIES: &str = "repository_tag_package = \"lat_cli\"\n\
+     repository_tag_format = \"repo-v{series}\"\nrepository_tags = [\"minor\"]";
 
 /// A bare repository added to `root`'s repo as `origin`. The returned remote
 /// must outlive the test.
@@ -679,7 +679,7 @@ fn series_tag_moves_with_each_release_while_exact_tags_stay_put() {
     let root = tmp.path();
     let remote = series_repo(
         root,
-        "tag_mode_overrides = { both = [\"packages/lat_cli\"] }",
+        "package_tags_overrides = { \"packages/lat_cli\" = [\"exact\", \"minor\"] }",
     );
     let remote = remote.path();
     set_version(root, "lat_cli", "0.0.1");
@@ -744,7 +744,7 @@ fn info_reports_the_tags_a_package_actually_gets() {
     let root = tmp.path();
     let _remote = series_repo(
         root,
-        "tag_mode_overrides = { both = [\"packages/lat_cli\"] }",
+        "package_tags_overrides = { \"packages/lat_cli\" = [\"exact\", \"minor\"] }",
     );
 
     trellis(root)
@@ -767,17 +767,28 @@ fn tag_plan_reports_the_series_move() {
     let root = tmp.path();
     let _remote = series_repo(
         root,
-        "tag_mode_overrides = { both = [\"packages/lat_cli\"] }",
+        "package_tags_overrides = { \"packages/lat_cli\" = [\"exact\", \"minor\"] }",
     );
     trellis(root).args(["tag", "create"]).assert().success();
-    git(root, &["commit", "-q", "--allow-empty", "-m", "later work"]);
 
+    // Work that releases nothing moves nothing: the series tag follows its own
+    // package's version, not HEAD.
+    git(root, &["commit", "-q", "--allow-empty", "-m", "later work"]);
+    trellis(root)
+        .args(["tag", "plan"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("already tagged"));
+
+    // A patch release inside the same series moves it.
+    set_version(root, "lat_cli", "0.3.2");
+    git(root, &["commit", "-qam", "lat_cli 0.3.2"]);
     trellis(root)
         .args(["tag", "plan"])
         .assert()
         .success()
         .stdout(predicate::str::contains(
-            "lat_cli: 0.3.1 moves tag lat_cli-v0.3",
+            "lat_cli: 0.3.2 moves tag lat_cli-v0.3",
         ));
 
     let output = trellis(root)
@@ -786,10 +797,41 @@ fn tag_plan_reports_the_series_move() {
         .unwrap();
     let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     let plan = document["tags"].as_array().unwrap();
-    assert_eq!(plan.len(), 1, "only the series tag needs work: {plan:?}");
-    assert_eq!(plan[0]["tag"], "lat_cli-v0.3");
-    assert_eq!(plan[0]["kind"], "series");
-    assert_eq!(plan[0]["action"], "move");
+    let series = plan
+        .iter()
+        .find(|tag| tag["tag"] == "lat_cli-v0.3")
+        .unwrap_or_else(|| panic!("no series tag planned: {plan:?}"));
+    assert_eq!(series["kind"], "series");
+    assert_eq!(series["action"], "move");
+}
+
+/// One package's release must not drag every other package's series tags to
+/// the release commit — the reason the signal is the manifest version at the
+/// tag rather than the tag's position.
+#[test]
+fn a_release_moves_only_the_releasing_packages_series_tags() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let _remote = series_repo(root, "package_tags = [\"major\", \"minor\"]");
+    trellis(root).args(["tag", "create"]).assert().success();
+    let before = commit_of(root, "HEAD");
+
+    set_version(root, "lat_cli", "0.4.0");
+    git(root, &["commit", "-qam", "lat_cli 0.4.0"]);
+    trellis(root)
+        .args(["tag", "create"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("moved lat_cli-v0"))
+        .stdout(predicate::str::contains("tagged lat_cli-v0.4"))
+        .stdout(predicate::str::contains("lat_core").not())
+        .stdout(predicate::str::contains("lat_mid").not());
+
+    // Untouched packages keep both levels on their own release commit.
+    for tag in ["lat_core-v1", "lat_core-v1.2", "lat_mid-v0", "lat_mid-v0.5"] {
+        assert_eq!(commit_of(root, tag), before, "{tag} was dragged forward");
+    }
+    assert_eq!(commit_of(root, "lat_cli-v0"), commit_of(root, "HEAD"));
 }
 
 #[test]
@@ -798,7 +840,7 @@ fn github_releases_skip_series_tags() {
     let root = tmp.path();
     let _remote = series_repo(
         root,
-        "tag_mode_overrides = { both = [\"packages/lat_cli\"] }",
+        "package_tags_overrides = { \"packages/lat_cli\" = [\"exact\", \"minor\"] }",
     );
     let api = common::mock_github(root);
 
@@ -823,16 +865,17 @@ fn github_releases_skip_series_tags() {
 fn series_only_mode_creates_no_exact_tags() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
-    let _remote = series_repo(root, "tag_mode = \"series\"");
+    let _remote = series_repo(root, "package_tags = [\"minor\"]");
     // A prerelease belongs to no series, so it moves nothing.
     set_version(root, "lat_mid", "0.6.0-rc.1");
     git(root, &["commit", "-qam", "lat_mid rc"]);
 
     trellis(root).args(["tag", "create"]).assert().success();
+    // The default level is `minor`, so a 1.x package gets `v1.2`, not `v1`.
     let tags = git_stdout(root, &["tag", "--list"]);
     assert_eq!(
         tags.lines().collect::<Vec<_>>(),
-        vec!["lat_cli-v0.3", "lat_core-v1"]
+        vec!["lat_cli-v0.3", "lat_core-v1.2"]
     );
 
     trellis(root)
@@ -841,8 +884,123 @@ fn series_only_mode_creates_no_exact_tags() {
         .success()
         .stdout(predicate::str::contains("tags=[]\n"))
         .stdout(predicate::str::contains(
-            "series_tags=[\"lat_core-v1\",\"lat_cli-v0.3\"]",
+            "series_tags=[\"lat_core-v1.2\",\"lat_cli-v0.3\"]",
         ));
+}
+
+#[test]
+fn the_major_level_gives_a_one_part_series_at_every_major() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let _remote = series_repo(root, "package_tags = [\"major\"]");
+
+    trellis(root).args(["tag", "create"]).assert().success();
+    let tags = git_stdout(root, &["tag", "--list"]);
+    assert_eq!(
+        tags.lines().collect::<Vec<_>>(),
+        vec!["lat_cli-v0", "lat_core-v1", "lat_mid-v0"]
+    );
+}
+
+#[test]
+fn listing_both_levels_moves_a_major_and_a_minor_tag() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let remote = series_repo(root, "package_tags = [\"major\", \"minor\"]");
+    let remote = remote.path();
+
+    trellis(root)
+        .args(["tag", "create", "--push"])
+        .assert()
+        .success();
+    let first = commit_of(root, "HEAD");
+    let tags = git_stdout(root, &["tag", "--list"]);
+    assert_eq!(
+        tags.lines().collect::<Vec<_>>(),
+        vec![
+            "lat_cli-v0",
+            "lat_cli-v0.3",
+            "lat_core-v1",
+            "lat_core-v1.2",
+            "lat_mid-v0",
+            "lat_mid-v0.5",
+        ]
+    );
+    assert_eq!(commit_of(root, "lat_cli-v0"), first);
+
+    // A minor bump starts a new minor tag and moves the major one — the whole
+    // point of the coarser level.
+    set_version(root, "lat_cli", "0.4.0");
+    git(root, &["commit", "-qam", "lat_cli 0.4.0"]);
+    trellis(root)
+        .args(["tag", "create", "--push"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("tagged lat_cli-v0.4"))
+        .stdout(predicate::str::contains("moved lat_cli-v0"))
+        .stdout(predicate::str::contains("force-pushed lat_cli-v0"));
+
+    let second = commit_of(root, "HEAD");
+    assert_ne!(first, second);
+    assert_eq!(commit_of(root, "lat_cli-v0"), second);
+    assert_eq!(
+        commit_of(remote, "lat_cli-v0"),
+        second,
+        "origin has the move"
+    );
+    assert_eq!(
+        commit_of(root, "lat_cli-v0.3"),
+        first,
+        "the superseded minor series stays put"
+    );
+
+    // The bare major tag still resolves back to its package.
+    trellis(root)
+        .args(["ci", "tag-package", "lat_cli-v0"])
+        .assert()
+        .success()
+        .stdout("lat_cli\n");
+    trellis(root)
+        .args(["ci", "outputs"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("lat_cli-v0\""));
+}
+
+#[test]
+fn the_repository_tag_moves_every_level_it_declares() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    // `repository_tags` is stated, not inherited from `package_tags` — the
+    // repository tag tracks the anchor regardless of what packages publish.
+    let remote = series_repo(
+        root,
+        "package_tags = [\"exact\"]\n\
+         repository_tag_package = \"lat_cli\"\n\
+         repository_tag_format = \"repo-v{series}\"\n\
+         repository_tags = [\"major\", \"minor\"]",
+    );
+    let remote = remote.path();
+
+    trellis(root)
+        .args(["tag", "create", "--push"])
+        .assert()
+        .success();
+    let first = commit_of(root, "HEAD");
+    assert_eq!(commit_of(root, "repo-v0.3"), first);
+    assert_eq!(commit_of(root, "repo-v0"), first);
+
+    set_version(root, "lat_cli", "0.4.0");
+    git(root, &["commit", "-qam", "anchor 0.4.0"]);
+    trellis(root)
+        .args(["tag", "create", "--push"])
+        .assert()
+        .success();
+    let second = commit_of(root, "HEAD");
+    assert_eq!(commit_of(root, "repo-v0.4"), second);
+    assert_eq!(commit_of(root, "repo-v0"), second);
+    assert_eq!(commit_of(remote, "repo-v0"), second);
+    assert_eq!(commit_of(root, "repo-v0.3"), first);
 }
 
 #[test]
@@ -871,7 +1029,7 @@ fn a_series_tag_names_a_package_but_never_a_release() {
     let root = tmp.path();
     let _remote = series_repo(
         root,
-        "tag_mode_overrides = { both = [\"packages/lat_cli\"] }",
+        "package_tags_overrides = { \"packages/lat_cli\" = [\"exact\", \"minor\"] }",
     );
 
     // CI can still route on it…
@@ -914,7 +1072,7 @@ fn doctor_warns_about_a_repo_wide_series_tag_whatever_the_versions() {
     let root = tmp.path();
     let _remote = series_repo(
         root,
-        "tag_mode = \"both\"\nseries_tag_format = \"v{series}\"",
+        "package_tags = [\"exact\", \"minor\"]\nseries_tag_format = \"v{series}\"",
     );
 
     // lat_core 1.2.0, lat_mid 0.5.0 and lat_cli 0.3.1 are three distinct
@@ -944,11 +1102,38 @@ fn doctor_warns_about_a_repo_wide_series_tag_whatever_the_versions() {
         .stdout(predicate::str::contains("has no {name}"));
 }
 
+/// The format is deprecated for its shape, so one series-mode package — where
+/// nothing is ambiguous yet — is warned too. Adding a second series package is
+/// a one-line change that would otherwise silently break `ci tag-package`.
+#[test]
+fn doctor_deprecates_a_name_less_series_tag_format_even_when_unambiguous() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let _remote = series_repo(
+        root,
+        "series_tag_format = \"v{series}\"\n\
+         package_tags_overrides = { \"packages/lat_cli\" = [\"minor\"] }",
+    );
+
+    // The named-format case — no warning at all — is `a_named_series_format
+    // _stays_unambiguous`.
+    trellis(root)
+        .args(["doctor"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "is deprecated and will be removed at 1.0",
+        ))
+        .stdout(predicate::str::contains("repository_series"))
+        // Only one series-mode package, so no ambiguity clause.
+        .stdout(predicate::str::contains("cannot resolve it to one package").not());
+}
+
 #[test]
 fn repository_series_moves_only_when_the_anchor_manifest_version_changes() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
-    let _remote = series_repo(root, &format!("tag_mode = \"exact\"\n{REPO_SERIES}"));
+    let _remote = series_repo(root, &format!("package_tags = [\"exact\"]\n{REPO_SERIES}"));
 
     trellis(root)
         .args(["tag", "create"])
@@ -1096,9 +1281,9 @@ fn repository_series_is_independent_of_tag_mode_and_never_resolves_as_a_package_
     let root = tmp.path();
     let _remote = series_repo(
         root,
-        "tag_mode = \"exact\"\n\
-         [tools.trellis.publish.repository_series]\n\
-         package = \"lat_core\"\nformat = \"repo-v{series}\"",
+        "package_tags = [\"exact\"]\n\
+         repository_tag_package = \"lat_core\"\n\
+         repository_tag_format = \"repo-v{series}\"\nrepository_tags = [\"minor\"]",
     );
     trellis(root).args(["tag", "create"]).assert().success();
     assert!(git_stdout(root, &["tag", "--list"]).contains("repo-v1"));
@@ -1121,8 +1306,8 @@ fn repository_series_anchor_and_namespace_are_validated_by_doctor() {
     let root = tmp.path();
     let _remote = series_repo(
         root,
-        "[tools.trellis.publish.repository_series]\n\
-         package = \"missing\"\nformat = \"repo-v{series}\"",
+        "repository_tag_package = \"missing\"\n\
+         repository_tag_format = \"repo-v{series}\"\nrepository_tags = [\"minor\"]",
     );
     trellis(root)
         .args(["doctor"])
@@ -1136,8 +1321,10 @@ fn repository_series_anchor_and_namespace_are_validated_by_doctor() {
         &root.join("gleam.toml"),
         "[tools.trellis]\nmembers = [\"packages/*\", \"examples/*\"]\n\
          exclude = { \"@release\" = [\"examples/*\"] }\n\
-         [tools.trellis.publish.repository_series]\n\
-         package = \"package_a\"\nformat = \"repo-v{series}\"\n",
+         [tools.trellis.publish]\n\
+         repository_tag_package = \"package_a\"\n\
+         repository_tag_format = \"repo-v{series}\"\n\
+         repository_tags = [\"minor\"]\n",
     );
     trellis(root)
         .args(["doctor"])
@@ -1151,9 +1338,11 @@ fn repository_series_anchor_and_namespace_are_validated_by_doctor() {
         &root.join("gleam.toml"),
         "[tools.trellis]\nmembers = [\"packages/*\", \"examples/*\"]\n\
          exclude = { \"@release\" = [\"examples/*\"] }\n\
-         [tools.trellis.publish]\ntag_format = \"repo-v{version}\"\n\
-         [tools.trellis.publish.repository_series]\n\
-         package = \"lat_core\"\nformat = \"repo-v{series}.0.0\"\n",
+         [tools.trellis.publish]\nexact_tag_format = \"repo-v{version}\"\n\
+         package_tags = [\"exact\", \"major\"]\n\
+         repository_tag_package = \"lat_core\"\n\
+         repository_tag_format = \"repo-v{series}.0.0\"\n\
+         repository_tags = [\"major\"]\n",
     );
     set_version(root, "lat_core", "1.0.0");
     trellis(root)
@@ -1227,7 +1416,7 @@ fn repository_series_reports_an_unreadable_historical_anchor_manifest() {
 fn a_named_series_format_stays_unambiguous() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
-    let _remote = series_repo(root, "tag_mode = \"both\"");
+    let _remote = series_repo(root, "package_tags = [\"exact\", \"minor\"]");
     // Two packages in the same series: with `{name}` in the format their tags
     // stay distinct, so there is nothing to warn about and each still resolves.
     set_version(root, "lat_cli", "0.5.2");
@@ -1251,12 +1440,12 @@ fn a_named_series_format_stays_unambiguous() {
 }
 
 #[test]
-fn doctor_rejects_a_tag_mode_override_that_matches_nothing() {
+fn doctor_rejects_a_package_tags_override_that_matches_nothing() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
     let _remote = series_repo(
         root,
-        "tag_mode_overrides = { series = [\"packages/nope\"] }",
+        "package_tags_overrides = { \"packages/nope\" = [\"minor\"] }",
     );
 
     trellis(root)
@@ -1264,7 +1453,7 @@ fn doctor_rejects_a_tag_mode_override_that_matches_nothing() {
         .assert()
         .failure()
         .stdout(predicate::str::contains(
-            "`tag_mode_overrides.series` glob `packages/nope` matches no member",
+            "`package_tags_overrides` glob `packages/nope` matches no member",
         ));
 }
 
@@ -1357,7 +1546,7 @@ fn bootstrap_creates_both_exact_and_series_tags() {
     let root = tmp.path();
     let _remote = series_repo(
         root,
-        "tag_mode_overrides = { both = [\"packages/lat_cli\"] }",
+        "package_tags_overrides = { \"packages/lat_cli\" = [\"exact\", \"minor\"] }",
     );
 
     trellis(root)

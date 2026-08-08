@@ -373,7 +373,7 @@ fn plan_releases(
                 .for_package(&entry.name)
                 .chain(entry.generated.iter())
                 .collect();
-            let tag = workspace.config.format_tag(&entry.name, &entry.next);
+            let tag = workspace.config.exact_tag(&entry.name, &entry.next);
             let section = changelog::render_section(
                 &workspace.config.changelog,
                 &entry.name,

@@ -2,7 +2,7 @@
 //! dependency graph. Every command starts here; the topological order is
 //! computed once and consumed everywhere.
 
-use crate::config::{ConfigFile, ReleaseLifecycle, TagMode};
+use crate::config::{ConfigFile, ReleaseLifecycle, TagLevel};
 use crate::gleam::GleamManifest;
 use crate::json::{Check, Finding};
 use anyhow::{Context, Result, bail};
@@ -23,9 +23,9 @@ pub struct Member {
     /// a legacy `exclude.@release` match, overridden in turn by an explicit
     /// `publish.lifecycle.packages` match. See [`Workspace::load_with_diagnostics`].
     pub lifecycle: ReleaseLifecycle,
-    /// Which tags a release creates for this member: the workspace
-    /// `tag_mode`, unless a `tag_mode_overrides` glob claims it.
-    pub tag_mode: TagMode,
+    /// Which tags a release maintains for this member: the workspace
+    /// `package_tags`, unless a `package_tags_overrides` glob claims it.
+    pub tags: Vec<TagLevel>,
 }
 
 impl Member {
@@ -267,31 +267,27 @@ impl Workspace {
                 );
             })
             .ok();
-        // Unknown mode keys are already rejected by `ConfigFile::validate`;
-        // skipping them here keeps doctor's lenient load from panicking on a
-        // config it is about to report as invalid anyway.
-        let mut tag_mode_overrides: Vec<(TagMode, globset::GlobSet)> = Vec::new();
-        for (key, patterns) in &config.publish.tag_mode_overrides {
-            let Some(mode) = TagMode::from_key(key) else {
-                continue;
-            };
-            match build_globset(patterns) {
-                Ok(set) => tag_mode_overrides.push((mode, set)),
+        // Keyed by one member-path glob each, like `publish.lifecycle.packages`
+        // below, so a member can match several with different lists — the case
+        // `resolve_package_tags` must reject.
+        let mut package_tags_overrides: Vec<(Vec<TagLevel>, globset::GlobMatcher)> = Vec::new();
+        for (pattern, levels) in &config.publish.package_tags_overrides {
+            match globset::Glob::new(pattern) {
+                Ok(glob) => package_tags_overrides.push((levels.clone(), glob.compile_matcher())),
                 Err(err) => {
                     diagnostics.push(
                         Finding::error(
                             Check::WorkspaceConfig,
-                            format!("invalid `tag_mode_overrides.{key}` glob: {err:#}"),
+                            format!("invalid `package_tags_overrides` glob `{pattern}`: {err:#}"),
                         )
                         .at(GLEAM_TOML),
                     );
                 }
             }
         }
-        // `publish.lifecycle.packages` globs, compiled individually — unlike
-        // `tag_mode_overrides`, each key names exactly one glob, so a member
-        // can match several with different targets, which is the case
-        // `resolve_lifecycle` must reject.
+        // `publish.lifecycle.packages` globs, compiled individually — each key
+        // names exactly one glob, so a member can match several with different
+        // targets, which is the case `resolve_lifecycle` must reject.
         let mut lifecycle_overrides: Vec<(ReleaseLifecycle, globset::GlobMatcher)> = Vec::new();
         for (pattern, lifecycle) in &config.publish.lifecycle.packages {
             match globset::Glob::new(pattern) {
@@ -354,10 +350,10 @@ impl Workspace {
                         config.publish.lifecycle.default,
                         &mut diagnostics,
                     );
-                    let tag_mode = resolve_tag_mode(
-                        &tag_mode_overrides,
+                    let tags = resolve_package_tags(
+                        &package_tags_overrides,
                         &rel_path,
-                        config.publish.tag_mode,
+                        &config.publish.package_tags,
                         &mut diagnostics,
                     );
                     members.push(Member {
@@ -366,7 +362,7 @@ impl Workspace {
                         rel_path,
                         manifest,
                         lifecycle,
-                        tag_mode,
+                        tags,
                     });
                 }
                 Err(err) => diagnostics.push(
@@ -394,17 +390,13 @@ impl Workspace {
             }
         }
 
-        if let Some(repository_series) = &config.publish.repository_series {
-            match members
-                .iter()
-                .find(|member| member.name == repository_series.package)
-            {
+        if let Some(anchor) = &config.publish.repository_tag_package {
+            match members.iter().find(|member| &member.name == anchor) {
                 None => diagnostics.push(
                     Finding::error(
                         Check::WorkspaceConfig,
                         format!(
-                            "repository series anchor package `{}` is not a workspace member",
-                            repository_series.package
+                            "repository series anchor package `{anchor}` is not a workspace member"
                         ),
                     )
                     .at(GLEAM_TOML),
@@ -413,8 +405,7 @@ impl Workspace {
                     Finding::error(
                         Check::ReleaseBoundary,
                         format!(
-                            "repository series anchor package `{}` is excluded from release",
-                            repository_series.package
+                            "repository series anchor package `{anchor}` is excluded from release"
                         ),
                     )
                     .at(GLEAM_TOML)
@@ -528,12 +519,12 @@ impl Workspace {
         let repository_series_anchor =
             config
                 .publish
-                .repository_series
+                .repository_tag_package
                 .as_ref()
-                .and_then(|series| {
+                .and_then(|anchor| {
                     members
                         .iter()
-                        .position(|member| member.name == series.package && member.releasable())
+                        .position(|member| &member.name == anchor && member.releasable())
                 });
         let workspace = Workspace {
             root: root.to_path_buf(),
@@ -941,41 +932,51 @@ pub fn discovered_member_paths(root: &Path) -> Vec<String> {
         .collect()
 }
 
-/// The member's tag mode: `default`, unless exactly one override claims it.
-/// Two overrides claiming the same member is ambiguous — there is no sensible
-/// precedence between `series` and `both` — so it is reported rather than
-/// silently resolved.
-fn resolve_tag_mode(
-    overrides: &[(TagMode, globset::GlobSet)],
+/// The member's tag list: `default`, unless an override glob claims it.
+///
+/// Globs resolving to *different* lists are ambiguous — there is no sensible
+/// precedence between `["exact"]` and `["exact", "major"]` — so that is
+/// reported rather than silently resolved. Overlapping globs agreeing on the
+/// same list are fine, matching how `resolve_lifecycle` treats its rules.
+fn resolve_package_tags(
+    overrides: &[(Vec<TagLevel>, globset::GlobMatcher)],
     rel_path: &str,
-    default: TagMode,
+    default: &[TagLevel],
     diagnostics: &mut Diagnostics,
-) -> TagMode {
-    let matched: Vec<TagMode> = overrides
+) -> Vec<TagLevel> {
+    let mut matched: Vec<&Vec<TagLevel>> = overrides
         .iter()
-        .filter(|(_, set)| set.is_match(rel_path))
-        .map(|(mode, _)| *mode)
+        .filter(|(_, glob)| glob.is_match(rel_path))
+        .map(|(levels, _)| levels)
         .collect();
+    matched.dedup_by(|a, b| a == b);
     match matched.as_slice() {
-        [] => default,
-        [mode] => *mode,
-        modes => {
+        [] => default.to_vec(),
+        [levels] => (*levels).clone(),
+        lists => {
             diagnostics.push(
                 Finding::error(
                     Check::WorkspaceConfig,
                     format!(
-                        "member `{rel_path}` matches `tag_mode_overrides` globs for {}; \
-                         a member may have only one tag mode",
-                        modes
+                        "member `{rel_path}` matches `package_tags_overrides` globs resolving \
+                         to {}; a member may have only one tag list",
+                        lists
                             .iter()
-                            .map(|mode| format!("`{}`", mode.key()))
+                            .map(|levels| format!(
+                                "[{}]",
+                                levels
+                                    .iter()
+                                    .map(|level| format!("`{}`", level.key()))
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
+                            ))
                             .collect::<Vec<_>>()
                             .join(" and ")
                     ),
                 )
                 .at(GLEAM_TOML),
             );
-            default
+            default.to_vec()
         }
     }
 }
@@ -1116,46 +1117,73 @@ mod tests {
         build_globset(&names(patterns)).unwrap()
     }
 
+    fn tag_overrides(
+        entries: &[(&str, &[TagLevel])],
+    ) -> Vec<(Vec<TagLevel>, globset::GlobMatcher)> {
+        entries
+            .iter()
+            .map(|(pattern, levels)| {
+                (
+                    levels.to_vec(),
+                    globset::Glob::new(pattern).unwrap().compile_matcher(),
+                )
+            })
+            .collect()
+    }
+
     #[test]
-    fn tag_mode_falls_back_to_the_workspace_default() {
+    fn package_tags_fall_back_to_the_workspace_default() {
         let mut diagnostics = Diagnostics::default();
-        let overrides = vec![(TagMode::Both, globs(&["packages/lat_*"]))];
+        let both: &[TagLevel] = &[TagLevel::Exact, TagLevel::Minor];
+        let overrides = tag_overrides(&[("packages/lat_*", both)]);
+        let default = [TagLevel::Exact];
         assert_eq!(
-            resolve_tag_mode(&overrides, "packages/cli", TagMode::Exact, &mut diagnostics),
-            TagMode::Exact
+            resolve_package_tags(&overrides, "packages/cli", &default, &mut diagnostics),
+            default
         );
         assert_eq!(
-            resolve_tag_mode(
+            resolve_package_tags(&overrides, "packages/lat_core", &default, &mut diagnostics),
+            both
+        );
+        assert!(!diagnostics.has_errors());
+    }
+
+    /// Overlapping globs are only a problem when they disagree — the same rule
+    /// `resolve_lifecycle` applies.
+    #[test]
+    fn overlapping_tag_overrides_agreeing_on_one_list_are_fine() {
+        let mut diagnostics = Diagnostics::default();
+        let minor: &[TagLevel] = &[TagLevel::Minor];
+        let overrides = tag_overrides(&[("packages/*", minor), ("packages/lat_*", minor)]);
+        assert_eq!(
+            resolve_package_tags(
                 &overrides,
                 "packages/lat_core",
-                TagMode::Exact,
+                &[TagLevel::Exact],
                 &mut diagnostics
             ),
-            TagMode::Both
+            minor
         );
         assert!(!diagnostics.has_errors());
     }
 
     #[test]
-    fn a_member_matching_two_tag_modes_is_an_error() {
+    fn a_member_matching_two_different_tag_lists_is_an_error() {
         let mut diagnostics = Diagnostics::default();
-        let overrides = vec![
-            (TagMode::Series, globs(&["packages/*"])),
-            (TagMode::Both, globs(&["packages/lat_*"])),
-        ];
-        let mode = resolve_tag_mode(
-            &overrides,
-            "packages/lat_core",
-            TagMode::Exact,
-            &mut diagnostics,
-        );
-        assert_eq!(mode, TagMode::Exact, "falls back to the default");
+        let overrides = tag_overrides(&[
+            ("packages/*", &[TagLevel::Minor]),
+            ("packages/lat_*", &[TagLevel::Exact, TagLevel::Minor]),
+        ]);
+        let default = [TagLevel::Exact];
+        let tags =
+            resolve_package_tags(&overrides, "packages/lat_core", &default, &mut diagnostics);
+        assert_eq!(tags, default, "falls back to the default");
         let errors: Vec<&str> = diagnostics.errors().collect();
         assert_eq!(errors.len(), 1);
         let error = errors[0];
         assert!(error.contains("packages/lat_core"), "{error}");
         assert!(
-            error.contains("`series`") && error.contains("`both`"),
+            error.contains("`minor`") && error.contains("`exact`"),
             "{error}"
         );
     }

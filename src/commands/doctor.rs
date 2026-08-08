@@ -1,7 +1,7 @@
 //! `trellis doctor` — validate every workspace invariant that would otherwise
 //! be enforced only by hope. Reports all problems, exits non-zero on any error.
 
-use crate::config::Strictness;
+use crate::config::{Strictness, TagLevel};
 use crate::gleam::Requirement;
 use crate::json::{Check, DoctorDocument, Finding, FixRecord, PackageLifecycleRecord, Severity};
 use crate::lockfile;
@@ -538,17 +538,10 @@ fn check_exclusions(workspace: &Workspace, report: &mut Report) {
             );
         }
     }
-    // Same typo trap, one table over: a tag-mode override that matches nothing
-    // silently leaves its packages on the workspace default.
-    for (mode, patterns) in &workspace.config.publish.tag_mode_overrides {
-        for pattern in patterns {
-            check_member_glob(
-                workspace,
-                &format!("`tag_mode_overrides.{mode}` glob"),
-                pattern,
-                report,
-            );
-        }
+    // Same typo trap, one table over: a package-tags override that matches
+    // nothing silently leaves its packages on the workspace default.
+    for pattern in workspace.config.publish.package_tags_overrides.keys() {
+        check_member_glob(workspace, "`package_tags_overrides` glob", pattern, report);
     }
     // And again for `publish.lifecycle.packages`: a glob matching nothing
     // silently leaves its packages on the legacy mapping or the default.
@@ -619,13 +612,15 @@ fn check_member_glob(workspace: &Workspace, label: &str, pattern: &str, report: 
 /// Check 7: no two releasable members produce the same tag, for series tags as
 /// well as exact ones.
 ///
-/// A `series_tag_format` without `{name}` is the exception: sharing one
-/// repository-wide tag is the point, so it warns rather than errors. The
-/// warning is keyed on the format and the member count, not on today's
-/// versions — `resolve_tag` substitutes `{name}` per member, so with no
-/// `{name}` to substitute *every* series tag matches every member regardless
-/// of what they're versioned at. Warning only on a version collision would go
-/// quiet on exactly the configurations `trellis ci tag-package` still fails on.
+/// A `series_tag_format` without `{name}` is the exception: it is deprecated
+/// in favour of `[publish.repository_series]`, and warns rather than errors so
+/// that repositories using it keep releasing. The warning is keyed on the
+/// format alone, not on today's versions or member count — `resolve_tag`
+/// substitutes `{name}` per member, so with no `{name}` to substitute *every*
+/// series tag matches every member regardless of what they're versioned at.
+/// Warning only on a version collision, or only once a second package makes it
+/// ambiguous, would go quiet on exactly the configurations that break as soon
+/// as the workspace grows.
 fn check_tag_collisions(workspace: &Workspace, report: &mut Report) {
     fn insert(
         seen: &mut std::collections::HashMap<String, String>,
@@ -651,8 +646,8 @@ fn check_tag_collisions(workspace: &Workspace, report: &mut Report) {
     let mut seen: std::collections::HashMap<String, String> = std::collections::HashMap::new();
 
     for member in workspace.members.iter().filter(|m| m.releasable()) {
-        if member.tag_mode.includes_exact() {
-            let tag = workspace.config.format_tag(&member.name, member.version());
+        if member.tags.contains(&TagLevel::Exact) {
+            let tag = workspace.config.exact_tag(&member.name, member.version());
             insert(
                 &mut seen,
                 report,
@@ -666,7 +661,7 @@ fn check_tag_collisions(workspace: &Workspace, report: &mut Report) {
     let series_members: Vec<&str> = workspace
         .members
         .iter()
-        .filter(|m| m.releasable() && m.tag_mode.includes_series())
+        .filter(|m| m.releasable() && m.tags.iter().any(|t| t.is_series()))
         .map(|m| m.name.as_str())
         .collect();
     let names = |members: &[&str]| {
@@ -678,16 +673,29 @@ fn check_tag_collisions(workspace: &Workspace, report: &mut Report) {
     };
 
     let repo_wide = workspace.config.series_tag_is_repo_wide();
-    if repo_wide && series_members.len() > 1 {
+    if repo_wide && !series_members.is_empty() {
+        // A deprecation, not a collision: the shape is wrong even where it
+        // happens to be unambiguous today, because one more series-mode
+        // package makes it ambiguous with no other config change.
+        let ambiguity = if series_members.len() > 1 {
+            format!(
+                ", so one repository-wide series tag covers {} and `trellis ci tag-package` \
+                 cannot resolve it to one package",
+                names(&series_members)
+            )
+        } else {
+            String::new()
+        };
         report.push(
             Finding::warning(
-                Check::TagCollision,
+                Check::WorkspaceConfig,
                 format!(
-                    "`series_tag_format` `{}` has no {{name}}, so one repository-wide series \
-                     tag covers {}; `trellis ci tag-package` cannot resolve such a tag to one \
-                     package",
+                    "`series_tag_format` `{}` has no {{name}}{ambiguity}. A `{{name}}`-less \
+                     `series_tag_format` is deprecated and will be removed at 1.0; declare \
+                     `[tools.trellis.publish.repository_series]` with an anchor `package` \
+                     instead, and restore `{{name}}` here. Note the repository tag is not \
+                     resolved by `ci tag-package` or `publish --tag`",
                     workspace.config.publish.series_tag_format,
-                    names(&series_members)
                 ),
             )
             .at(crate::workspace::GLEAM_TOML),
@@ -700,11 +708,11 @@ fn check_tag_collisions(workspace: &Workspace, report: &mut Report) {
     for member in workspace
         .members
         .iter()
-        .filter(|m| m.releasable() && m.tag_mode.includes_series())
+        .filter(|m| m.releasable() && m.tags.iter().any(|t| t.is_series()))
     {
-        if let Some(tag) = workspace
+        for tag in workspace
             .config
-            .format_series_tag(&member.name, member.version())
+            .series_tags(&member.name, member.version(), &member.tags)
         {
             if repo_wide && !legacy_claimed.insert(tag.clone()) {
                 continue;
@@ -724,25 +732,24 @@ fn check_tag_collisions(workspace: &Workspace, report: &mut Report) {
     // the tag strings today's versions happen to produce.
     if let Some(index) = workspace.repository_series_anchor {
         let anchor = &workspace.members[index];
-        if let Some(tag) = workspace
-            .config
-            .format_repository_series_tag(anchor.version())
-            && crate::commands::tag::repository_tag_collides_with_packages(workspace, &tag)
+        for tag in workspace.config.repository_tags(anchor.version()) {
+            if crate::commands::tag::repository_tag_collides_with_packages(workspace, &tag)
                 .unwrap_or(false)
-        {
-            report.push(
-                Finding::error(
-                    Check::TagCollision,
-                    format!(
-                        "tag collision: repository series tag `{tag}` (anchored to `{}`) \
-                         occupies a package tag namespace; choose a distinct \
-                         `repository_series.format`",
-                        anchor.name
-                    ),
-                )
-                .at(crate::workspace::GLEAM_TOML)
-                .in_package(&anchor.name),
-            );
+            {
+                report.push(
+                    Finding::error(
+                        Check::TagCollision,
+                        format!(
+                            "tag collision: repository series tag `{tag}` (anchored to `{}`) \
+                             occupies a package tag namespace; choose a distinct \
+                             `repository_tag_format`",
+                            anchor.name
+                        ),
+                    )
+                    .at(crate::workspace::GLEAM_TOML)
+                    .in_package(&anchor.name),
+                );
+            }
         }
     }
 }
