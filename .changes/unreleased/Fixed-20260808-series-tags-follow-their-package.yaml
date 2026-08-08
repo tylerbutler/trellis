@@ -1,5 +1,0 @@
-component: tag
-kind: Fixed
-body: |-
-  **A package's series tag no longer follows commits that did not release it.** `tag create` moved a series tag whenever it did not point at `HEAD`, so in a monorepo one package's release force-pushed every other package's series tags onto a commit that never touched them, and a docs-only commit moved all of them. A series tag now moves when its own package's manifest version changes, and a commit that releases nothing reports `every releasable package version is already tagged`.
-time: 2026-08-08T00:02:00.000000-07:00
