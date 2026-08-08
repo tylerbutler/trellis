@@ -539,3 +539,13 @@ deployments:
   - dietrichgebert/ponytail
   active_owner: dietrichgebert/ponytail
   content_hash: sha256:7f6bee86702a488d29ef0dcaabf424bbe2aca345a6a642319d43a1fe0276792e
+lsp_servers:
+- rust-analyzer
+lsp_configs:
+  rust-analyzer:
+    name: rust-analyzer
+    command: rust-analyzer
+    extensionToLanguage:
+      .rs: rust
+    restartOnCrash: true
+    maxRestarts: 3
