@@ -24,3 +24,7 @@ target
 # Added by cargo
 
 /target
+
+
+# APM dependencies
+apm_modules/
