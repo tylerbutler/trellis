@@ -1,0 +1,44 @@
+{
+  "SessionStart": [
+    {
+      "matcher": "startup|resume|clear|compact",
+      "hooks": [
+        {
+          "type": "command",
+          "statusMessage": "Loading ponytail mode...",
+          "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/ponytail/hooks/ponytail-activate.js\"",
+          "timeout": 5
+        }
+      ],
+      "_apm_source": "dietrichgebert/ponytail"
+    }
+  ],
+  "SubagentStart": [
+    {
+      "matcher": "*",
+      "hooks": [
+        {
+          "type": "command",
+          "statusMessage": "Loading ponytail mode...",
+          "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/ponytail/hooks/ponytail-subagent.js\"",
+          "timeout": 5
+        }
+      ],
+      "_apm_source": "dietrichgebert/ponytail"
+    }
+  ],
+  "UserPromptSubmit": [
+    {
+      "matcher": "*",
+      "hooks": [
+        {
+          "type": "command",
+          "statusMessage": "Tracking ponytail mode...",
+          "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/ponytail/hooks/ponytail-mode-tracker.js\"",
+          "timeout": 5
+        }
+      ],
+      "_apm_source": "dietrichgebert/ponytail"
+    }
+  ]
+}
