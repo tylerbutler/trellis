@@ -7,11 +7,8 @@ import Callout from "../../../components/Callout.astro";
 
 The changelog engine is native — no second tool to install in CI, no config
 file to keep in sync with the workspace. Changes are recorded as small TOML
-fragments; version bumps and changelog sections are derived from them.
-
-The fragment-per-change workflow is modeled on
-[changie](https://changie.dev/)'s project mode, reimplemented natively so a
-managed workspace needs no second binary in CI.
+fragments, one per change; version bumps and changelog sections are derived
+from them.
 
 ```txt wrap
 trellis changelog new [--package <pkg>] --kind <kind> --body <text>
@@ -33,9 +30,9 @@ body = "Add graph-parallel task scheduling"
 
 <Callout>
 
-`package` was spelled `project` through v0.7.0, inherited from changie. Both
-spellings parse, so fragments already sitting in `.changes/unreleased/` keep
-working — but `changelog new` writes `package`, and the alias goes away at 1.0.
+`package` was spelled `project` through v0.7.0. Both spellings parse, so
+fragments already sitting in `.changes/unreleased/` keep working, but
+`changelog new` writes `package` and the alias goes away at 1.0.
 
 </Callout>
 
@@ -53,8 +50,7 @@ created .changes/unreleased/lat_core-1.toml
 
 Invalid fragments — unknown package, kind, or category, empty body,
 unparseable TOML — are hard errors for `check`, `plan`, and `apply`, and
-`doctor` flags them on every PR. Silently dropping a change is exactly the
-drift trellis exists to prevent.
+`doctor` flags them on every PR.
 
 </Callout>
 
@@ -80,9 +76,9 @@ lat_cli: needs a changelog entry
 ```
 
 A package counts as changed when the diff touches *any* file under its
-directory — a README edit trips the same gate as a behavior change. That is
-deliberate (the alternative is a heuristic that guesses wrong quietly), but it
-means the gate is sometimes stricter than a repository wants.
+directory — a README edit trips the same gate as a behavior change. That makes
+the gate stricter than some repositories want; [`strictness`](#strictness)
+turns it down.
 
 ### Scope
 
@@ -266,13 +262,12 @@ lat_cli: 0.4.2 -> 0.4.3 (1 fragment(s), dependencies: lat_core, lat_mid)
 `lat_mid` owns no fragment, yet it is in that plan. When a package bumps, so
 does everything that path-depends on it, transitively.
 
-This is a correctness requirement, not a convenience. A path dependency has no
-version in the repository — it is rewritten into a Hex requirement at publish
-time, derived from whatever version the dependency is on *then*. If `lat_core`
-went 1.1.0 → 1.2.0 and `lat_mid` stayed at 0.5.0, then `lat_mid` 0.5.0 would
-mean `>= 1.1.0 and < 2.0.0` to anyone who fetched it before the release and
-`>= 1.2.0 and < 2.0.0` to anyone who fetched it after. One published version,
-two dependency sets.
+This is a correctness requirement, not a convenience. A path dependency carries
+no version in the repository; it becomes a Hex requirement at publish time,
+derived from whatever version the dependency is on *then*. Holding `lat_mid` at
+0.5.0 while `lat_core` moved would leave one published `lat_mid` 0.5.0 meaning
+two different things — `>= 1.1.0` to whoever fetched it before the release,
+`>= 1.2.0` to whoever fetched it after.
 
 The rules:
 

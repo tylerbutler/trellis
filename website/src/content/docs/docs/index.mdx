@@ -9,17 +9,16 @@ repository and adds changelogs, versioning, and publishing, deriving its model
 of the workspace from the `gleam.toml` files already in it.
 
 Throughout these docs, a **package** is one Gleam package — a directory with
-its own `gleam.toml`. A **member** is a package that belongs to this
-workspace. The two are the same thing seen from different sides, so "member"
-appears only where membership is the point: the `members` key, the `@members`
-exclusion, and the member paths that exclusion globs match.
+its own `gleam.toml`. A **member** is a package that belongs to the workspace;
+that word appears where membership itself is the point, as in the `members`
+key and the `@members` exclusion.
 
 ## Derived, then verified
 
 The member set, its topological order, change impact, and publish order all
-come from manifests that already exist. Four things can't be derived: locked
-versions, changelogs, tags, and toolchain pins. `trellis doctor` checks those
-and exits non-zero when one breaks.
+come from manifests that already exist. What can't be derived has to be
+duplicated somewhere — locked versions, changelogs, tags, toolchain pins — and
+`trellis doctor` checks those, exiting non-zero when one breaks.
 
 Some findings are mechanically fixable — a releasable package missing its
 `CHANGELOG.md`, a `manifest.toml` locked version that drifted from its
@@ -31,13 +30,11 @@ a file.
 
 Trellis has one way of doing each job: change fragments are TOML files in
 `.changes/unreleased/`, every releasable package gets its own git tag, and
-version bumps are derived from fragment kinds. Those opinions are what make
-derivation and verification possible — there's no plugin system to configure
-around them.
+version bumps are derived from fragment kinds.
 
-The jobs themselves are independent. Every capability is a plain command,
-and nothing requires the piece above it, so you can adopt trellis a layer at
-a time:
+The jobs themselves are independent. Every capability is a plain command, and
+nothing requires the piece above it, so you can adopt trellis a layer at a
+time:
 
 - **Just the task runner.** `run`, `exec`, `list`, and `graph` need no
   configuration at all — members are auto-discovered from git. Keep your
