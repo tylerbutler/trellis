@@ -170,15 +170,25 @@ command = "gleam run -m glinter"
 needs_deps = true            # run `gleam deps download` first if not cached
 
 [tools.trellis.publish]
-tag_format = "{name}-v{version}"          # lattice_core-v1.1.0
-# The moving series tag, re-pointed at each release in the series. {series} is
-# derived from the version — `0.Y` while the major is 0, `X` after — and never
-# configured. Omit {name} for one repository-wide tag.
-series_tag_format = "{name}-v{series}"    # lattice_core-v1, lattice_cli-v0.4
-# Which tags a release creates: exact (default), series, or both. The
-# overrides map picks it per member, as globs matched against member paths.
-tag_mode = "exact"
-tag_mode_overrides = { both = ["packages/lattice_cli"] }
+# Which tags a release maintains per package, one entry per tag. `exact` keeps
+# the whole version and is immutable; `major` (v1) and `minor` (v1.2) truncate
+# it and move, re-pointed at each release in the series. Levels, not templates:
+# the closed vocabulary is what keeps a tag invertible in `ci tag-package` and
+# two entries from colliding at an unreleased version. The overrides map picks
+# the list per member, as globs matched against member paths.
+package_tags = ["exact"]
+package_tags_overrides = { "packages/lattice_cli" = ["exact", "minor"] }
+# `exact` substitutes into the first, every series level into the second.
+# {version} and {series} are derived, never written by hand. Keep {name} in
+# series_tag_format: omitting it for a repository-wide tag is deprecated, see
+# repository_tag_* below.
+exact_tag_format = "{name}-v{version}"    # lattice_core-v1.1.0
+series_tag_format = "{name}-v{series}"    # lattice_core-v1.2, lattice_cli-v0.4
+# Optional repository-wide moving tag, anchored to one package's version.
+# All three keys are required together, or left out together.
+repository_tag_package = "lattice_cli"
+repository_tag_format = "v{series}"
+repository_tags = ["minor"]
 # How a path dep is rewritten to a Hex requirement at publish time, from the
 # dependency's current version X.Y.Z:
 #   minor  → ">= X.Y.Z and < (X+1).0.0"   (default)
@@ -191,10 +201,6 @@ retry = { attempts = 5, initial_delay = "30s", multiplier = 2 }
 [tools.trellis.publish.lifecycle]
 default = "hex"
 packages = { "packages/experimental/**" = "workspace", "packages/providers/**" = "git_only" }
-
-[tools.trellis.publish.repository_series]
-package = "lattice_cli"
-format = "v{series}"
 
 [tools.trellis.changelog]
 # Native engine (§7): fragments in <dir>/unreleased/, version sections in
@@ -421,8 +427,8 @@ trellis lockfile refresh [--package <pkg>]
   them are touched — one package's immutable tag disagreeing with origin fails
   the whole run rather than half-tagging the rest, in dry-run or for real.
 - A member may instead (or also) carry a **series tag** — `{name}-v{series}`,
-  where the series is derived from the version: `0.Y` while the major is 0,
-  `X` after. It is the one ref trellis rewrites: each release in the series
+  where the series is the version truncated at each level `package_tags` lists:
+  `major` to one part, `minor` to two. It is the one ref trellis rewrites: each release in the series
   force-moves it to the release commit and force-pushes it, so consumers can
   pin a series rather than chase patch tags. Divergence between local and
   origin is the normal state for a moving tag, so the divergence check that
@@ -430,17 +436,23 @@ trellis lockfile refresh [--package <pkg>]
   names no particular version: it never carries a GitHub Release (which would
   silently retarget), `publish --tag` refuses it (`ci tag-package` still
   resolves it, so CI can route on it), and a `series`-only workspace releases
-  through `--all-untagged` rather than a tag-push trigger. `tag_mode` sets the
-  lifecycle for the workspace; `tag_mode_overrides` sets it per member.
-- A **repository series tag** is separate repository metadata, anchored to one
-  releasable package and independent of package `tag_mode`. Its current series
+  through `--all-untagged` rather than a tag-push trigger. A series tag moves
+  only when its own package's manifest version changes, so one package's
+  release never drags another's forward. `package_tags` sets the list for the
+  workspace; `package_tags_overrides` sets it per member.
+- A **repository tag** is separate repository metadata, anchored to one
+  releasable package and independent of every package's list. Its current series
   comes from the anchor's stable manifest version. An existing tag moves only
   when that manifest version differs from the anchor manifest stored at the
   tag; exact package tags are not a release signal. Entering a new series
   creates a new tag and preserves the old one. Repository tags are mutable,
   get no GitHub Release, and never participate in `publish --tag` or
-  `ci tag-package` resolution. The `{name}`-less `series_tag_format` remains a
-  legacy package-series behavior with its ambiguity warning.
+  `ci tag-package` resolution. A `{name}`-less `series_tag_format` — the
+  pre-`repository_tag_*` way to reach the same thing — is deprecated and
+  removed at 1.0: it is a *package* template with the discriminator taken out,
+  so every package's series tag matches every member and `ci tag-package`
+  cannot resolve it. `doctor` warns on the shape whether or not a second
+  series-mode package has yet made it ambiguous.
 - `publish` performs, per package:
   1. **Idempotency check** — query Hex once; skip if this exact version is already
      published (makes re-runs of a partially failed release safe).
@@ -500,9 +512,9 @@ Checks, each of which is an unenforced invariant in lattice today:
    `hex` nor `git_only` may depend on a `workspace`-only one.
 7. Tag-format collisions (two members whose names would produce ambiguous tags),
    for series tags as well as exact ones — except a `series_tag_format` without
-   `{name}`, which warns instead once the workspace has more than one series
-   member, since sharing one repository-wide tag is the point and costs only
-   the ability to resolve it back to a single package. That warning keys on the
+   `{name}`, which warns instead — it is deprecated rather than an error, so
+   repositories using it keep releasing, and it costs the ability to resolve a
+   tag back to a single package. That warning keys on the
    format, not on today's versions: with no `{name}` to substitute, every
    series tag matches every member whatever they are versioned at.
 

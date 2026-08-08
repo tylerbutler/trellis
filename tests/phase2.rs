@@ -1868,7 +1868,7 @@ fn a_prerelease_moves_no_series_tag() {
         &root.join("gleam.toml"),
         "[tools.trellis]\nmembers = [\"packages/*\", \"examples/*\"]\n\
          exclude = { \"@release\" = [\"examples/*\"] }\n\
-         [tools.trellis.publish]\ntag_mode = \"both\"\n",
+         [tools.trellis.publish]\npackage_tags = [\"exact\", \"minor\"]\n",
     );
     add_fragment(root, "lat_core", "Added", "x");
     init_repo(root);

@@ -9,5 +9,5 @@ exclude = { docs = ["examples/*"], hello = ["examples/*"], "@release" = ["exampl
 command = "echo hello-from-task"
 
 [tools.trellis.publish]
-tag_format = "{name}-v{version}"
+exact_tag_format = "{name}-v{version}"
 retry = { attempts = 2, initial_delay = "10ms", multiplier = 2 }
