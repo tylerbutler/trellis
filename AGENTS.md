@@ -98,7 +98,9 @@ every later one at **4** — that lands as the 2-space markdown indent. A line a
 - End a `Breaking` entry with the concrete migration: old spelling → new, or the
   `jq` change.
 - Use current spellings in prose: snake_case keys, "package" not "project".
-- 40–90 words for most entries; two or three short paragraphs for a big one.
+- 40–90 words for most entries. A `Breaking` entry may run to ~160, because the
+  migration is load-bearing and does not compress — but the extra budget buys
+  old→new spellings and reachable edge cases, never rationale.
 
 ## Conventions
 
