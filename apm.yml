@@ -14,5 +14,12 @@ dependencies:
     # - git: https://github.com/obra/superpowers
     - DietrichGebert/ponytail
   mcp: []
+  lsp:
+    - name: rust-analyzer
+      command: rust-analyzer
+      extensionToLanguage:
+        ".rs": rust
+      restartOnCrash: true
+      maxRestarts: 3
 includes: auto
 scripts: {}
