@@ -1,0 +1,7 @@
+component: tag
+kind: Changed
+body: |-
+  **A `series_tag_format` without `{name}` is deprecated, and removed at 1.0.** Dropping `{name}` gave the whole repository one shared series tag, but the template then matches every member, so `trellis ci tag-package` cannot resolve such a tag to a package. `doctor` now warns on the shape whether or not a second package has made it ambiguous, as `workspace_config` rather than `tag_collision`. The tag still moves and releases still work.
+
+    To migrate, restore `{name}` and declare the repository tag instead: `repository_tag_package`, `repository_tag_format`, `repository_tags`. It is repository metadata, so unlike the shared package tag it never resolves through `ci tag-package` or `publish --tag` — keep a `{name}`-ful series tag for anything that routes CI on a tag.
+time: 2026-08-08T00:01:00.000000-07:00

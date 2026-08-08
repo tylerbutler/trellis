@@ -613,7 +613,7 @@ fn check_member_glob(workspace: &Workspace, label: &str, pattern: &str, report: 
 /// well as exact ones.
 ///
 /// A `series_tag_format` without `{name}` is the exception: it is deprecated
-/// in favour of `[publish.repository_series]`, and warns rather than errors so
+/// in favour of the `repository_tag_*` keys, and warns rather than errors so
 /// that repositories using it keep releasing. The warning is keyed on the
 /// format alone, not on today's versions or member count — `resolve_tag`
 /// substitutes `{name}` per member, so with no `{name}` to substitute *every*
@@ -740,7 +740,7 @@ fn check_tag_collisions(workspace: &Workspace, report: &mut Report) {
                     Finding::error(
                         Check::TagCollision,
                         format!(
-                            "tag collision: repository series tag `{tag}` (anchored to `{}`) \
+                            "tag collision: repository tag `{tag}` (anchored to `{}`) \
                              occupies a package tag namespace; choose a distinct \
                              `repository_tag_format`",
                             anchor.name

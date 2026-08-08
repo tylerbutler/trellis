@@ -24,7 +24,7 @@ Two exclusions, both formats trellis does not own:
 - **CLI long flags.** `--no-update-check`, not `--no_update_check`. Kebab is the
   universal convention there and clap's default.
 
-Free-form table keys (`exclude`, `tasks`, `publish.tag_mode_overrides`) are the
+Free-form table keys (`exclude`, `tasks`, `publish.package_tags_overrides`) are the
 user's to name; a hyphen in one is not a violation, and `doctor` says nothing
 about them.
 

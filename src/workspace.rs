@@ -55,7 +55,7 @@ pub struct Workspace {
     pub configless: bool,
     /// Members in topological order (dependencies before dependents).
     pub members: Vec<Member>,
-    /// Index of the repository series anchor member. `None` when the feature
+    /// Index of the repository tag anchor member. `None` when the feature
     /// is unconfigured — or, under doctor's lenient load, when the configured
     /// anchor is missing or unreleasable (an error diagnostic either way, so
     /// strict-loading commands never run without it).
@@ -395,18 +395,14 @@ impl Workspace {
                 None => diagnostics.push(
                     Finding::error(
                         Check::WorkspaceConfig,
-                        format!(
-                            "repository series anchor package `{anchor}` is not a workspace member"
-                        ),
+                        format!("`repository_tag_package` `{anchor}` is not a workspace member"),
                     )
                     .at(GLEAM_TOML),
                 ),
                 Some(member) if !member.releasable() => diagnostics.push(
                     Finding::error(
                         Check::ReleaseBoundary,
-                        format!(
-                            "repository series anchor package `{anchor}` is excluded from release"
-                        ),
+                        format!("`repository_tag_package` `{anchor}` is excluded from release"),
                     )
                     .at(GLEAM_TOML)
                     .in_package(&member.name),

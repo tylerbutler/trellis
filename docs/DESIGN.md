@@ -440,7 +440,7 @@ trellis lockfile refresh [--package <pkg>]
   only when its own package's manifest version changes, so one package's
   release never drags another's forward. `package_tags` sets the list for the
   workspace; `package_tags_overrides` sets it per member.
-- A **repository series tag** is separate repository metadata, anchored to one
+- A **repository tag** is separate repository metadata, anchored to one
   releasable package and independent of every package's list. Its current series
   comes from the anchor's stable manifest version. An existing tag moves only
   when that manifest version differs from the anchor manifest stored at the

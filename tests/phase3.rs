@@ -1292,12 +1292,12 @@ fn repository_series_is_independent_of_tag_mode_and_never_resolves_as_a_package_
         .args(["ci", "tag-package", "repo-v1"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("repository series tag"));
+        .stderr(predicate::str::contains("repository tag"));
     trellis(root)
         .args(["publish", "--tag", "repo-v1"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("repository series tag"));
+        .stderr(predicate::str::contains("repository tag"));
 }
 
 #[test]
@@ -1314,7 +1314,7 @@ fn repository_series_anchor_and_namespace_are_validated_by_doctor() {
         .assert()
         .failure()
         .stdout(predicate::str::contains(
-            "repository series anchor package `missing` is not a workspace member",
+            "`repository_tag_package` `missing` is not a workspace member",
         ));
 
     write(
@@ -1331,7 +1331,7 @@ fn repository_series_anchor_and_namespace_are_validated_by_doctor() {
         .assert()
         .failure()
         .stdout(predicate::str::contains(
-            "repository series anchor package `package_a` is excluded from release",
+            "`repository_tag_package` `package_a` is excluded from release",
         ));
 
     write(
@@ -1384,7 +1384,7 @@ fn repository_series_is_force_pushed_and_gets_no_github_release() {
         remote_peeled.starts_with(&commit_of(root, "HEAD")),
         "{remote_peeled}"
     );
-    // A repository series tag is a moving tag, so it is never checked for or
+    // A repository tag is a moving tag, so it is never checked for or
     // given a GitHub release, which would silently retarget on the next move.
     let log = fs::read_to_string(root.join(".fake/github-log")).unwrap();
     assert!(!log.contains(r#""tag_name": "repo-v0.3""#), "{log}");
@@ -1407,7 +1407,7 @@ fn repository_series_reports_an_unreadable_historical_anchor_manifest() {
         .assert()
         .failure()
         .stderr(predicate::str::contains(
-            "cannot read repository series anchor manifest \
+            "cannot read repository tag anchor manifest \
              `packages/lat_cli/gleam.toml` at revision `repo-v0.3`",
         ));
 }

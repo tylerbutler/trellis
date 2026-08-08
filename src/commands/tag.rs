@@ -213,7 +213,7 @@ pub fn repository_tag_collides_with_packages(workspace: &Workspace, tag: &str) -
 fn reject_repository_tag_package_collision(workspace: &Workspace, tag: &str) -> Result<()> {
     if repository_tag_collides_with_packages(workspace, tag)? {
         bail!(
-            "repository series tag `{tag}` collides with a package tag namespace; \
+            "repository tag `{tag}` collides with a package tag namespace; \
              choose a distinct `repository_tag_format`"
         );
     }
@@ -235,14 +235,12 @@ fn manifest_version_at_revision(
     };
     let object = format!("{revision}:{manifest}");
     let text = git_stdout(&workspace.root, &["show", &object]).with_context(|| {
-        format!(
-            "cannot read repository series anchor manifest `{manifest}` at revision `{revision}`"
-        )
+        format!("cannot read repository tag anchor manifest `{manifest}` at revision `{revision}`")
     })?;
     GleamManifest::parse(&text)
         .with_context(|| {
             format!(
-                "cannot parse repository series anchor manifest `{manifest}` at revision `{revision}`"
+                "cannot parse repository tag anchor manifest `{manifest}` at revision `{revision}`"
             )
         })
         .map(|manifest| manifest.version)
@@ -378,7 +376,7 @@ pub fn create(workspace: &Workspace, options: &CreateOptions) -> Result<()> {
     Ok(())
 }
 
-/// Reconcile the repository series tag from origin before planning a push.
+/// Reconcile the repository tag from origin before planning a push.
 /// The remote anchor version is authoritative: a stale clone may advance it,
 /// but may never move it backward.
 fn reconcile_remote_repository_series_tag(workspace: &Workspace) -> Result<()> {
@@ -404,7 +402,7 @@ fn reconcile_remote_repository_series_tag(workspace: &Workspace) -> Result<()> {
         })?;
         if remote_version_parsed > head_version {
             bail!(
-                "repository series tag `{tag}` on origin is anchored at newer {} version \
+                "repository tag `{tag}` on origin is anchored at newer {} version \
                  `{remote_version}`; refusing to move it backward to `{anchor_version}`",
                 anchor.name
             );
@@ -703,7 +701,7 @@ pub fn resolve_tag(workspace: &Workspace, tag: &str) -> Result<ResolvedTag> {
             .repository_series_anchor
             .map(|index| (index, workspace.members[index].name.as_str()));
         if !match_tag_template(anchor.as_slice(), tag, format, "{series}", is_series)?.is_empty() {
-            bail!("tag `{tag}` is a repository series tag and does not identify a package release");
+            bail!("tag `{tag}` is a repository tag and does not identify a package release");
         }
     }
     let exact = match_tag_template(
