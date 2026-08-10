@@ -85,8 +85,8 @@ Read `packages`; the alias goes away at 1.0.
 
 `tags` lists the immutable per-version tags and `series_tags` the moving ones,
 each covering only the packages whose
-[`tag_mode`](/docs/configuration/#series-tags) creates that kind — so a
-`series`-only workspace reports an empty `tags`. Repository series tags are
+[`package_tags`](/docs/configuration/#tags) includes that level — so a
+workspace with no `exact` entry reports an empty `tags`. Repository tags are
 deliberately absent from both outputs because they do not identify packages.
 
 Both `ci matrix` and `ci outputs` are shaped by GitHub rather than by trellis,
@@ -233,7 +233,7 @@ a tag-push workflow publishes each package:
 ```
 
 This shape needs per-version tags. A moving
-[series tag](/docs/configuration/#series-tags) matches `*-v*` too, but
+[series tag](/docs/configuration/#tags) matches `*-v*` too, but
 names no particular version, so `publish --tag` rejects it by design —
 `ci tag-package` still resolves it, so the workflow can route on it. Packages
 tagged `series`-only belong in the publish-then-tag shape below.

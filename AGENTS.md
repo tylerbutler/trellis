@@ -24,7 +24,7 @@ Two exclusions, both formats trellis does not own:
 - **CLI long flags.** `--no-update-check`, not `--no_update_check`. Kebab is the
   universal convention there and clap's default.
 
-Free-form table keys (`exclude`, `tasks`, `publish.tag_mode_overrides`) are the
+Free-form table keys (`exclude`, `tasks`, `publish.package_tags_overrides`) are the
 user's to name; a hyphen in one is not a violation, and `doctor` says nothing
 about them.
 
@@ -98,7 +98,9 @@ every later one at **4** — that lands as the 2-space markdown indent. A line a
 - End a `Breaking` entry with the concrete migration: old spelling → new, or the
   `jq` change.
 - Use current spellings in prose: snake_case keys, "package" not "project".
-- 40–90 words for most entries; two or three short paragraphs for a big one.
+- 40–90 words for most entries. A `Breaking` entry may run to ~160, because the
+  migration is load-bearing and does not compress — but the extra budget buys
+  old→new spellings and reachable edge cases, never rationale.
 
 ## Conventions
 

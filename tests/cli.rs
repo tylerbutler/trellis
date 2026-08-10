@@ -1342,10 +1342,13 @@ fn workspace_with(root: &Path, config: &str, a_deps: &str, b_deps: &str) {
 fn a_pre_0_8_kebab_case_key_still_works_and_says_it_is_deprecated() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
-    // The spelling every release through v0.7.0 documented.
+    // The spelling every release through v0.7.0 documented. `package_tags` is
+    // snake-case-only: it postdates the rename, so it has no kebab spelling to
+    // be deprecated for.
     workspace_with(
         root,
-        "[tools.trellis.publish]\ntag-format = \"{name}@{version}\"\n",
+        "[tools.trellis.publish]\nseries-tag-format = \"{name}@{series}\"\n\
+         package_tags = [\"minor\"]\n",
         "",
         "",
     );
@@ -1357,17 +1360,18 @@ fn a_pre_0_8_kebab_case_key_still_works_and_says_it_is_deprecated() {
         // so failing would break working repositories over a spelling.
         .success()
         .stdout(predicate::str::contains(
-            "key `publish.tag-format` is deprecated; rename it to `publish.tag_format`",
+            "key `publish.series-tag-format` is deprecated; rename it to \
+             `publish.series_tag_format`",
         ));
 
     // And it is still in effect — the old name is an alias, not a no-op. This
     // is the half that a silently-ignored key would fail: the tags would come
-    // out in the default `{name}-v{version}` scheme instead.
+    // out in the default `{name}-v{series}` scheme instead.
     trellis(root)
         .args(["ci", "outputs"])
         .assert()
         .success()
-        .stdout(predicate::str::contains(r#"tags=["a@1.0.0","b@1.0.0"]"#));
+        .stdout(predicate::str::contains(r#"series_tags=["a@1.0","b@1.0"]"#));
 }
 
 #[test]

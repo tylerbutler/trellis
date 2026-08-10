@@ -199,10 +199,12 @@ fn tag_plan_json_contract() {
     copy_fixture_to(root);
     let manifest = root.join("gleam.toml");
     let mut config = fs::read_to_string(&manifest).unwrap();
+    // Bare keys, no header: `[tools.trellis.publish]` is the fixture's last
+    // table, and repeating the header would be a TOML duplicate-table error.
     config.push_str(
-        "\n[tools.trellis.publish.repository_series]\n\
-         package = \"lat_cli\"\n\
-         format = \"repo-v{series}\"\n",
+        "repository_tag_package = \"lat_cli\"\n\
+         repository_tag_format = \"repo-v{series}\"\n\
+         repository_tags = [\"minor\"]\n",
     );
     fs::write(manifest, config).unwrap();
     init_repo(root);
@@ -295,7 +297,7 @@ fn ci_tag_package_json_contract_for_a_series_tag() {
         "[tools.trellis]\nmembers = [\"packages/*\", \"examples/*\"]\n\
          exclude = { \"@release\" = [\"examples/*\"] }\n\n\
          [tools.trellis.publish]\n\
-         tag_mode_overrides = { both = [\"packages/lat_cli\"] }\n",
+         package_tags_overrides = { \"packages/lat_cli\" = [\"exact\", \"minor\"] }\n",
     );
     init_repo(root);
 

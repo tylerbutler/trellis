@@ -25,15 +25,14 @@ Tag format, path-dep rewriting, and Hex retry policy are configured under
 
 ```toml title="gleam.toml" wrap
 [tools.trellis.publish]
-tag_format = "{name}-v{version}"          # lat_core-v1.2.0
-series_tag_format = "{name}-v{series}"    # lat_core-v1, lat_cli-v0.4
-# Which tags a release creates:
-#   exact   → the immutable per-version tag only   (default)
-#   series  → the moving series tag only
-#   both    → one of each
-tag_mode = "exact"
-# Per-package overrides, as globs matched against member paths.
-tag_mode_overrides = { both = ["packages/lat_cli"] }
+exact_tag_format = "{name}-v{version}"    # lat_core-v1.2.0
+series_tag_format = "{name}-v{series}"    # lat_core-v1.2, lat_cli-v0.4
+# Which tags a release maintains, one entry per tag. "exact" keeps the whole
+# version and is immutable; "major" (v1) and "minor" (v1.2) truncate it and
+# move. Default ["exact"].
+package_tags = ["exact"]
+# Per-package overrides, keyed by a member-path glob.
+package_tags_overrides = { "packages/lat_cli" = ["exact", "major", "minor"] }
 # How a path dep is rewritten to a Hex requirement at publish time, from the
 # dependency's current version X.Y.Z:
 #   minor  → ">= X.Y.Z and < (X+1).0.0"   (default)
@@ -42,9 +41,10 @@ tag_mode_overrides = { both = ["packages/lat_cli"] }
 path_dep_requirement = "minor"
 retry = { attempts = 5, initial_delay = "30s", multiplier = 2 }
 
-[tools.trellis.publish.repository_series]
-package = "lat_cli"                       # anchor package
-format = "repo-v{series}"                 # repo-v0.4
+repository_tag_package = "lat_cli"        # anchor package
+repository_tag_format = "repo-v{series}"  # repo-v0.4
+# All three repository keys are required together, or omitted together.
+repository_tags = ["major", "minor"]      # repo-v0 and repo-v0.4
 ```
 
 ## The release PR
@@ -67,17 +67,19 @@ as `release pr`) also
 creates a GitHub Release per tag with the matching CHANGELOG section as the
 body.
 
-A package tags in one of two lifecycles, chosen by `tag_mode`:
+Each entry in a package's `package_tags` falls into one of two lifecycles:
 
 - **Exact tags** (`{name}-v{version}`) are immutable. They are created once,
   fetched when origin already has them, and never rewritten — local and remote
   disagreeing about what one names is an error, not something to reconcile.
-- **Series tags** (`{name}-v{series}`) move. Every release in a series
-  force-moves its tag to the release commit and force-pushes it, so consumers
-  can pin `lat_cli-v0.4` and follow the series instead of chasing patch tags.
-  The series is derived from the version — see
-  [series tags](/docs/configuration/#series-tags).
-- **Repository series tags** are independent of `tag_mode`. Trellis moves the
+- **Series tags** (`{name}-v{series}`) move. Releasing a new version in the
+  series force-moves its tag to the release commit and force-pushes it, so
+  consumers can pin `lat_cli-v0.4` and follow the series instead of chasing
+  patch tags. The signal is the package's manifest version stored at the tag,
+  so a commit that does not release the package — another package's release, a
+  docs change — leaves its series tags alone. The series is derived from the
+  version — see [series tags](/docs/configuration/#tags).
+- **Repository tags** are independent of any package's list. Trellis moves the
   configured tag only when the anchor package's manifest version differs from
   the version at that tag. A series change creates a new tag and leaves the
   prior series tag intact.
@@ -98,17 +100,17 @@ force-pushed lat_cli-v0.4
 ```
 
 <Callout>
-`--github-release` skips package and repository series tags. A release attached
+`--github-release` skips every moving tag. A release attached
 to a moving tag would silently retarget on the next release, so only immutable
 per-version tags carry one.
 </Callout>
 
-Under `tag_mode = "series"` a package has no per-version tags at all, so there
+With no `exact` entry a package has no per-version tags at all, so there
 is no tag to trigger a publish from: run `trellis publish --all-untagged` on
 release-PR merge instead. Passing a series tag to `publish --tag` is an error
 — it names a package, but no particular version.
 
-Repository series tags identify repository snapshots rather than package
+Repository tags identify repository snapshots rather than package
 releases, so neither `publish --tag` nor `ci tag-package` resolves them.
 
 ## Publishing to Hex

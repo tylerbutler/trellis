@@ -329,6 +329,24 @@ fn render(template: &str, what: &str, context: minijinja::Value) -> Result<Strin
         .with_context(|| format!("failed to render {what} template"))
 }
 
+/// The `{{ series }}` variable available to `version_format`: the semver
+/// compatibility range a version sits in — `0.Y` while the major is 0, `X`
+/// after. Deliberately its own derivation rather than one of
+/// [`crate::config::SeriesTag`]'s levels: this names a heading in a rendered
+/// changelog and must not shift when a workspace changes which git tags it
+/// publishes. `None` for a prerelease, which belongs to no series.
+fn compatibility_series(version: &str) -> Option<String> {
+    let version = semver::Version::parse(version).ok()?;
+    if !version.pre.is_empty() {
+        return None;
+    }
+    Some(if version.major == 0 {
+        format!("0.{}", version.minor)
+    } else {
+        version.major.to_string()
+    })
+}
+
 /// Render one version section: the version heading, then the entries grouped
 /// by kind in configured order — or, when categories are configured, by
 /// category first and kind within each.
@@ -341,7 +359,7 @@ pub fn render_section(
     fragments: &[&Fragment],
 ) -> Result<String> {
     // Empty for a prerelease, which belongs to no series.
-    let series = crate::config::series_of(version).unwrap_or_default();
+    let series = compatibility_series(version).unwrap_or_default();
     let mut out = render(
         &config.version_format,
         "version_format",
@@ -685,6 +703,19 @@ mod tests {
             body: body.to_string(),
             path: Some(PathBuf::from("unused")),
         }
+    }
+
+    /// `{{ series }}` renders a heading in a committed changelog, so its
+    /// derivation is pinned here and does not follow `publish.package_tags`.
+    #[test]
+    fn the_series_variable_is_the_compatibility_range() {
+        assert_eq!(compatibility_series("0.0.17").as_deref(), Some("0.0"));
+        assert_eq!(compatibility_series("0.12.3").as_deref(), Some("0.12"));
+        assert_eq!(compatibility_series("1.2.3").as_deref(), Some("1"));
+        assert_eq!(compatibility_series("10.0.0").as_deref(), Some("10"));
+        assert_eq!(compatibility_series("1.0.0+build.5").as_deref(), Some("1"));
+        assert_eq!(compatibility_series("1.0.0-beta"), None);
+        assert_eq!(compatibility_series("not-a-version"), None);
     }
 
     fn categorized(package: &str, kind: &str, category: &str, body: &str) -> Fragment {

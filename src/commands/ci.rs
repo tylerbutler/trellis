@@ -4,6 +4,7 @@
 //! ($GITHUB_REF_NAME) to the package it belongs to.
 
 use super::tag::{ResolvedTag, TagKind};
+use crate::config::TagLevel;
 use crate::json::{CiMatrix, CiTagPackageDocument};
 use crate::workspace::{SelectionFilter, Workspace};
 use anyhow::Result;
@@ -65,8 +66,8 @@ pub fn outputs(workspace: &Workspace) -> Result<()> {
     let tags: Vec<String> = workspace
         .members
         .iter()
-        .filter(|m| m.releasable() && m.tag_mode.includes_exact())
-        .map(|m| workspace.config.format_tag(&m.name, m.version()))
+        .filter(|m| m.releasable() && m.tags.contains(&TagLevel::Exact))
+        .map(|m| workspace.config.exact_tag(&m.name, m.version()))
         .collect();
     // Deduplicated: a repository-wide series tag is one tag, however many
     // members move it.
@@ -74,14 +75,15 @@ pub fn outputs(workspace: &Workspace) -> Result<()> {
     for member in workspace
         .members
         .iter()
-        .filter(|m| m.releasable() && m.tag_mode.includes_series())
+        .filter(|m| m.releasable() && m.tags.iter().any(|t| t.is_series()))
     {
-        if let Some(tag) = workspace
+        for tag in workspace
             .config
-            .format_series_tag(&member.name, member.version())
-            && !series_tags.contains(&tag)
+            .series_tags(&member.name, member.version(), &member.tags)
         {
-            series_tags.push(tag);
+            if !series_tags.contains(&tag) {
+                series_tags.push(tag);
+            }
         }
     }
 

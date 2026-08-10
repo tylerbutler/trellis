@@ -287,7 +287,7 @@ pub fn apply(workspace: &Workspace, overrides: &Overrides, json: bool) -> Result
             .chain(entry.generated.iter())
             .collect();
         let next = semver::Version::parse(&entry.next).expect("plan versions are valid");
-        let tag = workspace.config.format_tag(&entry.name, &entry.next);
+        let tag = workspace.config.exact_tag(&entry.name, &entry.next);
         let section = changelog::render_section(
             &workspace.config.changelog,
             &entry.name,
