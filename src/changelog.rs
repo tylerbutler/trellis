@@ -256,7 +256,32 @@ pub fn dependency_fragment(
     })
 }
 
-/// Write a new fragment file, picking an unused `<package>-<n>.toml` name.
+/// The filename stem a body earns: its leading words, kebab-cased. Naming the
+/// file after the change is what makes a directory of fragments readable, and
+/// what keeps two branches from both claiming `<package>-1.toml`.
+fn body_slug(body: &str) -> String {
+    let mut out = String::new();
+    for word in body
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|word| !word.is_empty())
+        .take(4)
+    {
+        let word = word.to_lowercase();
+        if !out.is_empty() {
+            if out.len() + 1 + word.len() > 40 {
+                break;
+            }
+            out.push('-');
+        }
+        out.push_str(&word);
+    }
+    out.truncate(40);
+    out
+}
+
+/// Write a new fragment file, named for the package and the change it
+/// describes. A body with nothing nameable in it (punctuation only) falls back
+/// to the package alone, and any clash takes the next free `-<n>` suffix.
 pub fn write_fragment(
     workspace: &Workspace,
     package: &str,
@@ -273,8 +298,15 @@ pub fn write_fragment(
         doc["category"] = toml_edit::value(category);
     }
     doc["body"] = toml_edit::value(body);
+    let stem = match body_slug(body) {
+        slug if slug.is_empty() => package.to_string(),
+        slug => format!("{package}-{slug}"),
+    };
     for n in 1u32.. {
-        let path = dir.join(format!("{package}-{n}.toml"));
+        let path = dir.join(match n {
+            1 => format!("{stem}.toml"),
+            n => format!("{stem}-{n}.toml"),
+        });
         if !path.exists() {
             std::fs::write(&path, doc.to_string())
                 .with_context(|| format!("failed to write {}", path.display()))?;
@@ -703,6 +735,24 @@ mod tests {
             body: body.to_string(),
             path: Some(PathBuf::from("unused")),
         }
+    }
+
+    /// A fragment's filename comes from its body, so the name has to survive
+    /// whatever a body contains: punctuation, case, unicode, or nothing usable.
+    #[test]
+    fn fragment_names_are_slugs_of_their_body() {
+        assert_eq!(
+            body_slug("repair the flux capacitor, again"),
+            "repair-the-flux-capacitor"
+        );
+        assert_eq!(body_slug("Fix `Vine::grow` panic!"), "fix-vine-grow-panic");
+        assert_eq!(body_slug("  x  "), "x");
+        assert_eq!(body_slug("!!! ---"), "");
+        assert_eq!(body_slug(""), "");
+        // Four long words still stop at the length cap, mid-word if need be.
+        let long = body_slug("aaaaaaaaaaaaaaa bbbbbbbbbbbbbbb ccccccccccccccc");
+        assert_eq!(long, "aaaaaaaaaaaaaaa-bbbbbbbbbbbbbbb");
+        assert!(body_slug(&"z".repeat(60)).len() <= 40);
     }
 
     /// `{{ series }}` renders a heading in a committed changelog, so its
