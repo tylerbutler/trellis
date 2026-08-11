@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.11.1 - 2026-08-11
+
+
+### changelog
+
+#### Changed
+
+- **`changelog new` names a fragment after the change it describes, not a counter.** The file is now `<package>-<first few words of the body>.toml` — `lat_core-reject-path-deps-that.toml` rather than `lat_core-1.toml` — so a directory of unreleased fragments reads as a list of pending changes, and two branches adding a change to the same package no longer both claim `-1`. Bodies with nothing nameable in them fall back to the package alone, and a genuine clash still takes the next free `-2`, `-3` suffix.
+
+  Existing fragments are unaffected: names are never parsed, only written, so anything already in `.changes/unreleased/` keeps working.
+
 ## v0.11.0 - 2026-08-08
 
 
