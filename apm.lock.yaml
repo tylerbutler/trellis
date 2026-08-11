@@ -1,5 +1,5 @@
 lockfile_version: '1'
-generated_at: '2026-08-08T03:45:51.361672+00:00'
+generated_at: '2026-08-11T19:23:49.801525+00:00'
 apm_version: 0.28.0
 dependencies:
 - repo_url: dietrichgebert/ponytail
@@ -84,6 +84,7 @@ dependencies:
     .github/hooks/scripts/ponytail/hooks/ponytail-statusline.sh: sha256:f1dbfa5997a5d4b5339619709053eff557ab16d71af75eb3041c3d3e3dca42ec
     .github/hooks/scripts/ponytail/hooks/ponytail-subagent.js: sha256:7f6bee86702a488d29ef0dcaabf424bbe2aca345a6a642319d43a1fe0276792e
   content_hash: sha256:17a5d405c7a1b9ef17969bc14deacaa78ae420fb453c0f2b1f7170d530e55b26
+  is_dev: true
 - repo_url: juliusbrussee/caveman
   materialization_repo_url: JuliusBrussee/caveman
   name: caveman-commit
@@ -106,7 +107,26 @@ dependencies:
     .claude/skills/caveman-commit/README.md: sha256:a2e82924b487fc1845114c247b47c2d3c2d1bd60f90bbfa60e9831319eb964fa
     .claude/skills/caveman-commit/SKILL.md: sha256:58db7b8efab911a629c26e7132517d9076e4e3645009eb604cb8c25663477841
   content_hash: sha256:790a4eeace0be35c6691faf923518ba5bd50f1f1305d1101d09dd4971be94e00
+  is_dev: true
 deployments:
+- kind: project-relative
+  target: agents
+  value: .agents/skills/trellis-onboarding
+  runtime: null
+  scope: project
+  owners:
+  - .
+  active_owner: .
+  content_hash: null
+- kind: project-relative
+  target: agents
+  value: .agents/skills/trellis-onboarding/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - .
+  active_owner: .
+  content_hash: sha256:ae99df8cb27e09887e02c4f77dfe3bf6d86d30258fc269d40bf4a68e3b267565
 - kind: project-relative
   target: claude
   value: .claude/hooks/ponytail/hooks/package.json
@@ -324,6 +344,24 @@ deployments:
   active_owner: dietrichgebert/ponytail
   content_hash: sha256:1316a2f3f95741d2300b116fe0c2d81ce4a9568656ed0a62643f54aaf09957f2
 - kind: project-relative
+  target: claude
+  value: .claude/skills/trellis-onboarding
+  runtime: null
+  scope: project
+  owners:
+  - .
+  active_owner: .
+  content_hash: null
+- kind: project-relative
+  target: claude
+  value: .claude/skills/trellis-onboarding/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - .
+  active_owner: .
+  content_hash: sha256:ae99df8cb27e09887e02c4f77dfe3bf6d86d30258fc269d40bf4a68e3b267565
+- kind: project-relative
   target: copilot
   value: .agents/skills/caveman-commit
   runtime: null
@@ -539,13 +577,11 @@ deployments:
   - dietrichgebert/ponytail
   active_owner: dietrichgebert/ponytail
   content_hash: sha256:7f6bee86702a488d29ef0dcaabf424bbe2aca345a6a642319d43a1fe0276792e
-lsp_servers:
-- rust-analyzer
-lsp_configs:
-  rust-analyzer:
-    name: rust-analyzer
-    command: rust-analyzer
-    extensionToLanguage:
-      .rs: rust
-    restartOnCrash: true
-    maxRestarts: 3
+local_deployed_files:
+- .agents/skills/trellis-onboarding
+- .agents/skills/trellis-onboarding/SKILL.md
+- .claude/skills/trellis-onboarding
+- .claude/skills/trellis-onboarding/SKILL.md
+local_deployed_file_hashes:
+  .agents/skills/trellis-onboarding/SKILL.md: sha256:ae99df8cb27e09887e02c4f77dfe3bf6d86d30258fc269d40bf4a68e3b267565
+  .claude/skills/trellis-onboarding/SKILL.md: sha256:ae99df8cb27e09887e02c4f77dfe3bf6d86d30258fc269d40bf4a68e3b267565

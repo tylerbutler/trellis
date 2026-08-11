@@ -6,7 +6,7 @@ targets:
   - copilot
   - claude
 
-dependencies:
+devDependencies:
   apm:
     # - tylerbutler/agent-marketplace/plugins/repo-tools
     # - tylerbutler/agent-marketplace/plugins/specialists

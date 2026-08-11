@@ -1,10 +1,1 @@
-{
-  "rust-analyzer": {
-    "command": "rust-analyzer",
-    "restartOnCrash": true,
-    "maxRestarts": 3,
-    "extensionToLanguage": {
-      ".rs": "rust"
-    }
-  }
-}
+{}
