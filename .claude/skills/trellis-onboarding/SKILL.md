@@ -8,7 +8,9 @@ Onboard the repo to use Trellis. This includes adding the Trellis config file, c
 
 ## Initial Setup
 
-First check the repository for existing tools for managing changelogs, handling releases, and task running. If any of those are found, ask the user if they want to keep using those tools or switch to Trellis. If they want to switch, clarify that Trellis will take over those responsibilities and that they will need to migrate any existing changelog or release notes to Trellis.
+First confirm that the project is a Gleam project. If not, explain to the user that Trellis is designed for Gleam projects. 
+
+Then check the repository for existing tools for managing changelogs, handling releases, and task running. If any of those are found, ask the user if they want to keep using those tools or switch to Trellis. If they want to switch, clarify that Trellis will take over those responsibilities and that they will need to migrate any existing changelog or release notes to Trellis.
 
 ## Migration
 
@@ -16,4 +18,4 @@ Refer to the documentation for Trellis for instructions on how to migrate existi
 
 ## Reference
 
-- Documentation for trellis: https://github.com/tylerbutler/trellis/tree/main/website/src/content/docs/docs, also published to https://trellis.tylerbutler.com.
+- Documentation for Trellis: https://github.com/tylerbutler/trellis/tree/main/website/src/content/docs/docs, also published to https://trellis.tylerbutler.com.

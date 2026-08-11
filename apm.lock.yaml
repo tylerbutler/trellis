@@ -126,7 +126,7 @@ deployments:
   owners:
   - .
   active_owner: .
-  content_hash: sha256:ae99df8cb27e09887e02c4f77dfe3bf6d86d30258fc269d40bf4a68e3b267565
+  content_hash: sha256:2b147d03e89aca49126605bf858828428c6c6f3640d71c0e018d7fde7eaa3ef3
 - kind: project-relative
   target: claude
   value: .claude/hooks/ponytail/hooks/package.json
@@ -360,7 +360,7 @@ deployments:
   owners:
   - .
   active_owner: .
-  content_hash: sha256:ae99df8cb27e09887e02c4f77dfe3bf6d86d30258fc269d40bf4a68e3b267565
+  content_hash: sha256:2b147d03e89aca49126605bf858828428c6c6f3640d71c0e018d7fde7eaa3ef3
 - kind: project-relative
   target: copilot
   value: .agents/skills/caveman-commit
@@ -583,5 +583,5 @@ local_deployed_files:
 - .claude/skills/trellis-onboarding
 - .claude/skills/trellis-onboarding/SKILL.md
 local_deployed_file_hashes:
-  .agents/skills/trellis-onboarding/SKILL.md: sha256:ae99df8cb27e09887e02c4f77dfe3bf6d86d30258fc269d40bf4a68e3b267565
-  .claude/skills/trellis-onboarding/SKILL.md: sha256:ae99df8cb27e09887e02c4f77dfe3bf6d86d30258fc269d40bf4a68e3b267565
+  .agents/skills/trellis-onboarding/SKILL.md: sha256:2b147d03e89aca49126605bf858828428c6c6f3640d71c0e018d7fde7eaa3ef3
+  .claude/skills/trellis-onboarding/SKILL.md: sha256:2b147d03e89aca49126605bf858828428c6c6f3640d71c0e018d7fde7eaa3ef3
