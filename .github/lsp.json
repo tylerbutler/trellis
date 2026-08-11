@@ -1,13 +1,3 @@
 {
-  "lspServers": {
-    "rust-analyzer": {
-      "command": "rust-analyzer",
-      "restartOnCrash": true,
-      "maxRestarts": 3,
-      "fileExtensions": {
-        ".rs": "rust"
-      },
-      "args": []
-    }
-  }
+  "lspServers": {}
 }
