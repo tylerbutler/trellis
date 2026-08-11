@@ -22,7 +22,7 @@ trellis version apply [--json]
 A fragment is one file in `.changes/unreleased/` with three keys — the package
 it belongs to, a configured change kind, and the entry text:
 
-```toml title=".changes/unreleased/lat_core-1.toml"
+```toml title=".changes/unreleased/lat_core-add-graph-parallel-task.toml"
 package = "lat_core"
 kind = "Added"
 body = "Add graph-parallel task scheduling"
@@ -43,8 +43,12 @@ be omitted when the workspace has exactly one releasable package):
 ```console
 $ trellis changelog new --package lat_core --kind Fixed \
     --body "Reject path deps that escape the workspace"
-created .changes/unreleased/lat_core-1.toml
+created .changes/unreleased/lat_core-reject-path-deps-that.toml
 ```
+
+The filename is the package plus the first few words of the body, so a
+directory of fragments reads as a list of pending changes and two branches
+rarely pick the same name. A clash takes the next free `-2`, `-3` suffix.
 
 <Callout>
 

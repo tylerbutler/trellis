@@ -179,15 +179,16 @@ fn new_fragment_writes_toml_and_validates_inputs() {
         .assert()
         .success()
         .stdout(predicate::str::contains(
-            ".changes/unreleased/lat_core-1.toml",
+            ".changes/unreleased/lat_core-grow-more-vines.toml",
         ));
-    let fragment = fs::read_to_string(root.join(".changes/unreleased/lat_core-1.toml")).unwrap();
+    let fragment =
+        fs::read_to_string(root.join(".changes/unreleased/lat_core-grow-more-vines.toml")).unwrap();
     assert_eq!(
         fragment,
         "package = \"lat_core\"\nkind = \"Added\"\nbody = \"grow more vines\"\n"
     );
 
-    // A second fragment gets the next free name.
+    // A different body earns a different name, no counter involved.
     trellis(root)
         .args([
             "changelog",
@@ -201,7 +202,23 @@ fn new_fragment_writes_toml_and_validates_inputs() {
         ])
         .assert()
         .success()
-        .stdout(predicate::str::contains("lat_core-2.toml"));
+        .stdout(predicate::str::contains("lat_core-x.toml"));
+
+    // The same body twice falls back to a counter.
+    trellis(root)
+        .args([
+            "changelog",
+            "new",
+            "--package",
+            "lat_core",
+            "--kind",
+            "Fixed",
+            "--body",
+            "x",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("lat_core-x-2.toml"));
 
     trellis(root)
         .args([
@@ -305,7 +322,8 @@ fn new_fragment_records_a_category_and_validates_it() {
         ])
         .assert()
         .success();
-    let fragment = fs::read_to_string(root.join(".changes/unreleased/lat_core-1.toml")).unwrap();
+    let fragment =
+        fs::read_to_string(root.join(".changes/unreleased/lat_core-grow-more-vines.toml")).unwrap();
     assert_eq!(
         fragment,
         "package = \"lat_core\"\nkind = \"Added\"\ncategory = \"build\"\nbody = \"grow more vines\"\n"
@@ -325,7 +343,7 @@ fn new_fragment_records_a_category_and_validates_it() {
         ])
         .assert()
         .success();
-    let fragment = fs::read_to_string(root.join(".changes/unreleased/lat_core-2.toml")).unwrap();
+    let fragment = fs::read_to_string(root.join(".changes/unreleased/lat_core-x.toml")).unwrap();
     assert_eq!(
         fragment,
         "package = \"lat_core\"\nkind = \"Fixed\"\nbody = \"x\"\n"
