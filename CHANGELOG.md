@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.11.2 - 2026-08-12
+
+
+### publish
+
+#### Fixed
+
+- **`publish` clears a package's resolved dependency tree after rewriting its path deps.** Validation resolves `build/packages` while those deps are still paths, and gleam cannot swap a local dependency for the Hex release of the same name in place: it drops the local entry, then fails reading the `gleam.toml` it just removed. Publishing any package with a path dep died that way, retries and all.
+
+  Only `build/packages` is cleared, so compiled output under `build/dev` survives and the publish compile stays incremental. A package whose manifest needed no rewrite keeps its tree untouched.
+
 ## v0.11.1 - 2026-08-11
 
 
