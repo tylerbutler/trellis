@@ -86,6 +86,10 @@ fn init_repo(root: &Path) {
 
 /// A fake gleam that logs every invocation (cwd + args) to `.fake/gleam-log`
 /// and snapshots gleam.toml at publish time so tests can observe the rewrite.
+///
+/// It also records whether `build/packages` existed at each invocation, in
+/// `.fake/build-state` — a separate file so tests asserting on the exact
+/// contents of `gleam-log` are unaffected.
 fn install_fake_gleam(root: &Path) -> PathBuf {
     let script = root.join("fake-gleam.sh");
     write(
@@ -96,6 +100,8 @@ fn install_fake_gleam(root: &Path) -> PathBuf {
                 "set -eu\n",
                 "root=\"{root}\"\n",
                 "echo \"$(basename \"$PWD\") gleam $*\" >> \"$root/.fake/gleam-log\"\n",
+                "if [ -d build/packages ]; then state=present; else state=absent; fi\n",
+                "echo \"$(basename \"$PWD\") $1 $state\" >> \"$root/.fake/build-state\"\n",
                 "if [ \"$1\" = publish ]; then\n",
                 "  cp gleam.toml \"$root/.fake/published-$(basename \"$PWD\").toml\"\n",
                 "fi\n",
@@ -456,6 +462,78 @@ fn publish_rewrites_path_deps_and_restores_the_manifest() {
         fs::read_to_string(root.join("packages/lat_mid/gleam.toml")).unwrap(),
         original
     );
+}
+
+#[test]
+fn publish_clears_the_stale_dependency_tree_before_publishing() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+    let gleam = install_fake_gleam(root);
+    let hex = mock_hex(vec![("lat_core", vec!["1.2.0"])]); // lat_mid: 404
+
+    // Stand in for what validation leaves behind: a dependency tree gleam
+    // resolved while lat_core was still a path dep, alongside compiled output.
+    let packages = root.join("packages/lat_mid/build/packages");
+    fs::create_dir_all(&packages).unwrap();
+    write(&packages.join("lat_core.config_fingerprint"), "stale");
+    let compiled = root.join("packages/lat_mid/build/dev/erlang/lat_mid");
+    fs::create_dir_all(&compiled).unwrap();
+    write(&compiled.join("lat_mid.app"), "compiled");
+
+    trellis(root)
+        .env("TRELLIS_GLEAM_BIN", &gleam)
+        .env("TRELLIS_HEX_API_URL", &hex)
+        .args(["publish", "lat_mid"])
+        .assert()
+        .success();
+
+    // Validation runs against the tree as resolved; publish must not, or gleam
+    // fails reading the local dependency it just dropped from the manifest.
+    let state = fs::read_to_string(root.join(".fake/build-state")).unwrap();
+    assert_eq!(
+        state,
+        concat!(
+            "lat_mid format present\n",
+            "lat_mid build present\n",
+            "lat_mid test present\n",
+            "lat_mid publish absent\n",
+        )
+    );
+    // Only the resolved-dependency half is stale; compiled output survives.
+    assert!(
+        compiled.join("lat_mid.app").exists(),
+        "clearing the dependency tree must not throw away compiled artifacts"
+    );
+}
+
+#[test]
+fn publish_keeps_the_dependency_tree_when_nothing_is_rewritten() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+    let gleam = install_fake_gleam(root);
+    let hex = mock_hex(vec![]); // nothing published yet
+
+    // lat_core has no path deps, so its manifest is published as-is and its
+    // dependency tree stays valid throughout — no reason to pay for a refetch.
+    let packages = root.join("packages/lat_core/build/packages");
+    fs::create_dir_all(&packages).unwrap();
+    write(&packages.join("gleam.lock"), "");
+
+    trellis(root)
+        .env("TRELLIS_GLEAM_BIN", &gleam)
+        .env("TRELLIS_HEX_API_URL", &hex)
+        .args(["publish", "lat_core"])
+        .assert()
+        .success();
+
+    let state = fs::read_to_string(root.join(".fake/build-state")).unwrap();
+    assert!(
+        state.contains("lat_core publish present"),
+        "unrewritten package should keep its dependency tree:\n{state}"
+    );
+    assert!(packages.join("gleam.lock").exists());
 }
 
 #[test]

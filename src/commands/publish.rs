@@ -3,7 +3,8 @@
 //!      failed release),
 //!   2. validation (`gleam format --check`, `build --warnings-as-errors`,
 //!      `test`), Hex-touching steps wrapped in the retry policy,
-//!   3. path-dep rewrite computed from the graph,
+//!   3. path-dep rewrite computed from the graph, clearing the resolved
+//!      dependency tree the rewrite invalidates,
 //!   4. `gleam publish --yes` with retry,
 //!   5. restore the original gleam.toml (the repo never shows rewritten
 //!      files, even on failure).
@@ -176,6 +177,21 @@ pub fn run(workspace: &Workspace, options: &PublishOptions) -> Result<bool> {
         };
         std::fs::write(&manifest_path, &rewritten)
             .with_context(|| format!("failed to write {}", manifest_path.display()))?;
+        // Validation resolved `build/packages` while the rewritten deps were
+        // still paths, and gleam cannot swap a local dependency for the Hex
+        // release of the same name in place: it drops the local entry, then
+        // reads the gleam.toml it just removed and fails with a file-IO error.
+        // Clearing the resolved tree makes the next resolve start from the
+        // rewritten manifest; `build/dev` — the compiled half, and the
+        // expensive one — is untouched.
+        if !rewrites.is_empty() {
+            let resolved = member.path.join("build").join("packages");
+            if resolved.exists() {
+                std::fs::remove_dir_all(&resolved).with_context(|| {
+                    format!("failed to clear resolved deps at {}", resolved.display())
+                })?;
+            }
+        }
         for rewrite in &rewrites {
             crate::status!(
                 "[{}] rewrote {} -> \"{}\"",

@@ -1,0 +1,7 @@
+component: publish
+kind: Fixed
+body: |-
+  **`publish` clears a package's resolved dependency tree after rewriting its path deps.** Validation resolves `build/packages` while those deps are still paths, and gleam cannot swap a local dependency for the Hex release of the same name in place: it drops the local entry, then fails reading the `gleam.toml` it just removed. Publishing any package with a path dep died that way, retries and all.
+
+    Only `build/packages` is cleared, so compiled output under `build/dev` survives and the publish compile stays incremental. A package whose manifest needed no rewrite keeps its tree untouched.
+time: 2026-08-11T19:52:00.000000-07:00
