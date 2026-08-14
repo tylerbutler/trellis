@@ -35,7 +35,7 @@ export default defineConfig({
       ],
       customCss: [
         "@fontsource-variable/archivo/wdth.css",
-        "@fontsource-variable/martian-mono",
+        "@fontsource-variable/fira-code",
         "./src/styles/starlight.css",
       ],
       components: {
@@ -70,7 +70,7 @@ export default defineConfig({
           borderRadius: "8px",
           borderColor: "oklch(0.34 0.03 230)",
           codeFontFamily:
-            '"Martian Mono Variable", ui-monospace, "SF Mono", Menlo, monospace',
+            '"Fira Code Variable", ui-monospace, "SF Mono", Menlo, monospace',
           codeFontSize: "0.875rem",
           codeLineHeight: "1.75",
           codeBackground: "oklch(0.205 0.026 230)",

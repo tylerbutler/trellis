@@ -22,7 +22,7 @@
 
   /* -- type -- */
   --font-sans: "Archivo Variable", "Helvetica Neue", Arial, sans-serif;
-  --font-mono: "Martian Mono Variable", ui-monospace, "SF Mono", Menlo, monospace;
+  --font-mono: "Fira Code Variable", ui-monospace, "SF Mono", Menlo, monospace;
 
   --text-display: clamp(2.3rem, 1.1rem + 4.6vw, 4.4rem);
   --text-h2: clamp(1.6rem, 1.05rem + 2.1vw, 2.5rem);

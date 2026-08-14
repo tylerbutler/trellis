@@ -37,7 +37,7 @@
 
   /* type */
   --sl-font: "Archivo Variable", "Helvetica Neue", Arial, sans-serif;
-  --sl-font-mono: "Martian Mono Variable", ui-monospace, "SF Mono", Menlo, monospace;
+  --sl-font-mono: "Fira Code Variable", ui-monospace, "SF Mono", Menlo, monospace;
   --sl-text-base: var(--text-body);
   --sl-text-h1: var(--text-docs-h1);
   --sl-text-h2: var(--text-docs-h2);

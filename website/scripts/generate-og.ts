@@ -5,7 +5,7 @@
  * - Colors are parsed from src/styles/tokens.css (the same OKLCH tokens the
  *   site ships) and converted to hex with culori.
  * - Fonts are instanced at the exact DESIGN.md axis values (Archivo
- *   'wdth' 118 / wght 680, Martian Mono wght 560) from the same
+ *   'wdth' 118 / wght 680, Fira Code wght 560) from the same
  *   @fontsource-variable woff2 files the site serves, via HarfBuzz.
  * - The lattice glyph is the committed dark-scheme favicon mark.
  *
@@ -66,7 +66,7 @@ async function instance(
 const archivoText = headlinePlain + headlineBrass + wordmark;
 const monoText = `$ ${command}${domain}`;
 
-const [archivoDisplay, archivoWordmark, martianMono] = await Promise.all([
+const [archivoDisplay, archivoWordmark, firaCode] = await Promise.all([
   instance(
     "@fontsource-variable/archivo/files/archivo-latin-wdth-normal.woff2",
     archivoText,
@@ -78,7 +78,7 @@ const [archivoDisplay, archivoWordmark, martianMono] = await Promise.all([
     { wght: 640, wdth: 118 },
   ),
   instance(
-    "@fontsource-variable/martian-mono/files/martian-mono-latin-wght-normal.woff2",
+    "@fontsource-variable/fira-code/files/fira-code-latin-wght-normal.woff2",
     monoText,
     { wght: 560 },
   ),
@@ -175,7 +175,7 @@ const card = h(
             justifyContent: "space-between",
             alignItems: "center",
             marginTop: 30,
-            fontFamily: "Martian Mono",
+            fontFamily: "Fira Code",
             fontSize: 23,
           },
           [
@@ -199,7 +199,7 @@ const svg = await satori(card, {
   fonts: [
     { name: "Archivo Display", data: archivoDisplay, weight: 680 },
     { name: "Archivo Wordmark", data: archivoWordmark, weight: 640 },
-    { name: "Martian Mono", data: martianMono, weight: 560 },
+    { name: "Fira Code", data: firaCode, weight: 560 },
   ],
 });
 
