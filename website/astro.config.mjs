@@ -70,7 +70,7 @@ export default defineConfig({
           borderRadius: "8px",
           borderColor: "oklch(0.34 0.03 230)",
           codeFontFamily:
-            '"Fira Code Variable", "SF Mono", Menlo, ui-monospace, monospace',
+            '"Fira Code Variable", ui-monospace, "SF Mono", Menlo, monospace',
           codeFontSize: "0.875rem",
           codeLineHeight: "1.75",
           codeBackground: "oklch(0.205 0.026 230)",
