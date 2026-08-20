@@ -34,6 +34,7 @@ pub struct PublishOptions {
 }
 
 pub fn run(workspace: &Workspace, options: &PublishOptions) -> Result<bool> {
+    workspace.refuse_under_adapter("publish")?;
     let targets: Vec<usize> = match &options.selector {
         Selector::Package(name) => {
             let idx = workspace

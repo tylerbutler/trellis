@@ -228,22 +228,28 @@ fn manifest_version_at_revision(
     anchor: &crate::workspace::Member,
     revision: &str,
 ) -> Result<String> {
+    let manifest_rel = workspace.manifest_rel();
     let manifest = if anchor.rel_path == "." {
-        crate::workspace::GLEAM_TOML.to_string()
+        manifest_rel.to_string()
     } else {
-        format!("{}/{}", anchor.rel_path, crate::workspace::GLEAM_TOML)
+        format!("{}/{manifest_rel}", anchor.rel_path)
     };
     let object = format!("{revision}:{manifest}");
     let text = git_stdout(&workspace.root, &["show", &object]).with_context(|| {
         format!("cannot read repository tag anchor manifest `{manifest}` at revision `{revision}`")
     })?;
-    GleamManifest::parse(&text)
-        .with_context(|| {
-            format!(
-                "cannot parse repository tag anchor manifest `{manifest}` at revision `{revision}`"
-            )
+    let parsed = || -> Result<String> {
+        Ok(match workspace.adapter() {
+            Some(adapter) => {
+                crate::manifest::read_string(&text, adapter.format()?, &adapter.version)?
+                    .with_context(|| format!("no `{}` field", adapter.version))?
+            }
+            None => GleamManifest::parse(&text)?.version,
         })
-        .map(|manifest| manifest.version)
+    };
+    parsed().with_context(|| {
+        format!("cannot parse repository tag anchor manifest `{manifest}` at revision `{revision}`")
+    })
 }
 
 pub fn plan(workspace: &Workspace, json: bool) -> Result<()> {

@@ -177,12 +177,13 @@ impl Report {
 
 /// Load the workspace and run every check, collecting findings and the fixes
 /// that would remediate the mechanical ones. No output, no side effects.
-fn inspect(root: &Path) -> Result<Report> {
+fn inspect(root: &Path) -> Result<(Report, Option<String>)> {
     let (workspace, diagnostics) = Workspace::load_with_diagnostics(root)?;
     let mut report = Report {
         findings: diagnostics.findings,
         ..Report::default()
     };
+    let mut adapter_manifest = None;
 
     if let Some(workspace) = &workspace {
         report.configless = workspace.configless;
@@ -195,40 +196,119 @@ fn inspect(root: &Path) -> Result<Report> {
                 lifecycle: member.lifecycle,
             })
             .collect();
+        adapter_manifest = workspace.adapter().map(|adapter| adapter.manifest.clone());
+        // The checks reading a `manifest.toml`, a Gleam dependency table, or
+        // the gleam binary have nothing to look at in an adapter workspace;
+        // `check_adapter` takes their place. The rest run either way.
+        let gleam = adapter_manifest.is_none();
         check_exclusions(workspace, &mut report);
         check_tag_collisions(workspace, &mut report);
-        check_lockfiles(workspace, &mut report);
+        if gleam {
+            check_lockfiles(workspace, &mut report);
+        }
         check_changelogs(workspace, &mut report);
         check_fragments(workspace, &mut report);
-        check_shared_dependencies(workspace, &mut report);
-        check_tool_versions(workspace, &mut report);
+        if gleam {
+            check_shared_dependencies(workspace, &mut report);
+            check_tool_versions(workspace, &mut report);
+        } else {
+            check_adapter(workspace, &mut report);
+        }
     }
-    Ok(report)
+    Ok((report, adapter_manifest))
+}
+
+/// The adapter's own claims about each member manifest, in place of the checks
+/// that read a `gleam.toml`.
+///
+/// Missing, unparseable, and nameless manifests are already errors from
+/// [`Workspace::load_with_diagnostics`] — a member that fails any of those is
+/// not in `members` at all — so what is left is what loading accepted but a
+/// release would trip over.
+fn check_adapter(workspace: &Workspace, report: &mut Report) {
+    let manifest_rel = workspace.manifest_rel();
+    for member in &workspace.members {
+        let at = format!("{}/{manifest_rel}", member.rel_path);
+        if semver::Version::parse(member.version()).is_err() {
+            report.push(
+                Finding::error(
+                    Check::PackageVersion,
+                    format!(
+                        "package `{}` version `{}` is not valid semver",
+                        member.name,
+                        member.version()
+                    ),
+                )
+                .at(&at)
+                .in_package(member.name.clone()),
+            );
+        }
+        // Members are found by globbing directories, so a name that disagrees
+        // with its directory makes `--package` and the tag namespace read
+        // wrong. A warning, not an error: nothing downstream requires them to
+        // match, and repositories in the wild do drift here.
+        let dir_name = member
+            .rel_path
+            .rsplit('/')
+            .next()
+            .unwrap_or(&member.rel_path);
+        if !member.rel_path.is_empty() && dir_name != member.name {
+            report.push(
+                Finding::warning(
+                    Check::PackageManifest,
+                    format!(
+                        "package `{}` lives in `{}`; the manifest name and the directory \
+                         disagree",
+                        member.name, member.rel_path
+                    ),
+                )
+                .at(&at)
+                .in_package(member.name.clone()),
+            );
+        }
+    }
 }
 
 /// Returns true when the workspace is healthy (warnings allowed).
 pub fn run(root: &Path, options: &DoctorOptions) -> Result<bool> {
     let text = options.format.is_text();
+    // Inspecting first so the preamble can name the checks that actually ran —
+    // it writes nothing, so the output order is unchanged.
+    let (mut report, adapter_manifest) = inspect(root)?;
     if text {
-        let checked = [
-            "member globs resolve and every package has a parseable gleam.toml",
-            "path dependencies stay inside the workspace; graph is acyclic",
-            "task exclusion globs match members; no package depends on one unavailable at its release lifecycle",
-            "tag format produces a unique tag per releasable package",
-            "manifest.toml locked versions match workspace-internal gleam.toml versions",
-            "each releasable package's version is not behind its CHANGELOG",
-            "unreleased changelog fragments parse and reference valid packages, kinds, and categories",
-            "[tools.trellis] carries no unrecognized or deprecated keys",
-            "packages agree on the external dependencies they share",
-            "gleam on PATH matches the .tool-versions pin (advisory)",
-        ];
-        for check in checked {
+        let manifest = adapter_manifest.as_deref().unwrap_or("gleam.toml");
+        let mut checked = vec![format!(
+            "member globs resolve and every package has a parseable {manifest}"
+        )];
+        if adapter_manifest.is_none() {
+            checked
+                .push("path dependencies stay inside the workspace; graph is acyclic".to_string());
+            checked.push("task exclusion globs match members; no package depends on one unavailable at its release lifecycle".to_string());
+        } else {
+            checked.push("task exclusion globs match members".to_string());
+        }
+        checked.push("tag format produces a unique tag per releasable package".to_string());
+        if adapter_manifest.is_none() {
+            checked.push(format!(
+                "manifest.toml locked versions match workspace-internal {manifest} versions"
+            ));
+        }
+        checked.push("each releasable package's version is not behind its CHANGELOG".to_string());
+        checked.push("unreleased changelog fragments parse and reference valid packages, kinds, and categories".to_string());
+        checked.push("[tools.trellis] carries no unrecognized or deprecated keys".to_string());
+        if adapter_manifest.is_none() {
+            checked.push("packages agree on the external dependencies they share".to_string());
+            checked.push("gleam on PATH matches the .tool-versions pin (advisory)".to_string());
+        } else {
+            checked.push(format!(
+                "every {manifest} declares a semver version, and a name matching its directory"
+            ));
+        }
+        for check in &checked {
             crate::status!("{}", crate::term::dim(&format!("checked: {check}")));
         }
         crate::status!();
     }
-
-    let mut report = inspect(root)?;
 
     // --dry-run only previews; it never writes, so state (and exit code) is
     // identical to a plain run — a fixable error still fails, keeping CI honest.
@@ -261,7 +341,7 @@ pub fn run(root: &Path, options: &DoctorOptions) -> Result<bool> {
         // Moved out before the re-inspect, which by design no longer reports
         // them — this is the only remaining record of what was written.
         applied = std::mem::take(&mut report.fixes);
-        report = inspect(root)?;
+        report = inspect(root)?.0;
     }
 
     if text {
@@ -570,7 +650,7 @@ fn check_exclusions(workspace: &Workspace, report: &mut Report) {
                             dep.lifecycle.key(),
                         ),
                     )
-                    .at(format!("{}/gleam.toml", member.rel_path))
+                    .at(format!("{}/{}", member.rel_path, workspace.manifest_rel()))
                     .in_package(member.name.clone()),
                 );
             }
@@ -597,14 +677,14 @@ fn check_member_glob(workspace: &Workspace, label: &str, pattern: &str, report: 
                 Check::ExclusionGlob,
                 format!("{label} `{pattern}` matches no member (typo?)"),
             )
-            .at(crate::workspace::GLEAM_TOML),
+            .at(workspace.config_rel),
         ),
         None => report.push(
             Finding::error(
                 Check::ExclusionGlob,
                 format!("{label} `{pattern}` is invalid"),
             )
-            .at(crate::workspace::GLEAM_TOML),
+            .at(workspace.config_rel),
         ),
     }
 }
@@ -628,6 +708,7 @@ fn check_tag_collisions(workspace: &Workspace, report: &mut Report) {
         tag: String,
         owner: String,
         member: &crate::workspace::Member,
+        config_rel: &str,
     ) {
         if let Some(other) = seen.get(&tag) {
             report.push(
@@ -635,7 +716,7 @@ fn check_tag_collisions(workspace: &Workspace, report: &mut Report) {
                     Check::TagCollision,
                     format!("tag collision: {other} and {owner} both produce tag `{tag}`"),
                 )
-                .at(crate::workspace::GLEAM_TOML)
+                .at(config_rel)
                 .in_package(&member.name),
             );
         } else {
@@ -654,6 +735,7 @@ fn check_tag_collisions(workspace: &Workspace, report: &mut Report) {
                 tag,
                 format!("package `{}` exact tag", member.name),
                 member,
+                workspace.config_rel,
             );
         }
     }
@@ -698,7 +780,7 @@ fn check_tag_collisions(workspace: &Workspace, report: &mut Report) {
                     workspace.config.publish.series_tag_format,
                 ),
             )
-            .at(crate::workspace::GLEAM_TOML),
+            .at(workspace.config_rel),
         );
     }
 
@@ -723,6 +805,7 @@ fn check_tag_collisions(workspace: &Workspace, report: &mut Report) {
                 tag,
                 format!("package `{}` series tag", member.name),
                 member,
+                workspace.config_rel,
             );
         }
     }
@@ -746,7 +829,7 @@ fn check_tag_collisions(workspace: &Workspace, report: &mut Report) {
                             anchor.name
                         ),
                     )
-                    .at(crate::workspace::GLEAM_TOML)
+                    .at(workspace.config_rel)
                     .in_package(&anchor.name),
                 );
             }
@@ -889,7 +972,7 @@ fn check_changelogs(workspace: &Workspace, report: &mut Report) {
                         member.version()
                     ),
                 )
-                .at(format!("{}/gleam.toml", member.rel_path))
+                .at(format!("{}/{}", member.rel_path, workspace.manifest_rel()))
                 .in_package(member.name.clone()),
             );
             continue;
@@ -903,11 +986,13 @@ fn check_changelogs(workspace: &Workspace, report: &mut Report) {
                 Finding::error(
                     Check::ChangelogBehind,
                     format!(
-                        "package `{}` gleam.toml version {} is behind its CHANGELOG ({latest})",
-                        member.name, current
+                        "package `{}` {} version {} is behind its CHANGELOG ({latest})",
+                        member.name,
+                        workspace.manifest_rel(),
+                        current
                     ),
                 )
-                .at(format!("{}/gleam.toml", member.rel_path))
+                .at(format!("{}/{}", member.rel_path, workspace.manifest_rel()))
                 .in_package(member.name.clone()),
             );
         }

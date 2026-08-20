@@ -21,6 +21,13 @@ version, and path dependencies. The dependency graph — topological order,
 publish order, change impact, path-dep rewrite maps — is computed, never
 declared.
 
+Gleam is the native, batteries-included ecosystem. For a repository whose
+packages are not Gleam packages — a Claude Code plugin marketplace, an APM
+monorepo, anything distributed by git ref rather than a registry — a
+[`[tools.trellis.adapter]`](#manifest-adapter) table redefines which file marks
+a member and where its name and version live. Everything downstream is the same
+code.
+
 See [docs/DESIGN.md](docs/DESIGN.md) for the full design.
 
 ## Status
@@ -171,11 +178,45 @@ literal path remains included even when Git ignores it. `[tools.trellis.exclude]
 is a separate post-discovery filter: task and `@release` exclusions do not
 control traversal.
 
+### Manifest adapter
+
+`[tools.trellis.adapter]` redefines the manifest seam for a workspace whose
+members are not Gleam packages. One key is required — `manifest`, the member
+manifest's path relative to the member directory, whose presence marks a member
+and whose extension (`.toml`, `.json`, `.yaml`, `.yml`) picks the format:
+
+```toml
+# trellis.toml at the repo root — an adapter workspace usually has no
+# gleam.toml for the table to live in, so trellis accepts this file too.
+# Root discovery prefers it; carrying the table in both is an error.
+[tools.trellis]
+members = ["plugins/*"]
+
+[tools.trellis.adapter]
+manifest = ".claude-plugin/plugin.json"
+# name = "name"        # dotted field paths, defaults shown
+# version = "version"  # this is the field `version apply` rewrites
+
+[tools.trellis.publish]
+package_tags = ["exact", "major"]
+```
+
+The bump is surgical: only the field `version` names is rewritten, so comments,
+key order, and formatting survive byte for byte. The changelog engine,
+`version`, `tag`, GitHub Releases, `release pr`, and `ci` are unchanged.
+
+The graph is flat — an adapter declares no dependency edges, so nothing ripple-
+bumps. `publish.lifecycle` defaults to `git_only` and `hex` is a configuration
+error; `publish`, `lockfile refresh`, `new`, and `run`'s built-in Gleam verbs
+are refused. `doctor` drops the `manifest.toml`, shared-dependency, and
+toolchain checks, and adds that every member manifest declares a semver version
+and a name matching its directory.
+
 ## Commands
 
 Every command works from anywhere inside the workspace (the root is found by
-walking up to the first `gleam.toml` with a `[tools.trellis]` table, like
-`git` or `cargo` — member manifests along the way are skipped). Without a
+walking up to the first `trellis.toml` or `gleam.toml` with a `[tools.trellis]`
+table, like `git` or `cargo` — member manifests along the way are skipped). Without a
 `[tools.trellis]` table anywhere, the git repository root is the workspace
 root and members are auto-discovered.
 

@@ -190,13 +190,18 @@ pub fn repo_root(dir: &Path) -> Option<PathBuf> {
         .map(|out| PathBuf::from(out.trim()))
 }
 
-/// Every non-gitignored `gleam.toml` under `cwd` — tracked and untracked
+/// Every non-gitignored member manifest under `cwd` — tracked and untracked
 /// alike, so freshly created packages are discovered before their first
 /// commit. Paths are relative to `cwd`.
-pub fn ls_gleam_manifests(cwd: &Path) -> Result<Vec<String>> {
+///
+/// `rel_path` is the manifest's path within a member directory: `gleam.toml`
+/// normally, or whatever `[tools.trellis.adapter].manifest` names, which may
+/// carry directories of its own (`.claude-plugin/plugin.json`).
+pub fn ls_manifests(cwd: &Path, rel_path: &str) -> Result<Vec<String>> {
     // A plain pathspec wildcard matches across `/`, so `*gleam.toml` finds
-    // manifests at any depth; the basename filter drops accidental matches
+    // manifests at any depth; the suffix filter drops accidental matches
     // like `mygleam.toml`.
+    let file_name = rel_path.rsplit('/').next().unwrap_or(rel_path);
     let text = git_stdout(
         cwd,
         &[
@@ -205,16 +210,25 @@ pub fn ls_gleam_manifests(cwd: &Path) -> Result<Vec<String>> {
             "--others",
             "--exclude-standard",
             "--",
-            "*gleam.toml",
+            &format!("*{file_name}"),
         ],
     )?;
     Ok(lines(&text)
-        .filter(|path| {
-            Path::new(path)
-                .file_name()
-                .is_some_and(|name| name == "gleam.toml")
-        })
+        .filter(|path| manifest_dir(path, rel_path).is_some())
         .collect())
+}
+
+/// The member directory owning `path`, when `path` is exactly `<dir>/<rel_path>`.
+/// `""` means the manifest sits at the search root. `None` means `path` merely
+/// ends in a similar name (`mygleam.toml`, `other/plugin.json` under a
+/// different layout).
+pub fn manifest_dir<'a>(path: &'a str, rel_path: &str) -> Option<&'a str> {
+    let dir = path.strip_suffix(rel_path)?;
+    match dir.strip_suffix('/') {
+        Some(dir) => Some(dir),
+        None if dir.is_empty() => Some(""),
+        None => None,
+    }
 }
 
 /// `-c user.name=... -c user.email=...` args to prepend to a git command that

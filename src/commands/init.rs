@@ -8,7 +8,7 @@
 
 use crate::config::has_trellis_table;
 use crate::git;
-use crate::workspace::{self, GLEAM_TOML};
+use crate::workspace::{self, CONFIG_HOMES, GLEAM_TOML, TRELLIS_TOML};
 use anyhow::{Context, Result, bail};
 use std::path::{Path, PathBuf};
 
@@ -85,25 +85,28 @@ fn refuse_if_already_a_workspace(root: &Path) -> Result<()> {
         );
     }
     for member in workspace::discovered_member_paths(root) {
-        let path = root.join(&member).join(GLEAM_TOML);
-        if reads_trellis_table(&path) {
-            bail!(
-                "{} has a [tools.trellis] table; a member manifest cannot carry one \
-                 (it would hijack workspace-root discovery). Remove it, then rerun \
-                 `trellis init`",
-                path.display()
-            );
+        for name in [GLEAM_TOML, TRELLIS_TOML] {
+            let path = root.join(&member).join(name);
+            if reads_trellis_table(&path) {
+                bail!(
+                    "{} has a [tools.trellis] table; a member manifest cannot carry one \
+                     (it would hijack workspace-root discovery). Remove it, then rerun \
+                     `trellis init`",
+                    path.display()
+                );
+            }
         }
     }
     Ok(())
 }
 
-/// The nearest `gleam.toml` at or above `root` carrying the table. Ancestors
+/// The nearest config home at or above `root` carrying the table. Ancestors
 /// count: initializing inside an existing workspace would nest one workspace in
-/// another, which trellis has no notion of.
+/// another, which trellis has no notion of. Both homes are checked, so `init`
+/// cannot write a second table beside a `trellis.toml` that already has one.
 fn trellis_table_at_or_above(root: &Path) -> Option<PathBuf> {
     root.ancestors()
-        .map(|dir| dir.join(GLEAM_TOML))
+        .flat_map(|dir| CONFIG_HOMES.map(|name| dir.join(name)))
         .find(|manifest| reads_trellis_table(manifest))
 }
 
