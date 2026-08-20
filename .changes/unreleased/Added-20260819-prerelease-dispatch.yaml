@@ -1,0 +1,5 @@
+component: trellis
+kind: Added
+body: |-
+  **Release automation accepts an explicit prerelease version.** Manually dispatching the Changie Release workflow now accepts `auto` or an explicit SemVer such as `1.0.0-rc.1`; merging the generated release PR lets the existing release-plz and cargo-dist pipeline publish the crate and artifacts as a prerelease.
+time: 2026-08-19T17:42:52.502-07:00

@@ -9,6 +9,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      version:
+        description: Version to release (`auto` or explicit semver)
+        required: false
+        default: auto
 
 jobs:
   release:
@@ -29,6 +34,7 @@ jobs:
         id: release
         with:
           token: ${{ steps.app-token.outputs.token }}
+          version: ${{ inputs.version || 'auto' }}
           version-files: 'Cargo.toml:package.version'
           pr-title-template: 'chore(release): {version}'
 
