@@ -1448,7 +1448,9 @@ fn version_apply_preflights_all_manifests_before_consuming_fragments() {
         .args(["version", "apply"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("has no version field"));
+        .stderr(predicate::str::contains(
+            "packages/lat_mid/gleam.toml: no `version` field",
+        ));
 
     assert!(root.join(".changes/unreleased/lat_core-1.toml").is_file());
     assert!(root.join(".changes/unreleased/lat_mid-1.toml").is_file());

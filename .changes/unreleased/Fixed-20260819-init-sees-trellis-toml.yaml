@@ -1,0 +1,5 @@
+component: init
+kind: Fixed
+body: |-
+  **`init` refuses a repository already configured by a `trellis.toml`.** It only looked for a `[tools.trellis]` table in `gleam.toml` files, so in a workspace configured the new way it wrote a second config home — a state every later command then rejects as ambiguous. Member manifests are checked for both spellings too.
+time: 2026-08-19T09:04:00.000000-07:00

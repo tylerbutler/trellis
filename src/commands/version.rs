@@ -307,11 +307,24 @@ pub fn apply(workspace: &Workspace, overrides: &Overrides, json: bool) -> Result
             adoption.as_ref(),
         )
         .with_context(|| format!("failed to merge `{}`", entry.name))?;
-        let manifest_path = member.path.join("gleam.toml");
+        let manifest_path = member.path.join(workspace.manifest_rel());
         let manifest = std::fs::read_to_string(&manifest_path)
             .with_context(|| format!("failed to read {}", manifest_path.display()))?;
-        let manifest = changelog::render_manifest_version(&manifest, &next)
-            .with_context(|| format!("failed to bump `{}`", entry.name))?;
+        // The adapter's version path, or a Gleam manifest's top-level
+        // `version`. Either way the edit is surgical: nothing else in the file
+        // moves, so a hand-maintained manifest keeps its comments and layout.
+        let (format, field) = match workspace.adapter() {
+            Some(adapter) => (adapter.format()?, adapter.version.as_str()),
+            None => (crate::manifest::Format::Toml, "version"),
+        };
+        let manifest = crate::manifest::write_string(&manifest, format, field, &next.to_string())
+            .with_context(|| {
+            format!(
+                "failed to bump `{}` in {}",
+                entry.name,
+                manifest_path.display()
+            )
+        })?;
         prepared_versions.push(PreparedVersion {
             name: entry.name.clone(),
             next,
@@ -332,8 +345,14 @@ pub fn apply(workspace: &Workspace, overrides: &Overrides, json: bool) -> Result
         versions.insert(entry.name.clone(), entry.next.clone());
     }
 
+    // A Gleam concern only: an adapter workspace has no `manifest.toml` lock
+    // to keep in step with the bump.
     let mut prepared_lockfiles = Vec::new();
-    for member in &workspace.members {
+    for member in workspace
+        .members
+        .iter()
+        .filter(|_| workspace.adapter().is_none())
+    {
         let path = member.path.join("manifest.toml");
         if !path.is_file() {
             continue;

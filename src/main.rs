@@ -8,6 +8,7 @@ mod gleam;
 mod hex;
 mod json;
 mod lockfile;
+mod manifest;
 mod rewrite;
 mod runner;
 mod term;

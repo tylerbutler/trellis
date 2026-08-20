@@ -9,6 +9,7 @@ use anyhow::{Context, Result, bail};
 use std::process::Command;
 
 pub fn refresh(workspace: &Workspace, package: Option<&str>) -> Result<bool> {
+    workspace.refuse_under_adapter("lockfile refresh")?;
     let targets: Vec<usize> = match package {
         Some(name) => {
             let idx = workspace

@@ -72,6 +72,34 @@ impl GleamManifest {
         Self::parse(&text).with_context(|| format!("failed to parse {}", path.display()))
     }
 
+    /// Read a member's identity out of a non-Gleam manifest, as
+    /// `[tools.trellis.adapter]` describes it.
+    ///
+    /// Only name and version are read. Dependencies are deliberately empty:
+    /// an adapter declares no dependency edges in this release, so the graph
+    /// is flat and every consumer of it degrades to member order.
+    pub fn load_adapted(path: &Path, adapter: &crate::config::AdapterConfig) -> Result<Self> {
+        let format = adapter.format()?;
+        let text = std::fs::read_to_string(path)
+            .with_context(|| format!("failed to read {}", path.display()))?;
+        let read = |field: &str, key: &str| -> Result<String> {
+            crate::manifest::read_string(&text, format, field)
+                .with_context(|| format!("failed to parse {}", path.display()))?
+                .with_context(|| {
+                    format!(
+                        "{} has no `{field}` (the `adapter.{key}` field path)",
+                        path.display()
+                    )
+                })
+        };
+        Ok(Self {
+            name: read(&adapter.name, "name")?,
+            version: read(&adapter.version, "version")?,
+            dependencies: Vec::new(),
+            has_trellis_config: false,
+        })
+    }
+
     pub fn parse(text: &str) -> Result<Self> {
         let raw: RawManifest = toml::from_str(text)?;
         let mut dependencies = Vec::new();

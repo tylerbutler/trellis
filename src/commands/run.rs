@@ -115,6 +115,25 @@ fn expand_targets(target: Option<Target>) -> Vec<Option<&'static str>> {
     }
 }
 
+/// ` (declared: a, b)`, or nothing when no custom tasks exist — the tail of
+/// every message that has just refused a task name.
+fn declared_tasks(workspace: &Workspace) -> String {
+    if workspace.config.tasks.is_empty() {
+        String::new()
+    } else {
+        format!(
+            " (declared: {})",
+            workspace
+                .config
+                .tasks
+                .keys()
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    }
+}
+
 fn commands_for(
     workspace: &Workspace,
     options: &TaskOptions,
@@ -131,6 +150,19 @@ fn commands_for(
             package_dir.to_path_buf(),
         ));
         return Ok(commands);
+    }
+
+    // Built-in verbs all shell out to `gleam`, which an adapter workspace's
+    // members are not. A custom task with the same name is honoured above, so
+    // reaching here means none was declared.
+    if let Some(adapter) = workspace.adapter() {
+        bail!(
+            "`{}` is a built-in Gleam task, and this workspace's members are `{}` manifests; \
+             declare a command for it under [tools.trellis.tasks]{}",
+            options.task,
+            adapter.manifest,
+            declared_tasks(workspace)
+        );
     }
 
     let targets = expand_targets(options.target);
@@ -151,20 +183,7 @@ fn commands_for(
         other => bail!(
             "unknown task `{other}`; built-ins: {}. Custom tasks are declared under [tools.trellis.tasks] in the root gleam.toml{}",
             BUILTIN_TASKS.join(", "),
-            if workspace.config.tasks.is_empty() {
-                String::new()
-            } else {
-                format!(
-                    " (declared: {})",
-                    workspace
-                        .config
-                        .tasks
-                        .keys()
-                        .cloned()
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                )
-            }
+            declared_tasks(workspace)
         ),
     };
     Ok(commands)
