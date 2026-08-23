@@ -1,0 +1,7 @@
+component: run
+kind: Changed
+body: |-
+  **The built-in verbs are refused in an adapter workspace, and name the tasks you have declared.** `build`, `test`, `check`, `docs`, `deps`, `format`, and `clean` all shell out to `gleam`, which an adapter workspace's members are not. Declare what you need under `[tools.trellis.tasks]` — a custom task with a built-in's name still overrides it, and `trellis exec` is unaffected.
+
+    `publish`, `lockfile refresh`, and `new` are refused for the same reason.
+time: 2026-08-19T09:03:00.000000-07:00

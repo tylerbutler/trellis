@@ -108,6 +108,75 @@ their roots.
 
 </Callout>
 
+## Manifest adapter
+
+Trellis is a Gleam tool: `gleam.toml` is where members, names, versions, and the
+dependency graph come from. `[tools.trellis.adapter]` is the escape hatch for a
+repository whose packages are not Gleam packages — an AI skill or Claude Code
+plugin marketplace, an [APM](https://microsoft.github.io/apm/) monorepo,
+anything distributed by git ref rather than by a registry.
+
+The adapter redefines three things: which file marks a member, and where its
+name and version live inside that file. Everything downstream — the changelog
+engine, `version plan`/`apply`, tags, GitHub Releases, `release pr`, `ci
+matrix`/`outputs` — is the same code, unchanged.
+
+```toml title="trellis.toml"
+[tools.trellis]
+members = ["plugins/*"]
+
+[tools.trellis.adapter]
+# Relative to each member directory. Its presence is what marks a member.
+# The extension picks the format — .toml, .json, .yaml, or .yml.
+manifest = ".claude-plugin/plugin.json"
+# Dotted field paths. Both default to what is shown, so a manifest spelling
+# them `name` and `version` needs neither key.
+name = "name"
+version = "version"
+
+[tools.trellis.publish]
+package_tags = ["exact", "major"]   # moving `v1` tags are how git-ref
+exact_tag_format = "{name}-v{version}"   # consumers pin a release
+series_tag_format = "{name}-v{series}"
+```
+
+### `trellis.toml`, a second config home
+
+An adapter workspace usually has no `gleam.toml` for the table to live in, so
+trellis also accepts a **`trellis.toml`** at the workspace root, carrying the
+same `[tools.trellis]` table. Root discovery walks up to the first directory
+with either file carrying the table, preferring `trellis.toml`; carrying it in
+both at once is an error rather than a precedence puzzle.
+
+`trellis.toml` is not adapter-specific — a Gleam workspace may use it too — but
+there is rarely a reason to, since `gleam.toml` is already there.
+
+### Version bumps are surgical
+
+`version apply` rewrites the single field `adapter.version` names and nothing
+else. Comments, key order, indentation, and quote style all survive byte for
+byte, because these manifests are hand-maintained files their owners read. A
+field the path does not resolve to is an error, never an insertion.
+
+### What changes under an adapter
+
+| Area | Behavior |
+| --- | --- |
+| Discovery, `list`, `info`, `graph`, `ci matrix` | Unchanged — globs plus manifest presence. `members` may still be omitted to auto-discover. |
+| Changelog, `version`, `tag`, `release pr`, GitHub Releases | Unchanged, except that the bump is written to the adapter's version field. |
+| Dependency graph | Flat. An adapter declares no dependency edges, so topological order is member order and a workspace dependency never ripple-bumps. |
+| `publish.lifecycle` | Defaults to `git_only`; `hex` anywhere is a configuration error. There is no registry to publish to. |
+| `run` | Built-in verbs (`build`, `test`, …) are refused — they shell out to `gleam`. Declare what you need under `[tools.trellis.tasks]`; `trellis exec` is unaffected. |
+| `publish`, `lockfile refresh`, `new` | Refused. |
+| `doctor` | Drops the `manifest.toml`, shared-dependency, and toolchain checks; adds that every member manifest declares a semver version and a name matching its directory. |
+
+<Callout>
+
+Keeping a root index file (a `marketplace.json`, say) in step with its members
+is not yet automated — that is the `adapter.sync` work tracked separately.
+
+</Callout>
+
 ## Keys
 
 | Key | Required | What it does |
@@ -117,6 +186,9 @@ their roots.
 | `exclude.@release` | no | The shared package set omitted from changelog, versioning, tagging, publishing, and release CI. The `@` prefix is reserved for special keys like this one, so it can never collide with a task name — task names may not start with `@`. |
 | `exclude.@members` | no | Directories removed from workspace membership entirely — never parsed, graphed, or touched by any command. Useful for committed test fixtures that auto-discovery would otherwise sweep in; also filters explicit `members` globs. |
 | `tasks.<name>` | no | Custom tasks for `trellis run`. A task with a built-in's name (`build`, `test`, …) overrides it. `needs_deps = true` downloads dependencies first. |
+| `adapter.manifest` | with the table | Path to the member manifest, relative to the member directory. Its presence marks a member, in place of a `gleam.toml`, and its extension picks the format: `.toml`, `.json`, `.yaml`, or `.yml`. See [Manifest adapter](#manifest-adapter). |
+| `adapter.name` | no | Dot-separated field path to the member's name inside that manifest. Default: `name`. |
+| `adapter.version` | no | Dot-separated field path to the member's version. This is the field `version apply` rewrites. Default: `version`. |
 | `publish.package_tags` | no | Which tags a release maintains per package, one entry per tag: `exact` (the whole version — `v1.2.3`), `major` (`v1`), `minor` (`v1.2`). Default: `["exact"]`. Must not be empty. |
 | `publish.package_tags_overrides` | no | Per-package overrides: a map of member-path glob to tag list. A member matched by globs resolving to different lists is an error; matches agreeing on the same list are fine. |
 | `publish.exact_tag_format` | no | Template the `exact` level substitutes into; `{name}` and `{version}`. Default: `{name}-v{version}`. |
@@ -126,7 +198,7 @@ their roots.
 | `publish.repository_tags` | with the other two | Which repository tags to maintain, from the same vocabulary minus `exact`. Required alongside `repository_tag_package` and `repository_tag_format`; declare all three or none. |
 | `publish.path_dep_requirement` | no | How a workspace path dependency becomes a Hex requirement at publish time, from the dependency's current version `X.Y.Z`: `minor` (default, `>= X.Y.Z and < (X+1).0.0`), `patch` (`>= X.Y.Z and < X.(Y+1).0`), or `exact` (`== X.Y.Z`). |
 | `publish.retry` | no | Backoff for Hex rate limits: `{ attempts, initial_delay, multiplier }`. Defaults: 5 attempts, `30s`, multiplier 2. |
-| `publish.lifecycle.default` | no | Release lifecycle for a member matched by no `packages` glob and no legacy `exclude.@release` glob: `workspace`, `git_only`, or `hex` (default). |
+| `publish.lifecycle.default` | no | Release lifecycle for a member matched by no `packages` glob and no legacy `exclude.@release` glob: `workspace`, `git_only`, or `hex` (default). Under an [adapter](#manifest-adapter) the default is `git_only` and `hex` is an error. |
 | `publish.lifecycle.packages` | no | Per-package lifecycle overrides: a map of member-path glob to lifecycle. Takes precedence over `exclude.@release`. A member matched by globs resolving to different lifecycles is an error; matches agreeing on the same lifecycle are fine. |
 | `changelog.dir` | no | Where fragments and batched version sections live. Default: `.changes`. |
 | `changelog.kinds` | no | Change kinds and the version bump each implies. The largest bump among a package's unreleased fragments wins. Replacing the list replaces it entirely. |

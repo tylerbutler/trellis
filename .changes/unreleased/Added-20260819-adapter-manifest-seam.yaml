@@ -1,0 +1,9 @@
+component: trellis
+kind: Added
+body: |-
+  **`[tools.trellis.adapter]` lets a workspace's members be something other than Gleam packages.** One key is required — `manifest`, the member manifest's path relative to the member directory, whose presence marks a member the way a `gleam.toml` does otherwise, and whose extension picks the format (`.toml`, `.json`, `.yaml`, `.yml`). `name` and `version` are dotted field paths into that manifest, defaulting to `name` and `version`. Built for repositories distributed by git ref rather than a registry: Claude Code plugin marketplaces, APM monorepos, AI skill collections.
+
+    Trellis also accepts a **`trellis.toml`** at the workspace root carrying the same `[tools.trellis]` table, since an adapter workspace usually has no `gleam.toml` for it to live in. Root discovery walks up to the first directory whose `trellis.toml` or `gleam.toml` carries the table, preferring `trellis.toml`; carrying it in both at once is an error.
+
+    The dependency graph is flat under an adapter — no dependency edges are declared, so topological order is member order and a workspace dependency never ripple-bumps. `publish.lifecycle` defaults to `git_only` and `hex` anywhere under an adapter is a configuration error, because there is no registry to publish to.
+time: 2026-08-19T09:00:00.000000-07:00

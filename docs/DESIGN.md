@@ -294,6 +294,58 @@ Notably absent, because derived: package lists, dependency order, per-package
 changelog wiring, version-file maps, path-dep rewrite maps, tag→package
 mappings.
 
+### 4.2 The manifest seam
+
+Trellis reads exactly four things out of a member's manifest:
+
+1. **Membership** — the file's presence is what makes a directory a member.
+2. **Identity** — its name.
+3. **Version** — the field a bump rewrites.
+4. **Dependency edges** — path deps, which become the graph.
+
+Everything else trellis does is computed from those four, and is therefore
+language-agnostic: the changelog engine, `version plan`/`apply`, exact and
+series tags, GitHub Releases, `release pr`, the scheduler, `ci matrix` and
+`ci outputs`. The `git_only` lifecycle already *is* the publishing model for a
+registry-less package type — changelog → version → tag → GitHub Release.
+
+`[tools.trellis.adapter]` redefines the first three for a different manifest
+format, and deliberately leaves the fourth undefined:
+
+```toml
+[tools.trellis.adapter]
+manifest = ".claude-plugin/plugin.json"   # membership; extension picks format
+name = "name"                             # identity, dotted field path
+version = "version"                       # bump target, dotted field path
+```
+
+No `deps` key means a flat graph, and every consumer of the graph degrades
+cleanly rather than specially: topological order is member order, ripple bumps
+never fire, and the path-dep rewrite is unreachable. That is the whole reason
+the adapter is four keys rather than a subsystem — declaring dependency edges
+in an arbitrary manifest format is the expensive half, and no motivating
+repository needs it yet.
+
+Two consequences follow from the seam rather than from configuration. A
+workspace whose members are not Gleam packages usually has no `gleam.toml` for
+the `[tools.trellis]` table to live in, so a root `trellis.toml` is a second
+config home, preferred over `gleam.toml` when both exist and an error when both
+carry the table. And the lifecycle ladder tops out one rung lower: `hex` under
+an adapter is a configuration error, not a runtime refusal, so it is caught
+once at load rather than at each of `publish`'s four gates.
+
+The write side is where the seam costs something real. A `gleam.toml` bump has
+always been surgical — `toml_edit` with the original value's decor cloned onto
+the replacement — because a manifest is a file its owner reads. That promise
+has to hold for JSON and YAML too, and neither has a `toml_edit`. `src/manifest.rs`
+gets it from the fact that YAML 1.2 is a strict superset of JSON: one
+`saphyr-parser` event walk locates the target scalar's span in both formats,
+and the edit is a byte splice. Two of that parser's guarantees do not survive
+contact — `Marker::index` is a char index despite its doc comment, and a quoted
+scalar's `span.end` in block context runs to end-of-line, comment included — so
+only the start marker and the scalar style are trusted, and the extent is
+re-lexed from there.
+
 ## 5. Command surface
 
 ### Introspection

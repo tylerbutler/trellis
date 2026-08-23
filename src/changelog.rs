@@ -711,17 +711,6 @@ fn civil_from_days(days: i64) -> (i64, u32, u32) {
     (if month <= 2 { year + 1 } else { year }, month, day)
 }
 
-pub fn render_manifest_version(text: &str, next: &semver::Version) -> Result<String> {
-    let mut doc: toml_edit::DocumentMut = text.parse().context("failed to parse gleam.toml")?;
-    let Some(value) = doc.get_mut("version").and_then(|item| item.as_value_mut()) else {
-        bail!("gleam.toml has no version field");
-    };
-    let mut replacement = toml_edit::Value::from(next.to_string());
-    *replacement.decor_mut() = value.decor().clone();
-    *value = replacement;
-    Ok(doc.to_string())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

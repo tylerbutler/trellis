@@ -19,6 +19,7 @@ pub struct NewOptions {
 }
 
 pub fn run(workspace: &Workspace, options: &NewOptions) -> Result<()> {
+    workspace.refuse_under_adapter("new")?;
     if options.template != "lib" {
         bail!("unknown template `{}` (available: lib)", options.template);
     }

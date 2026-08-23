@@ -11,6 +11,17 @@ use std::path::{Component, Path, PathBuf};
 
 pub const GLEAM_TOML: &str = "gleam.toml";
 
+/// The alternative home for the `[tools.trellis]` table, for a workspace whose
+/// root is not itself a Gleam package — an adapter workspace has no
+/// `gleam.toml` for the configuration to live in.
+pub const TRELLIS_TOML: &str = "trellis.toml";
+
+/// The files that may carry the `[tools.trellis]` table, in precedence order.
+/// A dedicated `trellis.toml` wins over a `gleam.toml` beside it, though
+/// carrying the table in both at once is an error rather than a precedence
+/// question.
+pub const CONFIG_HOMES: [&str; 2] = [TRELLIS_TOML, GLEAM_TOML];
+
 #[derive(Debug)]
 pub struct Member {
     pub name: String,
@@ -46,6 +57,40 @@ impl Member {
     }
 }
 
+impl Workspace {
+    /// The member manifest's path within a member directory: `gleam.toml`,
+    /// or whatever `[tools.trellis.adapter].manifest` names.
+    pub fn manifest_rel(&self) -> &str {
+        self.config
+            .adapter
+            .as_ref()
+            .map_or(GLEAM_TOML, |adapter| adapter.manifest.as_str())
+    }
+
+    /// The adapter table, when this workspace has one. Its presence is what
+    /// every "is this a Gleam workspace?" question actually asks.
+    pub fn adapter(&self) -> Option<&crate::config::AdapterConfig> {
+        self.config.adapter.as_ref()
+    }
+
+    /// Refuse a command that only means something for Gleam packages.
+    ///
+    /// An adapter redefines what a member *is*; it cannot conjure a Gleam
+    /// toolchain, a `manifest.toml`, or a Hex registry for one. Those commands
+    /// fail loudly here rather than shelling out to `gleam` in a directory
+    /// that has never seen it.
+    pub fn refuse_under_adapter(&self, what: &str) -> Result<()> {
+        if let Some(adapter) = self.adapter() {
+            bail!(
+                "`{what}` is a Gleam command, and this workspace's members are `{}` manifests \
+                 declared by [tools.trellis.adapter]",
+                adapter.manifest
+            );
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug)]
 pub struct Workspace {
     pub root: PathBuf,
@@ -53,6 +98,9 @@ pub struct Workspace {
     /// True when no `[tools.trellis]` table exists anywhere: the root was
     /// inferred from git and the configuration is entirely defaulted.
     pub configless: bool,
+    /// The file the configuration was read from, relative to `root` — one of
+    /// [`CONFIG_HOMES`]. Findings about configuration are attributed to it.
+    pub config_rel: &'static str,
     /// Members in topological order (dependencies before dependents).
     pub members: Vec<Member>,
     /// Index of the repository tag anchor member. `None` when the feature
@@ -99,9 +147,9 @@ impl Diagnostics {
 }
 
 impl Workspace {
-    /// Walk up from `start` looking for a `gleam.toml` with a
+    /// Walk up from `start` looking for a `trellis.toml` or `gleam.toml` with a
     /// `[tools.trellis]` table — the workspace root marker. Member manifests
-    /// (gleam.toml without the table) are skipped, so commands work from
+    /// (a gleam.toml without the table) are skipped, so commands work from
     /// inside a package, like `git` or `cargo`.
     ///
     /// When no manifest anywhere up the tree has the table, trellis runs
@@ -115,21 +163,24 @@ impl Workspace {
             .with_context(|| format!("cannot resolve {}", start.display()))?;
         let mut unparseable: Vec<PathBuf> = Vec::new();
         for dir in start.ancestors() {
-            let manifest = dir.join(GLEAM_TOML);
-            let Ok(text) = std::fs::read_to_string(&manifest) else {
-                continue;
-            };
-            match toml::from_str::<toml::Value>(&text) {
-                Ok(document) if crate::config::has_trellis_table(&document) => {
-                    return Ok(dir.to_path_buf());
+            for name in CONFIG_HOMES {
+                let manifest = dir.join(name);
+                let Ok(text) = std::fs::read_to_string(&manifest) else {
+                    continue;
+                };
+                match toml::from_str::<toml::Value>(&text) {
+                    Ok(document) if crate::config::has_trellis_table(&document) => {
+                        return Ok(dir.to_path_buf());
+                    }
+                    Ok(_) => {} // a package manifest; keep walking
+                    Err(_) => unparseable.push(manifest),
                 }
-                Ok(_) => {} // a package manifest; keep walking
-                Err(_) => unparseable.push(manifest),
             }
         }
+        let homes = CONFIG_HOMES.join(" or ");
         if !unparseable.is_empty() {
             bail!(
-                "no {GLEAM_TOML} with a [tools.trellis] table found in {} or any parent \
+                "no {homes} with a [tools.trellis] table found in {} or any parent \
                  directory, and {} could not be parsed and may be the intended workspace root",
                 start.display(),
                 unparseable
@@ -143,7 +194,7 @@ impl Workspace {
             return Ok(root);
         }
         bail!(
-            "no {GLEAM_TOML} with a [tools.trellis] table found in {} or any parent directory, \
+            "no {homes} with a [tools.trellis] table found in {} or any parent directory, \
              and it is not inside a git repository (configless mode discovers members from git)",
             start.display()
         )
@@ -167,47 +218,76 @@ impl Workspace {
     /// coherent model exists (unreadable config or a dependency cycle).
     pub fn load_with_diagnostics(root: &Path) -> Result<(Option<Self>, Diagnostics)> {
         let mut diagnostics = Diagnostics::default();
-        // The root's gleam.toml decides the mode: a [tools.trellis] table is
-        // configuration, its absence (or a missing manifest — a configless
-        // git-root workspace) means everything is defaulted and discovered.
-        let manifest_path = root.join(GLEAM_TOML);
-        let (configless, root_is_package) = match std::fs::read_to_string(&manifest_path) {
-            Ok(text) => match toml::from_str::<toml::Value>(&text) {
-                Ok(document) => (
-                    !crate::config::has_trellis_table(&document),
-                    document.get("name").is_some(),
-                ),
+        // A [tools.trellis] table at the root is configuration; its absence
+        // (or no root manifest at all — a configless git-root workspace) means
+        // everything is defaulted and discovered. Either config home may carry
+        // it, so both are read before deciding.
+        let mut carriers: Vec<&'static str> = Vec::new();
+        let mut root_is_package = false;
+        for name in CONFIG_HOMES {
+            let path = root.join(name);
+            let Ok(text) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            match toml::from_str::<toml::Value>(&text) {
+                Ok(document) => {
+                    if crate::config::has_trellis_table(&document) {
+                        carriers.push(name);
+                    }
+                    // Only a gleam.toml can also be a package manifest.
+                    root_is_package |= name == GLEAM_TOML && document.get("name").is_some();
+                }
                 Err(err) => {
                     diagnostics.push(
                         Finding::error(
                             Check::WorkspaceConfig,
-                            format!("failed to parse {}: {err}", manifest_path.display()),
+                            format!("failed to parse {}: {err}", path.display()),
                         )
-                        .at(GLEAM_TOML),
+                        .at(name),
                     );
                     return Ok((None, diagnostics));
                 }
-            },
-            Err(_) => (true, false),
-        };
+            }
+        }
+        if carriers.len() > 1 {
+            diagnostics.push(
+                Finding::error(
+                    Check::WorkspaceConfig,
+                    format!(
+                        "both {} and {} carry a [tools.trellis] table; keep exactly one",
+                        CONFIG_HOMES[0], CONFIG_HOMES[1]
+                    ),
+                )
+                .at(TRELLIS_TOML),
+            );
+            return Ok((None, diagnostics));
+        }
+        let configless = carriers.is_empty();
+        let config_rel = carriers.first().copied().unwrap_or(GLEAM_TOML);
         let config = if configless {
             ConfigFile::configless()
         } else {
-            match ConfigFile::load(&manifest_path) {
+            match ConfigFile::load(&root.join(config_rel)) {
                 Ok(config) => config,
                 Err(err) => {
                     diagnostics.push(
-                        Finding::error(Check::WorkspaceConfig, format!("{err:#}")).at(GLEAM_TOML),
+                        Finding::error(Check::WorkspaceConfig, format!("{err:#}")).at(config_rel),
                     );
                     return Ok((None, diagnostics));
                 }
             }
         };
-        report_unknown_config_keys(&config, &mut diagnostics);
+        // `gleam.toml`, or whatever the adapter names — the file whose presence
+        // marks a member directory and whose contents supply name and version.
+        let manifest_rel = config
+            .adapter
+            .as_ref()
+            .map_or(GLEAM_TOML, |adapter| adapter.manifest.as_str());
+        report_unknown_config_keys(&config, config_rel, &mut diagnostics);
 
         let mut member_dirs = match &config.members {
-            Some(globs) => expand_member_globs(root, globs, &mut diagnostics),
-            None => discover_member_dirs(root, &mut diagnostics),
+            Some(globs) => expand_member_globs(root, globs, manifest_rel, &mut diagnostics),
+            None => discover_member_dirs(root, manifest_rel, &mut diagnostics),
         };
         // A config-only root manifest ([tools.trellis] without a `name`) is
         // configuration, not a package — discovery must not sweep it in.
@@ -223,7 +303,7 @@ impl Workspace {
                         Check::WorkspaceConfig,
                         format!("invalid `{task}` exclusion glob: {err:#}"),
                     )
-                    .at(GLEAM_TOML),
+                    .at(config_rel),
                 );
             }
         }
@@ -233,7 +313,7 @@ impl Workspace {
         // match anything once it's done its job, so the typo check has to run
         // here, against the pre-filter candidates, not against the survivors.
         if let Some(patterns) = config.exclude.get(crate::config::MEMBERS_EXCLUDE_KEY) {
-            check_members_exclude_globs(root, &member_dirs, patterns, &mut diagnostics);
+            check_members_exclude_globs(root, &member_dirs, patterns, config_rel, &mut diagnostics);
             if let Ok(excludes) = build_globset(patterns) {
                 member_dirs.retain(|dir| !excludes.is_match(rel_path_string(root, dir)));
             }
@@ -247,7 +327,7 @@ impl Workspace {
                         crate::config::MEMBERS_EXCLUDE_KEY
                     ),
                 )
-                .at(GLEAM_TOML),
+                .at(config_rel),
             );
         }
 
@@ -263,7 +343,7 @@ impl Workspace {
                         Check::WorkspaceConfig,
                         format!("invalid release exclusion glob: {err:#}"),
                     )
-                    .at(GLEAM_TOML),
+                    .at(config_rel),
                 );
             })
             .ok();
@@ -280,7 +360,7 @@ impl Workspace {
                             Check::WorkspaceConfig,
                             format!("invalid `package_tags_overrides` glob `{pattern}`: {err:#}"),
                         )
-                        .at(GLEAM_TOML),
+                        .at(config_rel),
                     );
                 }
             }
@@ -300,7 +380,7 @@ impl Workspace {
                                 "invalid `publish.lifecycle.packages` glob `{pattern}`: {err:#}"
                             ),
                         )
-                        .at(GLEAM_TOML),
+                        .at(config_rel),
                     );
                 }
             }
@@ -308,25 +388,30 @@ impl Workspace {
         let mut members = Vec::new();
         for dir in member_dirs {
             let rel_path = rel_path_string(root, &dir);
-            let manifest_path = dir.join("gleam.toml");
+            let manifest_path = dir.join(manifest_rel);
+            let manifest_at = format!("{rel_path}/{manifest_rel}");
             if !manifest_path.is_file() {
                 diagnostics.push(
                     Finding::error(
                         Check::PackageManifest,
-                        format!("member `{rel_path}` has no gleam.toml"),
+                        format!("member `{rel_path}` has no {manifest_rel}"),
                     )
-                    .at(format!("{rel_path}/{GLEAM_TOML}")),
+                    .at(&manifest_at),
                 );
                 continue;
             }
-            match GleamManifest::load(&manifest_path) {
+            let loaded = match &config.adapter {
+                Some(adapter) => crate::gleam::GleamManifest::load_adapted(&manifest_path, adapter),
+                None => GleamManifest::load(&manifest_path),
+            };
+            match loaded {
                 Ok(manifest) => {
                     // A member manifest with its own [tools.trellis] would
                     // hijack root discovery for commands run inside it.
                     if manifest.has_trellis_config && dir != root {
                         let message = if configless {
                             format!(
-                                "`{rel_path}/gleam.toml` has a [tools.trellis] table but the \
+                                "`{manifest_at}` has a [tools.trellis] table but the \
                                  workspace root was inferred as `{}`; run trellis from \
                                  `{rel_path}`, or move the table to the repository root",
                                 root.display()
@@ -334,13 +419,33 @@ impl Workspace {
                         } else {
                             format!(
                                 "member `{rel_path}` has a [tools.trellis] table; only the \
-                                 workspace root's gleam.toml may have one"
+                                 workspace root's {config_rel} may have one"
                             )
                         };
                         diagnostics.push(
                             Finding::error(Check::PackageManifest, message)
-                                .at(format!("{rel_path}/{GLEAM_TOML}"))
+                                .at(&manifest_at)
                                 .in_package(manifest.name.clone()),
+                        );
+                    }
+                    // A member-level `trellis.toml` would hijack root discovery
+                    // for commands run from inside the member, exactly as a
+                    // member-level [tools.trellis] table does.
+                    if dir != root
+                        && let Ok(text) = std::fs::read_to_string(dir.join(TRELLIS_TOML))
+                        && toml::from_str::<toml::Value>(&text)
+                            .is_ok_and(|document| crate::config::has_trellis_table(&document))
+                    {
+                        diagnostics.push(
+                            Finding::error(
+                                Check::PackageManifest,
+                                format!(
+                                    "member `{rel_path}` has a {TRELLIS_TOML} with a \
+                                     [tools.trellis] table; only the workspace root may have one"
+                                ),
+                            )
+                            .at(format!("{rel_path}/{TRELLIS_TOML}"))
+                            .in_package(manifest.name.clone()),
                         );
                     }
                     let lifecycle = resolve_lifecycle(
@@ -348,12 +453,14 @@ impl Workspace {
                         release_excludes.as_ref(),
                         &rel_path,
                         config.publish.lifecycle.default,
+                        config_rel,
                         &mut diagnostics,
                     );
                     let tags = resolve_package_tags(
                         &package_tags_overrides,
                         &rel_path,
                         &config.publish.package_tags,
+                        config_rel,
                         &mut diagnostics,
                     );
                     members.push(Member {
@@ -366,8 +473,7 @@ impl Workspace {
                     });
                 }
                 Err(err) => diagnostics.push(
-                    Finding::error(Check::PackageManifest, format!("{err:#}"))
-                        .at(format!("{rel_path}/{GLEAM_TOML}")),
+                    Finding::error(Check::PackageManifest, format!("{err:#}")).at(&manifest_at),
                 ),
             }
         }
@@ -384,7 +490,7 @@ impl Workspace {
                             member.name, other, member.rel_path
                         ),
                     )
-                    .at(format!("{}/{GLEAM_TOML}", member.rel_path))
+                    .at(format!("{}/{manifest_rel}", member.rel_path))
                     .in_package(member.name.clone()),
                 );
             }
@@ -397,14 +503,14 @@ impl Workspace {
                         Check::WorkspaceConfig,
                         format!("`repository_tag_package` `{anchor}` is not a workspace member"),
                     )
-                    .at(GLEAM_TOML),
+                    .at(config_rel),
                 ),
                 Some(member) if !member.releasable() => diagnostics.push(
                     Finding::error(
                         Check::ReleaseBoundary,
                         format!("`repository_tag_package` `{anchor}` is excluded from release"),
                     )
-                    .at(GLEAM_TOML)
+                    .at(config_rel)
                     .in_package(&member.name),
                 ),
                 Some(_) => {}
@@ -526,6 +632,7 @@ impl Workspace {
             root: root.to_path_buf(),
             config,
             configless,
+            config_rel,
             members,
             repository_series_anchor,
             deps,
@@ -706,7 +813,11 @@ pub fn toposort(
 /// trellis, so a workspace using one still loads under a pinned older one; a
 /// deprecated key still configures what it always did, so failing on it would
 /// break working repositories for a spelling change.
-fn report_unknown_config_keys(config: &ConfigFile, diagnostics: &mut Diagnostics) {
+fn report_unknown_config_keys(
+    config: &ConfigFile,
+    config_rel: &str,
+    diagnostics: &mut Diagnostics,
+) {
     for key in &config.deprecated_keys {
         diagnostics.push(
             Finding::warning(
@@ -717,7 +828,7 @@ fn report_unknown_config_keys(config: &ConfigFile, diagnostics: &mut Diagnostics
                     key.path, key.replacement
                 ),
             )
-            .at(GLEAM_TOML),
+            .at(config_rel),
         );
     }
     for path in &config.unknown_keys {
@@ -729,7 +840,7 @@ fn report_unknown_config_keys(config: &ConfigFile, diagnostics: &mut Diagnostics
                      it may belong to a newer trellis"
                 ),
             )
-            .at(GLEAM_TOML),
+            .at(config_rel),
         );
     }
 }
@@ -742,6 +853,7 @@ fn check_members_exclude_globs(
     root: &Path,
     member_dirs: &[PathBuf],
     patterns: &[String],
+    config_rel: &str,
     diagnostics: &mut Diagnostics,
 ) {
     let rel_paths: Vec<String> = member_dirs
@@ -760,7 +872,7 @@ fn check_members_exclude_globs(
                                 "`@members` exclusion glob `{pattern}` matches no member (typo?)"
                             ),
                         )
-                        .at(GLEAM_TOML),
+                        .at(config_rel),
                     );
                 }
             }
@@ -769,7 +881,7 @@ fn check_members_exclude_globs(
                     Check::ExclusionGlob,
                     format!("`@members` exclusion glob `{pattern}` is invalid"),
                 )
-                .at(GLEAM_TOML),
+                .at(config_rel),
             ),
         }
     }
@@ -778,6 +890,7 @@ fn check_members_exclude_globs(
 fn expand_member_globs(
     root: &Path,
     patterns: &[String],
+    manifest_rel: &str,
     diagnostics: &mut Diagnostics,
 ) -> Vec<PathBuf> {
     let mut dirs = BTreeSet::new();
@@ -793,9 +906,9 @@ fn expand_member_globs(
             continue;
         };
         // A literal member path is a promise that a package lives there, so a
-        // missing gleam.toml stays a hard error downstream. A wildcard pattern
+        // missing manifest stays a hard error downstream. A wildcard pattern
         // sweeps directories that merely live alongside packages (node_modules,
-        // asset dirs), so matches without a gleam.toml are skipped.
+        // asset dirs), so matches without a manifest are skipped.
         let is_wildcard = pattern.contains(['*', '?', '[']);
         if is_wildcard {
             match glob::Pattern::new(full) {
@@ -842,7 +955,7 @@ fn expand_member_globs(
                     if entry
                         .file_type()
                         .is_some_and(|file_type| file_type.is_dir())
-                        && entry.path().join(GLEAM_TOML).is_file() =>
+                        && entry.path().join(manifest_rel).is_file() =>
                 {
                     for (_, matcher, matched) in &mut wildcard_patterns {
                         if matcher.matches_path_with(entry.path(), match_options) {
@@ -874,12 +987,16 @@ fn expand_member_globs(
     dirs.into_iter().collect()
 }
 
-/// Auto-discovery: every directory owning a non-gitignored `gleam.toml` is a
+/// Auto-discovery: every directory owning a non-gitignored `manifest_rel` is a
 /// member. Gleam's `build/` tree is skipped unconditionally — it holds a
 /// manifest for every downloaded dependency, and while it is conventionally
 /// gitignored, membership must not hinge on that.
-fn discover_member_dirs(root: &Path, diagnostics: &mut Diagnostics) -> Vec<PathBuf> {
-    let manifests = match crate::git::ls_gleam_manifests(root) {
+fn discover_member_dirs(
+    root: &Path,
+    manifest_rel: &str,
+    diagnostics: &mut Diagnostics,
+) -> Vec<PathBuf> {
+    let manifests = match crate::git::ls_manifests(root, manifest_rel) {
         Ok(manifests) => manifests,
         Err(err) => {
             diagnostics.push(Finding::error(
@@ -891,18 +1008,22 @@ fn discover_member_dirs(root: &Path, diagnostics: &mut Diagnostics) -> Vec<PathB
     };
     let mut dirs = BTreeSet::new();
     for manifest in &manifests {
-        let path = Path::new(manifest);
-        if path.components().any(|c| c.as_os_str() == "build") {
+        if Path::new(manifest)
+            .components()
+            .any(|c| c.as_os_str() == "build")
+        {
             continue;
         }
-        let dir = path.parent().unwrap_or(Path::new(""));
+        let Some(dir) = crate::git::manifest_dir(manifest, manifest_rel) else {
+            continue;
+        };
         dirs.insert(normalize_path(&root.join(dir)));
     }
     if dirs.is_empty() {
         diagnostics.push(Finding::error(
             Check::MemberGlob,
             format!(
-                "no members to auto-discover: no gleam.toml found under {} \
+                "no members to auto-discover: no {manifest_rel} found under {} \
                  (gitignored paths are not searched); add packages, or configure \
                  `members` in a [tools.trellis] table",
                 root.display()
@@ -921,7 +1042,7 @@ fn discover_member_dirs(root: &Path, diagnostics: &mut Diagnostics) -> Vec<PathB
 /// finishes with raises them properly.
 pub fn discovered_member_paths(root: &Path) -> Vec<String> {
     let mut diagnostics = Diagnostics::default();
-    discover_member_dirs(root, &mut diagnostics)
+    discover_member_dirs(root, GLEAM_TOML, &mut diagnostics)
         .iter()
         .filter(|dir| dir.as_path() != root)
         .map(|dir| rel_path_string(root, dir))
@@ -938,6 +1059,7 @@ fn resolve_package_tags(
     overrides: &[(Vec<TagLevel>, globset::GlobMatcher)],
     rel_path: &str,
     default: &[TagLevel],
+    config_rel: &str,
     diagnostics: &mut Diagnostics,
 ) -> Vec<TagLevel> {
     let mut matched: Vec<&Vec<TagLevel>> = overrides
@@ -970,7 +1092,7 @@ fn resolve_package_tags(
                             .join(" and ")
                     ),
                 )
-                .at(GLEAM_TOML),
+                .at(config_rel),
             );
             default.to_vec()
         }
@@ -993,6 +1115,7 @@ fn resolve_lifecycle(
     release_excludes: Option<&globset::GlobSet>,
     rel_path: &str,
     default: ReleaseLifecycle,
+    config_rel: &str,
     diagnostics: &mut Diagnostics,
 ) -> ReleaseLifecycle {
     let matched: Vec<(ReleaseLifecycle, &str)> = overrides
@@ -1026,7 +1149,7 @@ fn resolve_lifecycle(
                             .join(", "),
                     ),
                 )
-                .at(GLEAM_TOML),
+                .at(config_rel),
             );
             default
         }
@@ -1134,11 +1257,23 @@ mod tests {
         let overrides = tag_overrides(&[("packages/lat_*", both)]);
         let default = [TagLevel::Exact];
         assert_eq!(
-            resolve_package_tags(&overrides, "packages/cli", &default, &mut diagnostics),
+            resolve_package_tags(
+                &overrides,
+                "packages/cli",
+                &default,
+                GLEAM_TOML,
+                &mut diagnostics
+            ),
             default
         );
         assert_eq!(
-            resolve_package_tags(&overrides, "packages/lat_core", &default, &mut diagnostics),
+            resolve_package_tags(
+                &overrides,
+                "packages/lat_core",
+                &default,
+                GLEAM_TOML,
+                &mut diagnostics
+            ),
             both
         );
         assert!(!diagnostics.has_errors());
@@ -1156,6 +1291,7 @@ mod tests {
                 &overrides,
                 "packages/lat_core",
                 &[TagLevel::Exact],
+                GLEAM_TOML,
                 &mut diagnostics
             ),
             minor
@@ -1171,8 +1307,13 @@ mod tests {
             ("packages/lat_*", &[TagLevel::Exact, TagLevel::Minor]),
         ]);
         let default = [TagLevel::Exact];
-        let tags =
-            resolve_package_tags(&overrides, "packages/lat_core", &default, &mut diagnostics);
+        let tags = resolve_package_tags(
+            &overrides,
+            "packages/lat_core",
+            &default,
+            GLEAM_TOML,
+            &mut diagnostics,
+        );
         assert_eq!(tags, default, "falls back to the default");
         let errors: Vec<&str> = diagnostics.errors().collect();
         assert_eq!(errors.len(), 1);
@@ -1206,6 +1347,7 @@ mod tests {
             None,
             "packages/core",
             ReleaseLifecycle::Hex,
+            GLEAM_TOML,
             &mut diagnostics,
         );
         assert_eq!(lifecycle, ReleaseLifecycle::Hex);
@@ -1221,6 +1363,7 @@ mod tests {
             Some(&release_excludes),
             "examples/demo",
             ReleaseLifecycle::Hex,
+            GLEAM_TOML,
             &mut diagnostics,
         );
         assert_eq!(lifecycle, ReleaseLifecycle::Workspace);
@@ -1230,6 +1373,7 @@ mod tests {
             Some(&release_excludes),
             "packages/core",
             ReleaseLifecycle::Hex,
+            GLEAM_TOML,
             &mut diagnostics,
         );
         assert_eq!(lifecycle, ReleaseLifecycle::Hex);
@@ -1246,6 +1390,7 @@ mod tests {
             Some(&release_excludes),
             "examples/demo",
             ReleaseLifecycle::Hex,
+            GLEAM_TOML,
             &mut diagnostics,
         );
         // Legacy alone would say `workspace`; the explicit rule wins.
@@ -1265,6 +1410,7 @@ mod tests {
             None,
             "packages/providers/aws",
             ReleaseLifecycle::Hex,
+            GLEAM_TOML,
             &mut diagnostics,
         );
         assert_eq!(lifecycle, ReleaseLifecycle::GitOnly);
@@ -1283,6 +1429,7 @@ mod tests {
             None,
             "packages/special/thing",
             ReleaseLifecycle::Hex,
+            GLEAM_TOML,
             &mut diagnostics,
         );
         assert_eq!(

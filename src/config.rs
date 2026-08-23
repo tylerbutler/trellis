@@ -42,6 +42,9 @@ pub struct ConfigFile {
     pub exclude: BTreeMap<String, Vec<String>>,
     #[serde(default)]
     pub tasks: BTreeMap<String, TaskConfig>,
+    /// Redefines the manifest seam so members need not be Gleam packages.
+    /// Absent — the overwhelmingly common case — means `gleam.toml`.
+    pub adapter: Option<AdapterConfig>,
     #[serde(default)]
     pub publish: PublishConfig,
     #[serde(default)]
@@ -49,7 +52,7 @@ pub struct ConfigFile {
     #[serde(default)]
     pub doctor: DoctorConfig,
     /// Keys under `[tools.trellis]` that no field claimed. Collected rather
-    /// than deserialized — see [`ConfigFile::from_gleam_toml`].
+    /// than deserialized — see [`ConfigFile::from_toml`].
     #[serde(skip)]
     pub unknown_keys: Vec<String>,
     /// Keys spelled in the pre-0.8 kebab-case style. Accepted, then reported —
@@ -203,6 +206,56 @@ pub fn has_trellis_table(document: &toml::Value) -> bool {
         .get("tools")
         .and_then(|tools| tools.get("trellis"))
         .is_some_and(toml::Value::is_table)
+}
+
+/// `[tools.trellis.adapter]`: the manifest seam, for a workspace whose members
+/// are not Gleam packages.
+///
+/// Trellis derives four things from a member's manifest — that the directory is
+/// a member at all, its name, its version, and its dependency edges. This table
+/// redefines the first three for a different manifest format; the fourth is
+/// deliberately not configurable in this release, so an adapter workspace has a
+/// flat dependency graph (topological order is member order, and a ripple bump
+/// never fires). Everything downstream — changelog, `version`, `tag`,
+/// `release pr`, `ci` — is unchanged.
+///
+/// Registry publishing is not: an adapter workspace tops out at the `git_only`
+/// lifecycle, which is why [`LifecycleConfig::default`] flips to `git_only`
+/// when this table is present.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct AdapterConfig {
+    /// Path to the member's manifest, relative to the member directory. Its
+    /// presence is what marks a directory as a member, the way a `gleam.toml`
+    /// does otherwise, and its extension picks the format
+    /// ([`crate::manifest::Format`]) — there is no format key.
+    pub manifest: String,
+    /// Dot-separated path to the member's name within the manifest.
+    #[serde(default = "default_adapter_name")]
+    pub name: String,
+    /// Dot-separated path to the member's version within the manifest. This is
+    /// the field `trellis version apply` rewrites.
+    #[serde(default = "default_adapter_version")]
+    pub version: String,
+}
+
+impl AdapterConfig {
+    /// The manifest's basename, for the git pathspec discovery uses.
+    pub fn manifest_file_name(&self) -> &str {
+        self.manifest.rsplit('/').next().unwrap_or(&self.manifest)
+    }
+
+    pub fn format(&self) -> Result<crate::manifest::Format> {
+        crate::manifest::Format::from_path(&self.manifest)
+    }
+}
+
+fn default_adapter_name() -> String {
+    "name".to_string()
+}
+
+fn default_adapter_version() -> String {
+    "version".to_string()
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -700,17 +753,30 @@ impl ConfigFile {
     pub fn load(path: &Path) -> Result<Self> {
         let text = std::fs::read_to_string(path)
             .with_context(|| format!("failed to read {}", path.display()))?;
-        Self::from_gleam_toml(&text).with_context(|| format!("in {}", path.display()))
+        Self::from_toml(&text).with_context(|| format!("in {}", path.display()))
     }
 
-    pub fn from_gleam_toml(text: &str) -> Result<Self> {
-        let document: toml::Value = toml::from_str(text).context("failed to parse gleam.toml")?;
+    pub fn from_toml(text: &str) -> Result<Self> {
+        let document: toml::Value = toml::from_str(text).context("failed to parse TOML")?;
         let Some(trellis) = document.get("tools").and_then(|tools| tools.get("trellis")) else {
-            bail!("gleam.toml has no [tools.trellis] table");
+            bail!("no [tools.trellis] table");
         };
         let (mut config, ignored) = deserialize_collecting_unknown(trellis)?;
         config.deprecated_keys = collect_deprecated_keys(trellis, &ignored);
         config.unknown_keys = ignored;
+        // An adapter workspace has no registry to publish to, so the ladder
+        // tops out one rung lower. Only the unwritten default moves; an
+        // explicit `workspace` still means `workspace`, and an explicit `hex`
+        // is rejected in `validate` rather than silently downgraded.
+        if config.adapter.is_some()
+            && trellis
+                .get("publish")
+                .and_then(|publish| publish.get("lifecycle"))
+                .and_then(|lifecycle| lifecycle.get("default"))
+                .is_none()
+        {
+            config.publish.lifecycle.default = ReleaseLifecycle::GitOnly;
+        }
         config.validate()?;
         Ok(config)
     }
@@ -722,6 +788,7 @@ impl ConfigFile {
             members: None,
             exclude: BTreeMap::new(),
             tasks: BTreeMap::new(),
+            adapter: None,
             publish: PublishConfig::default(),
             changelog: ChangelogConfig::default(),
             doctor: DoctorConfig::default(),
@@ -729,6 +796,71 @@ impl ConfigFile {
             unknown_keys: Vec::new(),
             deprecated_keys: Vec::new(),
         }
+    }
+
+    /// Reject an `adapter` table that cannot describe a real manifest, and the
+    /// lifecycle it cannot reach.
+    fn validate_adapter(&self) -> Result<()> {
+        let Some(adapter) = &self.adapter else {
+            // Without the table there is nothing adapter-specific to check —
+            // `hex` is the ordinary default for a Gleam workspace.
+            return Ok(());
+        };
+        if adapter.manifest.is_empty() {
+            bail!("`adapter.manifest` is empty; it names the member manifest, e.g. `apm.yml`");
+        }
+        let path = Path::new(&adapter.manifest);
+        if path.is_absolute()
+            || adapter
+                .manifest
+                .split(['/', '\\'])
+                .any(|part| part == ".." || part == ".")
+        {
+            bail!(
+                "`adapter.manifest` `{}` must be a relative path inside the member directory",
+                adapter.manifest
+            );
+        }
+        // A member manifest named `trellis.toml` would be mistaken for a
+        // workspace root by `Workspace::find_root` walking up from inside it.
+        if adapter.manifest_file_name() == crate::workspace::TRELLIS_TOML {
+            bail!(
+                "`adapter.manifest` may not be `{}`; that name marks a workspace root",
+                crate::workspace::TRELLIS_TOML
+            );
+        }
+        adapter
+            .format()
+            .map_err(|err| anyhow::anyhow!("{err:#}").context("invalid `adapter.manifest`"))?;
+        for (key, value) in [("name", &adapter.name), ("version", &adapter.version)] {
+            if value.is_empty() || value.split('.').any(str::is_empty) {
+                bail!(
+                    "`adapter.{key}` `{value}` is not a dotted field path, e.g. `{key}` or \
+                     `package.{key}`"
+                );
+            }
+        }
+        let hex = std::iter::once((None, self.publish.lifecycle.default))
+            .chain(
+                self.publish
+                    .lifecycle
+                    .packages
+                    .iter()
+                    .map(|(glob, lifecycle)| (Some(glob.as_str()), *lifecycle)),
+            )
+            .find(|(_, lifecycle)| *lifecycle == ReleaseLifecycle::Hex);
+        if let Some((glob, _)) = hex {
+            let key = match glob {
+                Some(glob) => format!("publish.lifecycle.packages.\"{glob}\""),
+                None => "publish.lifecycle.default".to_string(),
+            };
+            bail!(
+                "`{key}` is `hex`, but an `adapter` workspace has no Hex packages to publish; \
+                 the highest lifecycle it reaches is `{}`",
+                ReleaseLifecycle::GitOnly.key()
+            );
+        }
+        Ok(())
     }
 
     /// Reject an explicitly empty `members` list (omit it to auto-discover),
@@ -759,6 +891,7 @@ impl ConfigFile {
                 );
             }
         }
+        self.validate_adapter()?;
         self.reject_removed_keys()?;
         if !self.publish.exact_tag_format.contains("{version}") {
             bail!(
@@ -1025,7 +1158,7 @@ mod tests {
             categories = ["build", "publish"]
             uncategorized_label = "Everything else"
         "###;
-        let config = ConfigFile::from_gleam_toml(text).unwrap();
+        let config = ConfigFile::from_toml(text).unwrap();
         assert_eq!(config.members.as_deref().unwrap().len(), 2);
         assert_eq!(config.exclude["docs"], vec!["examples/*"]);
         assert_eq!(
@@ -1049,7 +1182,7 @@ mod tests {
     /// upgrade. The changelog axis defaults the other way, on purpose.
     #[test]
     fn changelog_strictness_defaults_to_error_and_parses() {
-        let unset = ConfigFile::from_gleam_toml("[tools.trellis]\n").unwrap();
+        let unset = ConfigFile::from_toml("[tools.trellis]\n").unwrap();
         assert_eq!(unset.changelog.strictness, Strictness::Error);
         assert_eq!(ChangelogConfig::default().strictness, Strictness::Error);
         assert_eq!(
@@ -1062,7 +1195,7 @@ mod tests {
             ("error", Strictness::Error),
             ("off", Strictness::Off),
         ] {
-            let config = ConfigFile::from_gleam_toml(&format!(
+            let config = ConfigFile::from_toml(&format!(
                 "[tools.trellis.changelog]\nstrictness = \"{value}\"\n"
             ))
             .unwrap();
@@ -1079,7 +1212,7 @@ mod tests {
     /// CLI command is the user's business, not a deprecated key.
     #[test]
     fn hyphens_in_category_labels_are_not_deprecations() {
-        let config = ConfigFile::from_gleam_toml(
+        let config = ConfigFile::from_toml(
             "[tools.trellis.changelog]\ncategories = [\"markdown-help\", \"no-color\"]\n",
         )
         .unwrap();
@@ -1093,7 +1226,7 @@ mod tests {
     #[test]
     fn kind_headings_demote_only_when_categories_are_in_play() {
         let parse = |table: &str| {
-            ConfigFile::from_gleam_toml(&format!("[tools.trellis.changelog]\n{table}"))
+            ConfigFile::from_toml(&format!("[tools.trellis.changelog]\n{table}"))
                 .unwrap()
                 .changelog
         };
@@ -1115,7 +1248,7 @@ mod tests {
 
     #[test]
     fn uncategorized_label_may_not_collide_with_a_category() {
-        let err = ConfigFile::from_gleam_toml(
+        let err = ConfigFile::from_toml(
             "[tools.trellis.changelog]\ncategories = [\"build\", \"Other\"]\n",
         )
         .unwrap_err();
@@ -1126,7 +1259,7 @@ mod tests {
         );
 
         // Renaming either side settles it.
-        ConfigFile::from_gleam_toml(
+        ConfigFile::from_toml(
             "[tools.trellis.changelog]\ncategories = [\"build\", \"Other\"]\nuncategorized_label = \"Misc\"\n",
         )
         .unwrap();
@@ -1155,7 +1288,7 @@ mod tests {
             kind-format = "### {{ kind }}"
             change-format = "* {{ body }}"
         "####;
-        let config = ConfigFile::from_gleam_toml(text).unwrap();
+        let config = ConfigFile::from_toml(text).unwrap();
         assert!(config.tasks["lint"].needs_deps);
         assert_eq!(config.publish.series_tag_format, "{name}@{series}");
         assert_eq!(
@@ -1189,7 +1322,7 @@ mod tests {
 
     #[test]
     fn a_deprecated_key_names_its_replacement() {
-        let config = ConfigFile::from_gleam_toml(
+        let config = ConfigFile::from_toml(
             "[tools.trellis]\n[tools.trellis.publish]\nseries-tag-format = \"v{series}\"\n",
         )
         .unwrap();
@@ -1209,7 +1342,7 @@ mod tests {
     /// accepting it would invent a migration for a key with no history.
     #[test]
     fn keys_added_after_the_rename_have_no_kebab_spelling() {
-        let config = ConfigFile::from_gleam_toml(
+        let config = ConfigFile::from_toml(
             "[tools.trellis]\n[tools.trellis.publish]\nseries-tags = [\"major\"]\n",
         )
         .unwrap();
@@ -1228,7 +1361,7 @@ mod tests {
     /// be a warning nobody can act on.
     #[test]
     fn hyphens_in_free_form_table_keys_are_not_deprecations() {
-        let config = ConfigFile::from_gleam_toml(
+        let config = ConfigFile::from_toml(
             r###"
             [tools.trellis]
             members = ["packages/*"]
@@ -1252,7 +1385,7 @@ mod tests {
     /// leaves the task's own name alone.
     #[test]
     fn a_stale_key_under_a_hyphenated_task_name_is_still_reported() {
-        let config = ConfigFile::from_gleam_toml(
+        let config = ConfigFile::from_toml(
             "[tools.trellis.tasks.check-all]\ncommand = \"gleam check\"\nneeds-deps = true\n",
         )
         .unwrap();
@@ -1269,7 +1402,7 @@ mod tests {
     /// no alias — they are simply unknown.
     #[test]
     fn keys_added_after_the_last_kebab_release_have_no_alias() {
-        let config = ConfigFile::from_gleam_toml(
+        let config = ConfigFile::from_toml(
             r###"
             [tools.trellis.changelog]
             dependency-kind = "Docs"
@@ -1299,8 +1432,7 @@ mod tests {
 
     #[test]
     fn minimal_config_gets_defaults() {
-        let config =
-            ConfigFile::from_gleam_toml("[tools.trellis]\nmembers = [\"packages/*\"]").unwrap();
+        let config = ConfigFile::from_toml("[tools.trellis]\nmembers = [\"packages/*\"]").unwrap();
         assert!(config.exclude.is_empty());
         assert_eq!(config.publish.exact_tag_format, "{name}-v{version}");
         assert_eq!(
@@ -1338,15 +1470,14 @@ mod tests {
 
     #[test]
     fn lifecycle_defaults_to_hex_with_no_package_overrides() {
-        let config =
-            ConfigFile::from_gleam_toml("[tools.trellis]\nmembers = [\"packages/*\"]").unwrap();
+        let config = ConfigFile::from_toml("[tools.trellis]\nmembers = [\"packages/*\"]").unwrap();
         assert_eq!(config.publish.lifecycle.default, ReleaseLifecycle::Hex);
         assert!(config.publish.lifecycle.packages.is_empty());
     }
 
     #[test]
     fn lifecycle_parses_nested_table_and_inline_map() {
-        let config = ConfigFile::from_gleam_toml(
+        let config = ConfigFile::from_toml(
             r###"
             [tools.trellis.publish.lifecycle]
             default = "hex"
@@ -1370,10 +1501,9 @@ mod tests {
 
     #[test]
     fn lifecycle_default_can_be_overridden() {
-        let config = ConfigFile::from_gleam_toml(
-            "[tools.trellis.publish.lifecycle]\ndefault = \"workspace\"\n",
-        )
-        .unwrap();
+        let config =
+            ConfigFile::from_toml("[tools.trellis.publish.lifecycle]\ndefault = \"workspace\"\n")
+                .unwrap();
         assert_eq!(
             config.publish.lifecycle.default,
             ReleaseLifecycle::Workspace
@@ -1382,16 +1512,15 @@ mod tests {
 
     #[test]
     fn lifecycle_rejects_an_unknown_value() {
-        let err = ConfigFile::from_gleam_toml(
-            "[tools.trellis.publish.lifecycle]\ndefault = \"published\"\n",
-        )
-        .unwrap_err();
+        let err =
+            ConfigFile::from_toml("[tools.trellis.publish.lifecycle]\ndefault = \"published\"\n")
+                .unwrap_err();
         assert!(format!("{err:#}").contains("published"));
     }
 
     #[test]
     fn lifecycle_package_glob_rejects_an_unknown_value() {
-        let err = ConfigFile::from_gleam_toml(
+        let err = ConfigFile::from_toml(
             "[tools.trellis.publish.lifecycle]\npackages = { \"pkg/*\" = \"nope\" }\n",
         )
         .unwrap_err();
@@ -1400,7 +1529,7 @@ mod tests {
 
     #[test]
     fn dependency_kind_must_name_a_configured_kind() {
-        let err = ConfigFile::from_gleam_toml(
+        let err = ConfigFile::from_toml(
             r###"
             [tools.trellis.changelog]
             kinds = [{ label = "Docs", bump = "patch" }]
@@ -1422,7 +1551,7 @@ mod tests {
 
     #[test]
     fn dependency_kind_may_point_at_an_existing_kind() {
-        let config = ConfigFile::from_gleam_toml(
+        let config = ConfigFile::from_toml(
             r###"
             [tools.trellis.changelog]
             dependency_kind = "Docs"
@@ -1440,7 +1569,7 @@ mod tests {
 
     #[test]
     fn omitted_members_means_auto_discovery() {
-        let config = ConfigFile::from_gleam_toml(
+        let config = ConfigFile::from_toml(
             "[tools.trellis]\nexclude = { \"@members\" = [\"tests/fixtures/*\"] }",
         )
         .unwrap();
@@ -1453,7 +1582,7 @@ mod tests {
 
     #[test]
     fn empty_members_is_a_clear_error() {
-        let err = ConfigFile::from_gleam_toml("[tools.trellis]\nmembers = []").unwrap_err();
+        let err = ConfigFile::from_toml("[tools.trellis]\nmembers = []").unwrap_err();
         assert!(err.to_string().contains("auto-discover"), "{err:#}");
     }
 
@@ -1468,7 +1597,7 @@ mod tests {
 
     #[test]
     fn task_name_may_not_use_the_reserved_prefix() {
-        let err = ConfigFile::from_gleam_toml(
+        let err = ConfigFile::from_toml(
             "[tools.trellis]\nmembers = [\"packages/*\"]\n[tools.trellis.tasks.\"@lint\"]\ncommand = \"x\"\n",
         )
         .unwrap_err();
@@ -1477,7 +1606,7 @@ mod tests {
 
     #[test]
     fn unknown_reserved_exclude_key_is_a_clear_error() {
-        let err = ConfigFile::from_gleam_toml(
+        let err = ConfigFile::from_toml(
             "[tools.trellis]\nmembers = [\"packages/*\"]\nexclude = { \"@relase\" = [\"x\"] }\n",
         )
         .unwrap_err();
@@ -1486,7 +1615,7 @@ mod tests {
 
     #[test]
     fn missing_tools_trellis_is_a_clear_error() {
-        let err = ConfigFile::from_gleam_toml("name = \"pkg\"\nversion = \"1.0.0\"").unwrap_err();
+        let err = ConfigFile::from_toml("name = \"pkg\"\nversion = \"1.0.0\"").unwrap_err();
         assert!(err.to_string().contains("[tools.trellis]"));
     }
 
@@ -1521,8 +1650,7 @@ mod tests {
     #[test]
     fn formats_series_tags() {
         let minor = [TagLevel::Minor];
-        let config =
-            ConfigFile::from_gleam_toml("[tools.trellis]\nmembers = [\"packages/*\"]").unwrap();
+        let config = ConfigFile::from_toml("[tools.trellis]\nmembers = [\"packages/*\"]").unwrap();
         assert_eq!(config.publish.series_tag_format, "{name}-v{series}");
         assert_eq!(config.series_tags("core", "0.0.3", &minor), ["core-v0.0"]);
         assert!(config.series_tags("core", "0.0.3-rc.1", &minor).is_empty());
@@ -1533,7 +1661,7 @@ mod tests {
                 .is_empty()
         );
 
-        let repo_wide = ConfigFile::from_gleam_toml(
+        let repo_wide = ConfigFile::from_toml(
             "[tools.trellis]\n[tools.trellis.publish]\nseries_tag_format = \"v{series}\"\n",
         )
         .unwrap();
@@ -1542,7 +1670,7 @@ mod tests {
 
     #[test]
     fn parses_package_tags_and_overrides() {
-        let config = ConfigFile::from_gleam_toml(
+        let config = ConfigFile::from_toml(
             r###"
             [tools.trellis]
             members = ["packages/*"]
@@ -1568,8 +1696,7 @@ mod tests {
     /// unless asked for — and `package_tags` has to preserve it.
     #[test]
     fn package_tags_default_to_exact_only() {
-        let config =
-            ConfigFile::from_gleam_toml("[tools.trellis]\nmembers = [\"packages/*\"]").unwrap();
+        let config = ConfigFile::from_toml("[tools.trellis]\nmembers = [\"packages/*\"]").unwrap();
         assert_eq!(config.publish.package_tags, [TagLevel::Exact]);
         assert!(config.publish.package_tags_overrides.is_empty());
         assert!(!TagLevel::Exact.is_series());
@@ -1578,7 +1705,7 @@ mod tests {
 
     #[test]
     fn an_empty_override_list_is_rejected() {
-        let err = ConfigFile::from_gleam_toml(
+        let err = ConfigFile::from_toml(
             "[tools.trellis.publish]\npackage_tags_overrides = { \"packages/x\" = [] }\n",
         )
         .unwrap_err();
@@ -1587,7 +1714,7 @@ mod tests {
 
     #[test]
     fn series_tag_format_must_carry_the_series_placeholder() {
-        let err = ConfigFile::from_gleam_toml(
+        let err = ConfigFile::from_toml(
             "[tools.trellis]\n[tools.trellis.publish]\nseries_tag_format = \"{name}-latest\"\n",
         )
         .unwrap_err();
@@ -1596,7 +1723,7 @@ mod tests {
 
     #[test]
     fn parses_and_formats_the_repository_tag() {
-        let config = ConfigFile::from_gleam_toml(
+        let config = ConfigFile::from_toml(
             "[tools.trellis.publish]\n\
              repository_tag_package = \"core\"\nrepository_tag_format = \"v{series}\"\n\
              repository_tags = [\"minor\"]\n",
@@ -1612,7 +1739,7 @@ mod tests {
 
     #[test]
     fn the_repository_tag_is_optional() {
-        let config = ConfigFile::from_gleam_toml("[tools.trellis]").unwrap();
+        let config = ConfigFile::from_toml("[tools.trellis]").unwrap();
         assert!(config.publish.repository_tag_package.is_none());
         assert!(config.repository_tags("1.2.3").is_empty());
     }
@@ -1635,7 +1762,7 @@ mod tests {
                 ["repository_tag_package", "repository_tag_format"],
             ),
         ] {
-            let err = ConfigFile::from_gleam_toml(&format!("[tools.trellis.publish]\n{partial}\n"))
+            let err = ConfigFile::from_toml(&format!("[tools.trellis.publish]\n{partial}\n"))
                 .unwrap_err();
             let message = format!("{err:#}");
             for key in missing {
@@ -1643,7 +1770,7 @@ mod tests {
             }
         }
         // None of the three is the ordinary case: the feature is off.
-        let off = ConfigFile::from_gleam_toml("[tools.trellis]").unwrap();
+        let off = ConfigFile::from_toml("[tools.trellis]").unwrap();
         assert!(off.publish.repository_tags.is_empty());
         assert!(off.repository_tags("1.2.3").is_empty());
     }
@@ -1651,7 +1778,7 @@ mod tests {
     #[test]
     fn both_levels_produce_two_tags_at_every_major() {
         let both = [TagLevel::Major, TagLevel::Minor];
-        let config = ConfigFile::from_gleam_toml("[tools.trellis]").unwrap();
+        let config = ConfigFile::from_toml("[tools.trellis]").unwrap();
         assert_eq!(
             config.series_tags("core", "0.10.3", &both),
             ["core-v0", "core-v0.10"]
@@ -1672,7 +1799,7 @@ mod tests {
     /// levels are stated rather than inferred from `package_tags`.
     #[test]
     fn the_repository_tag_takes_its_own_levels() {
-        let config = ConfigFile::from_gleam_toml(
+        let config = ConfigFile::from_toml(
             "[tools.trellis.publish]\npackage_tags = [\"exact\", \"major\", \"minor\"]\n\
              repository_tag_package = \"core\"\nrepository_tag_format = \"v{series}\"\n\
              repository_tags = [\"major\"]\n",
@@ -1684,13 +1811,13 @@ mod tests {
 
     #[test]
     fn empty_package_tags_are_rejected_and_the_error_lists_the_levels() {
-        let err = ConfigFile::from_gleam_toml("[tools.trellis.publish]\npackage_tags = []\n")
-            .unwrap_err();
+        let err =
+            ConfigFile::from_toml("[tools.trellis.publish]\npackage_tags = []\n").unwrap_err();
         let message = format!("{err:#}");
         assert!(message.contains("package_tags"), "{message}");
         assert!(message.contains("`major`, `minor`, `exact`"), "{message}");
 
-        let err = ConfigFile::from_gleam_toml(
+        let err = ConfigFile::from_toml(
             "[tools.trellis.publish]\n\
              repository_tag_package = \"core\"\nrepository_tag_format = \"v{series}\"\n\
              repository_tags = []\n",
@@ -1703,7 +1830,7 @@ mod tests {
     /// version, which is what package exact tags are for.
     #[test]
     fn the_repository_tag_rejects_the_exact_level() {
-        let err = ConfigFile::from_gleam_toml(
+        let err = ConfigFile::from_toml(
             "[tools.trellis.publish]\n\
              repository_tag_package = \"core\"\nrepository_tag_format = \"v{series}\"\n\
              repository_tags = [\"exact\"]\n",
@@ -1728,14 +1855,14 @@ mod tests {
             ),
         ];
         for (removed, replacement) in cases {
-            let err = ConfigFile::from_gleam_toml(&format!("[tools.trellis.publish]\n{removed}\n"))
+            let err = ConfigFile::from_toml(&format!("[tools.trellis.publish]\n{removed}\n"))
                 .unwrap_err();
             let message = format!("{err:#}");
             assert!(message.contains("has been removed"), "{message}");
             assert!(message.contains(replacement), "{message}");
         }
         // The old sub-table is matched by prefix, through its nested keys.
-        let err = ConfigFile::from_gleam_toml(
+        let err = ConfigFile::from_toml(
             "[tools.trellis.publish.repository_series]\npackage = \"core\"\nformat = \"v{series}\"\n",
         )
         .unwrap_err();
@@ -1743,16 +1870,15 @@ mod tests {
         assert!(message.contains("publish.repository_series"), "{message}");
         assert!(message.contains("repository_tag_package"), "{message}");
         // A pre-0.8 kebab spelling of a removed key reports the same way.
-        let err = ConfigFile::from_gleam_toml("[tools.trellis.publish]\ntag-mode = \"series\"\n")
-            .unwrap_err();
+        let err =
+            ConfigFile::from_toml("[tools.trellis.publish]\ntag-mode = \"series\"\n").unwrap_err();
         assert!(format!("{err:#}").contains("package_tags"), "{err:#}");
     }
 
     #[test]
     fn an_unknown_series_level_names_the_vocabulary() {
-        let err =
-            ConfigFile::from_gleam_toml("[tools.trellis.publish]\npackage_tags = [\"patch\"]\n")
-                .unwrap_err();
+        let err = ConfigFile::from_toml("[tools.trellis.publish]\npackage_tags = [\"patch\"]\n")
+            .unwrap_err();
         let message = format!("{err:#}");
         assert!(message.contains("major"), "{message}");
         assert!(message.contains("minor"), "{message}");
@@ -1760,7 +1886,7 @@ mod tests {
 
     #[test]
     fn repository_tag_format_must_carry_the_series_placeholder() {
-        let err = ConfigFile::from_gleam_toml(
+        let err = ConfigFile::from_toml(
             "[tools.trellis.publish]\n\
              repository_tag_package = \"core\"\nrepository_tag_format = \"latest\"\n\
              repository_tags = [\"minor\"]\n",
@@ -1773,7 +1899,7 @@ mod tests {
 
     #[test]
     fn repository_tag_format_rejects_the_name_placeholder() {
-        let err = ConfigFile::from_gleam_toml(
+        let err = ConfigFile::from_toml(
             "[tools.trellis.publish]\n\
              repository_tag_package = \"core\"\nrepository_tag_format = \"{name}-v{series}\"\n\
              repository_tags = [\"minor\"]\n",
@@ -1786,7 +1912,7 @@ mod tests {
 
     #[test]
     fn exact_tag_format_must_carry_the_version_placeholder() {
-        let err = ConfigFile::from_gleam_toml(
+        let err = ConfigFile::from_toml(
             "[tools.trellis.publish]\nexact_tag_format = \"{name}-latest\"\n",
         )
         .unwrap_err();
@@ -1797,5 +1923,97 @@ mod tests {
     fn bump_ordering_supports_max() {
         assert!(Bump::Major > Bump::Minor);
         assert!(Bump::Minor > Bump::Patch);
+    }
+
+    #[test]
+    fn adapter_field_paths_default_to_name_and_version() {
+        let config =
+            ConfigFile::from_toml("[tools.trellis.adapter]\nmanifest = \"apm.yml\"\n").unwrap();
+        let adapter = config.adapter.expect("the table was declared");
+        assert_eq!(adapter.name, "name");
+        assert_eq!(adapter.version, "version");
+        assert_eq!(adapter.format().unwrap(), crate::manifest::Format::Yaml);
+        assert_eq!(adapter.manifest_file_name(), "apm.yml");
+    }
+
+    #[test]
+    fn adapter_manifest_file_name_drops_the_directories() {
+        let config = ConfigFile::from_toml(
+            "[tools.trellis.adapter]\nmanifest = \".claude-plugin/plugin.json\"\n",
+        )
+        .unwrap();
+        let adapter = config.adapter.expect("the table was declared");
+        assert_eq!(adapter.manifest_file_name(), "plugin.json");
+        assert_eq!(adapter.format().unwrap(), crate::manifest::Format::Json);
+    }
+
+    /// The lifecycle ladder tops out one rung lower under an adapter, but only
+    /// the unwritten default moves.
+    #[test]
+    fn adapter_defaults_the_lifecycle_to_git_only() {
+        let config =
+            ConfigFile::from_toml("[tools.trellis.adapter]\nmanifest = \"apm.yml\"\n").unwrap();
+        assert_eq!(config.publish.lifecycle.default, ReleaseLifecycle::GitOnly);
+
+        let config = ConfigFile::from_toml(
+            "[tools.trellis.adapter]\nmanifest = \"apm.yml\"\n\
+             [tools.trellis.publish.lifecycle]\ndefault = \"workspace\"\n",
+        )
+        .unwrap();
+        assert_eq!(
+            config.publish.lifecycle.default,
+            ReleaseLifecycle::Workspace
+        );
+
+        // Without the table, `hex` remains the default.
+        let config = ConfigFile::from_toml("[tools.trellis]\n").unwrap();
+        assert_eq!(config.publish.lifecycle.default, ReleaseLifecycle::Hex);
+    }
+
+    #[test]
+    fn adapter_rejects_a_hex_lifecycle_wherever_it_is_written() {
+        for table in [
+            "[tools.trellis.publish.lifecycle]\ndefault = \"hex\"\n",
+            "[tools.trellis.publish.lifecycle.packages]\n\"packages/*\" = \"hex\"\n",
+        ] {
+            let err = ConfigFile::from_toml(&format!(
+                "[tools.trellis.adapter]\nmanifest = \"apm.yml\"\n{table}"
+            ))
+            .unwrap_err();
+            let message = format!("{err:#}");
+            assert!(message.contains("no Hex packages to publish"), "{message}");
+        }
+    }
+
+    #[test]
+    fn adapter_rejects_a_manifest_it_cannot_read() {
+        for (manifest, expected) in [
+            ("", "is empty"),
+            ("../shared/apm.yml", "relative path inside the member"),
+            ("/etc/apm.yml", "relative path inside the member"),
+            ("Makefile", "invalid `adapter.manifest`"),
+            ("trellis.toml", "marks a workspace root"),
+        ] {
+            let err = ConfigFile::from_toml(&format!(
+                "[tools.trellis.adapter]\nmanifest = \"{manifest}\"\n"
+            ))
+            .unwrap_err();
+            let message = format!("{err:#}");
+            assert!(message.contains(expected), "{manifest}: {message}");
+        }
+    }
+
+    #[test]
+    fn adapter_rejects_a_malformed_field_path() {
+        for path in ["", "package."] {
+            let err = ConfigFile::from_toml(&format!(
+                "[tools.trellis.adapter]\nmanifest = \"apm.yml\"\nversion = \"{path}\"\n"
+            ))
+            .unwrap_err();
+            assert!(
+                format!("{err:#}").contains("is not a dotted field path"),
+                "{path}: {err:#}"
+            );
+        }
     }
 }

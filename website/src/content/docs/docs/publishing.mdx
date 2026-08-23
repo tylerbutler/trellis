@@ -118,7 +118,10 @@ releases, so neither `publish --tag` nor `ci tag-package` resolves them.
 `publish` selects members whose [release lifecycle](/docs/configuration/#release-lifecycle)
 is `hex` — `--package <name>` and `--tag <tag>` refuse a `workspace` or
 `git_only` package by name, and `--all-untagged` only ever considers `hex`
-members. It runs, per package and in dependency order:
+members. In a [manifest adapter](/docs/configuration/#manifest-adapter)
+workspace the command is refused outright: the lifecycle ladder tops out at
+`git_only`, so there is nothing to publish. It runs, per package and in
+dependency order:
 
 1. **Idempotency check** — one Hex API query; versions already published are
    skipped.
