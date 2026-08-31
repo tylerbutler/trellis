@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.12.0 - 2026-08-31
+
+
+### pin
+
+#### Added
+
+- **`trellis pin` pins git dependency refs to commit SHAs, ratchet-style.** A symbolic ref (`ref = "lattice_core-v1"`) is readable but not reproducible; a bare SHA is auditable but loses the intent. `pin` keeps both: it resolves each symbolic ref with `git ls-remote`, rewrites `ref` to the commit SHA, and records the original in a `# trellis:pin <ref>` comment on the dependency's own line, leaving the rest of `gleam.toml` byte-for-byte intact. The locked commit in `manifest.toml` is patched surgically, without `gleam update`.
+
+  `--update` re-resolves every recorded ref and rewrites the SHAs that moved — following a series becomes a reviewable diff instead of a silent re-resolution. `--unpin` restores the symbolic refs. `--check` fails (exit 1, for CI) when a pinned SHA is no longer reachable from its tracked ref — the signal that a tag or branch was force-moved past it; `doctor` reports the same drift as an advisory warning.
+
 ## v0.11.2 - 2026-08-12
 
 
