@@ -476,6 +476,55 @@ trellis lockfile refresh [--package <pkg>]
   encoding the "don't refresh the whole workspace or you'll get rate-limited"
   rule from publish.yml:124-133 as behavior instead of a comment.
 
+### Dependency pinning
+
+```
+trellis pin [pkgs...]            # resolve symbolic git refs to SHAs, record intent
+trellis pin --update [pkgs...]   # re-resolve each recorded intent to its latest SHA
+trellis pin --check [pkgs...]    # fail if a pinned SHA is not reachable from its tracked ref
+trellis pin --unpin [pkgs...]    # restore the symbolic refs
+```
+
+The consumer half of series tags. A release force-moves `{name}-v{series}`
+tags so that consumers can track a series (§4); `pin` gives those consumers
+the ratchet workflow for gleam git dependencies. A mutable ref (`ref =
+"lattice_core-v1"`) is readable but not reproducible: the tag moves, and a
+re-resolve follows it silently. An immutable ref (`ref = "a1b2c3d"`) is
+auditable but loses the intent, so nobody knows what to bump it to. `pin`
+keeps both in `gleam.toml`, in the same style as
+[ratchet](https://github.com/sethvargo/ratchet) does for GitHub Actions:
+
+```toml
+[dependencies]
+lattice_core = { git = "https://github.com/x/lattice", ref = "4f2a9c81…", path = "packages/lattice_core" } # trellis:pin lattice_core-v1
+```
+
+- `pin` scans `[dependencies]` and `[dev-dependencies]` of the selected
+  members for git requirements whose `ref` is not a full commit SHA. It
+  resolves each with `git ls-remote <url> <ref>` — no clone, any host,
+  authentication through git's own credential machinery — then rewrites `ref`
+  to the SHA and appends the `# trellis:pin <ref>` comment. `toml_edit`
+  preserves the rest of the file byte for byte, the same surgical approach as
+  the `manifest.toml` version patching (§9).
+- The comment is the record of intent. It lives on the dependency's own line,
+  so it survives copy-paste between manifests and needs no separate table
+  that could orphan when a dependency is removed. A pinned dependency whose
+  comment is deleted simply stops updating — safe by default.
+- `--update` re-resolves every `# trellis:pin` comment and rewrites the SHAs
+  that moved. The result is a plain `gleam.toml` diff to review, which is the
+  point: following a series becomes a deliberate, visible bump instead of a
+  silent re-resolution.
+- `--check` verifies that each pinned SHA is an ancestor of (or equal to) the
+  commit its tracked ref points at now. A SHA no longer reachable from its
+  ref means the tag or branch was force-moved past it — the supply-chain
+  signal this exists to catch. `doctor` runs the same check as a warning;
+  `pin --check` exits non-zero for use as a CI step.
+- After a rewrite, the locked commit in `manifest.toml` is stale. `pin`
+  patches it surgically rather than running `gleam update`, consistent with
+  the rate-limit posture of `lockfile refresh`.
+- Prerelease refs and semver-range tracking (`v1.*`) are out of scope: series
+  tags already give every level a stable name to track.
+
 ### CI glue
 
 ```

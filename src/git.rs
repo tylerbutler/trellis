@@ -236,7 +236,110 @@ pub fn identity_fallback_args(cwd: &Path) -> Vec<String> {
     }
 }
 
-fn git_stdout(cwd: &Path, args: &[&str]) -> Result<String> {
+/// The commit a ref names on `url`, from one `ls-remote` — `None` when the
+/// remote has no such ref. Annotated tags resolve to the peeled commit (the
+/// object gleam locks), not the tag object. A name matching several refs
+/// with different commits (say a branch and a tag) is an error.
+pub fn ls_remote_commit(cwd: &Path, url: &str, refname: &str) -> Result<Option<String>> {
+    // The peeled pattern is queried explicitly: ls-remote only prints the
+    // `^{}` line for an annotated tag when a pattern matches it.
+    let peeled = format!("{refname}^{{}}");
+    let args = ["ls-remote", "--exit-code", url, refname, peeled.as_str()];
+    crate::term::trace_command("git", &args, cwd);
+    let output = Command::new("git")
+        .args(args)
+        .current_dir(cwd)
+        .output()
+        .context("failed to run git")?;
+    match output.status.code() {
+        Some(0) => {}
+        Some(2) => return Ok(None),
+        _ => bail!(
+            "git ls-remote failed for `{refname}` on {url}: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ),
+    }
+    // "<oid>\t<ref>" lines; an annotated tag contributes a second
+    // "<oid>\t<ref>^{}" line carrying the peeled commit, which wins.
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut commits: std::collections::BTreeMap<String, String> = Default::default();
+    for line in stdout.lines() {
+        let Some((oid, reference)) = line.split_once('\t') else {
+            continue;
+        };
+        match reference.strip_suffix("^{}") {
+            Some(base) => {
+                commits.insert(base.to_string(), oid.to_string());
+            }
+            None => {
+                commits
+                    .entry(reference.to_string())
+                    .or_insert_with(|| oid.to_string());
+            }
+        }
+    }
+    let mut distinct: Vec<&String> = commits.values().collect();
+    distinct.sort();
+    distinct.dedup();
+    match distinct.len() {
+        0 => Ok(None),
+        1 => Ok(Some(distinct[0].clone())),
+        _ => bail!(
+            "`{refname}` is ambiguous on {url}: it matches {} — use a full refname",
+            commits.keys().cloned().collect::<Vec<_>>().join(", ")
+        ),
+    }
+}
+
+/// Fetch a ref's history (commits only) from `url` into the local repository
+/// so ancestry can be tested. `--filter=tree:0` keeps it cheap; a server that
+/// rejects filters gets one plain retry.
+pub fn fetch_ref(cwd: &Path, url: &str, refname: &str) -> Result<()> {
+    let filtered = [
+        "fetch",
+        "--quiet",
+        "--no-tags",
+        "--filter=tree:0",
+        url,
+        refname,
+    ];
+    if git_stdout(cwd, &filtered).is_ok() {
+        return Ok(());
+    }
+    git_stdout(cwd, &["fetch", "--quiet", "--no-tags", url, refname]).map(|_| ())
+}
+
+/// Whether `ancestor` is an ancestor of (or equal to) `descendant` among
+/// locally-known objects. A commit git doesn't have counts as "no": after
+/// fetching a tracked ref, a pin absent from its history is exactly the
+/// drift being tested for.
+pub fn is_ancestor(cwd: &Path, ancestor: &str, descendant: &str) -> Result<bool> {
+    let args = ["merge-base", "--is-ancestor", ancestor, descendant];
+    crate::term::trace_command("git", &args, cwd);
+    let output = Command::new("git")
+        .args(args)
+        .current_dir(cwd)
+        .output()
+        .context("failed to run git")?;
+    match output.status.code() {
+        Some(0) => Ok(true),
+        Some(1) => Ok(false),
+        _ => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let lower = stderr.to_lowercase();
+            if lower.contains("not a valid")
+                || lower.contains("bad object")
+                || lower.contains("bad revision")
+            {
+                Ok(false)
+            } else {
+                bail!("git merge-base --is-ancestor failed: {}", stderr.trim())
+            }
+        }
+    }
+}
+
+pub(crate) fn git_stdout(cwd: &Path, args: &[&str]) -> Result<String> {
     crate::term::trace_command("git", args, cwd);
     let output = Command::new("git")
         .args(args)

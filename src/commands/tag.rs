@@ -10,6 +10,7 @@
 //! package's list. Only immutable tags can carry a GitHub Release.
 
 use crate::config::TagLevel;
+use crate::git::git_stdout;
 use crate::github::GitHubClient;
 use crate::gleam::GleamManifest;
 use crate::json::TagPlanDocument;
@@ -798,23 +799,6 @@ fn is_series(token: &str) -> bool {
         && parts
             .iter()
             .all(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit()))
-}
-
-fn git_stdout(cwd: &Path, args: &[&str]) -> Result<String> {
-    crate::term::trace_command("git", args, cwd);
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(cwd)
-        .output()
-        .context("failed to run git")?;
-    if !output.status.success() {
-        bail!(
-            "git {} failed: {}",
-            args.join(" "),
-            String::from_utf8_lossy(&output.stderr).trim()
-        );
-    }
-    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
 #[cfg(test)]

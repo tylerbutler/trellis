@@ -198,6 +198,7 @@ fn inspect(root: &Path) -> Result<Report> {
         check_exclusions(workspace, &mut report);
         check_tag_collisions(workspace, &mut report);
         check_lockfiles(workspace, &mut report);
+        check_pinned_refs(workspace, &mut report);
         check_changelogs(workspace, &mut report);
         check_fragments(workspace, &mut report);
         check_shared_dependencies(workspace, &mut report);
@@ -216,6 +217,7 @@ pub fn run(root: &Path, options: &DoctorOptions) -> Result<bool> {
             "task exclusion globs match members; no package depends on one unavailable at its release lifecycle",
             "tag format produces a unique tag per releasable package",
             "manifest.toml locked versions match workspace-internal gleam.toml versions",
+            "pinned git dependency SHAs remain reachable from their tracked refs (advisory)",
             "each releasable package's version is not behind its CHANGELOG",
             "unreleased changelog fragments parse and reference valid packages, kinds, and categories",
             "[tools.trellis] carries no unrecognized or deprecated keys",
@@ -824,6 +826,29 @@ fn check_lockfiles(workspace: &Workspace, report: &mut Report) {
             path,
             contents: new_text,
         });
+    }
+}
+
+/// Advisory: each `# trellis:pin` tracked ref should still contain its pinned
+/// SHA. Warnings, not errors — the check needs the network, and re-pinning is
+/// a supply-chain decision `--fix` must not make. `trellis pin --check` is the
+/// enforcing form.
+fn check_pinned_refs(workspace: &Workspace, report: &mut Report) {
+    let indices: Vec<usize> = (0..workspace.members.len()).collect();
+    match crate::commands::pin::check_pins(workspace, &indices) {
+        Ok(drifts) => {
+            for drift in drifts {
+                report.push(
+                    Finding::warning(Check::PinnedRef, drift.message)
+                        .at(&drift.rel_path)
+                        .in_package(&drift.package),
+                );
+            }
+        }
+        Err(err) => report.push(Finding::warning(
+            Check::PinnedRef,
+            format!("could not verify pinned refs: {err:#}"),
+        )),
     }
 }
 
