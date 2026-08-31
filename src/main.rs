@@ -241,6 +241,30 @@ enum Command {
         #[command(subcommand)]
         command: LockfileCommand,
     },
+    /// Pin git dependency refs to commit SHAs, recording the tracked ref
+    ///
+    /// Rewrites each symbolic `ref` in `[dependencies]`/`[dev-dependencies]`
+    /// to the commit it resolves to and records the original in a trailing
+    /// `# trellis:pin <ref>` comment, ratchet-style: the dependency becomes
+    /// reproducible without losing what to bump it to. Following the ref
+    /// again is a deliberate, reviewable `--update` diff instead of a silent
+    /// re-resolution; deleting the comment simply stops updates.
+    Pin {
+        /// Packages whose git dependencies to pin; all packages when omitted
+        #[arg(add = completion::packages())]
+        packages: Vec<String>,
+        /// Re-resolve every recorded `# trellis:pin` ref and rewrite the SHAs
+        /// that moved
+        #[arg(long, conflicts_with_all = ["check", "unpin"])]
+        update: bool,
+        /// Verify each pinned SHA is still reachable from its tracked ref;
+        /// non-zero exit on drift (for CI)
+        #[arg(long, conflicts_with = "unpin")]
+        check: bool,
+        /// Restore the symbolic refs and remove the pin comments
+        #[arg(long)]
+        unpin: bool,
+    },
     /// Validate workspace invariants; non-zero exit on any error
     Doctor {
         /// Apply the mechanically-fixable findings (seed changelog stubs,
@@ -762,6 +786,21 @@ fn dispatch(cli: Cli) -> Result<bool> {
                 commands::lockfile::refresh(&workspace, package.as_deref())
             }
         },
+        Command::Pin {
+            packages,
+            update,
+            check,
+            unpin,
+        } => {
+            let mode = match (update, check, unpin) {
+                (false, false, false) => commands::pin::Mode::Pin,
+                (true, false, false) => commands::pin::Mode::Update,
+                (false, true, false) => commands::pin::Mode::Check,
+                (false, false, true) => commands::pin::Mode::Unpin,
+                _ => unreachable!("clap conflicts prevent combining pin flags"),
+            };
+            commands::pin::run(&workspace, &commands::pin::PinOptions { mode, packages })
+        }
         Command::Doctor { .. }
         | Command::Init
         | Command::MarkdownHelp
