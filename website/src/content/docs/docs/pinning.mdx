@@ -1,0 +1,116 @@
+---
+title: Dependency pinning
+description: trellis pin rewrites symbolic git dependency refs to commit SHAs and records the tracked ref in a comment, so builds are reproducible without losing what to bump to.
+---
+
+import Callout from "../../../components/Callout.astro";
+
+A Gleam git dependency names a ref, and there are two ways to spell it, both
+wrong. A symbolic ref (`ref = "v0.4"`) is readable but not reproducible — the
+tag moves and the next resolve silently follows it. A bare commit SHA is
+reproducible but loses the intent, so nobody knows what to bump it to.
+`trellis pin` keeps both, in the same style
+[ratchet](https://github.com/sethvargo/ratchet) uses for GitHub Actions: the
+`ref` becomes the SHA, and the ref it tracks moves into a comment on the same
+line.
+
+```txt wrap
+trellis pin [pkgs...]            # resolve symbolic refs to SHAs, record the intent
+trellis pin --update [pkgs...]   # re-resolve each recorded intent to its latest SHA
+trellis pin --check [pkgs...]    # fail if a pinned SHA drifted from its tracked ref
+trellis pin --unpin [pkgs...]    # restore the symbolic refs
+```
+
+This is the consumer half of [series tags](/docs/configuration/#tags): a
+release force-moves `lat_cli-v0.4` so consumers can track the series, and
+`pin` is how a consumer follows that tag deliberately instead of silently.
+It works the same on any moving ref — a branch, or another tool's tags.
+
+## Pinning
+
+`pin` scans `[dependencies]` and `[dev-dependencies]` of the selected
+packages — all of them when none are named — for git requirements whose `ref`
+is not already a full commit SHA. Each ref is resolved with
+`git ls-remote <url> <ref>`: no clone, any host, authentication through git's
+own credential machinery. An annotated tag pins the commit it points at, not
+the tag object. Then `ref` is rewritten and the original recorded in a
+`# trellis:pin` comment on the dependency's own line:
+
+```diff lang="toml" title="packages/lat_cli/gleam.toml" wrap
+  [dependencies]
+- vestibule = { git = "https://github.com/example/monorepo.git", ref = "v0.4", path = "packages/vestibule" }
++ vestibule = { git = "https://github.com/example/monorepo.git", ref = "93deb4c38d4b3f5848681ff7e9d59883db751c67", path = "packages/vestibule" } # trellis:pin v0.4
+```
+
+```console
+$ trellis pin
+[lat_cli] pinned vestibule 93deb4c tracking v0.4
+```
+
+The rest of the file is preserved byte for byte, and the locked commit in
+`manifest.toml` is patched surgically — no `gleam update`, no Hex traffic. A
+package without a manifest is fine: gleam locks the pinned commit on its next
+download.
+
+The comment is the record of intent. It lives on the dependency's own line,
+so it survives copy-paste between manifests, and there is no separate table
+to orphan when a dependency is removed. A dependency whose comment is deleted
+simply stops updating — still pinned, no longer followed. The converse also
+holds: a hand-written SHA with no comment is left alone, because there is no
+recorded ref to follow.
+
+## Following the ref
+
+`--update` re-resolves every recorded ref and rewrites the SHAs that moved:
+
+```console
+$ trellis pin --update
+[lat_cli] updated vestibule 51cbad6 was 93deb4c, tracking v0.4
+```
+
+The result is a plain `gleam.toml` diff to review — following a moving tag
+becomes a deliberate, visible bump instead of a silent re-resolution. A
+dependency already at its ref's tip is untouched.
+
+`--unpin` restores every recorded ref and removes the comments, returning the
+manifest to its pre-pin text:
+
+```console
+$ trellis pin --unpin
+[lat_cli] unpinned vestibule restored v0.4
+```
+
+## Catching a force-moved ref
+
+`--check` verifies that each pinned SHA is an ancestor of (or equal to) the
+commit its tracked ref points at now. A SHA no longer reachable from its ref
+means the tag or branch was force-moved *past* it — the supply-chain signal
+this exists to catch:
+
+```console
+$ trellis pin --check
+drift: [lat_cli] `vestibule` is pinned at 51cbad6 which is not reachable from its tracked ref `v0.4` (now 8b9acd6) — the ref may have been force-moved
+```
+
+It exits `1` on any drift, so it drops straight into a PR gate:
+
+```yaml
+# on: pull_request
+- run: trellis pin --check
+```
+
+`doctor` runs the same check, but as an advisory warning: it needs the
+network, and re-pinning past a force-move is a supply-chain decision
+`doctor --fix` must not make. A network failure degrades to a warning too,
+so an offline `doctor` run stays useful. In `--format json` these findings
+carry `check: pinned_ref` — see [JSON output](/docs/json-output/#doctor-findings).
+
+<Callout>
+
+A pin that is merely *behind* its ref does not drift. A series tag moves
+forward once per release, and the old release commit stays an ancestor of
+the new one, so `--check` stays green through ordinary releases — being
+behind is what `--update` is for. Drift means the ref's history was actually
+rewritten, which is why it warrants an alarm rather than a bump.
+
+</Callout>

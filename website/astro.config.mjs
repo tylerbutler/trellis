@@ -23,6 +23,7 @@ export default defineConfig({
         { label: "Task running", slug: "docs/task-running" },
         { label: "Changelog & versioning", slug: "docs/changelog" },
         { label: "Publishing", slug: "docs/publishing" },
+        { label: "Dependency pinning", slug: "docs/pinning" },
         { label: "CI recipes", slug: "docs/ci" },
         { label: "JSON output", slug: "docs/json-output" },
         { label: "Compatibility", slug: "docs/compatibility" },

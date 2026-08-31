@@ -126,6 +126,7 @@ is prose, not stable — branch on `check`:
 | `release_boundary` | a package's runtime path dependency is less capable than it is (a `hex` package depending on `git_only`/`workspace`, or `git_only` on `workspace`) |
 | `tag_collision` | two releasable packages produce the same tag |
 | `lockfile_drift` | a `manifest.toml` locks a workspace-internal dep at a stale version |
+| `pinned_ref` | a [pinned git dependency](/docs/pinning/) SHA is no longer reachable from its tracked ref, its pin comment disagrees with its ref, or the refs could not be verified — always a warning |
 | `changelog_missing` | a releasable package has no `CHANGELOG.md` |
 | `changelog_unreadable` | a `CHANGELOG.md` exists but could not be read |
 | `changelog_behind` | a package's version is behind the newest one in its changelog |
