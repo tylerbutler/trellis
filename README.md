@@ -578,7 +578,6 @@ in a log:
 
 ```
 trellis init
-trellis new <name> [--template lib] [--path <dir>]
 ```
 
 `init` bootstraps the workspace itself: it writes a `[tools.trellis]` table
@@ -599,15 +598,6 @@ members are auto-discovered; found 2:
   packages/a
   packages/b
 ```
-
-Creates the member directory (derived from where existing members live, e.g.
-`packages/<name>`), a `gleam.toml` pre-filled from a sibling's metadata
-(gleam constraint, licences, repository, gleam_stdlib/gleeunit
-requirements), a stub module and gleeunit test, a CHANGELOG, and a README.
-There is no registration step anywhere: membership, the dependency graph,
-and the changelog engine all derive from the files just written. It refuses
-names that don't match any members glob, so a new package can never be
-silently invisible to the workspace.
 
 ### CI glue
 

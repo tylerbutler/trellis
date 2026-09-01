@@ -1,0 +1,5 @@
+component: new
+kind: Breaking
+body: |-
+  **`trellis new` is removed.** The command saw no real use: `gleam new` scaffolds the package, auto-discovery finds any `gleam.toml`, and `doctor --fix` seeds the changelog stub. Scaffolding can return post-1.0 if real scenarios appear.
+time: 2026-08-31T12:00:00.000000-07:00

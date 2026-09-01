@@ -1357,8 +1357,8 @@ fn changelog_adoption_happens_only_once() {
     assert_eq!(changelog.matches("- initial").count(), 1, "{changelog}");
 }
 
-/// The `trellis new` / `doctor --fix` stub is a header and nothing else, so
-/// there is no history to adopt.
+/// The `doctor --fix` stub is a header and nothing else, so there is no
+/// history to adopt.
 #[test]
 fn header_only_changelog_is_not_adopted() {
     let tmp = tempfile::tempdir().unwrap();
