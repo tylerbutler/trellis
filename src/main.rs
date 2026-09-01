@@ -793,3 +793,53 @@ fn dispatch(cli: Cli) -> Result<bool> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::CommandFactory;
+
+    /// Every visible command must appear in a hand-written website docs page.
+    /// reference.md is generated from the CLI itself, so it cannot count.
+    #[test]
+    fn every_command_is_documented_on_the_website() {
+        let docs_dir =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("website/src/content/docs/docs");
+        let mut pages = String::new();
+        for entry in std::fs::read_dir(&docs_dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.file_name().is_some_and(|n| n == "reference.md") {
+                continue;
+            }
+            if path.extension().is_some_and(|e| e == "md" || e == "mdx") {
+                pages.push_str(&std::fs::read_to_string(&path).unwrap());
+            }
+        }
+        assert!(
+            !pages.is_empty(),
+            "no docs pages found in {}",
+            docs_dir.display()
+        );
+
+        let missing: Vec<String> = Cli::command()
+            .get_subcommands()
+            .filter(|c| !c.is_hide_set())
+            .map(|c| c.get_name().to_string())
+            .filter(|name| name != "help")
+            .filter(|name| {
+                [
+                    format!("trellis {name}"),
+                    format!("`{name}`"),
+                    format!("`{name} "),
+                ]
+                .iter()
+                .all(|needle| !pages.contains(needle))
+            })
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "commands with no mention in website/src/content/docs/docs \
+             (reference.md is generated and does not count): {missing:?}"
+        );
+    }
+}
