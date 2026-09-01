@@ -1,0 +1,5 @@
+component: trellis
+kind: Fixed
+body: |-
+  **Update notices no longer repeat on cache hits.** Trellis shows the available-release notice only after a fresh check instead of after every successful interactive command.
+time: 2026-09-01T13:04:23.013-07:00

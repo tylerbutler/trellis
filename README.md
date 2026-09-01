@@ -95,12 +95,13 @@ shells and for man pages, which ship in the release archives under `man/`.
 ### Update checks
 
 Interactive commands print a one-line notice to stderr when a newer trellis
-has been published to crates.io. The check is best-effort — cached for a day,
-capped at a short timeout, and silent on any error — so it never slows a
-command or changes its exit status. It runs only when stderr is a terminal, so
-scripts and structured output are never touched. It is additionally skipped in
-CI and when `DO_NOT_TRACK` or `TRELLIS_NO_UPDATE_CHECK` is set in the
-environment, and `--no-update-check` suppresses it for a single invocation.
+has been published to crates.io. Successful checks are cached for a day, and
+the notice appears only after a fresh check. The check is best-effort — capped
+at a short timeout and silent on any error — so it never slows a command or
+changes its exit status. It runs only when stderr is a terminal, so scripts and
+structured output are never touched. It is additionally skipped in CI and when
+`DO_NOT_TRACK` or `TRELLIS_NO_UPDATE_CHECK` is set in the environment, and
+`--no-update-check` suppresses it for a single invocation.
 
 ## Configuration
 
