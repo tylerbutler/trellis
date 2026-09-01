@@ -2,31 +2,22 @@
 //!
 //! These exist so that a breaking change to a documented shape fails *here*
 //! rather than in a consumer's workflow. They assert the wire format and
-//! nothing else — behavior is covered by `cli.rs`, `phase2.rs`, and
-//! `phase3.rs`.
+//! nothing else — behavior is covered by the command-focused integration
+//! suites.
 //!
 //! A failing snapshot is not automatically a bug: adding a field is permitted
 //! by the contract. Renaming, removing, or retyping one is not, and needs the
 //! `schema` identifier bumped along with it. See
 //! `website/src/content/docs/docs/json-output.mdx`.
 
-use assert_cmd::Command;
+mod common;
+
+use common::{
+    add_fragment, copy_fixture_to, fixture, git, init_repo, trellis_with_stable_date as trellis,
+    write,
+};
 use std::fs;
-use std::path::{Path, PathBuf};
-
-fn fixture(name: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures")
-        .join(name)
-}
-
-fn trellis(dir: &Path) -> Command {
-    let mut cmd = Command::cargo_bin("trellis").unwrap();
-    cmd.current_dir(dir);
-    // Deterministic dates in rendered changelogs: 2026-07-11.
-    cmd.env("SOURCE_DATE_EPOCH", "1783728000");
-    cmd
-}
+use std::path::Path;
 
 /// Run a command and parse its stdout as JSON. Takes the expected exit status
 /// because `changelog check` reports failure through it while still emitting a
@@ -41,68 +32,6 @@ fn json_output(dir: &Path, args: &[&str], expect_success: bool) -> serde_json::V
     );
     serde_json::from_slice(&output.stdout)
         .unwrap_or_else(|err| panic!("{args:?} did not emit JSON: {err}"))
-}
-
-fn write(path: &Path, content: &str) {
-    fs::create_dir_all(path.parent().unwrap()).unwrap();
-    fs::write(path, content).unwrap();
-}
-
-fn copy_fixture_to(root: &Path) {
-    fn walk(dir: &Path, files: &mut Vec<PathBuf>) {
-        for entry in fs::read_dir(dir).unwrap() {
-            let path = entry.unwrap().path();
-            if path.is_dir() {
-                walk(&path, files);
-            } else {
-                files.push(path);
-            }
-        }
-    }
-    let from = fixture("basic");
-    let mut files = Vec::new();
-    walk(&from, &mut files);
-    for file in files {
-        let dest = root.join(file.strip_prefix(&from).unwrap());
-        fs::create_dir_all(dest.parent().unwrap()).unwrap();
-        fs::copy(&file, &dest).unwrap();
-    }
-}
-
-fn git(root: &Path, args: &[&str]) {
-    let status = std::process::Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .env("GIT_AUTHOR_NAME", "t")
-        .env("GIT_AUTHOR_EMAIL", "t@t")
-        .env("GIT_COMMITTER_NAME", "t")
-        .env("GIT_COMMITTER_EMAIL", "t@t")
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .unwrap();
-    assert!(status.success(), "git {args:?} failed");
-}
-
-fn init_repo(root: &Path) {
-    git(root, &["init", "-q", "-b", "main"]);
-    git(root, &["add", "."]);
-    git(root, &["commit", "-q", "-m", "init"]);
-}
-
-fn add_fragment(root: &Path, project: &str, kind: &str, body: &str) {
-    let dir = root.join(".changes/unreleased");
-    fs::create_dir_all(&dir).unwrap();
-    for n in 1u32.. {
-        let path = dir.join(format!("{project}-{n}.toml"));
-        if !path.exists() {
-            write(
-                &path,
-                &format!("project = \"{project}\"\nkind = \"{kind}\"\nbody = \"{body}\"\n"),
-            );
-            return;
-        }
-    }
 }
 
 // ---- introspection -------------------------------------------------------

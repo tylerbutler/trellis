@@ -1,108 +1,15 @@
-//! End-to-end tests for `trellis release pr` (release-PR management via a
-//! mock GitHub API) and doctor's .tool-versions advisory.
+//! End-to-end tests for `trellis release`.
 
 mod common;
 
-use assert_cmd::Command;
+use common::{
+    add_fragment, bare_origin, commit_of, copy_fixture_to, git, git_stdout, init_repo, series_repo,
+    trellis_github, trellis_with_local_http as trellis, version_of, write,
+};
 use predicates::prelude::*;
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
-
-fn fixture(name: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures")
-        .join(name)
-}
-
-fn trellis(dir: &Path) -> Command {
-    let mut cmd = Command::cargo_bin("trellis").unwrap();
-    cmd.current_dir(dir);
-    cmd
-}
-
-fn write(path: &Path, content: &str) {
-    fs::create_dir_all(path.parent().unwrap()).unwrap();
-    fs::write(path, content).unwrap();
-}
-
-fn copy_fixture_to(root: &Path) {
-    fn walk(dir: &Path, files: &mut Vec<PathBuf>) {
-        for entry in fs::read_dir(dir).unwrap() {
-            let path = entry.unwrap().path();
-            if path.is_dir() {
-                walk(&path, files);
-            } else {
-                files.push(path);
-            }
-        }
-    }
-    let from = fixture("basic");
-    let mut files = Vec::new();
-    walk(&from, &mut files);
-    for file in files {
-        let dest = root.join(file.strip_prefix(&from).unwrap());
-        fs::create_dir_all(dest.parent().unwrap()).unwrap();
-        fs::copy(&file, &dest).unwrap();
-    }
-}
-
-fn git(root: &Path, args: &[&str]) {
-    let status = std::process::Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .env("GIT_AUTHOR_NAME", "t")
-        .env("GIT_AUTHOR_EMAIL", "t@t")
-        .env("GIT_COMMITTER_NAME", "t")
-        .env("GIT_COMMITTER_EMAIL", "t@t")
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .unwrap();
-    assert!(status.success(), "git {args:?} failed");
-}
-
-fn make_executable(path: &Path) {
-    fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
-}
 
 // ---- trellis release pr ----------------------------------------------------
-
-fn add_fragment(root: &Path, project: &str, kind: &str, body: &str) {
-    let dir = root.join(".changes/unreleased");
-    fs::create_dir_all(&dir).unwrap();
-    for n in 1u32.. {
-        let path = dir.join(format!("{project}-{n}.toml"));
-        if !path.exists() {
-            write(
-                &path,
-                &format!("project = \"{project}\"\nkind = \"{kind}\"\nbody = \"{body}\"\n"),
-            );
-            return;
-        }
-    }
-}
-
-/// A trellis invocation aimed at the mock GitHub API: base URL and repo
-/// overridden, a token in the environment, and proxy variables stripped so
-/// requests reach the localhost mock.
-fn trellis_github(dir: &Path, api: &str) -> Command {
-    let mut cmd = trellis(dir);
-    cmd.env("TRELLIS_GITHUB_API_URL", api)
-        .env("TRELLIS_GITHUB_REPO", "example/repo")
-        .env("GITHUB_TOKEN", "test-token");
-    for var in [
-        "HTTP_PROXY",
-        "HTTPS_PROXY",
-        "http_proxy",
-        "https_proxy",
-        "ALL_PROXY",
-        "all_proxy",
-    ] {
-        cmd.env_remove(var);
-    }
-    cmd
-}
 
 #[test]
 fn release_pr_creates_then_updates_the_pull_request() {
@@ -308,35 +215,237 @@ fn release_pr_failure_preserves_an_existing_release_branch() {
         "a failed release must not move the existing local release branch"
     );
 }
-
-// ---- doctor .tool-versions advisory ----------------------------------------
+// ---- release bootstrap -----------------------------------------------------
 
 #[test]
-fn doctor_warns_on_tool_versions_mismatch() {
+fn bootstrap_uses_current_versions_with_no_fragments_required() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
     copy_fixture_to(root);
-    write(&root.join(".tool-versions"), "erlang 27.0\ngleam 1.5.0\n");
-    let gleam = root.join("fake-gleam.sh");
-    write(&gleam, "#!/bin/sh\necho 'gleam 1.4.1'\n");
-    make_executable(&gleam);
+    init_repo(root);
+    // The fixture ships no `.changes/unreleased` directory at all — bootstrap
+    // must not need one.
+    assert!(!root.join(".changes").exists());
 
-    // Mismatch is a warning, not an error: doctor still succeeds.
     trellis(root)
-        .env("TRELLIS_GLEAM_BIN", &gleam)
-        .arg("doctor")
+        .args(["release", "bootstrap"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("tagged lat_core-v1.2.0"))
+        .stdout(predicate::str::contains("tagged lat_mid-v0.5.0"))
+        .stdout(predicate::str::contains("tagged lat_cli-v0.3.1"));
+
+    let tags = git_stdout(root, &["tag", "--list"]);
+    assert_eq!(
+        tags.lines().collect::<Vec<_>>(),
+        vec!["lat_cli-v0.3.1", "lat_core-v1.2.0", "lat_mid-v0.5.0"]
+    );
+    // No version bump: bootstrap never runs `version plan`/`version apply`.
+    assert_eq!(version_of(root, "lat_core"), "1.2.0");
+    assert_eq!(version_of(root, "lat_mid"), "0.5.0");
+    assert_eq!(version_of(root, "lat_cli"), "0.3.1");
+}
+
+#[test]
+fn bootstrap_dry_run_reports_every_action_and_mutates_nothing() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+    init_repo(root);
+    let remote = bare_origin(root);
+    let api = common::mock_github(root);
+
+    trellis_github(root, &api)
+        .args([
+            "release",
+            "bootstrap",
+            "--dry-run",
+            "--push",
+            "--github-release",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("would tag lat_core-v1.2.0"))
+        .stdout(predicate::str::contains("would push lat_core-v1.2.0"))
+        .stdout(predicate::str::contains(
+            "would create GitHub release lat_core-v1.2.0",
+        ))
+        .stdout(predicate::str::contains("would tag lat_mid-v0.5.0"))
+        .stdout(predicate::str::contains(
+            "would create GitHub release lat_cli-v0.3.1",
+        ));
+
+    // Nothing was actually created, locally, on origin, or via the API.
+    assert_eq!(git_stdout(root, &["tag", "--list"]), "");
+    assert_eq!(git_stdout(remote.path(), &["tag", "--list"]), "");
+    let log = fs::read_to_string(root.join(".fake/github-log")).unwrap_or_default();
+    assert!(
+        !log.contains("POST /repos/example/repo/releases\n"),
+        "{log}"
+    );
+}
+
+#[test]
+fn bootstrap_creates_both_exact_and_series_tags() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let _remote = series_repo(
+        root,
+        "package_tags_overrides = { \"packages/lat_cli\" = [\"exact\", \"minor\"] }",
+    );
+
+    trellis(root)
+        .args(["release", "bootstrap", "--dry-run"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("would tag lat_cli-v0.3.1"))
+        .stdout(predicate::str::contains("would tag lat_cli-v0.3\n"));
+
+    trellis(root)
+        .args(["release", "bootstrap"])
+        .assert()
+        .success();
+    let tags = git_stdout(root, &["tag", "--list"]);
+    assert_eq!(
+        tags.lines().collect::<Vec<_>>(),
+        vec![
+            "lat_cli-v0.3",
+            "lat_cli-v0.3.1",
+            "lat_core-v1.2.0",
+            "lat_mid-v0.5.0"
+        ]
+    );
+}
+
+#[test]
+fn bootstrap_leaves_release_excluded_packages_untagged() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+    init_repo(root);
+
+    trellis(root)
+        .args(["release", "bootstrap", "--dry-run"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("package_a").not());
+
+    trellis(root)
+        .args(["release", "bootstrap"])
+        .assert()
+        .success();
+    let tags = git_stdout(root, &["tag", "--list"]);
+    assert!(!tags.contains("package_a"), "{tags}");
+}
+
+#[test]
+fn bootstrap_fetches_a_remote_only_tag_instead_of_recreating_it() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+    init_repo(root);
+    let _remote = bare_origin(root);
+    // lat_core is already tagged and pushed by some earlier process; the
+    // local clone bootstrapping now has never seen the tag.
+    git(root, &["tag", "-a", "lat_core-v1.2.0", "-m", "existing"]);
+    git(root, &["push", "origin", "lat_core-v1.2.0"]);
+    let original = commit_of(root, "lat_core-v1.2.0");
+    git(root, &["tag", "-d", "lat_core-v1.2.0"]);
+
+    trellis(root)
+        .args(["release", "bootstrap", "--dry-run", "--push"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("would fetch lat_core-v1.2.0"));
+
+    trellis(root)
+        .args(["release", "bootstrap", "--push"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("fetched lat_core-v1.2.0"));
+    assert_eq!(commit_of(root, "lat_core-v1.2.0"), original);
+}
+
+#[test]
+fn bootstrap_reports_existing_releases_and_reruns_idempotently() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+    init_repo(root);
+    let _remote = bare_origin(root);
+    let api = common::mock_github(root);
+
+    trellis_github(root, &api)
+        .args(["release", "bootstrap", "--push", "--github-release"])
+        .assert()
+        .success();
+    let first_log = fs::read_to_string(root.join(".fake/github-log")).unwrap();
+    assert_eq!(
+        first_log
+            .matches("POST /repos/example/repo/releases\n")
+            .count(),
+        3
+    );
+
+    trellis_github(root, &api)
+        .args([
+            "release",
+            "bootstrap",
+            "--dry-run",
+            "--push",
+            "--github-release",
+        ])
         .assert()
         .success()
         .stdout(predicate::str::contains(
-            "gleam on PATH is 1.4.1 but .tool-versions pins 1.5.0",
-        ));
+            "GitHub release lat_core-v1.2.0 already exists; skipping",
+        ))
+        .stdout(predicate::str::contains("would").not());
 
-    // Matching versions: no warning.
-    write(&root.join(".tool-versions"), "gleam 1.4.1\n");
-    trellis(root)
-        .env("TRELLIS_GLEAM_BIN", &gleam)
-        .arg("doctor")
+    trellis_github(root, &api)
+        .args(["release", "bootstrap", "--push", "--github-release"])
         .assert()
-        .success()
-        .stdout(predicate::str::contains("gleam on PATH is").not());
+        .success();
+    let second_log = fs::read_to_string(root.join(".fake/github-log")).unwrap();
+    assert_eq!(
+        second_log
+            .matches("POST /repos/example/repo/releases\n")
+            .count(),
+        3
+    );
+}
+
+#[test]
+fn bootstrap_preflights_conflicts_before_mutating_any_package() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+    init_repo(root);
+    let _remote = bare_origin(root);
+    // lat_core is tagged and pushed, then the local tag is force-moved to a
+    // later commit — an immutable tag disagreeing with origin.
+    git(root, &["tag", "-a", "lat_core-v1.2.0", "-m", "first"]);
+    git(root, &["push", "origin", "lat_core-v1.2.0"]);
+    write(&root.join("later.txt"), "later\n");
+    git(root, &["add", "."]);
+    git(root, &["commit", "-q", "-m", "later"]);
+    git(root, &["tag", "-f", "-a", "lat_core-v1.2.0", "-m", "moved"]);
+    // lat_mid and lat_cli have no tag yet, and would otherwise be created.
+
+    trellis(root)
+        .args(["release", "bootstrap", "--dry-run", "--push"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("different objects"));
+
+    trellis(root)
+        .args(["release", "bootstrap", "--push"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("different objects"));
+
+    // Neither the dry-run nor the failed real run tagged anything else —
+    // the conflict on lat_core blocks the whole batch.
+    let tags = git_stdout(root, &["tag", "--list"]);
+    assert_eq!(tags.lines().collect::<Vec<_>>(), vec!["lat_core-v1.2.0"]);
 }
