@@ -734,6 +734,7 @@ fn set_version(root: &Path, package: &str, version: &str) {
 
 fn git_stdout(dir: &Path, args: &[&str]) -> String {
     let output = std::process::Command::new("git")
+        .args(["-c", "safe.bareRepository=all"])
         .args(args)
         .current_dir(dir)
         .output()
