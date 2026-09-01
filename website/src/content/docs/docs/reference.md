@@ -20,7 +20,6 @@ description: Every trellis command, flag, and argument — generated from the CL
 * [`trellis version plan`↴](#trellis-version-plan)
 * [`trellis version apply`↴](#trellis-version-apply)
 * [`trellis init`↴](#trellis-init)
-* [`trellis new`↴](#trellis-new)
 * [`trellis release`↴](#trellis-release)
 * [`trellis release pr`↴](#trellis-release-pr)
 * [`trellis release bootstrap`↴](#trellis-release-bootstrap)
@@ -54,7 +53,6 @@ A workspace CLI for Gleam monorepos: task fan-out, introspection, and release or
 * `changelog` — Changelog fragment management (see [tools.trellis.changelog])
 * `version` — Plan and apply version bumps from unreleased changelog fragments
 * `init` — Bootstrap a workspace: write a [tools.trellis] table at the repo root
-* `new` — Scaffold a new package in the workspace
 * `release` — Release orchestration
 * `tag` — Compare package versions against git tags; create what's missing
 * `publish` — Publish packages to Hex, in dependency order, with path deps rewritten
@@ -287,25 +285,6 @@ Bootstrap a workspace: write a [tools.trellis] table at the repo root
 Everything trellis can derive it derives, so the table this writes is nearly empty by design — its presence is what marks the workspace root. Members stay auto-discovered from git; the comments it leaves point at what can be configured. Refuses if the repository is already a trellis workspace, and finishes by running `doctor`.
 
 **Usage:** `trellis init`
-
-
-
-## `trellis new`
-
-Scaffold a new package in the workspace
-
-**Usage:** `trellis new [OPTIONS] <NAME>`
-
-###### **Arguments:**
-
-* `<NAME>` — Package name (lowercase letters, digits, and _)
-
-###### **Options:**
-
-* `--template <TEMPLATE>` — Template to scaffold from
-
-  Default value: `lib`
-* `--path <PATH>` — Parent directory relative to the workspace root (derived from existing members when omitted)
 
 
 

@@ -199,18 +199,6 @@ enum Command {
     /// what can be configured. Refuses if the repository is already a trellis
     /// workspace, and finishes by running `doctor`.
     Init,
-    /// Scaffold a new package in the workspace
-    New {
-        /// Package name (lowercase letters, digits, and _)
-        name: String,
-        /// Template to scaffold from
-        #[arg(long, default_value = "lib")]
-        template: String,
-        /// Parent directory relative to the workspace root (derived from
-        /// existing members when omitted)
-        #[arg(long)]
-        path: Option<String>,
-    },
     /// Release orchestration
     Release {
         #[command(subcommand)]
@@ -729,21 +717,6 @@ fn dispatch(cli: Cli) -> Result<bool> {
                 commands::version::apply(&workspace, &overrides.parse()?, json)
             }
         },
-        Command::New {
-            name,
-            template,
-            path,
-        } => {
-            commands::new::run(
-                &workspace,
-                &commands::new::NewOptions {
-                    name,
-                    template,
-                    path,
-                },
-            )?;
-            Ok(true)
-        }
         Command::Release { command } => match command {
             ReleaseCommand::Pr { base, branch } => {
                 commands::release::pr(&workspace, &commands::release::PrOptions { base, branch })

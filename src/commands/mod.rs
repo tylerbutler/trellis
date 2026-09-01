@@ -8,7 +8,6 @@ pub mod info;
 pub mod init;
 pub mod list;
 pub mod lockfile;
-pub mod new;
 pub mod pin;
 pub mod publish;
 pub mod release;

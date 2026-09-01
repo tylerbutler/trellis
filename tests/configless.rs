@@ -249,22 +249,3 @@ fn at_members_also_filters_explicit_member_globs() {
         .success()
         .stdout("core  hex\n");
 }
-
-#[test]
-fn new_package_is_discovered_without_a_members_glob() {
-    let tmp = tempfile::tempdir().unwrap();
-    let root = tmp.path();
-    git_init(root);
-    scaffold_two_packages(root);
-
-    trellis(root)
-        .args(["new", "extra"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("created packages/extra/"));
-    trellis(root)
-        .arg("list")
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("extra"));
-}

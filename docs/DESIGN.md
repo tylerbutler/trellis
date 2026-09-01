@@ -583,6 +583,10 @@ Creates `packages/<name>` with a `gleam.toml` pre-filled from workspace metadata
 runs `changelog sync`. Adding a package becomes one command instead of edits to
 five files.
 
+> `trellis new` shipped as designed here but was removed before 1.0: it saw
+> no real use, and `gleam new` plus `doctor --fix` covers the workflow. It
+> can return post-1.0 if real scenarios appear.
+
 ## 6. The release pipeline, before and after
 
 Current flow (five workflows, two external action repos):
@@ -784,9 +788,7 @@ end-to-end suite runs against a fixture workspace with a mocked Hex API.
    yet — it depends on that repo's local composite actions.
 
 Beyond the numbered phases, the rest of the §5 command surface is also
-implemented: `trellis new` (scaffolding, with metadata copied from a sibling
-member and a members-glob match check so a new package can't be invisible to
-the workspace), `trellis release pr` (see question 2 in §11), and `trellis
+implemented: `trellis release pr` (see question 2 in §11) and `trellis
 release bootstrap` (§5) — added after adoption on a repository with correct
 versions but no tags exposed a gap between `tag create`, which reconciles
 tags, and the fragment-driven `version`/`release pr` path, which assumes a

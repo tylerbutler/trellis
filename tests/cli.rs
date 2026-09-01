@@ -696,7 +696,7 @@ fn doctor_fix_seeds_missing_changelog() {
         .success()
         .stdout(predicate::str::contains("fixed: seed CHANGELOG.md for `a`"));
 
-    // The seeded file matches the header `trellis new` scaffolds.
+    // The seeded file is the rendered header alone.
     let changelog = fs::read_to_string(root.join("packages/a/CHANGELOG.md")).unwrap();
     assert_eq!(changelog, "# a changelog\n");
 

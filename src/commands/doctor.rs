@@ -49,8 +49,8 @@ pub struct DoctorOptions {
 /// Every variant carries a package and a workspace-relative path, because
 /// `--format json` reports a fix the same way whichever check produced it.
 enum Fix {
-    /// Seed a releasable member's missing CHANGELOG.md with the same header
-    /// `trellis new` scaffolds, so it matches regenerated output byte-for-byte.
+    /// Seed a releasable member's missing CHANGELOG.md with the rendered
+    /// header, so it matches regenerated output byte-for-byte.
     SeedChangelog {
         package: String,
         rel_path: String,
@@ -860,7 +860,7 @@ fn check_changelogs(workspace: &Workspace, report: &mut Report) {
         let changelog = member.path.join("CHANGELOG.md");
         let rel_changelog = format!("{}/CHANGELOG.md", member.rel_path);
         if !changelog.is_file() {
-            // The stub is the same header `trellis new` scaffolds, so a later
+            // The stub is the rendered header alone, so a later
             // `version apply` regenerates it byte-for-byte. Rendering it first
             // is what decides whether the warning is fixable at all.
             let header = crate::changelog::render_header(&workspace.config.changelog, &member.name);
