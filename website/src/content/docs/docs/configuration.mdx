@@ -255,7 +255,7 @@ per tag. An entry names how much of the version the tag keeps:
 | `major` | `lat_cli-v0` | `lat_cli-v1` | moving — re-pointed at each release in the series |
 | `minor` | `lat_cli-v0.10` | `lat_cli-v1.2` | moving |
 
-The moving ones are what let a consumer pin `lat_cli-v0.10` once instead of
+The moving ones are what let a consumer track `lat_cli-v0.10` once instead of
 chasing `0.10.1`, `0.10.2`, `0.10.3`. `exact` substitutes into
 `exact_tag_format`, the series levels into `series_tag_format` — the entry name
 tells you which. A prerelease belongs to no series, so it gets an `exact` tag
@@ -549,5 +549,6 @@ are never reported.
 Run `trellis doctor` after any config change. It validates that member globs
 resolve, the graph is acyclic, task exclusion globs match members, release
 boundaries are safe, the tag format produces unique tags, locked versions
-match, packages agree on their shared dependencies, and `[tools.trellis]`
+match, [pinned git dependencies](/docs/pinning/) have not drifted from their
+tracked refs, packages agree on their shared dependencies, and `[tools.trellis]`
 carries no unrecognized or deprecated keys — exiting non-zero on any error.

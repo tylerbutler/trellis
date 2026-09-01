@@ -105,6 +105,11 @@ that changes a package without logging it:
 - run: trellis changelog check --base "origin/${{ github.base_ref }}"
 ```
 
+A workspace with [pinned git dependencies](/docs/pinning/) can add
+`trellis pin --check`, which fails the PR when a pinned SHA is no longer
+reachable from its tracked ref — `doctor` reports the same drift, but only
+as a warning.
+
 When the tripwire fires on a mechanical finding, such as a missing
 `CHANGELOG.md` or a stale `manifest.toml` locked version, clear it locally with
 `trellis doctor --fix`, which applies exactly those fixes and re-reports the

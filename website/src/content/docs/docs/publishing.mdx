@@ -74,8 +74,9 @@ Each entry in a package's `package_tags` falls into one of two lifecycles:
   disagreeing about what one names is an error, not something to reconcile.
 - **Series tags** (`{name}-v{series}`) move. Releasing a new version in the
   series force-moves its tag to the release commit and force-pushes it, so
-  consumers can pin `lat_cli-v0.4` and follow the series instead of chasing
-  patch tags. The signal is the package's manifest version stored at the tag,
+  consumers can track `lat_cli-v0.4` and follow the series instead of chasing
+  patch tags — [`trellis pin`](/docs/pinning/) gives git-dependency consumers
+  a reviewable way to do exactly that. The signal is the package's manifest version stored at the tag,
   so a commit that does not release the package — another package's release, a
   docs change — leaves its series tags alone. The series is derived from the
   version — see [series tags](/docs/configuration/#tags).
