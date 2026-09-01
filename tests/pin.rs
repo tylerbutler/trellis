@@ -2,36 +2,12 @@
 //! remotes — `ls-remote`, `fetch`, and ancestry all work against a local
 //! path, so no network is touched.
 
-use assert_cmd::Command;
+mod common;
+
+use common::{git, trellis, write};
 use predicates::prelude::*;
 use std::fs;
 use std::path::{Path, PathBuf};
-
-fn trellis(dir: &Path) -> Command {
-    let mut cmd = Command::cargo_bin("trellis").unwrap();
-    cmd.current_dir(dir);
-    cmd
-}
-
-fn write(path: &Path, content: &str) {
-    fs::create_dir_all(path.parent().unwrap()).unwrap();
-    fs::write(path, content).unwrap();
-}
-
-fn git(root: &Path, args: &[&str]) {
-    let status = std::process::Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .env("GIT_AUTHOR_NAME", "t")
-        .env("GIT_AUTHOR_EMAIL", "t@t")
-        .env("GIT_COMMITTER_NAME", "t")
-        .env("GIT_COMMITTER_EMAIL", "t@t")
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .unwrap();
-    assert!(status.success(), "git {args:?} failed");
-}
 
 fn git_stdout(dir: &Path, args: &[&str]) -> String {
     let output = std::process::Command::new("git")

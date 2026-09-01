@@ -1,17 +1,222 @@
-//! Shared e2e helpers: a mock GitHub API served from a background thread.
-//!
-//! Point TRELLIS_GITHUB_API_URL at the returned base URL and set
-//! TRELLIS_GITHUB_REPO plus GITHUB_TOKEN; every request the binary makes is
-//! appended to `.fake/github-log` as `METHOD path?query`, then the JSON body,
-//! then `---`, so tests assert on the log the way they asserted on the old
-//! fake-gh log. State lives in `.fake/`: a created release becomes a
-//! `release-<tag>` marker file (so existence checks respond 200 afterwards),
-//! and the PR listing replies with `.fake/pr-list` or `[]`.
+//! Shared support for the independently compiled integration-test targets.
 
+#![allow(dead_code)]
+
+use assert_cmd::Command;
+use std::fs;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
+pub fn fixture(name: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures")
+        .join(name)
+}
+
+pub fn trellis(dir: &Path) -> Command {
+    let mut cmd = Command::cargo_bin("trellis").unwrap();
+    cmd.current_dir(dir);
+    cmd
+}
+
+pub fn trellis_with_stable_date(dir: &Path) -> Command {
+    let mut cmd = trellis(dir);
+    cmd.env("SOURCE_DATE_EPOCH", "1783728000");
+    cmd
+}
+
+pub fn trellis_with_local_http(dir: &Path) -> Command {
+    let mut cmd = trellis(dir);
+    for var in [
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "ALL_PROXY",
+        "all_proxy",
+    ] {
+        cmd.env_remove(var);
+    }
+    cmd
+}
+
+pub fn trellis_github(dir: &Path, api: &str) -> Command {
+    let mut cmd = trellis_with_local_http(dir);
+    cmd.env("TRELLIS_GITHUB_API_URL", api)
+        .env("TRELLIS_GITHUB_REPO", "example/repo")
+        .env("GITHUB_TOKEN", "test-token");
+    cmd
+}
+
+pub fn write(path: &Path, content: &str) {
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(path, content).unwrap();
+}
+
+pub fn copy_fixture_to(root: &Path) {
+    fn walk(dir: &Path, files: &mut Vec<PathBuf>) {
+        for entry in fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                walk(&path, files);
+            } else {
+                files.push(path);
+            }
+        }
+    }
+
+    let from = fixture("basic");
+    let mut files = Vec::new();
+    walk(&from, &mut files);
+    for file in files {
+        let dest = root.join(file.strip_prefix(&from).unwrap());
+        fs::create_dir_all(dest.parent().unwrap()).unwrap();
+        fs::copy(&file, &dest).unwrap();
+    }
+}
+
+pub fn git(root: &Path, args: &[&str]) {
+    let status = std::process::Command::new("git")
+        .args(args)
+        .current_dir(root)
+        .env("GIT_AUTHOR_NAME", "t")
+        .env("GIT_AUTHOR_EMAIL", "t@t")
+        .env("GIT_COMMITTER_NAME", "t")
+        .env("GIT_COMMITTER_EMAIL", "t@t")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .unwrap();
+    assert!(status.success(), "git {args:?} failed");
+}
+
+pub fn init_repo(root: &Path) {
+    git(root, &["init", "-q", "-b", "main"]);
+    git(root, &["add", "."]);
+    git(root, &["commit", "-q", "-m", "init"]);
+}
+
+pub fn make_executable(path: &Path) {
+    fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
+}
+
+pub fn add_fragment(root: &Path, package: &str, kind: &str, body: &str) {
+    let dir = root.join(".changes/unreleased");
+    fs::create_dir_all(&dir).unwrap();
+    for n in 1u32.. {
+        let path = dir.join(format!("{package}-{n}.toml"));
+        if !path.exists() {
+            write(
+                &path,
+                &format!("project = \"{package}\"\nkind = \"{kind}\"\nbody = \"{body}\"\n"),
+            );
+            return;
+        }
+    }
+}
+
+pub fn version_of(root: &Path, package: &str) -> String {
+    let manifest =
+        fs::read_to_string(root.join("packages").join(package).join("gleam.toml")).unwrap();
+    manifest
+        .lines()
+        .find_map(|line| line.strip_prefix("version = \""))
+        .and_then(|line| line.strip_suffix('"'))
+        .unwrap()
+        .to_string()
+}
+
+pub fn install_fake_gleam(root: &Path) -> PathBuf {
+    let script = root.join("fake-gleam.sh");
+    write(
+        &script,
+        &format!(
+            concat!(
+                "#!/bin/sh\n",
+                "set -eu\n",
+                "root=\"{root}\"\n",
+                "echo \"$(basename \"$PWD\") gleam $*\" >> \"$root/.fake/gleam-log\"\n",
+                "if [ -d build/packages ]; then state=present; else state=absent; fi\n",
+                "echo \"$(basename \"$PWD\") $1 $state\" >> \"$root/.fake/build-state\"\n",
+                "if [ \"$1\" = publish ]; then\n",
+                "  cp gleam.toml \"$root/.fake/published-$(basename \"$PWD\").toml\"\n",
+                "fi\n",
+            ),
+            root = root.display()
+        ),
+    );
+    make_executable(&script);
+    fs::create_dir_all(root.join(".fake")).unwrap();
+    script
+}
+
+pub fn bare_origin(root: &Path) -> tempfile::TempDir {
+    let remote = tempfile::tempdir().unwrap();
+    git(remote.path(), &["init", "-q", "--bare"]);
+    git(
+        root,
+        &["remote", "add", "origin", remote.path().to_str().unwrap()],
+    );
+    remote
+}
+
+pub fn series_repo(root: &Path, publish: &str) -> tempfile::TempDir {
+    copy_fixture_to(root);
+    write(
+        &root.join("gleam.toml"),
+        &format!(
+            "[tools.trellis]\nmembers = [\"packages/*\", \"examples/*\"]\n\
+             exclude = {{ \"@release\" = [\"examples/*\"] }}\n\n\
+             [tools.trellis.publish]\n{publish}\n"
+        ),
+    );
+    init_repo(root);
+    bare_origin(root)
+}
+
+pub fn set_version(root: &Path, package: &str, version: &str) {
+    let path = root.join("packages").join(package).join("gleam.toml");
+    let text = fs::read_to_string(&path).unwrap();
+    let text: Vec<String> = text
+        .lines()
+        .map(|line| {
+            if line.starts_with("version = ") {
+                format!("version = \"{version}\"")
+            } else {
+                line.to_string()
+            }
+        })
+        .collect();
+    fs::write(&path, text.join("\n") + "\n").unwrap();
+}
+
+pub fn git_stdout(dir: &Path, args: &[&str]) -> String {
+    let output = std::process::Command::new("git")
+        .args(["-c", "safe.bareRepository=all"])
+        .args(args)
+        .current_dir(dir)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "git {args:?} failed in {}: {}",
+        dir.display(),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8_lossy(&output.stdout).trim().to_string()
+}
+
+pub fn commit_of(dir: &Path, revision: &str) -> String {
+    git_stdout(dir, &["rev-parse", &format!("{revision}^{{commit}}")])
+}
+
+/// Start a mock GitHub API and return its base URL.
+///
+/// Requests are appended to `.fake/github-log`. Created releases become
+/// `.fake/release-<tag>` marker files, and pull-request listings read
+/// `.fake/pr-list` or default to an empty list.
 pub fn mock_github(root: &Path) -> String {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
