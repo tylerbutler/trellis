@@ -552,48 +552,46 @@ fn main() -> ExitCode {
 }
 
 fn dispatch(cli: Cli) -> Result<bool> {
-    let start = match &cli.directory {
-        Some(dir) => dir.clone(),
+    let start = match cli.directory {
+        Some(dir) => dir,
         None => std::env::current_dir()?,
     };
 
     // Doctor loads leniently so it can report every problem instead of
     // failing on the first one.
     // Reference generation needs no workspace — it reflects on the CLI itself.
-    match &cli.command {
+    match cli.command {
         Command::MarkdownHelp => {
             print!("{}", commands::markdown_help());
             return Ok(true);
         }
         Command::Completions { shell } => {
-            commands::generate::completions(*shell)?;
+            commands::generate::completions(shell)?;
             return Ok(true);
         }
         Command::Man { out } => {
-            commands::generate::man_pages(out)?;
+            commands::generate::man_pages(&out)?;
             return Ok(true);
         }
         // `init` creates the workspace root, so it cannot be found by loading
         // one — it finds the repository root itself.
         Command::Init => return commands::init::run(&start),
+        Command::Doctor {
+            fix,
+            dry_run,
+            format,
+        } => {
+            let root = Workspace::find_root(&start)?;
+            return commands::doctor::run(
+                &root,
+                &commands::doctor::DoctorOptions {
+                    fix,
+                    dry_run,
+                    format,
+                },
+            );
+        }
         _ => {}
-    }
-
-    if let Command::Doctor {
-        fix,
-        dry_run,
-        format,
-    } = cli.command
-    {
-        let root = Workspace::find_root(&start)?;
-        return commands::doctor::run(
-            &root,
-            &commands::doctor::DoctorOptions {
-                fix,
-                dry_run,
-                format,
-            },
-        );
     }
 
     let workspace = Workspace::load(&start)?;
@@ -722,7 +720,8 @@ fn dispatch(cli: Cli) -> Result<bool> {
                 commands::release::pr(&workspace, &commands::release::PrOptions { base, branch })
             }
             ReleaseCommand::Bootstrap { args } => {
-                commands::release::bootstrap(&workspace, &args.options())
+                commands::tag::create(&workspace, &args.options())?;
+                Ok(true)
             }
         },
         Command::Tag { command } => match command {

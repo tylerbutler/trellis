@@ -86,6 +86,17 @@ pub enum Strictness {
     Off,
 }
 
+impl Strictness {
+    /// The configuration spelling, for output that is not serde.
+    pub fn key(self) -> &'static str {
+        match self {
+            Strictness::Warn => "warn",
+            Strictness::Error => "error",
+            Strictness::Off => "off",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct DoctorConfig {

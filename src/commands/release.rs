@@ -6,11 +6,11 @@
 //!
 //! `trellis release bootstrap` — `tag create` for adopting trellis on a
 //! repository that already has the versions and changelogs it wants; see
-//! [`bootstrap`].
+//! [`crate::commands::tag::create`].
 
 use crate::commands::version_override::Overrides;
 use crate::commands::{tag, version};
-use crate::git::{git_output, git_stdout};
+use crate::git::{git_output, git_stdout, git_with_identity};
 use crate::github::GitHubClient;
 use crate::workspace::Workspace;
 use anyhow::{Context, Result, bail};
@@ -55,17 +55,6 @@ pub fn pr(workspace: &Workspace, options: &PrOptions) -> Result<bool> {
     result
 }
 
-/// `trellis release bootstrap` — an alias for `tag create` under the release
-/// umbrella, for the repository *adopting* trellis: versions and changelogs
-/// are already right, only the tags (and GitHub Releases) are missing.
-/// Unlike `release pr`, it never runs `version apply` and requires no
-/// unreleased changelog fragments — `tag::plan_tags` reads versions straight
-/// off `gleam.toml`.
-pub fn bootstrap(workspace: &Workspace, options: &tag::CreateOptions) -> Result<bool> {
-    tag::create(workspace, options)?;
-    Ok(true)
-}
-
 fn build_release_commit_and_pr(
     workspace: &Workspace,
     options: &PrOptions,
@@ -84,10 +73,7 @@ fn build_release_commit_and_pr(
     let title = format!("release: {summary}");
 
     git_stdout(root, &["add", "-A"])?;
-    let mut commit_args = crate::git::identity_fallback_args(root);
-    commit_args.extend(["commit".into(), "-m".into(), format!("release: {summary}")]);
-    let commit_args: Vec<&str> = commit_args.iter().map(String::as_str).collect();
-    git_stdout(root, &commit_args)?;
+    git_with_identity(root, &["commit", "-m", &title])?;
 
     // Prepare on detached HEAD so failures never move an existing local
     // release branch; only the remote branch is replaced after the commit is
@@ -127,14 +113,8 @@ fn pr_body(workspace: &Workspace, plan: &[version::PlanEntry]) -> String {
         ));
     }
     for entry in plan {
-        let Some(idx) = workspace.member_index(&entry.name) else {
-            continue;
-        };
-        let changelog = workspace.members[idx].path.join("CHANGELOG.md");
-        if let Some(section) = std::fs::read_to_string(changelog)
-            .ok()
-            .and_then(|text| tag::changelog_section(&text, &entry.next))
-        {
+        let member = &workspace.members[entry.member];
+        if let Some(section) = tag::release_notes(member, &entry.next.to_string()) {
             body.push_str(&format!(
                 "\n## {} v{}\n\n{section}\n",
                 entry.name, entry.next

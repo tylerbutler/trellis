@@ -221,7 +221,7 @@ pub fn ls_gleam_manifests(cwd: &Path) -> Result<Vec<String>> {
 /// `-c user.name=... -c user.email=...` args to prepend to a git command that
 /// creates a commit or annotated tag, but only when no identity is
 /// configured (CI runners) — never overriding the user's own config.
-pub fn identity_fallback_args(cwd: &Path) -> Vec<String> {
+fn identity_fallback_args(cwd: &Path) -> Vec<String> {
     let has_identity = git_stdout(cwd, &["config", "user.email"])
         .map(|email| !email.trim().is_empty())
         .unwrap_or(false);
@@ -235,6 +235,18 @@ pub fn identity_fallback_args(cwd: &Path) -> Vec<String> {
             "user.email=trellis@localhost".into(),
         ]
     }
+}
+
+/// Run a git command that writes a commit or annotated tag, with the identity
+/// fallback prepended when the user has none configured.
+pub(crate) fn git_with_identity(cwd: &Path, args: &[&str]) -> Result<String> {
+    let identity = identity_fallback_args(cwd);
+    let full: Vec<&str> = identity
+        .iter()
+        .map(String::as_str)
+        .chain(args.iter().copied())
+        .collect();
+    git_stdout(cwd, &full)
 }
 
 /// The commit a ref names on `url`, from one `ls-remote` — `None` when the

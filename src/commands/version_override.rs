@@ -174,6 +174,11 @@ impl Overrides {
         changelog::apply_bump(current, bump)
     }
 
+    /// Whether `--bump pkg=` or `--set pkg=` named this package.
+    fn names(&self, package: &str) -> bool {
+        self.pinned.contains_key(package) || self.per_package_bump.contains_key(package)
+    }
+
     /// `--pre none`: a package already in a cycle drops its label and releases;
     /// one that gained fragments after the RC was cut bumps normally, so a late
     /// arrival does not block the promotion.
@@ -186,7 +191,7 @@ impl Overrides {
         if current.pre.is_empty() {
             return Ok(self.base(package, current, derived));
         }
-        if self.pinned.contains_key(package) || self.per_package_bump.contains_key(package) {
+        if self.names(package) {
             bail!(
                 "`{package}` is named by --bump or --set as well as --pre none; promoting takes \
                  the version the prerelease was already working toward"
@@ -204,9 +209,7 @@ impl Overrides {
         derived: Bump,
         label: &str,
     ) -> Result<semver::Version> {
-        let explicit =
-            self.pinned.contains_key(package) || self.per_package_bump.contains_key(package);
-        let base = if explicit {
+        let base = if self.names(package) {
             // An explicit --bump/--set retargets the cycle even mid-flight,
             // measured from the base rather than from `rc.1` itself.
             self.base(package, &release_of(current), derived)

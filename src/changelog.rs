@@ -82,10 +82,6 @@ impl Fragments {
         self.fragments.iter().filter(move |f| f.package == package)
     }
 
-    pub fn count_for(&self, package: &str) -> usize {
-        self.for_package(package).count()
-    }
-
     /// Problem messages alone, for the callers that only render prose.
     pub fn problem_messages(&self) -> Vec<String> {
         self.problems
@@ -114,9 +110,8 @@ fn versions_dir(workspace: &Workspace, package: &str) -> PathBuf {
 pub fn load_fragments(workspace: &Workspace) -> Result<Fragments> {
     let mut result = Fragments::default();
     let dir = unreleased_dir(workspace);
-    let entries = match std::fs::read_dir(&dir) {
-        Ok(entries) => entries,
-        Err(_) => return Ok(result), // nothing unreleased yet
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return Ok(result); // nothing unreleased yet
     };
     let mut paths: Vec<PathBuf> = entries
         .filter_map(|entry| entry.ok().map(|e| e.path()))
@@ -190,7 +185,7 @@ pub fn load_fragments(workspace: &Workspace) -> Result<Fragments> {
             } else {
                 format!(
                     "fragment `{display}`: category `{category}` is not one of {}",
-                    category_labels(categories)
+                    categories.join(", ")
                 )
             }));
             continue;
@@ -220,10 +215,6 @@ pub fn kind_labels(kinds: &[KindConfig]) -> String {
         .join(", ")
 }
 
-pub fn category_labels(categories: &[String]) -> String {
-    categories.join(", ")
-}
-
 /// The entry recording that a workspace dependency bumped in this release.
 ///
 /// A ripple is modelled as an ordinary fragment so the rest of the engine
@@ -239,6 +230,7 @@ pub fn dependency_fragment(
     dependency_version: &str,
 ) -> Result<Fragment> {
     let body = render(
+        &minijinja::Environment::new(),
         &config.dependency_body,
         "dependency_body",
         // `project` is the pre-1.0 spelling of `package`, kept so existing
@@ -351,14 +343,20 @@ pub fn apply_bump(current: &semver::Version, bump: Bump) -> semver::Version {
 
 // ---- rendering ---------------------------------------------------------------
 
-fn render(template: &str, what: &str, context: minijinja::Value) -> Result<String> {
-    let mut env = minijinja::Environment::new();
-    env.add_template(what, template)
-        .with_context(|| format!("invalid {what} template"))?;
-    env.get_template(what)
-        .expect("just added")
-        .render(context)
-        .with_context(|| format!("failed to render {what} template"))
+fn render(
+    env: &minijinja::Environment<'_>,
+    template: &str,
+    what: &str,
+    context: minijinja::Value,
+) -> Result<String> {
+    env.render_str(template, context).map_err(|err| {
+        let stage = if err.kind() == minijinja::ErrorKind::SyntaxError {
+            "invalid"
+        } else {
+            "failed to render"
+        };
+        anyhow::Error::new(err).context(format!("{stage} {what} template"))
+    })
 }
 
 /// The `{{ series }}` variable available to `version_format`: the semver
@@ -392,7 +390,9 @@ pub fn render_section(
 ) -> Result<String> {
     // Empty for a prerelease, which belongs to no series.
     let series = compatibility_series(version).unwrap_or_default();
+    let env = minijinja::Environment::new();
     let mut out = render(
+        &env,
         &config.version_format,
         "version_format",
         minijinja::context! { name, version, date, tag, series },
@@ -401,7 +401,7 @@ pub fn render_section(
 
     if !config.categories_enabled() {
         // Axis off: kind headings sit directly under the version heading.
-        render_kinds(config, &mut out, name, version, fragments, None)?;
+        render_kinds(config, &env, &mut out, name, version, fragments, None)?;
         return Ok(out);
     }
 
@@ -414,8 +414,16 @@ pub fn render_section(
         if entries.is_empty() {
             continue; // same skip-empty rule kinds follow
         }
-        render_category_heading(config, &mut out, category, name, version)?;
-        render_kinds(config, &mut out, name, version, &entries, Some(category))?;
+        render_category_heading(config, &env, &mut out, category, name, version)?;
+        render_kinds(
+            config,
+            &env,
+            &mut out,
+            name,
+            version,
+            &entries,
+            Some(category),
+        )?;
     }
 
     // Everything that named no category, including the generated ripple
@@ -427,8 +435,16 @@ pub fn render_section(
         .collect();
     if !uncategorized.is_empty() {
         let label = &config.uncategorized_label;
-        render_category_heading(config, &mut out, label, name, version)?;
-        render_kinds(config, &mut out, name, version, &uncategorized, Some(label))?;
+        render_category_heading(config, &env, &mut out, label, name, version)?;
+        render_kinds(
+            config,
+            &env,
+            &mut out,
+            name,
+            version,
+            &uncategorized,
+            Some(label),
+        )?;
     }
     Ok(out)
 }
@@ -437,6 +453,7 @@ pub fn render_section(
 /// custom `category_format` shapes every heading in the section alike.
 fn render_category_heading(
     config: &ChangelogConfig,
+    env: &minijinja::Environment<'_>,
     out: &mut String,
     category: &str,
     name: &str,
@@ -444,6 +461,7 @@ fn render_category_heading(
 ) -> Result<()> {
     out.push('\n');
     out.push_str(&render(
+        env,
         &config.category_format,
         "category_format",
         minijinja::context! { category, name, version },
@@ -456,6 +474,7 @@ fn render_category_heading(
 /// with a blank line, which also separates it from a category heading above.
 fn render_kinds(
     config: &ChangelogConfig,
+    env: &minijinja::Environment<'_>,
     out: &mut String,
     name: &str,
     version: &str,
@@ -463,12 +482,17 @@ fn render_kinds(
     category: Option<&str>,
 ) -> Result<()> {
     for kind in &config.kinds {
-        let entries: Vec<&&Fragment> = fragments.iter().filter(|f| f.kind == kind.label).collect();
+        let entries: Vec<&Fragment> = fragments
+            .iter()
+            .copied()
+            .filter(|f| f.kind == kind.label)
+            .collect();
         if entries.is_empty() {
             continue;
         }
         out.push('\n');
         out.push_str(&render(
+            env,
             config.kind_format(),
             "kind_format",
             minijinja::context! { kind => kind.label, category, name, version },
@@ -477,6 +501,7 @@ fn render_kinds(
         out.push('\n');
         for fragment in entries {
             out.push_str(&render(
+                env,
                 &config.change_format,
                 "change_format",
                 minijinja::context! {
@@ -514,12 +539,10 @@ pub struct Adoption {
 /// content is drift rather than history.
 pub fn plan_adoption(
     workspace: &Workspace,
-    package: &str,
+    member: &Member,
     current: &str,
 ) -> Result<Option<Adoption>> {
-    let idx = workspace
-        .member_index(package)
-        .with_context(|| format!("unknown package `{package}`"))?;
+    let package = &member.name;
     let dir = versions_dir(workspace, package);
     let already_batched = std::fs::read_dir(&dir).is_ok_and(|entries| {
         entries
@@ -530,7 +553,7 @@ pub fn plan_adoption(
         return Ok(None);
     }
 
-    let path = workspace.members[idx].path.join("CHANGELOG.md");
+    let path = member.path.join("CHANGELOG.md");
     let Ok(text) = std::fs::read_to_string(&path) else {
         return Ok(None);
     };
@@ -567,14 +590,17 @@ fn strip_header(text: &str) -> &str {
 pub fn latest_changelog_version(text: &str) -> Option<semver::Version> {
     text.lines()
         .filter_map(|line| line.strip_prefix("## "))
-        .filter_map(|heading| {
-            let token = heading.split_whitespace().next()?;
-            let token = token.trim_matches(['[', ']']);
-            let token = token.rsplit_once("-v").map(|(_, v)| v).unwrap_or(token);
-            let token = token.strip_prefix('v').unwrap_or(token);
-            semver::Version::parse(token).ok()
-        })
+        .filter_map(heading_version)
         .max()
+}
+
+/// The version a `## ...` heading names, in any of the tolerated shapes.
+pub(crate) fn heading_version(heading: &str) -> Option<semver::Version> {
+    let token = heading.split_whitespace().next()?;
+    let token = token.trim_matches(['[', ']']);
+    let token = token.rsplit_once("-v").map(|(_, v)| v).unwrap_or(token);
+    let token = token.strip_prefix('v').unwrap_or(token);
+    semver::Version::parse(token).ok()
 }
 
 // ---- batch + merge -----------------------------------------------------------
@@ -583,15 +609,12 @@ pub fn latest_changelog_version(text: &str) -> Option<semver::Version> {
 /// and an optional block of adopted pre-trellis history.
 pub fn render_merged_changelog(
     workspace: &Workspace,
-    package: &str,
+    member: &Member,
     pending: Option<(&semver::Version, &str)>,
     adopted: Option<&Adoption>,
 ) -> Result<String> {
-    workspace
-        .member_index(package)
-        .with_context(|| format!("unknown package `{package}`"))?;
     let config = &workspace.config.changelog;
-    let dir = versions_dir(workspace, package);
+    let dir = versions_dir(workspace, &member.name);
 
     let mut sections: Vec<(semver::Version, String)> = Vec::new();
     if let Ok(entries) = std::fs::read_dir(&dir) {
@@ -623,7 +646,7 @@ pub fn render_merged_changelog(
     }
     sections.sort_by(|a, b| b.0.cmp(&a.0));
 
-    let header = render_header(config, package)?;
+    let header = render_header(config, &member.name)?;
     let mut out = header.trim_end().to_string();
     out.push('\n');
     for (_, section) in &sections {
@@ -639,6 +662,7 @@ pub fn render_merged_changelog(
 /// stub, so seeded changelogs match regenerated ones).
 pub fn render_header(config: &ChangelogConfig, name: &str) -> Result<String> {
     render(
+        &minijinja::Environment::new(),
         &config.header_format,
         "header_format",
         minijinja::context! { name },
@@ -648,20 +672,17 @@ pub fn render_header(config: &ChangelogConfig, name: &str) -> Result<String> {
 /// Write a pre-rendered version section and complete package changelog.
 pub fn write_batch(
     workspace: &Workspace,
-    package: &str,
+    member: &Member,
     version: &semver::Version,
     section: &str,
     changelog: &str,
 ) -> Result<()> {
-    let idx = workspace
-        .member_index(package)
-        .with_context(|| format!("unknown package `{package}`"))?;
-    let dir = versions_dir(workspace, package);
+    let dir = versions_dir(workspace, &member.name);
     std::fs::create_dir_all(&dir).with_context(|| format!("failed to create {}", dir.display()))?;
     let section_path = dir.join(format!("v{version}.md"));
     std::fs::write(&section_path, section)
         .with_context(|| format!("failed to write {}", section_path.display()))?;
-    let path = workspace.members[idx].path.join("CHANGELOG.md");
+    let path = member.path.join("CHANGELOG.md");
     std::fs::write(&path, changelog).with_context(|| format!("failed to write {}", path.display()))
 }
 

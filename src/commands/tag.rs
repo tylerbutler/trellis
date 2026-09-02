@@ -10,11 +10,11 @@
 //! package's list. Only immutable tags can carry a GitHub Release.
 
 use crate::config::TagLevel;
-use crate::git::{git_output, git_stdout};
+use crate::git::{git_output, git_stdout, git_with_identity};
 use crate::github::GitHubClient;
 use crate::gleam::GleamManifest;
 use crate::json::TagPlanDocument;
-use crate::workspace::Workspace;
+use crate::workspace::{Member, Workspace};
 use anyhow::{Context, Result, bail};
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
@@ -79,11 +79,16 @@ pub(crate) fn plan_tags(workspace: &Workspace) -> Result<Vec<PlannedTag>> {
         .collect();
     let mut planned: Vec<PlannedTag> = Vec::new();
     let mut claimed: HashSet<String> = HashSet::new();
-    for (member, index) in workspace
+    let mut claim = |planned: &mut Vec<PlannedTag>, entry: PlannedTag| {
+        if claimed.insert(entry.tag.clone()) {
+            planned.push(entry);
+        }
+    };
+    for (index, member) in workspace
         .members
         .iter()
-        .zip(0..)
-        .filter(|(member, _)| member.releasable())
+        .enumerate()
+        .filter(|(_, member)| member.releasable())
     {
         if member.tags.contains(&TagLevel::Exact) {
             let tag = workspace.config.exact_tag(&member.name, member.version());
@@ -92,15 +97,16 @@ pub(crate) fn plan_tags(workspace: &Workspace) -> Result<Vec<PlannedTag>> {
             } else {
                 TagAction::Create
             };
-            if claimed.insert(tag.clone()) {
-                planned.push(PlannedTag {
+            claim(
+                &mut planned,
+                PlannedTag {
                     member: index,
                     version: member.version().to_string(),
                     tag,
                     kind: TagKind::Exact,
                     action,
-                });
-            }
+                },
+            );
         }
         // A prerelease belongs to no series, and so moves no tag.
         if member.tags.iter().any(|level| level.is_series()) {
@@ -115,15 +121,16 @@ pub(crate) fn plan_tags(workspace: &Workspace) -> Result<Vec<PlannedTag>> {
                 } else {
                     TagAction::Move
                 };
-                if claimed.insert(tag.clone()) {
-                    planned.push(PlannedTag {
+                claim(
+                    &mut planned,
+                    PlannedTag {
                         member: index,
                         version: member.version().to_string(),
                         tag,
                         kind: TagKind::Series,
                         action,
-                    });
-                }
+                    },
+                );
             }
         }
     }
@@ -289,6 +296,7 @@ pub fn plan(workspace: &Workspace, json: bool) -> Result<()> {
     Ok(())
 }
 
+#[derive(Debug, Clone, Copy)]
 pub struct CreateOptions {
     pub push: bool,
     pub github_release: bool,
@@ -298,7 +306,12 @@ pub struct CreateOptions {
 }
 
 pub fn create(workspace: &Workspace, options: &CreateOptions) -> Result<()> {
-    let push = options.push || options.github_release;
+    // A GitHub Release needs the tag on origin, so it implies a push.
+    let options = CreateOptions {
+        push: options.push || options.github_release,
+        ..*options
+    };
+    let push = options.push;
     if push {
         reconcile_remote_repository_series_tag(workspace)?;
     }
@@ -360,16 +373,11 @@ pub fn create(workspace: &Workspace, options: &CreateOptions) -> Result<()> {
     for planned in targets {
         let remote_oid = remote_oids.get(&planned.tag).map(String::as_str);
         match planned.kind {
-            TagKind::Exact => create_exact_tag(
-                workspace,
-                planned,
-                options,
-                github.as_ref(),
-                push,
-                remote_oid,
-            )?,
+            TagKind::Exact => {
+                create_exact_tag(workspace, planned, options, github.as_ref(), remote_oid)?
+            }
             TagKind::Series | TagKind::RepositorySeries => {
-                move_series_tag(workspace, planned, options, push, remote_oid)?
+                move_series_tag(workspace, planned, options, remote_oid)?
             }
         }
     }
@@ -421,9 +429,8 @@ fn reconcile_remote_repository_series_tag(workspace: &Workspace) -> Result<()> {
 fn create_exact_tag(
     workspace: &Workspace,
     planned: &PlannedTag,
-    options: &CreateOptions,
+    options: CreateOptions,
     github: Option<&GitHubClient>,
-    push: bool,
     remote_oid: Option<&str>,
 ) -> Result<()> {
     let member = &workspace.members[planned.member];
@@ -442,20 +449,12 @@ fn create_exact_tag(
         } else if options.dry_run {
             crate::status!("{}", crate::term::dim(&format!("would tag {tag}")));
         } else {
-            let mut args = crate::git::identity_fallback_args(&workspace.root);
-            args.extend([
-                "tag".into(),
-                "-a".into(),
-                tag.clone(),
-                "-m".into(),
-                format!("{} {}", member.name, planned.version),
-            ]);
-            let args: Vec<&str> = args.iter().map(String::as_str).collect();
-            git_stdout(&workspace.root, &args)?;
+            let message = format!("{} {}", member.name, planned.version);
+            git_with_identity(&workspace.root, &["tag", "-a", tag, "-m", &message])?;
             crate::status!("{} {tag}", crate::term::ok("tagged"));
         }
     }
-    if push && remote_oid.is_none() {
+    if options.push && remote_oid.is_none() {
         if options.dry_run {
             crate::status!("{}", crate::term::dim(&format!("would push {tag}")));
         } else {
@@ -476,7 +475,8 @@ fn create_exact_tag(
                 crate::term::dim(&format!("would create GitHub release {tag}"))
             );
         } else {
-            let notes = release_notes(workspace, planned.member);
+            let notes = release_notes(member, member.version())
+                .unwrap_or_else(|| format!("{} {}", member.name, member.version()));
             github.create_release(tag, tag, &notes)?;
             crate::status!("{} GitHub release {tag}", crate::term::ok("created"));
         }
@@ -491,8 +491,7 @@ fn create_exact_tag(
 fn move_series_tag(
     workspace: &Workspace,
     planned: &PlannedTag,
-    options: &CreateOptions,
-    push: bool,
+    options: CreateOptions,
     remote_oid: Option<&str>,
 ) -> Result<()> {
     let member = &workspace.members[planned.member];
@@ -507,21 +506,12 @@ fn move_series_tag(
         if options.dry_run {
             crate::status!("{}", crate::term::dim(&format!("would {verb} {tag}")));
         } else {
-            let mut args = crate::git::identity_fallback_args(&workspace.root);
-            args.extend([
-                "tag".into(),
-                "-f".into(),
-                "-a".into(),
-                tag.clone(),
-                "-m".into(),
-                format!("{} {}", member.name, member.version()),
-            ]);
-            let args: Vec<&str> = args.iter().map(String::as_str).collect();
-            git_stdout(&workspace.root, &args)?;
+            let message = format!("{} {}", member.name, member.version());
+            git_with_identity(&workspace.root, &["tag", "-f", "-a", tag, "-m", &message])?;
             crate::status!("{} {tag}", crate::term::ok(done));
         }
     }
-    if push {
+    if options.push {
         // Re-read after any move: a re-tag writes a fresh annotated object, so
         // it never matches origin (in a dry run `moved` stands in for that);
         // the comparison also catches "already where it belongs, but origin
@@ -598,14 +588,11 @@ fn remote_tag_oid(root: &Path, tag: &str) -> Result<Option<String>> {
     Ok(remote_tag_oids(root, &[tag])?.remove(tag))
 }
 
-/// The member's CHANGELOG section for its current version, or a minimal
-/// fallback body.
-fn release_notes(workspace: &Workspace, idx: usize) -> String {
-    let member = &workspace.members[idx];
+/// The member's CHANGELOG section for `version`, if the file has one.
+pub(crate) fn release_notes(member: &Member, version: &str) -> Option<String> {
     std::fs::read_to_string(member.path.join("CHANGELOG.md"))
         .ok()
-        .and_then(|text| changelog_section(&text, member.version()))
-        .unwrap_or_else(|| format!("{} {}", member.name, member.version()))
+        .and_then(|text| changelog_section(&text, version))
 }
 
 /// Extract the `## …` section whose heading names `version`, using the same
@@ -621,7 +608,7 @@ pub fn changelog_section(text: &str, version: &str) -> Option<String> {
             if section.is_some() {
                 break; // next section starts; we're done
             }
-            if heading_version(heading) == Some(wanted.clone()) {
+            if crate::changelog::heading_version(heading).as_ref() == Some(&wanted) {
                 section = Some(String::new());
             }
         } else if let Some(section) = section.as_mut() {
@@ -632,14 +619,6 @@ pub fn changelog_section(text: &str, version: &str) -> Option<String> {
     section
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
-}
-
-fn heading_version(heading: &str) -> Option<semver::Version> {
-    let token = heading.split_whitespace().next()?;
-    let token = token.trim_matches(['[', ']']);
-    let token = token.rsplit_once("-v").map(|(_, v)| v).unwrap_or(token);
-    let token = token.strip_prefix('v').unwrap_or(token);
-    semver::Version::parse(token).ok()
 }
 
 /// A pushed tag resolved back to the package it names.
@@ -719,9 +698,9 @@ fn candidates(workspace: &Workspace, wanted: impl Fn(&[TagLevel]) -> bool) -> Ve
     workspace
         .members
         .iter()
-        .zip(0..)
-        .filter(|(member, _)| member.releasable() && wanted(&member.tags))
-        .map(|(member, index)| (index, member.name.as_str()))
+        .enumerate()
+        .filter(|(_, member)| member.releasable() && wanted(&member.tags))
+        .map(|(index, member)| (index, member.name.as_str()))
         .collect()
 }
 

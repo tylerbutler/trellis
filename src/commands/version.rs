@@ -15,9 +15,11 @@ use std::path::PathBuf;
 
 #[derive(Debug)]
 pub struct PlanEntry {
+    /// Index into `workspace.members`.
+    pub member: usize,
     pub name: String,
-    pub current: String,
-    pub next: String,
+    pub current: semver::Version,
+    pub next: semver::Version,
     /// How many fragments the package owns on disk.
     pub fragments: usize,
     /// Workspace dependencies that bumped in this same plan, sorted by name.
@@ -142,13 +144,14 @@ pub fn compute_plan_from(
             },
         );
         plan.push(PlanEntry {
+            member: idx,
             name: member.name.clone(),
-            current: member.version().to_string(),
-            next: next.to_string(),
             fragments: owned.len(),
             updated_deps,
             generated,
             was_prerelease: !current.pre.is_empty(),
+            current,
+            next,
         });
     }
     if overrides.promoting() && !plan.iter().any(|entry| entry.was_prerelease) {
@@ -234,8 +237,8 @@ fn bumps(plan: &[PlanEntry]) -> Vec<Bump<'_>> {
     plan.iter()
         .map(|entry| Bump {
             name: &entry.name,
-            current: &entry.current,
-            next: &entry.next,
+            current: entry.current.to_string(),
+            next: entry.next.to_string(),
             fragments: entry.fragments,
             updated_dependencies: entry
                 .updated_deps
@@ -273,10 +276,7 @@ pub fn apply(workspace: &Workspace, overrides: &Overrides, json: bool) -> Result
     let date = changelog::today();
     let mut prepared_versions = Vec::new();
     for entry in &plan {
-        let idx = workspace
-            .member_index(&entry.name)
-            .expect("plan entries come from members");
-        let member = &workspace.members[idx];
+        let member = &workspace.members[entry.member];
         let member_fragments: Vec<&changelog::Fragment> =
             fragments.for_package(&entry.name).collect();
         // Generated ripple entries render alongside the real ones, but are
@@ -286,23 +286,24 @@ pub fn apply(workspace: &Workspace, overrides: &Overrides, json: bool) -> Result
             .copied()
             .chain(entry.generated.iter())
             .collect();
-        let next = semver::Version::parse(&entry.next).expect("plan versions are valid");
-        let tag = workspace.config.exact_tag(&entry.name, &entry.next);
+        let next = entry.next.clone();
+        let next_text = next.to_string();
+        let tag = workspace.config.exact_tag(&entry.name, &next_text);
         let section = changelog::render_section(
             &workspace.config.changelog,
             &entry.name,
-            &entry.next,
+            &next_text,
             &tag,
             &date,
             &rendered,
         )?;
         // A package releasing for the first time may already have a
         // hand-written CHANGELOG.md; adopt it so regenerating preserves it.
-        let adoption = changelog::plan_adoption(workspace, &entry.name, &entry.current)
+        let adoption = changelog::plan_adoption(workspace, member, &entry.current.to_string())
             .with_context(|| format!("failed to read `{}`'s changelog history", entry.name))?;
         let changelog = changelog::render_merged_changelog(
             workspace,
-            &entry.name,
+            member,
             Some((&next, &section)),
             adoption.as_ref(),
         )
@@ -313,6 +314,7 @@ pub fn apply(workspace: &Workspace, overrides: &Overrides, json: bool) -> Result
         let manifest = changelog::render_manifest_version(&manifest, &next)
             .with_context(|| format!("failed to bump `{}`", entry.name))?;
         prepared_versions.push(PreparedVersion {
+            member: entry.member,
             name: entry.name.clone(),
             next,
             section,
@@ -323,14 +325,16 @@ pub fn apply(workspace: &Workspace, overrides: &Overrides, json: bool) -> Result
         });
     }
 
-    let mut versions: BTreeMap<String, String> = workspace
+    // Plan entries come last, so a bumped package's next version wins.
+    let versions: BTreeMap<String, String> = workspace
         .members
         .iter()
         .map(|member| (member.name.clone(), member.version().to_string()))
+        .chain(
+            plan.iter()
+                .map(|entry| (entry.name.clone(), entry.next.to_string())),
+        )
         .collect();
-    for entry in &plan {
-        versions.insert(entry.name.clone(), entry.next.clone());
-    }
 
     let prepared_lockfiles: Vec<_> = workspace
         .members
@@ -354,7 +358,7 @@ pub fn apply(workspace: &Workspace, overrides: &Overrides, json: bool) -> Result
             .member_index(&entry.name)
             .with_context(|| format!("package `{}` disappeared during apply", entry.name))?;
         let actual = workspace.members[idx].version();
-        if actual != entry.next {
+        if actual != entry.next.to_string() {
             bail!(
                 "version bump did not land for `{}`: gleam.toml says {actual}, expected {}",
                 entry.name,
@@ -376,7 +380,7 @@ pub fn apply(workspace: &Workspace, overrides: &Overrides, json: bool) -> Result
         }
         changelog::write_batch(
             &workspace,
-            &prepared.name,
+            &workspace.members[prepared.member],
             &prepared.next,
             &prepared.section,
             &prepared.changelog,
@@ -446,6 +450,7 @@ fn display_path(workspace: &Workspace, path: &std::path::Path) -> String {
 }
 
 struct PreparedVersion {
+    member: usize,
     name: String,
     next: semver::Version,
     section: String,

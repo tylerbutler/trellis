@@ -70,7 +70,7 @@ pub fn new_fragment(
         }
         bail!(
             "unknown category `{category}`; configured categories: {}",
-            changelog::category_labels(categories)
+            categories.join(", ")
         );
     }
     if body.trim().is_empty() {
@@ -115,12 +115,27 @@ pub struct CheckOptions {
 struct PackageStatus {
     name: String,
     fragments: usize,
+    /// What the check concluded for this package, shown by every format.
+    state: EntryState,
     /// Whether the diff touched this package's own files. False for a package
     /// the branch documented without editing — a break that propagates to a
     /// dependent, say. Such a package is only here because it has a fragment,
     /// so `changed == false` implies `fragments > 0`; nothing is ever asked of
     /// it, and `needs_entry` says so explicitly rather than leaning on that.
     changed: bool,
+}
+
+/// What `check` has to say about one package.
+#[derive(Debug, Clone, Copy)]
+enum EntryState {
+    /// It has this many fragments.
+    Present(usize),
+    /// Nothing is asked of it: `off`, or it never changed.
+    NotAsked,
+    /// It needs an entry, and strictness is `warn`.
+    Warn,
+    /// It needs an entry, and strictness is `error`.
+    Error,
 }
 
 /// Map the base...head diff to releasable packages and decide which still
@@ -144,33 +159,37 @@ pub fn check(workspace: &Workspace, options: &CheckOptions) -> Result<bool> {
     // a break propagating to a dependent is documented where it lands, not
     // where it originated — and reporting only the diff left that package out
     // of the table while the release preview happily listed the bump.
+    // Under `off` the diff is still mapped and reported — the rows are useful
+    // on their own — but nothing is *asked* of the contributor, so there is no
+    // verdict to carry into the payload, the preview, or the exit code.
     let statuses: Vec<PackageStatus> = workspace
         .members
         .iter()
         .enumerate()
         .filter(|(_, member)| member.releasable())
         .filter_map(|(idx, member)| {
-            let count = fragments.count_for(&member.name);
+            let count = fragments.for_package(&member.name).count();
             let touched = changed.contains(&idx);
+            let state = match strictness {
+                _ if count > 0 => EntryState::Present(count),
+                Strictness::Off => EntryState::NotAsked,
+                _ if !touched => EntryState::NotAsked,
+                Strictness::Warn => EntryState::Warn,
+                Strictness::Error => EntryState::Error,
+            };
             (touched || count > 0).then(|| PackageStatus {
                 name: member.name.clone(),
                 fragments: count,
+                state,
                 changed: touched,
             })
         })
         .collect();
-
-    // Under `off` the diff is still mapped and reported — the rows are useful
-    // on their own — but nothing is *asked* of the contributor, so there is no
-    // verdict to carry into the payload, the preview, or the exit code.
-    let needs_entry: Vec<&str> = match strictness {
-        Strictness::Off => Vec::new(),
-        Strictness::Warn | Strictness::Error => statuses
-            .iter()
-            .filter(|status| status.changed && status.fragments == 0)
-            .map(|status| status.name.as_str())
-            .collect(),
-    };
+    let needs_entry: Vec<&str> = statuses
+        .iter()
+        .filter(|status| matches!(status.state, EntryState::Warn | EntryState::Error))
+        .map(|status| status.name.as_str())
+        .collect();
     // A fragment that does not parse is malformed input, not a judgment call,
     // so it fails at every strictness — and unlike the counts it is *not*
     // scoped to the branch. A broken fragment on the base branch blocks the
@@ -188,7 +207,7 @@ pub fn check(workspace: &Workspace, options: &CheckOptions) -> Result<bool> {
     } else {
         Vec::new()
     };
-    let preview = preview(&statuses, &needs_entry, &invalid, strictness, &releases);
+    let preview = preview(&statuses, &needs_entry, &invalid, &releases);
 
     match options.format {
         CheckFormat::Json => {
@@ -229,17 +248,14 @@ pub fn check(workspace: &Workspace, options: &CheckOptions) -> Result<bool> {
                 );
             }
             for status in &statuses {
-                let state = if status.fragments > 0 {
-                    format!("{} fragment(s)", status.fragments)
-                } else if !needs_entry.contains(&status.name.as_str()) {
+                let state = match status.state {
+                    EntryState::Present(count) => format!("{count} fragment(s)"),
                     // `off`: report the fact, ask for nothing.
-                    crate::term::dim("no entries")
-                } else if strictness == Strictness::Warn {
+                    EntryState::NotAsked => crate::term::dim("no entries"),
                     // Named as advisory, so a green exit code doesn't read as
                     // the line having been ignored.
-                    crate::term::warn("needs a changelog entry (warning)")
-                } else {
-                    crate::term::err("needs a changelog entry")
+                    EntryState::Warn => crate::term::warn("needs a changelog entry (warning)"),
+                    EntryState::Error => crate::term::err("needs a changelog entry"),
                 };
                 crate::status!("{}: {state}", crate::term::package(&status.name));
             }
@@ -262,14 +278,7 @@ fn print_github_outputs(
     preview: &str,
 ) -> Result<()> {
     println!("ok={ok}");
-    println!(
-        "strictness={}",
-        match strictness {
-            Strictness::Warn => "warn",
-            Strictness::Error => "error",
-            Strictness::Off => "off",
-        }
-    );
+    println!("strictness={}", strictness.key());
     println!("has_entries={has_entries}");
     println!("needs_entry={}", !needs_entry.is_empty());
     println!(
@@ -334,9 +343,11 @@ fn fragments_changed_by(
         fragments: fragments
             .fragments
             .iter()
-            .filter(|fragment| match &fragment.path {
-                Some(path) => !untouched.contains(path),
-                None => true,
+            .filter(|fragment| {
+                fragment
+                    .path
+                    .as_ref()
+                    .is_none_or(|path| !untouched.contains(path))
             })
             .cloned()
             .collect(),
@@ -373,19 +384,20 @@ fn plan_releases(
                 .for_package(&entry.name)
                 .chain(entry.generated.iter())
                 .collect();
-            let tag = workspace.config.exact_tag(&entry.name, &entry.next);
+            let next = entry.next.to_string();
+            let tag = workspace.config.exact_tag(&entry.name, &next);
             let section = changelog::render_section(
                 &workspace.config.changelog,
                 &entry.name,
-                &entry.next,
+                &next,
                 &tag,
                 &date,
                 &rendered,
             )?;
             Ok(ReleasePreview {
                 name: entry.name.clone(),
-                current: entry.current.clone(),
-                next: entry.next.clone(),
+                current: entry.current.to_string(),
+                next,
                 section,
             })
         })
@@ -399,7 +411,6 @@ fn preview(
     statuses: &[PackageStatus],
     needs_entry: &[&str],
     invalid: &[String],
-    strictness: Strictness,
     releases: &[ReleasePreview],
 ) -> String {
     let mut out = String::from("### Changelog check\n\n");
@@ -408,14 +419,11 @@ fn preview(
     } else {
         out.push_str("| package | fragments | version |\n| --- | --- | --- |\n");
         for status in statuses {
-            let cell = if status.fragments > 0 {
-                format!("✅ {}", status.fragments)
-            } else if !needs_entry.contains(&status.name.as_str()) {
-                "— none".to_string()
-            } else if strictness == Strictness::Warn {
-                "⚠️ no entry".to_string()
-            } else {
-                "❌ needs an entry".to_string()
+            let cell = match status.state {
+                EntryState::Present(count) => format!("✅ {count}"),
+                EntryState::NotAsked => "— none".to_string(),
+                EntryState::Warn => "⚠️ no entry".to_string(),
+                EntryState::Error => "❌ needs an entry".to_string(),
             };
             let version = releases
                 .iter()

@@ -876,7 +876,7 @@ fn check_changelogs(workspace: &Workspace, report: &mut Report) {
         // was never batched would vanish on the next release. `version apply`
         // adopts it automatically; surfacing it here means nobody meets it for
         // the first time mid-release.
-        match crate::changelog::plan_adoption(workspace, &member.name, member.version()) {
+        match crate::changelog::plan_adoption(workspace, member, member.version()) {
             Ok(Some(adoption)) => {
                 report.push(
                     Finding::warning(
