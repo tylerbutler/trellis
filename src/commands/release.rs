@@ -10,11 +10,10 @@
 
 use crate::commands::version_override::Overrides;
 use crate::commands::{tag, version};
+use crate::git::{git_output, git_stdout};
 use crate::github::GitHubClient;
 use crate::workspace::Workspace;
 use anyhow::{Context, Result, bail};
-use std::path::Path;
-use std::process::Command;
 
 pub struct PrOptions {
     /// Base branch the PR targets.
@@ -52,11 +51,7 @@ pub fn pr(workspace: &Workspace, options: &PrOptions) -> Result<bool> {
         }
         build_release_commit_and_pr(&workspace, options, &plan)
     })();
-    crate::term::trace_command("git", &["checkout", &original_branch], root);
-    let _ = Command::new("git")
-        .args(["checkout", &original_branch])
-        .current_dir(root)
-        .output();
+    let _ = git_output(root, &["checkout", &original_branch]);
     result
 }
 
@@ -147,21 +142,4 @@ fn pr_body(workspace: &Workspace, plan: &[version::PlanEntry]) -> String {
         }
     }
     body
-}
-
-fn git_stdout(cwd: &Path, args: &[&str]) -> Result<String> {
-    crate::term::trace_command("git", args, cwd);
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(cwd)
-        .output()
-        .context("failed to run `git`")?;
-    if !output.status.success() {
-        bail!(
-            "`git {}` failed: {}",
-            args.join(" "),
-            String::from_utf8_lossy(&output.stderr).trim()
-        );
-    }
-    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }

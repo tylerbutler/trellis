@@ -10,7 +10,7 @@
 //! package's list. Only immutable tags can carry a GitHub Release.
 
 use crate::config::TagLevel;
-use crate::git::git_stdout;
+use crate::git::{git_output, git_stdout};
 use crate::github::GitHubClient;
 use crate::gleam::GleamManifest;
 use crate::json::TagPlanDocument;
@@ -19,7 +19,6 @@ use anyhow::{Context, Result, bail};
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
-use std::process::Command;
 
 /// Which tag lifecycle a planned tag belongs to. The serialized names are wire
 /// format — see `crate::json`.
@@ -556,17 +555,8 @@ fn move_series_tag(
 }
 
 fn local_tag_oid(root: &Path, tag: &str) -> Result<Option<String>> {
-    rev_parse(root, &format!("refs/tags/{tag}"), tag)
-}
-
-fn rev_parse(root: &Path, reference: &str, subject: &str) -> Result<Option<String>> {
-    let args = ["rev-parse", "--verify", "--quiet", reference];
-    crate::term::trace_command("git", &args, root);
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .output()
-        .context("failed to run git")?;
+    let reference = format!("refs/tags/{tag}");
+    let output = git_output(root, &["rev-parse", "--verify", "--quiet", &reference])?;
     match output.status.code() {
         Some(0) => output
             .stdout
@@ -576,7 +566,7 @@ fn rev_parse(root: &Path, reference: &str, subject: &str) -> Result<Option<Strin
             .map(Some)
             .context("git rev-parse returned no object ID"),
         Some(1) => Ok(None),
-        _ => bail!("git rev-parse failed while checking `{subject}`"),
+        _ => bail!("git rev-parse failed while checking `{tag}`"),
     }
 }
 
@@ -605,28 +595,7 @@ fn remote_tag_oids(root: &Path, tags: &[&str]) -> Result<HashMap<String, String>
 /// it. Used by the repository-series reconciliation, which fetches and
 /// compares one specific tag rather than a planned batch.
 fn remote_tag_oid(root: &Path, tag: &str) -> Result<Option<String>> {
-    let reference = format!("refs/tags/{tag}");
-    let args = ["ls-remote", "--exit-code", "--tags", "origin", &reference];
-    crate::term::trace_command("git", &args, root);
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .output()
-        .context("failed to run git")?;
-    match output.status.code() {
-        Some(0) => output
-            .stdout
-            .split(|byte| byte.is_ascii_whitespace())
-            .find(|part| !part.is_empty())
-            .map(|oid| String::from_utf8_lossy(oid).into_owned())
-            .map(Some)
-            .context("git ls-remote returned no object ID"),
-        Some(2) => Ok(None),
-        _ => bail!(
-            "git ls-remote failed while checking tag `{tag}`: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        ),
-    }
+    Ok(remote_tag_oids(root, &[tag])?.remove(tag))
 }
 
 /// The member's CHANGELOG section for its current version, or a minimal

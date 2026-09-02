@@ -11,9 +11,8 @@ use std::process::Command;
 /// committed changes (`since...HEAD`), uncommitted changes, and untracked
 /// files, so the answer is the same locally and in CI.
 pub fn changed_members(workspace: &Workspace, since: &str) -> Result<HashSet<usize>> {
-    let repo_root = git_stdout(&workspace.root, &["rev-parse", "--show-toplevel"])
+    let repo_root = repo_root(&workspace.root)
         .context("--since requires the workspace to be inside a git repository")?;
-    let repo_root = PathBuf::from(repo_root.trim());
 
     let mut files: Vec<String> = Vec::new();
     let range = format!("{since}...HEAD");
@@ -41,9 +40,8 @@ pub fn changed_members_between(
     base: &str,
     head: &str,
 ) -> Result<HashSet<usize>> {
-    let repo_root = git_stdout(&workspace.root, &["rev-parse", "--show-toplevel"])
+    let repo_root = repo_root(&workspace.root)
         .context("changelog check requires the workspace to be inside a git repository")?;
-    let repo_root = PathBuf::from(repo_root.trim());
     let range = format!("{base}...{head}");
     let files: Vec<String> = lines(&git_stdout(
         &workspace.root,
@@ -73,22 +71,16 @@ pub fn unchanged_since_merge_base(
     if candidates.is_empty() {
         return Ok(HashSet::new());
     }
-    let repo_root = git_stdout(&workspace.root, &["rev-parse", "--show-toplevel"])
+    let repo_root = repo_root(&workspace.root)
         .context("changelog check requires the workspace to be inside a git repository")?;
-    let repo_root = PathBuf::from(repo_root.trim())
-        .canonicalize()
-        .unwrap_or_else(|_| PathBuf::from(repo_root.trim()));
+    let repo_root = repo_root.canonicalize().unwrap_or(repo_root);
     // A `dir` outside the repository has no tracked history to compare
     // against, so every file in it reads as the branch's own.
     let Ok(relative) = dir.strip_prefix(&repo_root) else {
         return Ok(HashSet::new());
     };
     // git pathspecs are `/`-separated on every platform.
-    let pathspec = relative
-        .components()
-        .map(|component| component.as_os_str().to_string_lossy())
-        .collect::<Vec<_>>()
-        .join("/");
+    let pathspec = slash_path(relative);
     let merge_base = git_stdout(&workspace.root, &["merge-base", base, head])
         .with_context(|| format!("no merge base between {base} and {head}"))?;
 
@@ -190,6 +182,15 @@ pub fn repo_root(dir: &Path) -> Option<PathBuf> {
         .map(|out| PathBuf::from(out.trim()))
 }
 
+/// `path`'s components joined by `/` regardless of platform — the form git
+/// pathspecs and trellis's own `rel_path` displays use.
+pub fn slash_path(path: &Path) -> String {
+    path.components()
+        .map(|c| c.as_os_str().to_string_lossy())
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
 /// Every non-gitignored `gleam.toml` under `cwd` — tracked and untracked
 /// alike, so freshly created packages are discovered before their first
 /// commit. Paths are relative to `cwd`.
@@ -244,13 +245,7 @@ pub fn ls_remote_commit(cwd: &Path, url: &str, refname: &str) -> Result<Option<S
     // The peeled pattern is queried explicitly: ls-remote only prints the
     // `^{}` line for an annotated tag when a pattern matches it.
     let peeled = format!("{refname}^{{}}");
-    let args = ["ls-remote", "--exit-code", url, refname, peeled.as_str()];
-    crate::term::trace_command("git", &args, cwd);
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(cwd)
-        .output()
-        .context("failed to run git")?;
+    let output = git_output(cwd, &["ls-remote", "--exit-code", url, refname, &peeled])?;
     match output.status.code() {
         Some(0) => {}
         Some(2) => return Ok(None),
@@ -278,12 +273,10 @@ pub fn ls_remote_commit(cwd: &Path, url: &str, refname: &str) -> Result<Option<S
             }
         }
     }
-    let mut distinct: Vec<&String> = commits.values().collect();
-    distinct.sort();
-    distinct.dedup();
+    let distinct: std::collections::BTreeSet<&String> = commits.values().collect();
     match distinct.len() {
         0 => Ok(None),
-        1 => Ok(Some(distinct[0].clone())),
+        1 => Ok(distinct.into_iter().next().cloned()),
         _ => bail!(
             "`{refname}` is ambiguous on {url}: it matches {} — use a full refname",
             commits.keys().cloned().collect::<Vec<_>>().join(", ")
@@ -314,13 +307,7 @@ pub fn fetch_ref(cwd: &Path, url: &str, refname: &str) -> Result<()> {
 /// fetching a tracked ref, a pin absent from its history is exactly the
 /// drift being tested for.
 pub fn is_ancestor(cwd: &Path, ancestor: &str, descendant: &str) -> Result<bool> {
-    let args = ["merge-base", "--is-ancestor", ancestor, descendant];
-    crate::term::trace_command("git", &args, cwd);
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(cwd)
-        .output()
-        .context("failed to run git")?;
+    let output = git_output(cwd, &["merge-base", "--is-ancestor", ancestor, descendant])?;
     match output.status.code() {
         Some(0) => Ok(true),
         Some(1) => Ok(false),
@@ -339,13 +326,21 @@ pub fn is_ancestor(cwd: &Path, ancestor: &str, descendant: &str) -> Result<bool>
     }
 }
 
-pub(crate) fn git_stdout(cwd: &Path, args: &[&str]) -> Result<String> {
+/// Run git in `cwd` and return the raw output, whatever the exit status.
+/// Every git invocation goes through here so `--verbose` tracing and the
+/// "git missing" error are uniform.
+pub(crate) fn git_output(cwd: &Path, args: &[&str]) -> Result<std::process::Output> {
     crate::term::trace_command("git", args, cwd);
-    let output = Command::new("git")
+    Command::new("git")
         .args(args)
         .current_dir(cwd)
         .output()
-        .context("failed to run git")?;
+        .context("failed to run git")
+}
+
+/// [`git_output`] that fails on a non-zero exit, returning stdout.
+pub(crate) fn git_stdout(cwd: &Path, args: &[&str]) -> Result<String> {
+    let output = git_output(cwd, args)?;
     if !output.status.success() {
         bail!(
             "git {} failed: {}",

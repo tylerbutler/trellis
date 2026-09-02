@@ -219,21 +219,10 @@ fn resolve_repo(root: &Path) -> Result<(String, String)> {
             _ => bail!("TRELLIS_GITHUB_REPO must be `owner/repo`, got `{spec}`"),
         };
     }
-    let args = ["remote", "get-url", "origin"];
-    crate::term::trace_command("git", &args, root);
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .output()
-        .context("failed to run git")?;
-    if !output.status.success() {
-        bail!(
-            "GitHub operations need an `origin` remote: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        );
-    }
-    let url = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    parse_remote_url(&url).ok_or_else(|| {
+    let url = crate::git::git_stdout(root, &["remote", "get-url", "origin"])
+        .context("GitHub operations need an `origin` remote")?;
+    let url = url.trim();
+    parse_remote_url(url).ok_or_else(|| {
         anyhow!(
             "origin remote `{url}` is not a GitHub repository (set TRELLIS_GITHUB_REPO to override)"
         )

@@ -1060,12 +1060,7 @@ pub fn normalize_path(path: &Path) -> PathBuf {
 }
 
 fn rel_path_string(root: &Path, path: &Path) -> String {
-    let rel = path.strip_prefix(root).unwrap_or(path);
-    let joined = rel
-        .components()
-        .map(|c| c.as_os_str().to_string_lossy())
-        .collect::<Vec<_>>()
-        .join("/");
+    let joined = crate::git::slash_path(path.strip_prefix(root).unwrap_or(path));
     // The root itself can be a member (a single-package repo under
     // auto-discovery); "." keeps `{rel_path}/...` displays working.
     if joined.is_empty() {
