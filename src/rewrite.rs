@@ -7,7 +7,7 @@
 use crate::config::PathDepRequirement;
 use anyhow::{Context, Result, bail};
 use std::collections::BTreeMap;
-use toml_edit::{DocumentMut, Value};
+use toml_edit::DocumentMut;
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Rewrite {
@@ -58,28 +58,20 @@ pub fn rewrite_path_deps(
         else {
             continue;
         };
-        let dep_names: Vec<String> = table.iter().map(|(key, _)| key.to_string()).collect();
-        for name in dep_names {
-            let Some(item) = table.get_mut(&name) else {
-                continue;
-            };
+        for (key, item) in table.iter_mut() {
             // A `path` key alongside `git` selects a subdirectory of the
             // remote repo (Gleam 1.18+), not a workspace-local path dep.
-            let is_path_dep = item
-                .as_value()
-                .and_then(|value| value.as_inline_table())
-                .is_some_and(|dep| dep.contains_key("path") && !dep.contains_key("git"));
-            if !is_path_dep {
+            let Some(dep) = item.as_value_mut().filter(|v| {
+                v.as_inline_table()
+                    .is_some_and(|t| t.contains_key("path") && !t.contains_key("git"))
+            }) else {
                 continue;
-            }
+            };
+            let name = key.get().to_string();
             match hex_versions.get(&name) {
                 Some(version) => {
                     let requirement = hex_requirement(version, mode)?;
-                    let mut value = Value::from(requirement.clone());
-                    if let Some(old) = item.as_value() {
-                        *value.decor_mut() = old.decor().clone();
-                    }
-                    *item = toml_edit::Item::Value(value);
+                    crate::lockfile::set_str_keep_decor(dep, &requirement);
                     rewrites.push(Rewrite { name, requirement });
                 }
                 None if section == "dependencies" => bail!(

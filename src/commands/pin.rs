@@ -10,7 +10,7 @@ use crate::workspace::{SelectionFilter, Workspace};
 use anyhow::{Context, Result};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
-use toml_edit::{DocumentMut, Value};
+use toml_edit::DocumentMut;
 
 /// The comment marker recording a pinned dependency's tracked ref. The
 /// trailing space is part of the marker: `# trellis:pin` with no ref after it
@@ -144,9 +144,7 @@ fn apply_changes(
             .and_then(|dep| dep.get_mut("ref"))
             && reference.as_str() != Some(change.new_ref.as_str())
         {
-            let mut replacement = Value::from(change.new_ref.clone());
-            *replacement.decor_mut() = reference.decor().clone();
-            *reference = replacement;
+            crate::lockfile::set_str_keep_decor(reference, &change.new_ref);
             changed = true;
         }
         let decor = value.decor_mut();

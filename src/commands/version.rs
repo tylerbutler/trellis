@@ -332,24 +332,11 @@ pub fn apply(workspace: &Workspace, overrides: &Overrides, json: bool) -> Result
         versions.insert(entry.name.clone(), entry.next.clone());
     }
 
-    let mut prepared_lockfiles = Vec::new();
-    for member in &workspace.members {
-        let path = member.path.join("manifest.toml");
-        if !path.is_file() {
-            continue;
-        }
-        let text = std::fs::read_to_string(&path)
-            .with_context(|| format!("failed to read {}", path.display()))?;
-        let (new_text, patched) = lockfile::patch_locked_versions(&text, &versions)
-            .with_context(|| format!("failed to patch {}", path.display()))?;
-        if !patched.is_empty() {
-            prepared_lockfiles.push(PreparedLockfile {
-                display: format!("{}/manifest.toml", member.rel_path),
-                path,
-                text: new_text,
-            });
-        }
-    }
+    let prepared_lockfiles: Vec<_> = workspace
+        .members
+        .iter()
+        .filter_map(|member| lockfile::patch_member(member, &versions).transpose())
+        .collect::<Result<_>>()?;
 
     for prepared in &prepared_versions {
         std::fs::write(&prepared.manifest_path, &prepared.manifest)
@@ -410,7 +397,7 @@ pub fn apply(workspace: &Workspace, overrides: &Overrides, json: bool) -> Result
 
     let patched_files: Vec<&str> = prepared_lockfiles
         .iter()
-        .map(|prepared| prepared.display.as_str())
+        .map(|prepared| prepared.rel_path.as_str())
         .collect();
 
     if json {
@@ -467,10 +454,4 @@ struct PreparedVersion {
     manifest: String,
     /// Pre-trellis changelog history to preserve, on a first release.
     adoption: Option<changelog::Adoption>,
-}
-
-struct PreparedLockfile {
-    display: String,
-    path: PathBuf,
-    text: String,
 }

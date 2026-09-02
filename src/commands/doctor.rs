@@ -728,42 +728,21 @@ fn check_lockfiles(workspace: &Workspace, report: &mut Report) {
         .collect();
 
     for member in &workspace.members {
-        let path = member.path.join("manifest.toml");
-        if !path.is_file() {
-            continue; // not generated yet; nothing to drift
-        }
-        let rel_path = format!("{}/manifest.toml", member.rel_path);
-        let text = match std::fs::read_to_string(&path) {
-            Ok(text) => text,
-            Err(err) => {
-                report.push(
-                    Finding::error(
-                        Check::LockfileDrift,
-                        format!("failed to read {}: {err}", path.display()),
-                    )
-                    .at(&rel_path)
-                    .in_package(&member.name),
-                );
-                continue;
-            }
-        };
-        let (new_text, patched) = match lockfile::patch_locked_versions(&text, &versions) {
-            Ok(result) => result,
+        let lockfile = match lockfile::patch_member(member, &versions) {
+            Ok(Some(lockfile)) => lockfile,
+            Ok(None) => continue, // no lockfile yet, or nothing drifted
             Err(err) => {
                 report.push(
                     Finding::error(Check::LockfileDrift, format!("{err:#}"))
-                        .at(&rel_path)
+                        .at(format!("{}/manifest.toml", member.rel_path))
                         .in_package(&member.name),
                 );
                 continue;
             }
         };
-        if patched.is_empty() {
-            continue;
-        }
         // One rewrite clears every drifted entry in this manifest, so each of
         // these findings is fixable by the single fix pushed below.
-        for entry in &patched {
+        for entry in &lockfile.patched {
             report.push(
                 Finding::error(
                     Check::LockfileDrift,
@@ -773,7 +752,7 @@ fn check_lockfiles(workspace: &Workspace, report: &mut Report) {
                         member.rel_path, entry.name, entry.old, entry.new
                     ),
                 )
-                .at(&rel_path)
+                .at(&lockfile.rel_path)
                 .in_package(&member.name)
                 .fixable(),
             );
@@ -781,9 +760,9 @@ fn check_lockfiles(workspace: &Workspace, report: &mut Report) {
         report.fixes.push(Fix {
             kind: FixKind::PatchLockfile,
             package: member.name.clone(),
-            rel_path,
-            path,
-            contents: new_text,
+            rel_path: lockfile.rel_path,
+            path: lockfile.path,
+            contents: lockfile.text,
         });
     }
 }
