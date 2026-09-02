@@ -2,89 +2,19 @@
 //! check, plan, apply, and template rendering. No external changie binary —
 //! trellis is the engine.
 
-use assert_cmd::Command;
+mod common;
+
+use common::*;
 use predicates::prelude::*;
 use std::fs;
-use std::path::{Path, PathBuf};
-
-fn fixture(name: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures")
-        .join(name)
-}
-
-fn trellis(dir: &Path) -> Command {
-    let mut cmd = Command::cargo_bin("trellis").unwrap();
-    cmd.current_dir(dir);
-    // Deterministic dates in rendered changelogs: 2026-07-11.
-    cmd.env("SOURCE_DATE_EPOCH", "1783728000");
-    cmd
-}
-
-fn write(path: &Path, content: &str) {
-    fs::create_dir_all(path.parent().unwrap()).unwrap();
-    fs::write(path, content).unwrap();
-}
-
-fn copy_fixture_to(root: &Path) {
-    fn walk(dir: &Path, files: &mut Vec<PathBuf>) {
-        for entry in fs::read_dir(dir).unwrap() {
-            let path = entry.unwrap().path();
-            if path.is_dir() {
-                walk(&path, files);
-            } else {
-                files.push(path);
-            }
-        }
-    }
-    let from = fixture("basic");
-    let mut files = Vec::new();
-    walk(&from, &mut files);
-    for file in files {
-        let dest = root.join(file.strip_prefix(&from).unwrap());
-        fs::create_dir_all(dest.parent().unwrap()).unwrap();
-        fs::copy(&file, &dest).unwrap();
-    }
-}
-
-fn add_fragment(root: &Path, project: &str, kind: &str, body: &str) {
-    let dir = root.join(".changes/unreleased");
-    fs::create_dir_all(&dir).unwrap();
-    for n in 1u32.. {
-        let path = dir.join(format!("{project}-{n}.toml"));
-        if !path.exists() {
-            write(
-                &path,
-                &format!("project = \"{project}\"\nkind = \"{kind}\"\nbody = \"{body}\"\n"),
-            );
-            return;
-        }
-    }
-}
-
-fn git(root: &Path, args: &[&str]) {
-    let status = std::process::Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .env("GIT_AUTHOR_NAME", "t")
-        .env("GIT_AUTHOR_EMAIL", "t@t")
-        .env("GIT_COMMITTER_NAME", "t")
-        .env("GIT_COMMITTER_EMAIL", "t@t")
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .unwrap();
-    assert!(status.success(), "git {args:?} failed");
-}
+use std::path::Path;
 
 /// Commit the fixture on `main`, branch, then touch two releasable packages and
 /// give only `lat_core` a fragment. Every strictness and `--format github` case
 /// wants the same shape: one package satisfied, one (`lat_mid`) missing.
 fn workspace_with_one_missing_fragment(root: &Path) {
     copy_fixture_to(root);
-    git(root, &["init", "-q", "-b", "main"]);
-    git(root, &["add", "."]);
-    git(root, &["commit", "-q", "-m", "init"]);
+    init_repo(root);
     git(root, &["checkout", "-q", "-b", "feature"]);
     write(&root.join("packages/lat_core/src/new.gleam"), "// x\n");
     write(&root.join("packages/lat_mid/src/new.gleam"), "// x\n");
@@ -448,9 +378,7 @@ fn changelog_check_maps_diff_to_missing_fragments() {
     let root = tmp.path();
     copy_fixture_to(root);
 
-    git(root, &["init", "-q", "-b", "main"]);
-    git(root, &["add", "."]);
-    git(root, &["commit", "-q", "-m", "init"]);
+    init_repo(root);
     git(root, &["checkout", "-q", "-b", "feature"]);
     // Change two releasable packages and the example package; add a fragment for one.
     write(&root.join("packages/lat_core/src/new.gleam"), "// x\n");
@@ -460,12 +388,11 @@ fn changelog_check_maps_diff_to_missing_fragments() {
     git(root, &["add", "."]);
     git(root, &["commit", "-q", "-m", "change"]);
 
-    let output = trellis(root)
-        .args(["changelog", "check", "--base", "main", "--json"])
-        .output()
-        .unwrap();
-    assert!(!output.status.success(), "lat_mid lacks a fragment");
-    let payload: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let payload = json_output(
+        root,
+        &["changelog", "check", "--base", "main", "--json"],
+        false,
+    );
     assert_eq!(payload["has_entries"], true);
     assert_eq!(payload["needs_entry"], true);
     let packages = payload["packages"].as_array().unwrap();
@@ -492,9 +419,7 @@ fn changelog_check_rows_a_package_the_branch_wrote_a_fragment_for() {
     let root = tmp.path();
     copy_fixture_to(root);
 
-    git(root, &["init", "-q", "-b", "main"]);
-    git(root, &["add", "."]);
-    git(root, &["commit", "-q", "-m", "init"]);
+    init_repo(root);
     git(root, &["checkout", "-q", "-b", "feature"]);
     // Only `lat_core` has changed files. `lat_mid` is documented by a fragment
     // this branch wrote — a break that propagates to it without touching its
@@ -506,12 +431,11 @@ fn changelog_check_rows_a_package_the_branch_wrote_a_fragment_for() {
     git(root, &["add", "."]);
     git(root, &["commit", "-q", "-m", "change"]);
 
-    let output = trellis(root)
-        .args(["changelog", "check", "--base", "main", "--format", "json"])
-        .output()
-        .unwrap();
-    assert!(output.status.success(), "both packages are documented");
-    let payload: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let payload = json_output(
+        root,
+        &["changelog", "check", "--base", "main", "--format", "json"],
+        true,
+    );
     let packages = payload["packages"].as_array().unwrap();
     assert_eq!(packages.len(), 2);
     let core = packages.iter().find(|p| p["name"] == "lat_core").unwrap();
@@ -575,12 +499,11 @@ fn strictness_off_drops_the_verdict_but_still_reports_counts() {
         .stdout(predicate::str::contains("lat_mid: no entries"))
         .stdout(predicate::str::contains("needs a changelog entry").not());
 
-    let output = trellis(root)
-        .args(["changelog", "check", "--base", "main", "--format", "json"])
-        .output()
-        .unwrap();
-    assert!(output.status.success());
-    let payload: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let payload = json_output(
+        root,
+        &["changelog", "check", "--base", "main", "--format", "json"],
+        true,
+    );
     assert_eq!(payload["needs_entry"], false);
     assert_eq!(payload["ok"], true);
     // The rows survive — `off` means "don't gate", not "don't report".
@@ -721,12 +644,11 @@ fn the_preview_reports_next_versions_and_fragment_contents() {
     workspace_with_one_missing_fragment(root);
     add_fragment(root, "lat_mid", "Fixed", "more");
 
-    let output = trellis(root)
-        .args(["changelog", "check", "--base", "main", "--format", "json"])
-        .output()
-        .unwrap();
-    assert!(output.status.success());
-    let payload: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let payload = json_output(
+        root,
+        &["changelog", "check", "--base", "main", "--format", "json"],
+        true,
+    );
     let preview = payload["preview"].as_str().unwrap();
     // The table carries each package's planned bump alongside its counts.
     assert!(
@@ -759,21 +681,18 @@ fn the_release_preview_ignores_fragments_already_on_the_base_branch() {
     // Unreleased on `main` already: an earlier PR's fragment, which this PR
     // neither added nor is answerable for.
     add_fragment(root, "lat_mid", "Fixed", "from an earlier pr");
-    git(root, &["init", "-q", "-b", "main"]);
-    git(root, &["add", "."]);
-    git(root, &["commit", "-q", "-m", "init"]);
+    init_repo(root);
     git(root, &["checkout", "-q", "-b", "feature"]);
     write(&root.join("packages/lat_core/src/new.gleam"), "// x\n");
     add_fragment(root, "lat_core", "Added", "from this pr");
     git(root, &["add", "."]);
     git(root, &["commit", "-q", "-m", "change"]);
 
-    let output = trellis(root)
-        .args(["changelog", "check", "--base", "main", "--format", "json"])
-        .output()
-        .unwrap();
-    assert!(output.status.success());
-    let payload: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let payload = json_output(
+        root,
+        &["changelog", "check", "--base", "main", "--format", "json"],
+        true,
+    );
     let preview = payload["preview"].as_str().unwrap();
     assert!(preview.contains("- from this pr"), "{preview}");
     assert!(!preview.contains("from an earlier pr"), "{preview}");
@@ -792,9 +711,7 @@ fn the_release_preview_ignores_fragments_already_on_the_base_branch() {
 fn workspace_with_a_base_branch_fragment(root: &Path) {
     copy_fixture_to(root);
     add_fragment(root, "lat_core", "Added", "from an earlier pr");
-    git(root, &["init", "-q", "-b", "main"]);
-    git(root, &["add", "."]);
-    git(root, &["commit", "-q", "-m", "init"]);
+    init_repo(root);
     git(root, &["checkout", "-q", "-b", "feature"]);
     write(&root.join("packages/lat_core/src/new.gleam"), "// x\n");
     git(root, &["add", "."]);
@@ -807,12 +724,11 @@ fn a_base_branch_fragment_does_not_satisfy_a_later_pr() {
     let root = tmp.path();
     workspace_with_a_base_branch_fragment(root);
 
-    let output = trellis(root)
-        .args(["changelog", "check", "--base", "main", "--format", "json"])
-        .output()
-        .unwrap();
-    assert!(!output.status.success());
-    let payload: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let payload = json_output(
+        root,
+        &["changelog", "check", "--base", "main", "--format", "json"],
+        false,
+    );
     assert_eq!(payload["needs_entry"], true);
     assert_eq!(payload["ok"], false);
     // `has_entries` follows the counts: this PR wrote nothing, so the CI recipe
@@ -842,12 +758,11 @@ fn editing_a_base_branch_fragment_counts_as_this_prs_entry() {
     git(root, &["add", "."]);
     git(root, &["commit", "-q", "-m", "reword"]);
 
-    let output = trellis(root)
-        .args(["changelog", "check", "--base", "main", "--format", "json"])
-        .output()
-        .unwrap();
-    assert!(output.status.success());
-    let payload: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let payload = json_output(
+        root,
+        &["changelog", "check", "--base", "main", "--format", "json"],
+        true,
+    );
     assert_eq!(payload["needs_entry"], false);
     let preview = payload["preview"].as_str().unwrap();
     assert!(preview.contains("- reworded by this pr"), "{preview}");
@@ -866,12 +781,11 @@ fn an_uncommitted_fragment_satisfies_the_check_before_it_is_committed() {
     // answer CI will give once it is.
     add_fragment(root, "lat_core", "Fixed", "not committed yet");
 
-    let output = trellis(root)
-        .args(["changelog", "check", "--base", "main", "--format", "json"])
-        .output()
-        .unwrap();
-    assert!(output.status.success());
-    let payload: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let payload = json_output(
+        root,
+        &["changelog", "check", "--base", "main", "--format", "json"],
+        true,
+    );
     assert_eq!(payload["needs_entry"], false);
     let preview = payload["preview"].as_str().unwrap();
     assert!(preview.contains("- not committed yet"), "{preview}");
@@ -889,21 +803,18 @@ fn an_invalid_base_branch_fragment_still_fails_the_check() {
         &root.join(".changes/unreleased/broken-1.toml"),
         "not toml at all {{{\n",
     );
-    git(root, &["init", "-q", "-b", "main"]);
-    git(root, &["add", "."]);
-    git(root, &["commit", "-q", "-m", "init"]);
+    init_repo(root);
     git(root, &["checkout", "-q", "-b", "feature"]);
     write(&root.join("packages/lat_core/src/new.gleam"), "// x\n");
     add_fragment(root, "lat_core", "Added", "from this pr");
     git(root, &["add", "."]);
     git(root, &["commit", "-q", "-m", "change"]);
 
-    let output = trellis(root)
-        .args(["changelog", "check", "--base", "main", "--format", "json"])
-        .output()
-        .unwrap();
-    assert!(!output.status.success());
-    let payload: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let payload = json_output(
+        root,
+        &["changelog", "check", "--base", "main", "--format", "json"],
+        false,
+    );
     assert_eq!(payload["needs_entry"], false);
     assert_eq!(payload["ok"], false);
     assert_eq!(payload["invalid_fragments"].as_array().unwrap().len(), 1);
@@ -922,12 +833,11 @@ fn invalid_fragments_leave_the_preview_without_versions() {
 
     // A plan cannot be computed over a fragment that does not parse, so the
     // preview falls back to counts alone — the problem itself is reported.
-    let output = trellis(root)
-        .args(["changelog", "check", "--base", "main", "--format", "json"])
-        .output()
-        .unwrap();
-    assert!(!output.status.success());
-    let payload: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let payload = json_output(
+        root,
+        &["changelog", "check", "--base", "main", "--format", "json"],
+        false,
+    );
     let preview = payload["preview"].as_str().unwrap();
     assert!(!preview.contains("### Release preview"), "{preview}");
     assert!(preview.contains("| lat_core | ✅ 1 | — |"), "{preview}");
@@ -990,12 +900,7 @@ fn version_plan_bumps_by_the_largest_kind() {
     add_fragment(root, "lat_core", "Added", "minor-level change");
     add_fragment(root, "lat_mid", "Breaking", "major-level change");
 
-    let output = trellis(root)
-        .args(["version", "plan", "--json"])
-        .output()
-        .unwrap();
-    assert!(output.status.success());
-    let plan: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let plan = json_output(root, &["version", "plan", "--json"], true);
     // lat_cli owns no fragment. lat_core's minor bump is inside its requirement
     // and ripples; lat_mid's major bump is outside and does not.
     assert_eq!(
@@ -1025,12 +930,7 @@ fn major_bump_outside_path_dep_requirement_does_not_ripple() {
     copy_fixture_to(root);
     add_fragment(root, "lat_core", "Breaking", "major-level change");
 
-    let output = trellis(root)
-        .args(["version", "plan", "--json"])
-        .output()
-        .unwrap();
-    assert!(output.status.success());
-    let plan: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let plan = json_output(root, &["version", "plan", "--json"], true);
     assert_eq!(
         plan["bumped"],
         serde_json::json!([
@@ -1295,12 +1195,7 @@ fn version_apply_adopts_existing_changelog_history() {
     copy_fixture_to(root);
     add_fragment(root, "lat_core", "Added", "grow more vines");
 
-    let output = trellis(root)
-        .args(["version", "apply", "--json"])
-        .output()
-        .unwrap();
-    assert!(output.status.success());
-    let payload: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let payload = json_output(root, &["version", "apply", "--json"], true);
     // Every package this release touches keeps its history, in topological
     // order — including the two that only bumped because lat_core did.
     assert_eq!(
@@ -1545,41 +1440,6 @@ fn custom_minijinja_templates_shape_the_output() {
 }
 
 // ---- version overrides (--bump, --set) -------------------------------------
-
-/// A package's version straight from its gleam.toml, so a test asserts on what
-/// actually landed on disk rather than on what `apply` said it did.
-fn version_of(root: &Path, package: &str) -> String {
-    let manifest = fs::read_to_string(root.join("packages").join(package).join("gleam.toml"))
-        .unwrap_or_else(|err| panic!("no gleam.toml for {package}: {err}"));
-    manifest
-        .lines()
-        .find_map(|line| line.trim().strip_prefix("version = "))
-        .unwrap_or_else(|| panic!("no version in {package}'s gleam.toml"))
-        .trim_matches('"')
-        .to_string()
-}
-
-/// A committed repository, for the commands that read git state.
-fn init_repo(root: &Path) {
-    for args in [
-        &["init", "-q", "-b", "main"][..],
-        &["add", "."],
-        &["commit", "-q", "-m", "init"],
-    ] {
-        let status = std::process::Command::new("git")
-            .args(args)
-            .current_dir(root)
-            .env("GIT_AUTHOR_NAME", "t")
-            .env("GIT_AUTHOR_EMAIL", "t@t")
-            .env("GIT_COMMITTER_NAME", "t")
-            .env("GIT_COMMITTER_EMAIL", "t@t")
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .unwrap();
-        assert!(status.success(), "git {args:?} failed");
-    }
-}
 
 fn unreleased_fragments(root: &Path) -> usize {
     fs::read_dir(root.join(".changes/unreleased"))

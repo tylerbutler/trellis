@@ -1,20 +1,10 @@
 //! End-to-end tests for workspace member discovery.
 
-use assert_cmd::Command;
+mod common;
+
+use common::*;
 use predicates::prelude::*;
-use std::fs;
 use std::path::Path;
-
-fn trellis(dir: &Path) -> Command {
-    let mut cmd = Command::cargo_bin("trellis").unwrap();
-    cmd.current_dir(dir);
-    cmd
-}
-
-fn write(path: &Path, content: &str) {
-    fs::create_dir_all(path.parent().unwrap()).unwrap();
-    fs::write(path, content).unwrap();
-}
 
 fn write_package(root: &Path, path: &str, name: &str) {
     write(
@@ -23,20 +13,11 @@ fn write_package(root: &Path, path: &str, name: &str) {
     );
 }
 
-fn init_git(root: &Path) {
-    let status = std::process::Command::new("git")
-        .args(["init", "--quiet"])
-        .current_dir(root)
-        .status()
-        .unwrap();
-    assert!(status.success());
-}
-
 #[test]
 fn recursive_member_glob_respects_repository_git_ignores() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
-    init_git(root);
+    git(root, &["init", "-q"]);
 
     write(
         &root.join("gleam.toml"),
@@ -70,7 +51,7 @@ fn recursive_member_glob_respects_repository_git_ignores() {
 fn literal_member_path_includes_an_ignored_package() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
-    init_git(root);
+    git(root, &["init", "-q"]);
 
     write(
         &root.join("gleam.toml"),
@@ -90,7 +71,7 @@ fn literal_member_path_includes_an_ignored_package() {
 fn wildcard_with_only_ignored_packages_reports_no_matches() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
-    init_git(root);
+    git(root, &["init", "-q"]);
 
     write(
         &root.join("gleam.toml"),

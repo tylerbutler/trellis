@@ -9,28 +9,10 @@
 //! `workspace` through the legacy `@release` mapping instead of an explicit
 //! rule.
 
-use assert_cmd::Command;
+mod common;
+
+use common::*;
 use predicates::prelude::*;
-use std::fs;
-use std::path::{Path, PathBuf};
-
-fn fixture(name: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures")
-        .join(name)
-}
-
-fn trellis(dir: &Path) -> Command {
-    let mut cmd = Command::cargo_bin("trellis").unwrap();
-    cmd.current_dir(dir);
-    cmd.env("SOURCE_DATE_EPOCH", "1783728000");
-    cmd
-}
-
-fn write(path: &Path, content: &str) {
-    fs::create_dir_all(path.parent().unwrap()).unwrap();
-    fs::write(path, content).unwrap();
-}
 
 // ---- introspection over the mixed-lifecycle fixture -------------------
 
@@ -47,12 +29,7 @@ fn doctor_passes_the_mixed_lifecycle_workspace() {
 
 #[test]
 fn list_json_reports_all_three_lifecycle_states() {
-    let output = trellis(&fixture("lifecycle"))
-        .args(["list", "--json"])
-        .output()
-        .unwrap();
-    assert!(output.status.success());
-    let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let document = json_output(&fixture("lifecycle"), &["list", "--json"], true);
     let items = document["packages"].as_array().unwrap();
     let lifecycle_of = |name: &str| {
         items

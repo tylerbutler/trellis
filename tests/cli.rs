@@ -1,21 +1,12 @@
 //! End-to-end tests running the trellis binary against fixture workspaces.
 
+mod common;
+
 use assert_cmd::Command;
+use common::*;
 use predicates::prelude::*;
 use std::fs;
-use std::path::{Path, PathBuf};
-
-fn fixture(name: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures")
-        .join(name)
-}
-
-fn trellis(dir: &Path) -> Command {
-    let mut cmd = Command::cargo_bin("trellis").unwrap();
-    cmd.current_dir(dir);
-    cmd
-}
+use std::path::Path;
 
 // ---- list ------------------------------------------------------------
 
@@ -61,12 +52,7 @@ fn list_releasable_excludes_release_excluded_members() {
 
 #[test]
 fn list_json_includes_graph_facts() {
-    let output = trellis(&fixture("basic"))
-        .args(["list", "--json"])
-        .output()
-        .unwrap();
-    assert!(output.status.success());
-    let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let document = json_output(&fixture("basic"), &["list", "--json"], true);
     assert_eq!(document["schema"], "trellis.list/1");
     let items = document["packages"].as_array().unwrap();
     assert_eq!(items.len(), 4);
@@ -254,12 +240,7 @@ fn exec_keep_going_runs_everything_despite_failures() {
 
 #[test]
 fn run_json_reports_one_record_per_package() {
-    let output = trellis(&fixture("basic"))
-        .args(["run", "hello", "--json"])
-        .output()
-        .unwrap();
-    assert!(output.status.success());
-    let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let document = json_output(&fixture("basic"), &["run", "hello", "--json"], true);
     assert_eq!(document["schema"], "trellis.run/1");
     assert_eq!(document["ok"], true);
     assert_eq!(document["task"], "hello");
@@ -291,12 +272,11 @@ fn run_json_carries_the_target_flag_as_given() {
 
 #[test]
 fn exec_json_records_the_exit_code_of_the_failing_command() {
-    let output = trellis(&fixture("basic"))
-        .args(["exec", "lat_core", "--json", "--", "sh", "-c", "exit 3"])
-        .output()
-        .unwrap();
-    assert!(!output.status.success());
-    let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let document = json_output(
+        &fixture("basic"),
+        &["exec", "lat_core", "--json", "--", "sh", "-c", "exit 3"],
+        false,
+    );
     assert_eq!(document["schema"], "trellis.exec/1");
     assert_eq!(document["ok"], false);
     // argv, not a re-splittable string.
@@ -317,12 +297,11 @@ fn exec_json_records_the_exit_code_of_the_failing_command() {
 fn exec_json_distinguishes_skipped_from_failed() {
     // lat_core fails first, so the other three never run. Skipped is not a
     // pass: it carries no exit code and still fails the command.
-    let output = trellis(&fixture("basic"))
-        .args(["exec", "--serial", "--json", "--", "sh", "-c", "exit 1"])
-        .output()
-        .unwrap();
-    assert!(!output.status.success());
-    let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let document = json_output(
+        &fixture("basic"),
+        &["exec", "--serial", "--json", "--", "sh", "-c", "exit 1"],
+        false,
+    );
     let results = document["results"].as_array().unwrap();
     let statuses: Vec<&str> = results
         .iter()
@@ -355,12 +334,11 @@ fn json_keeps_stdout_clean_and_moves_package_output_to_stderr() {
 fn json_emits_a_document_even_when_nothing_is_selected() {
     // The "no packages selected" notice would otherwise be the one thing on
     // stdout that is not JSON.
-    let output = trellis(&fixture("basic"))
-        .args(["run", "hello", "package_a", "--json"])
-        .output()
-        .unwrap();
-    assert!(output.status.success());
-    let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let document = json_output(
+        &fixture("basic"),
+        &["run", "hello", "package_a", "--json"],
+        true,
+    );
     assert_eq!(document["ok"], true);
     assert_eq!(document["results"], serde_json::json!([]));
 }
@@ -507,11 +485,6 @@ fn doctor_passes_on_healthy_workspace() {
         .assert()
         .success()
         .stdout(predicate::str::contains("ok: 4 package(s)"));
-}
-
-fn write(path: &Path, content: &str) {
-    fs::create_dir_all(path.parent().unwrap()).unwrap();
-    fs::write(path, content).unwrap();
 }
 
 #[test]
@@ -1018,12 +991,7 @@ fn member_glob_skips_directories_without_gleam_toml() {
 
 #[test]
 fn ci_matrix_emits_github_actions_shape() {
-    let output = trellis(&fixture("basic"))
-        .args(["ci", "matrix"])
-        .output()
-        .unwrap();
-    assert!(output.status.success());
-    let matrix: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let matrix = json_output(&fixture("basic"), &["ci", "matrix"], true);
     let include = matrix["include"].as_array().unwrap();
     assert_eq!(include.len(), 4);
     assert_eq!(include[0]["name"], "lat_core");
@@ -1225,29 +1193,13 @@ fn since_selects_changed_packages_and_dependents() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     // Copy the basic fixture into a real git repo.
-    copy_dir(&fixture("basic"), root);
+    copy_fixture_to(root);
 
-    let git = |args: &[&str]| {
-        let status = std::process::Command::new("git")
-            .args(args)
-            .current_dir(root)
-            .env("GIT_AUTHOR_NAME", "t")
-            .env("GIT_AUTHOR_EMAIL", "t@t")
-            .env("GIT_COMMITTER_NAME", "t")
-            .env("GIT_COMMITTER_EMAIL", "t@t")
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .unwrap();
-        assert!(status.success(), "git {args:?} failed");
-    };
-    git(&["init", "-q", "-b", "main"]);
-    git(&["add", "."]);
-    git(&["commit", "-q", "-m", "init"]);
-    git(&["checkout", "-q", "-b", "feature"]);
+    init_repo(root);
+    git(root, &["checkout", "-q", "-b", "feature"]);
     write(&root.join("packages/lat_mid/src/new.gleam"), "// change\n");
-    git(&["add", "."]);
-    git(&["commit", "-q", "-m", "touch mid"]);
+    git(root, &["add", "."]);
+    git(root, &["commit", "-q", "-m", "touch mid"]);
 
     trellis(root)
         .args(["list", "--since", "main"])
@@ -1295,28 +1247,6 @@ fn version_appends_git_describe_on_dev_builds() {
         }
         _ => assert_eq!(stdout.trim(), format!("trellis {base}")),
     }
-}
-
-fn copy_dir(from: &Path, to: &Path) {
-    for entry in walk(from) {
-        let rel = entry.strip_prefix(from).unwrap();
-        let dest = to.join(rel);
-        fs::create_dir_all(dest.parent().unwrap()).unwrap();
-        fs::copy(&entry, &dest).unwrap();
-    }
-}
-
-fn walk(dir: &Path) -> Vec<PathBuf> {
-    let mut files = Vec::new();
-    for entry in fs::read_dir(dir).unwrap() {
-        let path = entry.unwrap().path();
-        if path.is_dir() {
-            files.extend(walk(&path));
-        } else {
-            files.push(path);
-        }
-    }
-    files
 }
 
 // ---- doctor: unrecognized config keys ---------------------------------

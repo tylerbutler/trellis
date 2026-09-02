@@ -2,32 +2,11 @@
 //! (no [tools.trellis] anywhere, root inferred from git), configured
 //! workspaces without `members`, and the `@members` exclusion key.
 
-use assert_cmd::Command;
+mod common;
+
+use common::*;
 use predicates::prelude::*;
-use std::fs;
 use std::path::Path;
-
-fn trellis(dir: &Path) -> Command {
-    let mut cmd = Command::cargo_bin("trellis").unwrap();
-    cmd.current_dir(dir);
-    cmd
-}
-
-fn write(path: &Path, content: &str) {
-    fs::create_dir_all(path.parent().unwrap()).unwrap();
-    fs::write(path, content).unwrap();
-}
-
-fn git_init(root: &Path) {
-    let status = std::process::Command::new("git")
-        .args(["init", "--quiet"])
-        .current_dir(root)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .unwrap();
-    assert!(status.success(), "git init failed");
-}
 
 /// Two packages with a path dependency between them, no config anywhere.
 fn scaffold_two_packages(root: &Path) {
@@ -47,7 +26,7 @@ fn scaffold_two_packages(root: &Path) {
 fn configless_list_discovers_members_from_the_git_root() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
-    git_init(root);
+    git(root, &["init", "-q"]);
     scaffold_two_packages(root);
 
     // Nothing is committed: discovery must see untracked packages too.
@@ -62,7 +41,7 @@ fn configless_list_discovers_members_from_the_git_root() {
 fn configless_works_from_inside_a_package() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
-    git_init(root);
+    git(root, &["init", "-q"]);
     scaffold_two_packages(root);
 
     trellis(&root.join("packages/cli"))
@@ -76,15 +55,13 @@ fn configless_works_from_inside_a_package() {
 fn configless_single_package_repo_has_the_root_as_member() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
-    git_init(root);
+    git(root, &["init", "-q"]);
     write(
         &root.join("gleam.toml"),
         "name = \"solo\"\nversion = \"2.0.0\"\n",
     );
 
-    let output = trellis(root).args(["list", "--json"]).output().unwrap();
-    assert!(output.status.success());
-    let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let document = json_output(root, &["list", "--json"], true);
     let items = document["packages"].as_array().unwrap();
     assert_eq!(items.len(), 1);
     assert_eq!(items[0]["name"], "solo");
@@ -95,7 +72,7 @@ fn configless_single_package_repo_has_the_root_as_member() {
 fn configless_skips_gitignored_paths_and_build() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
-    git_init(root);
+    git(root, &["init", "-q"]);
     scaffold_two_packages(root);
     write(&root.join(".gitignore"), "vendor/\n");
     write(
@@ -120,7 +97,7 @@ fn configless_skips_gitignored_paths_and_build() {
 fn configless_doctor_announces_the_inference() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
-    git_init(root);
+    git(root, &["init", "-q"]);
     scaffold_two_packages(root);
 
     trellis(root)
@@ -136,7 +113,7 @@ fn configless_doctor_announces_the_inference() {
 fn configless_errors_on_a_stray_trellis_table() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
-    git_init(root);
+    git(root, &["init", "-q"]);
     scaffold_two_packages(root);
     write(
         &root.join("nested/gleam.toml"),
@@ -168,7 +145,7 @@ fn no_config_outside_a_git_repo_is_an_error() {
 fn unparseable_ancestor_manifest_blocks_the_configless_fallback() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
-    git_init(root);
+    git(root, &["init", "-q"]);
     scaffold_two_packages(root);
     write(&root.join("gleam.toml"), "name = \"broken\nversion=\n");
 
@@ -185,7 +162,7 @@ fn unparseable_ancestor_manifest_blocks_the_configless_fallback() {
 fn table_without_members_auto_discovers_and_keeps_exclusions() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
-    git_init(root);
+    git(root, &["init", "-q"]);
     scaffold_two_packages(root);
     write(
         &root.join("examples/demo/gleam.toml"),
@@ -212,7 +189,7 @@ fn table_without_members_auto_discovers_and_keeps_exclusions() {
 fn at_members_excludes_directories_from_membership() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
-    git_init(root);
+    git(root, &["init", "-q"]);
     scaffold_two_packages(root);
     // A committed fixture package: gitignore cannot exclude it, @members can.
     write(

@@ -8,27 +8,11 @@
 //! | 2    | usage error (clap's default)                                   |
 //! | 3    | internal/environment error — bad config, no git repo, no tool  |
 
-use assert_cmd::Command;
+mod common;
+
+use common::*;
 use predicates::prelude::*;
-use std::fs;
-use std::path::{Path, PathBuf};
-
-fn fixture(name: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures")
-        .join(name)
-}
-
-fn trellis(dir: &Path) -> Command {
-    let mut cmd = Command::cargo_bin("trellis").unwrap();
-    cmd.current_dir(dir);
-    cmd
-}
-
-fn write(path: &Path, content: &str) {
-    fs::create_dir_all(path.parent().unwrap()).unwrap();
-    fs::write(path, content).unwrap();
-}
+use std::path::Path;
 
 /// A workspace whose only problem is an unfixable one, so `doctor` reports a
 /// finding rather than failing to load.

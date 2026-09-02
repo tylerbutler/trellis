@@ -5,84 +5,14 @@
 
 mod common;
 
-use assert_cmd::Command;
+use common::*;
+
 use predicates::prelude::*;
 use std::fs;
 use std::io::{Read, Write as IoWrite};
 use std::net::TcpListener;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-
-fn fixture(name: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures")
-        .join(name)
-}
-
-/// The mock Hex server binds localhost, so the agent proxy configured in
-/// some environments must not intercept requests.
-fn trellis(dir: &Path) -> Command {
-    let mut cmd = Command::cargo_bin("trellis").unwrap();
-    cmd.current_dir(dir);
-    for var in [
-        "HTTP_PROXY",
-        "HTTPS_PROXY",
-        "http_proxy",
-        "https_proxy",
-        "ALL_PROXY",
-        "all_proxy",
-    ] {
-        cmd.env_remove(var);
-    }
-    cmd
-}
-
-fn write(path: &Path, content: &str) {
-    fs::create_dir_all(path.parent().unwrap()).unwrap();
-    fs::write(path, content).unwrap();
-}
-
-fn copy_fixture_to(root: &Path) {
-    fn walk(dir: &Path, files: &mut Vec<PathBuf>) {
-        for entry in fs::read_dir(dir).unwrap() {
-            let path = entry.unwrap().path();
-            if path.is_dir() {
-                walk(&path, files);
-            } else {
-                files.push(path);
-            }
-        }
-    }
-    let from = fixture("basic");
-    let mut files = Vec::new();
-    walk(&from, &mut files);
-    for file in files {
-        let dest = root.join(file.strip_prefix(&from).unwrap());
-        fs::create_dir_all(dest.parent().unwrap()).unwrap();
-        fs::copy(&file, &dest).unwrap();
-    }
-}
-
-fn git(root: &Path, args: &[&str]) {
-    let status = std::process::Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .env("GIT_AUTHOR_NAME", "t")
-        .env("GIT_AUTHOR_EMAIL", "t@t")
-        .env("GIT_COMMITTER_NAME", "t")
-        .env("GIT_COMMITTER_EMAIL", "t@t")
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .unwrap();
-    assert!(status.success(), "git {args:?} failed");
-}
-
-fn init_repo(root: &Path) {
-    git(root, &["init", "-q", "-b", "main"]);
-    git(root, &["add", "."]);
-    git(root, &["commit", "-q", "-m", "init"]);
-}
 
 /// A fake gleam that logs every invocation (cwd + args) to `.fake/gleam-log`
 /// and snapshots gleam.toml at publish time so tests can observe the rewrite.
@@ -112,16 +42,6 @@ fn install_fake_gleam(root: &Path) -> PathBuf {
     fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
     fs::create_dir_all(root.join(".fake")).unwrap();
     script
-}
-
-/// A trellis invocation aimed at the mock GitHub API: base URL and repo
-/// overridden, and a token in the environment.
-fn trellis_github(dir: &Path, api: &str) -> Command {
-    let mut cmd = trellis(dir);
-    cmd.env("TRELLIS_GITHUB_API_URL", api)
-        .env("TRELLIS_GITHUB_REPO", "example/repo")
-        .env("GITHUB_TOKEN", "test-token");
-    cmd
 }
 
 /// Serve a canned Hex API from a background thread: `versions` maps package
@@ -182,12 +102,7 @@ fn tag_plan_lists_untagged_versions_and_create_tags_them() {
     // lat_core 1.2.0 is already tagged; lat_mid and lat_cli are not.
     git(root, &["tag", "-a", "lat_core-v1.2.0", "-m", "existing"]);
 
-    let output = trellis(root)
-        .args(["tag", "plan", "--json"])
-        .output()
-        .unwrap();
-    assert!(output.status.success());
-    let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let document = json_output(root, &["tag", "plan", "--json"], true);
     assert_eq!(document["schema"], "trellis.tag_plan/2");
     let plan = document["tags"].as_array().unwrap();
     let names: Vec<&str> = plan.iter().map(|p| p["name"].as_str().unwrap()).collect();
@@ -401,12 +316,11 @@ fn ci_tag_package_resolves_tag_to_package() {
         .success()
         .stdout("lat_core\n");
 
-    let output = trellis(&fixture("basic"))
-        .args(["ci", "tag-package", "lat_mid-v9.9.9", "--json"])
-        .output()
-        .unwrap();
-    assert!(output.status.success());
-    let info: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let info = json_output(
+        &fixture("basic"),
+        &["ci", "tag-package", "lat_mid-v9.9.9", "--json"],
+        true,
+    );
     assert_eq!(info["name"], "lat_mid");
     assert_eq!(info["version"], "0.5.0");
     assert_eq!(info["tag_version"], "9.9.9");
@@ -714,37 +628,6 @@ fn series_repo(root: &Path, publish: &str) -> tempfile::TempDir {
     );
     init_repo(root);
     bare_origin(root)
-}
-
-fn set_version(root: &Path, package: &str, version: &str) {
-    let path = root.join("packages").join(package).join("gleam.toml");
-    let text = fs::read_to_string(&path).unwrap();
-    let text: Vec<String> = text
-        .lines()
-        .map(|line| {
-            if line.starts_with("version = ") {
-                format!("version = \"{version}\"")
-            } else {
-                line.to_string()
-            }
-        })
-        .collect();
-    fs::write(&path, text.join("\n") + "\n").unwrap();
-}
-
-fn git_stdout(dir: &Path, args: &[&str]) -> String {
-    let output = std::process::Command::new("git")
-        .args(args)
-        .current_dir(dir)
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "git {args:?} failed in {}: {}",
-        dir.display(),
-        String::from_utf8_lossy(&output.stderr)
-    );
-    String::from_utf8_lossy(&output.stdout).trim().to_string()
 }
 
 fn commit_of(dir: &Path, revision: &str) -> String {
@@ -1232,12 +1115,7 @@ fn repository_series_moves_only_when_the_anchor_manifest_version_changes() {
 
     set_version(root, "lat_cli", "0.3.2");
     git(root, &["commit", "-qam", "release anchor"]);
-    let output = trellis(root)
-        .args(["tag", "plan", "--json"])
-        .output()
-        .unwrap();
-    assert!(output.status.success());
-    let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let document = json_output(root, &["tag", "plan", "--json"], true);
     let repository = document["tags"]
         .as_array()
         .unwrap()
@@ -1539,16 +1417,6 @@ fn doctor_rejects_a_package_tags_override_that_matches_nothing() {
 
 // Mirrors `version_of` in phase2.rs — the same manifest-version read, kept in
 // step until the test binaries grow a shared support module.
-fn version_of(root: &Path, package: &str) -> String {
-    let manifest = fs::read_to_string(root.join("packages").join(package).join("gleam.toml"))
-        .unwrap_or_else(|err| panic!("no gleam.toml for {package}: {err}"));
-    manifest
-        .lines()
-        .find_map(|line| line.trim().strip_prefix("version = "))
-        .unwrap_or_else(|| panic!("no version in {package}'s gleam.toml"))
-        .trim_matches('"')
-        .to_string()
-}
 
 #[test]
 fn bootstrap_uses_current_versions_with_no_fragments_required() {
