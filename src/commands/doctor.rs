@@ -46,69 +46,47 @@ pub struct DoctorOptions {
 /// apply it. The fix content is computed at check time (it's exactly what the
 /// canonical command would write), so applying is a single write.
 ///
-/// Every variant carries a package and a workspace-relative path, because
+/// Every fix carries a package and a workspace-relative path, because
 /// `--format json` reports a fix the same way whichever check produced it.
-enum Fix {
+struct Fix {
+    kind: FixKind,
+    package: String,
+    rel_path: String,
+    path: PathBuf,
+    contents: String,
+}
+
+#[derive(Clone, Copy)]
+enum FixKind {
     /// Seed a releasable member's missing CHANGELOG.md with the rendered
     /// header, so it matches regenerated output byte-for-byte.
-    SeedChangelog {
-        package: String,
-        rel_path: String,
-        path: PathBuf,
-        contents: String,
-    },
+    SeedChangelog,
     /// Rewrite a manifest.toml's locked workspace-internal versions — the same
     /// operation `version apply` performs.
-    PatchLockfile {
-        package: String,
-        rel_path: String,
-        path: PathBuf,
-        contents: String,
-    },
+    PatchLockfile,
     /// Capture a package's pre-trellis CHANGELOG.md body as a version section,
     /// so regenerating the changelog preserves it. `version apply` does this on
     /// a first release anyway; doing it here makes it visible beforehand.
-    AdoptChangelog {
-        package: String,
-        rel_path: String,
-        path: PathBuf,
-        contents: String,
-    },
+    AdoptChangelog,
 }
 
 impl Fix {
     /// Stable identifier for the wire format; `describe` is the prose beside it.
     fn kind(&self) -> &'static str {
-        match self {
-            Fix::SeedChangelog { .. } => "seed_changelog",
-            Fix::PatchLockfile { .. } => "patch_lockfile",
-            Fix::AdoptChangelog { .. } => "adopt_changelog",
+        match self.kind {
+            FixKind::SeedChangelog => "seed_changelog",
+            FixKind::PatchLockfile => "patch_lockfile",
+            FixKind::AdoptChangelog => "adopt_changelog",
         }
     }
 
     fn describe(&self) -> String {
-        match self {
-            Fix::SeedChangelog { package, .. } => format!("seed CHANGELOG.md for `{package}`"),
-            Fix::PatchLockfile { rel_path, .. } => format!("patch locked versions in {rel_path}"),
-            Fix::AdoptChangelog { package, .. } => {
-                format!("adopt existing changelog history for `{package}`")
+        match self.kind {
+            FixKind::SeedChangelog => format!("seed CHANGELOG.md for `{}`", self.package),
+            FixKind::PatchLockfile => format!("patch locked versions in {}", self.rel_path),
+            FixKind::AdoptChangelog => {
+                format!("adopt existing changelog history for `{}`", self.package)
             }
-        }
-    }
-
-    fn package(&self) -> &str {
-        match self {
-            Fix::SeedChangelog { package, .. }
-            | Fix::PatchLockfile { package, .. }
-            | Fix::AdoptChangelog { package, .. } => package,
-        }
-    }
-
-    fn rel_path(&self) -> &str {
-        match self {
-            Fix::SeedChangelog { rel_path, .. }
-            | Fix::PatchLockfile { rel_path, .. }
-            | Fix::AdoptChangelog { rel_path, .. } => rel_path,
         }
     }
 
@@ -116,25 +94,18 @@ impl Fix {
         FixRecord {
             kind: self.kind(),
             description: self.describe(),
-            file: self.rel_path(),
-            package: Some(self.package()),
+            file: &self.rel_path,
+            package: Some(&self.package),
         }
     }
 
     fn apply(&self) -> Result<()> {
-        let (path, contents) = match self {
-            Fix::SeedChangelog { path, contents, .. } => (path, contents),
-            Fix::PatchLockfile { path, contents, .. } => (path, contents),
-            Fix::AdoptChangelog { path, contents, .. } => {
-                if let Some(parent) = path.parent() {
-                    std::fs::create_dir_all(parent)
-                        .with_context(|| format!("failed to create {}", parent.display()))?;
-                }
-                (path, contents)
-            }
-        };
-        std::fs::write(path, contents)
-            .with_context(|| format!("failed to write {}", path.display()))
+        if let Some(parent) = self.path.parent() {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("failed to create {}", parent.display()))?;
+        }
+        std::fs::write(&self.path, &self.contents)
+            .with_context(|| format!("failed to write {}", self.path.display()))
     }
 }
 
@@ -157,12 +128,6 @@ struct Report {
 impl Report {
     fn push(&mut self, finding: Finding) {
         self.findings.push(finding);
-    }
-    fn error(&mut self, check: Check, message: impl Into<String>) {
-        self.push(Finding::error(check, message));
-    }
-    fn fix(&mut self, fix: Fix) {
-        self.fixes.push(fix);
     }
     fn of_severity(&self, severity: Severity) -> impl Iterator<Item = &Finding> {
         self.findings.iter().filter(move |f| f.severity == severity)
@@ -412,7 +377,7 @@ fn check_fragments(workspace: &Workspace, report: &mut Report) {
                 report.push(finding);
             }
         }
-        Err(err) => report.error(Check::ChangelogFragment, format!("{err:#}")),
+        Err(err) => report.push(Finding::error(Check::ChangelogFragment, format!("{err:#}"))),
     }
 }
 
@@ -573,7 +538,7 @@ fn check_exclusions(workspace: &Workspace, report: &mut Report) {
                         ),
                     )
                     .at(format!("{}/gleam.toml", member.rel_path))
-                    .in_package(member.name.clone()),
+                    .in_package(&member.name),
                 );
             }
         }
@@ -581,34 +546,27 @@ fn check_exclusions(workspace: &Workspace, report: &mut Report) {
 }
 
 fn check_member_glob(workspace: &Workspace, label: &str, pattern: &str, report: &mut Report) {
-    let matches = globset::Glob::new(pattern)
-        .ok()
-        .map(|glob| glob.compile_matcher())
-        .map(|matcher| {
-            workspace
+    let problem = match globset::Glob::new(pattern).map(|glob| glob.compile_matcher()) {
+        Err(_) => "is invalid",
+        Ok(matcher)
+            if !workspace
                 .members
                 .iter()
-                .any(|member| matcher.is_match(&member.rel_path))
-        });
-    // Both cases are a claim about the root manifest's [tools.trellis] table,
-    // which is where the glob was written.
-    match matches {
-        Some(true) => {}
-        Some(false) => report.push(
-            Finding::error(
-                Check::ExclusionGlob,
-                format!("{label} `{pattern}` matches no member (typo?)"),
-            )
-            .at(crate::workspace::GLEAM_TOML),
-        ),
-        None => report.push(
-            Finding::error(
-                Check::ExclusionGlob,
-                format!("{label} `{pattern}` is invalid"),
-            )
-            .at(crate::workspace::GLEAM_TOML),
-        ),
-    }
+                .any(|m| matcher.is_match(&m.rel_path)) =>
+        {
+            "matches no member (typo?)"
+        }
+        Ok(_) => return,
+    };
+    // Either way the claim is about the root manifest's [tools.trellis]
+    // table, which is where the glob was written.
+    report.push(
+        Finding::error(
+            Check::ExclusionGlob,
+            format!("{label} `{pattern}` {problem}"),
+        )
+        .at(crate::workspace::GLEAM_TOML),
+    );
 }
 
 /// Check 7: no two releasable members produce the same tag, for series tags as
@@ -784,7 +742,7 @@ fn check_lockfiles(workspace: &Workspace, report: &mut Report) {
                         format!("failed to read {}: {err}", path.display()),
                     )
                     .at(&rel_path)
-                    .in_package(member.name.clone()),
+                    .in_package(&member.name),
                 );
                 continue;
             }
@@ -795,7 +753,7 @@ fn check_lockfiles(workspace: &Workspace, report: &mut Report) {
                 report.push(
                     Finding::error(Check::LockfileDrift, format!("{err:#}"))
                         .at(&rel_path)
-                        .in_package(member.name.clone()),
+                        .in_package(&member.name),
                 );
                 continue;
             }
@@ -816,11 +774,12 @@ fn check_lockfiles(workspace: &Workspace, report: &mut Report) {
                     ),
                 )
                 .at(&rel_path)
-                .in_package(member.name.clone())
+                .in_package(&member.name)
                 .fixable(),
             );
         }
-        report.fix(Fix::PatchLockfile {
+        report.fixes.push(Fix {
+            kind: FixKind::PatchLockfile,
             package: member.name.clone(),
             rel_path,
             path,
@@ -870,11 +829,12 @@ fn check_changelogs(workspace: &Workspace, report: &mut Report) {
                     format!("releasable package `{}` has no CHANGELOG.md", member.name),
                 )
                 .at(&rel_changelog)
-                .in_package(member.name.clone())
+                .in_package(&member.name)
                 .fixable_if(header.is_ok()),
             );
             match header {
-                Ok(header) => report.fix(Fix::SeedChangelog {
+                Ok(header) => report.fixes.push(Fix {
+                    kind: FixKind::SeedChangelog,
                     package: member.name.clone(),
                     rel_path: rel_changelog,
                     path: changelog,
@@ -888,7 +848,7 @@ fn check_changelogs(workspace: &Workspace, report: &mut Report) {
                             member.name
                         ),
                     )
-                    .in_package(member.name.clone()),
+                    .in_package(&member.name),
                 ),
             }
             continue;
@@ -900,7 +860,7 @@ fn check_changelogs(workspace: &Workspace, report: &mut Report) {
                     format!("could not read {}/CHANGELOG.md", member.rel_path),
                 )
                 .at(&rel_changelog)
-                .in_package(member.name.clone()),
+                .in_package(&member.name),
             );
             continue;
         };
@@ -915,7 +875,7 @@ fn check_changelogs(workspace: &Workspace, report: &mut Report) {
                     ),
                 )
                 .at(format!("{}/gleam.toml", member.rel_path))
-                .in_package(member.name.clone()),
+                .in_package(&member.name),
             );
             continue;
         };
@@ -933,7 +893,7 @@ fn check_changelogs(workspace: &Workspace, report: &mut Report) {
                     ),
                 )
                 .at(format!("{}/gleam.toml", member.rel_path))
-                .in_package(member.name.clone()),
+                .in_package(&member.name),
             );
         }
 
@@ -953,10 +913,11 @@ fn check_changelogs(workspace: &Workspace, report: &mut Report) {
                         ),
                     )
                     .at(&rel_changelog)
-                    .in_package(member.name.clone())
+                    .in_package(&member.name)
                     .fixable(),
                 );
-                report.fix(Fix::AdoptChangelog {
+                report.fixes.push(Fix {
+                    kind: FixKind::AdoptChangelog,
                     package: member.name.clone(),
                     rel_path: rel_changelog,
                     path: adoption.path,
@@ -970,7 +931,7 @@ fn check_changelogs(workspace: &Workspace, report: &mut Report) {
                     format!("cannot read `{}`'s changelog history: {err:#}", member.name),
                 )
                 .at(&rel_changelog)
-                .in_package(member.name.clone()),
+                .in_package(&member.name),
             ),
         }
     }
