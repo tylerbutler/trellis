@@ -2,6 +2,8 @@
 //! check, plan, apply, and template rendering. No external changie binary —
 //! trellis is the engine.
 
+// ponytail: changelog/gleam-log assertions use contains(); convert to insta::assert_snapshot! when next touched
+
 mod common;
 
 use common::*;
@@ -558,26 +560,6 @@ fn the_strictness_flag_overrides_the_configured_value() {
         .success();
 }
 
-#[test]
-fn invalid_fragments_fail_at_every_strictness() {
-    let tmp = tempfile::tempdir().unwrap();
-    let root = tmp.path();
-    workspace_with_one_missing_fragment(root);
-    set_changelog_config(root, "strictness = \"off\"");
-    write(
-        &root.join(".changes/unreleased/broken-1.toml"),
-        "not toml at all {{{\n",
-    );
-
-    // Strictness is a policy about missing entries. A fragment that does not
-    // parse is malformed input, and no policy setting excuses it.
-    trellis(root)
-        .args(["changelog", "check", "--base", "main"])
-        .assert()
-        .failure()
-        .stdout(predicate::str::contains("broken-1.toml"));
-}
-
 // ---- changelog check: --format github --------------------------------------
 
 #[test]
@@ -860,16 +842,25 @@ fn json_stays_an_alias_for_format_json() {
 }
 
 #[test]
-fn invalid_fragments_fail_check_and_doctor() {
+fn invalid_fragments_fail_check_doctor_and_plan_at_every_strictness() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
-    copy_fixture_to(root);
+    workspace_with_one_missing_fragment(root);
+    set_changelog_config(root, "strictness = \"off\"");
     add_fragment(root, "lat_typo", "Added", "x"); // unknown project
     add_fragment(root, "lat_core", "Invented", "x"); // unknown kind
     write(
         &root.join(".changes/unreleased/broken-1.toml"),
         "not toml at all {{{\n",
     );
+
+    // Strictness is a policy about missing entries. A fragment that does not
+    // parse is malformed input, and no policy setting excuses it.
+    trellis(root)
+        .args(["changelog", "check", "--base", "main"])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("broken-1.toml"));
 
     trellis(root)
         .arg("doctor")

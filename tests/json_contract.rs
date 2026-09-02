@@ -2,8 +2,8 @@
 //!
 //! These exist so that a breaking change to a documented shape fails *here*
 //! rather than in a consumer's workflow. They assert the wire format and
-//! nothing else — behavior is covered by `cli.rs`, `phase2.rs`, and
-//! `phase3.rs`.
+//! nothing else — behavior is covered by `cli.rs`, `changelog_version.rs`,
+//! and `tag_publish.rs`.
 //!
 //! A failing snapshot is not automatically a bug: adding a field is permitted
 //! by the contract. Renaming, removing, or retyping one is not, and needs the

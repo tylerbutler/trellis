@@ -1,18 +1,11 @@
 //! End-to-end tests for `trellis release pr` (release-PR management via a
-//! mock GitHub API) and doctor's .tool-versions advisory.
+//! mock GitHub API).
 
 mod common;
 
 use common::*;
-
 use predicates::prelude::*;
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
-use std::path::Path;
-
-fn make_executable(path: &Path) {
-    fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
-}
 
 // ---- trellis release pr ----------------------------------------------------
 
@@ -211,36 +204,4 @@ fn release_pr_failure_preserves_an_existing_release_branch() {
         preserved_release, original_release,
         "a failed release must not move the existing local release branch"
     );
-}
-
-// ---- doctor .tool-versions advisory ----------------------------------------
-
-#[test]
-fn doctor_warns_on_tool_versions_mismatch() {
-    let tmp = tempfile::tempdir().unwrap();
-    let root = tmp.path();
-    copy_fixture_to(root);
-    write(&root.join(".tool-versions"), "erlang 27.0\ngleam 1.5.0\n");
-    let gleam = root.join("fake-gleam.sh");
-    write(&gleam, "#!/bin/sh\necho 'gleam 1.4.1'\n");
-    make_executable(&gleam);
-
-    // Mismatch is a warning, not an error: doctor still succeeds.
-    trellis(root)
-        .env("TRELLIS_GLEAM_BIN", &gleam)
-        .arg("doctor")
-        .assert()
-        .success()
-        .stdout(predicate::str::contains(
-            "gleam on PATH is 1.4.1 but .tool-versions pins 1.5.0",
-        ));
-
-    // Matching versions: no warning.
-    write(&root.join(".tool-versions"), "gleam 1.4.1\n");
-    trellis(root)
-        .env("TRELLIS_GLEAM_BIN", &gleam)
-        .arg("doctor")
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("gleam on PATH is").not());
 }

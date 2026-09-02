@@ -219,6 +219,20 @@ fn publish_all_untagged_selects_hex_packages_only() {
         .stdout(predicate::str::contains("demo").not());
 }
 
+#[test]
+fn publish_rejects_unreleasable_package() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+    trellis(root)
+        .args(["publish", "package_a"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "release lifecycle `workspace`, not `hex`",
+        ));
+}
+
 // ---- configuration: parsing, precedence, and conflicts -----------------
 
 #[test]

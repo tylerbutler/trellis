@@ -3,6 +3,8 @@
 //! Hex API served from a local thread (TRELLIS_HEX_API_URL), and real git
 //! repos.
 
+// ponytail: changelog/gleam-log assertions use contains(); convert to insta::assert_snapshot! when next touched
+
 mod common;
 
 use common::*;
@@ -579,20 +581,6 @@ fn publish_restores_manifest_even_when_publish_fails() {
         original,
         "gleam.toml must be restored after a failed publish"
     );
-}
-
-#[test]
-fn publish_rejects_unreleasable_package() {
-    let tmp = tempfile::tempdir().unwrap();
-    let root = tmp.path();
-    copy_fixture_to(root);
-    trellis(root)
-        .args(["publish", "package_a"])
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains(
-            "release lifecycle `workspace`, not `hex`",
-        ));
 }
 
 // ---- series tags -----------------------------------------------------------
@@ -1414,9 +1402,6 @@ fn doctor_rejects_a_package_tags_override_that_matches_nothing() {
 }
 
 // ---- release bootstrap -----------------------------------------------------
-
-// Mirrors `version_of` in phase2.rs — the same manifest-version read, kept in
-// step until the test binaries grow a shared support module.
 
 #[test]
 fn bootstrap_uses_current_versions_with_no_fragments_required() {

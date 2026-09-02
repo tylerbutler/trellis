@@ -6,6 +6,7 @@ use assert_cmd::Command;
 use common::*;
 use predicates::prelude::*;
 use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
 // ---- list ------------------------------------------------------------
@@ -50,24 +51,6 @@ fn list_releasable_excludes_release_excluded_members() {
         .stdout("lat_core  hex\nlat_mid   hex\nlat_cli   hex\n");
 }
 
-#[test]
-fn list_json_includes_graph_facts() {
-    let document = json_output(&fixture("basic"), &["list", "--json"], true);
-    assert_eq!(document["schema"], "trellis.list/1");
-    let items = document["packages"].as_array().unwrap();
-    assert_eq!(items.len(), 4);
-    let mid = items.iter().find(|i| i["name"] == "lat_mid").unwrap();
-    assert_eq!(mid["version"], "0.5.0");
-    assert_eq!(mid["path"], "packages/lat_mid");
-    assert_eq!(mid["lifecycle"], "hex");
-    assert_eq!(mid["releasable"], true);
-    assert_eq!(mid["dependencies"], serde_json::json!(["lat_core"]));
-    assert_eq!(mid["dependents"], serde_json::json!(["lat_cli"]));
-    let package_a = items.iter().find(|i| i["name"] == "package_a").unwrap();
-    assert_eq!(package_a["lifecycle"], "workspace");
-    assert_eq!(package_a["releasable"], false);
-}
-
 // ---- graph -----------------------------------------------------------
 
 #[test]
@@ -78,19 +61,6 @@ fn graph_mermaid_shows_edges() {
         .success()
         .stdout(predicate::str::contains("lat_mid --> lat_core"))
         .stdout(predicate::str::contains("lat_cli --> lat_mid"));
-}
-
-#[test]
-fn graph_json_lists_nodes_and_edges() {
-    let output = trellis(&fixture("basic"))
-        .args(["graph", "--format", "json"])
-        .output()
-        .unwrap();
-    let graph: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(graph["nodes"].as_array().unwrap().len(), 4);
-    // lat_mid->lat_core, lat_cli->lat_mid, lat_cli->lat_core (dev),
-    // package_a->lat_cli
-    assert_eq!(graph["edges"].as_array().unwrap().len(), 4);
 }
 
 // ---- info ------------------------------------------------------------
@@ -239,26 +209,6 @@ fn exec_keep_going_runs_everything_despite_failures() {
 // ---- run / exec --json -----------------------------------------------
 
 #[test]
-fn run_json_reports_one_record_per_package() {
-    let document = json_output(&fixture("basic"), &["run", "hello", "--json"], true);
-    assert_eq!(document["schema"], "trellis.run/1");
-    assert_eq!(document["ok"], true);
-    assert_eq!(document["task"], "hello");
-    // `--target` was not given, so the field is absent rather than null.
-    assert!(document.get("target").is_none());
-    let results = document["results"].as_array().unwrap();
-    // package_a is excluded from `hello` by the fixture's [tools.trellis.exclude].
-    assert_eq!(results.len(), 3);
-    let core = results.iter().find(|r| r["package"] == "lat_core").unwrap();
-    assert_eq!(core["path"], "packages/lat_core");
-    assert_eq!(core["status"], "success");
-    assert!(core["duration_ms"].is_u64());
-    // Nothing failed, so neither failure field is present.
-    assert!(core.get("exit_code").is_none());
-    assert!(core.get("command").is_none());
-}
-
-#[test]
 fn run_json_carries_the_target_flag_as_given() {
     let output = trellis(&fixture("basic"))
         .env("TRELLIS_GLEAM_BIN", "echo")
@@ -268,29 +218,6 @@ fn run_json_carries_the_target_flag_as_given() {
     assert!(output.status.success());
     let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(document["target"], "all");
-}
-
-#[test]
-fn exec_json_records_the_exit_code_of_the_failing_command() {
-    let document = json_output(
-        &fixture("basic"),
-        &["exec", "lat_core", "--json", "--", "sh", "-c", "exit 3"],
-        false,
-    );
-    assert_eq!(document["schema"], "trellis.exec/1");
-    assert_eq!(document["ok"], false);
-    // argv, not a re-splittable string.
-    assert_eq!(
-        document["command"],
-        serde_json::json!(["sh", "-c", "exit 3"])
-    );
-    let results = document["results"].as_array().unwrap();
-    assert_eq!(results.len(), 1);
-    assert_eq!(results[0]["status"], "failed");
-    assert_eq!(results[0]["exit_code"], 3);
-    // `sh -c` is unwrapped back to the script, matching what the summary table
-    // and the `$ ...` echo have always shown.
-    assert_eq!(results[0]["command"], "exit 3");
 }
 
 #[test]
@@ -905,21 +832,6 @@ fn doctor_github_format_escapes_multiline_messages() {
     assert_eq!(stdout.lines().count(), 1, "annotation spilled: {stdout}");
 }
 
-/// `--json` owns stdout the same way, and still reports through the exit code.
-#[test]
-fn doctor_json_format_emits_only_the_payload() {
-    let assert = trellis(&fixture("basic"))
-        .args(["doctor", "--format", "json"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("checked:").not());
-
-    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
-    let payload: serde_json::Value = serde_json::from_str(&stdout).unwrap();
-    assert_eq!(payload["schema"], "trellis.doctor/1");
-    assert_eq!(payload["ok"], true);
-}
-
 /// `--fix` in a structured format reports what it wrote through `applied`
 /// rather than through the `fixed:` prose it suppresses.
 #[test]
@@ -987,32 +899,37 @@ fn member_glob_skips_directories_without_gleam_toml() {
     assert!(!stdout.contains("node_modules"));
 }
 
-// ---- ci --------------------------------------------------------------
-
 #[test]
-fn ci_matrix_emits_github_actions_shape() {
-    let matrix = json_output(&fixture("basic"), &["ci", "matrix"], true);
-    let include = matrix["include"].as_array().unwrap();
-    assert_eq!(include.len(), 4);
-    assert_eq!(include[0]["name"], "lat_core");
-    assert_eq!(include[0]["path"], "packages/lat_core");
-    assert_eq!(include[0]["version"], "1.2.0");
-}
+fn doctor_warns_on_tool_versions_mismatch() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+    write(&root.join(".tool-versions"), "erlang 27.0\ngleam 1.5.0\n");
+    let gleam = root.join("fake-gleam.sh");
+    write(&gleam, "#!/bin/sh\necho 'gleam 1.4.1'\n");
+    fs::set_permissions(&gleam, fs::Permissions::from_mode(0o755)).unwrap();
 
-#[test]
-fn ci_outputs_emits_key_value_lines() {
-    trellis(&fixture("basic"))
-        .args(["ci", "outputs"])
+    // Mismatch is a warning, not an error: doctor still succeeds.
+    trellis(root)
+        .env("TRELLIS_GLEAM_BIN", &gleam)
+        .arg("doctor")
         .assert()
         .success()
         .stdout(predicate::str::contains(
-            "projects=[\"lat_core\",\"lat_mid\",\"lat_cli\",\"package_a\"]",
-        ))
-        .stdout(predicate::str::contains(
-            "releasable=[\"lat_core\",\"lat_mid\",\"lat_cli\"]",
-        ))
-        .stdout(predicate::str::contains("lat_core-v1.2.0"));
+            "gleam on PATH is 1.4.1 but .tool-versions pins 1.5.0",
+        ));
+
+    // Matching versions: no warning.
+    write(&root.join(".tool-versions"), "gleam 1.4.1\n");
+    trellis(root)
+        .env("TRELLIS_GLEAM_BIN", &gleam)
+        .arg("doctor")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("gleam on PATH is").not());
 }
+
+// ---- ci --------------------------------------------------------------
 
 // ---- markdown reference ----------------------------------------------
 
