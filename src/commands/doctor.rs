@@ -621,7 +621,7 @@ fn check_tag_collisions(workspace: &Workspace, report: &mut Report) {
     let series_members: Vec<&str> = workspace
         .members
         .iter()
-        .filter(|m| m.releasable() && m.tags.iter().any(|t| t.is_series()))
+        .filter(|m| m.releasable() && m.has_series_tag())
         .map(|m| m.name.as_str())
         .collect();
     let names = |members: &[&str]| {
@@ -665,15 +665,11 @@ fn check_tag_collisions(workspace: &Workspace, report: &mut Report) {
     // Members sharing a legacy `{name}`-less series tag is intentional — the
     // ambiguity warning above covers it — so claim each such tag only once.
     let mut legacy_claimed: std::collections::HashSet<String> = std::collections::HashSet::new();
-    for member in workspace
-        .members
-        .iter()
-        .filter(|m| m.releasable() && m.tags.iter().any(|t| t.is_series()))
-    {
-        for tag in workspace
-            .config
-            .series_tags(&member.name, member.version(), &member.tags)
-        {
+    for (idx, member) in workspace.members.iter().enumerate() {
+        if !member.releasable() {
+            continue;
+        }
+        for tag in workspace.series_tags_of(idx) {
             if repo_wide && !legacy_claimed.insert(tag.clone()) {
                 continue;
             }

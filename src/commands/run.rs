@@ -49,11 +49,7 @@ pub fn run(workspace: &Workspace, options: &TaskOptions) -> Result<bool> {
         releasable_only: false,
     })?;
     if let Some(patterns) = workspace.config.exclude.get(&options.task) {
-        let mut builder = globset::GlobSetBuilder::new();
-        for pattern in patterns {
-            builder.add(globset::Glob::new(pattern)?);
-        }
-        let excluded = builder.build()?;
+        let excluded = crate::workspace::build_globset(patterns)?;
         selected.retain(|&idx| !excluded.is_match(&workspace.members[idx].rel_path));
     }
 

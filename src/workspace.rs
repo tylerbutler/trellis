@@ -6,7 +6,7 @@ use crate::config::{ConfigFile, ReleaseLifecycle, TagLevel};
 use crate::gleam::GleamManifest;
 use crate::json::{Check, Finding};
 use anyhow::{Context, Result, bail};
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::{Component, Path, PathBuf};
 
 pub const GLEAM_TOML: &str = "gleam.toml";
@@ -29,6 +29,17 @@ pub struct Member {
 }
 
 impl Member {
+    /// `<rel_path>/<name>`, for messages that cite a file in this member.
+    pub fn rel_file(&self, name: &str) -> String {
+        format!("{}/{name}", self.rel_path)
+    }
+
+    /// True when a release maintains at least one moving series tag for this
+    /// member (any level but [`TagLevel::Exact`]).
+    pub fn has_series_tag(&self) -> bool {
+        self.tags.iter().any(|level| level.is_series())
+    }
+
     /// True when this member is published to Hex (`lifecycle == hex`).
     pub fn publishes_to_hex(&self) -> bool {
         self.lifecycle == ReleaseLifecycle::Hex
@@ -83,6 +94,16 @@ pub struct Diagnostics {
 impl Diagnostics {
     fn push(&mut self, finding: Finding) {
         self.findings.push(finding);
+    }
+
+    /// An error about the root manifest's `[tools.trellis]` table.
+    fn config_error(&mut self, message: impl Into<String>) {
+        self.push(Finding::error(Check::WorkspaceConfig, message).at(GLEAM_TOML));
+    }
+
+    /// A warning about the root manifest's `[tools.trellis]` table.
+    fn config_warning(&mut self, message: impl Into<String>) {
+        self.push(Finding::warning(Check::WorkspaceConfig, message).at(GLEAM_TOML));
     }
 
     /// Error messages only, in the order they were found.
@@ -171,37 +192,35 @@ impl Workspace {
         // configuration, its absence (or a missing manifest — a configless
         // git-root workspace) means everything is defaulted and discovered.
         let manifest_path = root.join(GLEAM_TOML);
-        let (configless, root_is_package) = match std::fs::read_to_string(&manifest_path) {
+        let document = match std::fs::read_to_string(&manifest_path) {
             Ok(text) => match toml::from_str::<toml::Value>(&text) {
-                Ok(document) => (
-                    !crate::config::has_trellis_table(&document),
-                    document.get("name").is_some(),
-                ),
+                Ok(document) => Some(document),
                 Err(err) => {
-                    diagnostics.push(
-                        Finding::error(
-                            Check::WorkspaceConfig,
-                            format!("failed to parse {}: {err}", manifest_path.display()),
-                        )
-                        .at(GLEAM_TOML),
-                    );
+                    diagnostics.config_error(format!(
+                        "failed to parse {}: {err}",
+                        manifest_path.display()
+                    ));
                     return Ok((None, diagnostics));
                 }
             },
-            Err(_) => (true, false),
+            Err(_) => None,
         };
-        let config = if configless {
-            ConfigFile::configless()
-        } else {
-            match ConfigFile::load(&manifest_path) {
+        let root_is_package = document.as_ref().is_some_and(|d| d.get("name").is_some());
+        let trellis_table = document
+            .as_ref()
+            .filter(|d| crate::config::has_trellis_table(d));
+        let configless = trellis_table.is_none();
+        let config = match trellis_table {
+            None => ConfigFile::configless(),
+            Some(document) => match ConfigFile::from_document(document)
+                .with_context(|| format!("in {}", manifest_path.display()))
+            {
                 Ok(config) => config,
                 Err(err) => {
-                    diagnostics.push(
-                        Finding::error(Check::WorkspaceConfig, format!("{err:#}")).at(GLEAM_TOML),
-                    );
+                    diagnostics.config_error(format!("{err:#}"));
                     return Ok((None, diagnostics));
                 }
-            }
+            },
         };
         report_unknown_config_keys(&config, &mut diagnostics);
 
@@ -218,13 +237,7 @@ impl Workspace {
         // Parse each member manifest; unparseable members are reported and dropped.
         for (task, patterns) in &config.exclude {
             if let Err(err) = build_globset(patterns) {
-                diagnostics.push(
-                    Finding::error(
-                        Check::WorkspaceConfig,
-                        format!("invalid `{task}` exclusion glob: {err:#}"),
-                    )
-                    .at(GLEAM_TOML),
-                );
+                diagnostics.config_error(format!("invalid `{task}` exclusion glob: {err:#}"));
             }
         }
 
@@ -239,72 +252,33 @@ impl Workspace {
             }
         }
         if member_dirs.is_empty() && !diagnostics.has_errors() {
-            diagnostics.push(
-                Finding::error(
-                    Check::WorkspaceConfig,
-                    format!(
-                        "no workspace members left after `{}` exclusions",
-                        crate::config::MEMBERS_EXCLUDE_KEY
-                    ),
-                )
-                .at(GLEAM_TOML),
-            );
+            diagnostics.config_error(format!(
+                "no workspace members left after `{}` exclusions",
+                crate::config::MEMBERS_EXCLUDE_KEY
+            ));
         }
 
-        let release_exclusions = config
+        // An invalid glob was already reported by the `exclude` sweep above.
+        let release_excludes = config
             .exclude
             .get(crate::config::RELEASE_EXCLUDE_KEY)
-            .cloned()
-            .unwrap_or_default();
-        let release_excludes = build_globset(&release_exclusions)
-            .map_err(|err| {
-                diagnostics.push(
-                    Finding::error(
-                        Check::WorkspaceConfig,
-                        format!("invalid release exclusion glob: {err:#}"),
-                    )
-                    .at(GLEAM_TOML),
-                );
-            })
-            .ok();
+            .and_then(|patterns| build_globset(patterns).ok());
         // Keyed by one member-path glob each, like `publish.lifecycle.packages`
         // below, so a member can match several with different lists — the case
         // `resolve_package_tags` must reject.
-        let mut package_tags_overrides: Vec<(Vec<TagLevel>, globset::GlobMatcher)> = Vec::new();
-        for (pattern, levels) in &config.publish.package_tags_overrides {
-            match globset::Glob::new(pattern) {
-                Ok(glob) => package_tags_overrides.push((levels.clone(), glob.compile_matcher())),
-                Err(err) => {
-                    diagnostics.push(
-                        Finding::error(
-                            Check::WorkspaceConfig,
-                            format!("invalid `package_tags_overrides` glob `{pattern}`: {err:#}"),
-                        )
-                        .at(GLEAM_TOML),
-                    );
-                }
-            }
-        }
+        let package_tags_overrides = compile_overrides(
+            &config.publish.package_tags_overrides,
+            "package_tags_overrides",
+            &mut diagnostics,
+        );
         // `publish.lifecycle.packages` globs, compiled individually — each key
         // names exactly one glob, so a member can match several with different
         // targets, which is the case `resolve_lifecycle` must reject.
-        let mut lifecycle_overrides: Vec<(ReleaseLifecycle, globset::GlobMatcher)> = Vec::new();
-        for (pattern, lifecycle) in &config.publish.lifecycle.packages {
-            match globset::Glob::new(pattern) {
-                Ok(glob) => lifecycle_overrides.push((*lifecycle, glob.compile_matcher())),
-                Err(err) => {
-                    diagnostics.push(
-                        Finding::error(
-                            Check::WorkspaceConfig,
-                            format!(
-                                "invalid `publish.lifecycle.packages` glob `{pattern}`: {err:#}"
-                            ),
-                        )
-                        .at(GLEAM_TOML),
-                    );
-                }
-            }
-        }
+        let lifecycle_overrides = compile_overrides(
+            &config.publish.lifecycle.packages,
+            "publish.lifecycle.packages",
+            &mut diagnostics,
+        );
         let mut members = Vec::new();
         for dir in member_dirs {
             let rel_path = rel_path_string(root, &dir);
@@ -392,13 +366,9 @@ impl Workspace {
 
         if let Some(anchor) = &config.publish.repository_tag_package {
             match members.iter().find(|member| &member.name == anchor) {
-                None => diagnostics.push(
-                    Finding::error(
-                        Check::WorkspaceConfig,
-                        format!("`repository_tag_package` `{anchor}` is not a workspace member"),
-                    )
-                    .at(GLEAM_TOML),
-                ),
+                None => diagnostics.config_error(format!(
+                    "`repository_tag_package` `{anchor}` is not a workspace member"
+                )),
                 Some(member) if !member.releasable() => diagnostics.push(
                     Finding::error(
                         Check::ReleaseBoundary,
@@ -467,7 +437,7 @@ impl Workspace {
             }
         }
 
-        let names: Vec<String> = members.iter().map(|m| m.name.clone()).collect();
+        let names: Vec<&str> = members.iter().map(|m| m.name.as_str()).collect();
         let edge_list: Vec<(usize, usize)> = edges.iter().copied().collect();
         let order = match toposort(members.len(), &names, &edge_list) {
             Ok(order) => order,
@@ -582,26 +552,35 @@ impl Workspace {
         seen
     }
 
+    /// The series tags a release of member `idx` maintains at its current
+    /// version — empty unless [`Member::has_series_tag`].
+    pub fn series_tags_of(&self, idx: usize) -> Vec<String> {
+        let member = &self.members[idx];
+        self.config
+            .series_tags(&member.name, member.version(), &member.tags)
+    }
+
     /// Resolve a set of member names/filters into topologically ordered indices.
     pub fn select(&self, filter: &SelectionFilter) -> Result<Vec<usize>> {
         let mut selected: HashSet<usize> = if filter.names.is_empty() {
             (0..self.members.len()).collect()
         } else {
-            let mut set = HashSet::new();
-            for name in &filter.names {
-                let idx = self.member_index(name).with_context(|| {
-                    format!(
-                        "unknown package `{name}` (members: {})",
-                        self.members
-                            .iter()
-                            .map(|m| m.name.as_str())
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    )
-                })?;
-                set.insert(idx);
-            }
-            set
+            filter
+                .names
+                .iter()
+                .map(|name| {
+                    self.member_index(name).with_context(|| {
+                        format!(
+                            "unknown package `{name}` (members: {})",
+                            self.members
+                                .iter()
+                                .map(|m| m.name.as_str())
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        )
+                    })
+                })
+                .collect::<Result<_>>()?
         };
 
         if let Some(since) = &filter.since {
@@ -643,7 +622,7 @@ pub struct SelectionFilter {
 /// dependency order, or one cycle (as names) on failure.
 pub fn toposort(
     n: usize,
-    names: &[String],
+    names: &[&str],
     edges: &[(usize, usize)],
 ) -> Result<Vec<usize>, Vec<String>> {
     use std::cmp::Reverse;
@@ -657,7 +636,7 @@ pub fn toposort(
     }
     let mut ready: BinaryHeap<Reverse<(&str, usize)>> = (0..n)
         .filter(|&idx| in_degree[idx] == 0)
-        .map(|idx| Reverse((names[idx].as_str(), idx)))
+        .map(|idx| Reverse((names[idx], idx)))
         .collect();
     let mut order = Vec::with_capacity(n);
     while let Some(Reverse((_, idx))) = ready.pop() {
@@ -665,7 +644,7 @@ pub fn toposort(
         for &next in &adjacency[idx] {
             in_degree[next] -= 1;
             if in_degree[next] == 0 {
-                ready.push(Reverse((names[next].as_str(), next)));
+                ready.push(Reverse((names[next], next)));
             }
         }
     }
@@ -689,9 +668,9 @@ pub fn toposort(
             let cycle_start = path.iter().position(|&idx| idx == next).unwrap_or(0);
             let mut cycle: Vec<String> = path[cycle_start..]
                 .iter()
-                .map(|&idx| names[idx].clone())
+                .map(|&idx| names[idx].to_string())
                 .collect();
-            cycle.push(names[next].clone());
+            cycle.push(names[next].to_string());
             return Err(cycle);
         }
         path.push(next);
@@ -708,30 +687,38 @@ pub fn toposort(
 /// break working repositories for a spelling change.
 fn report_unknown_config_keys(config: &ConfigFile, diagnostics: &mut Diagnostics) {
     for key in &config.deprecated_keys {
-        diagnostics.push(
-            Finding::warning(
-                Check::WorkspaceConfig,
-                format!(
-                    "[tools.trellis] key `{}` is deprecated; rename it to `{}` \
+        diagnostics.config_warning(format!(
+            "[tools.trellis] key `{}` is deprecated; rename it to `{}` \
                      (trellis config keys are snake_case)",
-                    key.path, key.replacement
-                ),
-            )
-            .at(GLEAM_TOML),
-        );
+            key.path, key.replacement
+        ));
     }
     for path in &config.unknown_keys {
-        diagnostics.push(
-            Finding::warning(
-                Check::WorkspaceConfig,
-                format!(
-                    "[tools.trellis] key `{path}` is not recognized and is being ignored; \
+        diagnostics.config_warning(format!(
+            "[tools.trellis] key `{path}` is not recognized and is being ignored; \
                      it may belong to a newer trellis"
-                ),
-            )
-            .at(GLEAM_TOML),
-        );
+        ));
     }
+}
+
+/// Compile a `{ glob = value }` override table, one matcher per key. Each key
+/// is exactly one glob, so a member can match several with different values
+/// — the case the resolvers must reject.
+fn compile_overrides<T: Clone>(
+    overrides: &BTreeMap<String, T>,
+    key: &str,
+    diagnostics: &mut Diagnostics,
+) -> Vec<(T, globset::GlobMatcher)> {
+    overrides
+        .iter()
+        .filter_map(|(pattern, value)| match globset::Glob::new(pattern) {
+            Ok(glob) => Some((value.clone(), glob.compile_matcher())),
+            Err(err) => {
+                diagnostics.config_error(format!("invalid `{key}` glob `{pattern}`: {err:#}"));
+                None
+            }
+        })
+        .collect()
 }
 
 /// Validates `@members` exclusion globs against the pre-filter candidate set
@@ -749,28 +736,19 @@ fn check_members_exclude_globs(
         .map(|dir| rel_path_string(root, dir))
         .collect();
     for pattern in patterns {
-        match globset::Glob::new(pattern) {
-            Ok(glob) => {
-                let matcher = glob.compile_matcher();
-                if !rel_paths.iter().any(|rel| matcher.is_match(rel)) {
-                    diagnostics.push(
-                        Finding::error(
-                            Check::ExclusionGlob,
-                            format!(
-                                "`@members` exclusion glob `{pattern}` matches no member (typo?)"
-                            ),
-                        )
-                        .at(GLEAM_TOML),
-                    );
-                }
-            }
-            Err(_) => diagnostics.push(
+        // An invalid glob was already reported by the `exclude` sweep.
+        let Ok(glob) = globset::Glob::new(pattern) else {
+            continue;
+        };
+        let matcher = glob.compile_matcher();
+        if !rel_paths.iter().any(|rel| matcher.is_match(rel)) {
+            diagnostics.push(
                 Finding::error(
                     Check::ExclusionGlob,
-                    format!("`@members` exclusion glob `{pattern}` is invalid"),
+                    format!("`@members` exclusion glob `{pattern}` matches no member (typo?)"),
                 )
                 .at(GLEAM_TOML),
-            ),
+            );
         }
     }
 }
@@ -945,33 +923,27 @@ fn resolve_package_tags(
         .filter(|(_, glob)| glob.is_match(rel_path))
         .map(|(levels, _)| levels)
         .collect();
-    matched.dedup_by(|a, b| a == b);
+    matched.dedup();
     match matched.as_slice() {
         [] => default.to_vec(),
         [levels] => (*levels).clone(),
         lists => {
-            diagnostics.push(
-                Finding::error(
-                    Check::WorkspaceConfig,
-                    format!(
-                        "member `{rel_path}` matches `package_tags_overrides` globs resolving \
+            diagnostics.config_error(format!(
+                "member `{rel_path}` matches `package_tags_overrides` globs resolving \
                          to {}; a member may have only one tag list",
-                        lists
+                lists
+                    .iter()
+                    .map(|levels| format!(
+                        "[{}]",
+                        levels
                             .iter()
-                            .map(|levels| format!(
-                                "[{}]",
-                                levels
-                                    .iter()
-                                    .map(|level| format!("`{}`", level.key()))
-                                    .collect::<Vec<_>>()
-                                    .join(", ")
-                            ))
+                            .map(|level| format!("`{}`", level.key()))
                             .collect::<Vec<_>>()
-                            .join(" and ")
-                    ),
-                )
-                .at(GLEAM_TOML),
-            );
+                            .join(", ")
+                    ))
+                    .collect::<Vec<_>>()
+                    .join(" and ")
+            ));
             default.to_vec()
         }
     }
@@ -1010,30 +982,21 @@ fn resolve_lifecycle(
         }
         Some((&(first, _), rest)) if rest.iter().all(|&(lifecycle, _)| lifecycle == first) => first,
         Some(_) => {
-            diagnostics.push(
-                Finding::error(
-                    Check::WorkspaceConfig,
-                    format!(
-                        "member `{rel_path}` matches `publish.lifecycle.packages` globs for \
+            diagnostics.config_error(format!(
+                "member `{rel_path}` matches `publish.lifecycle.packages` globs for \
                          conflicting lifecycles: {}",
-                        matched
-                            .iter()
-                            .map(|(lifecycle, pattern)| format!(
-                                "`{pattern}` => `{}`",
-                                lifecycle.key()
-                            ))
-                            .collect::<Vec<_>>()
-                            .join(", "),
-                    ),
-                )
-                .at(GLEAM_TOML),
-            );
+                matched
+                    .iter()
+                    .map(|(lifecycle, pattern)| format!("`{pattern}` => `{}`", lifecycle.key()))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+            ));
             default
         }
     }
 }
 
-fn build_globset(patterns: &[String]) -> Result<globset::GlobSet> {
+pub(crate) fn build_globset(patterns: &[String]) -> Result<globset::GlobSet> {
     let mut builder = globset::GlobSetBuilder::new();
     for pattern in patterns {
         builder.add(globset::Glob::new(pattern)?);
@@ -1074,8 +1037,8 @@ fn rel_path_string(root: &Path, path: &Path) -> String {
 mod tests {
     use super::*;
 
-    fn names(items: &[&str]) -> Vec<String> {
-        items.iter().map(|s| s.to_string()).collect()
+    fn names<'a>(items: &[&'a str]) -> Vec<&'a str> {
+        items.to_vec()
     }
 
     #[test]
@@ -1105,7 +1068,8 @@ mod tests {
     }
 
     fn globs(patterns: &[&str]) -> globset::GlobSet {
-        build_globset(&names(patterns)).unwrap()
+        let patterns: Vec<String> = patterns.iter().map(|s| s.to_string()).collect();
+        build_globset(&patterns).unwrap()
     }
 
     fn tag_overrides(

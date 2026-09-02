@@ -38,13 +38,8 @@ pub fn run(workspace: &Workspace, name: &str, json: bool) -> Result<()> {
             workspace.config.exact_tag(&member.name, member.version())
         );
     }
-    if member.tags.iter().any(|level| level.is_series()) {
-        for tag in workspace
-            .config
-            .series_tags(&member.name, member.version(), &member.tags)
-        {
-            crate::status!("{} {tag}", label("series tag:"));
-        }
+    for tag in workspace.series_tags_of(idx) {
+        crate::status!("{} {tag}", label("series tag:"));
     }
     let format_names = |indices: &[usize]| -> String {
         if indices.is_empty() {
