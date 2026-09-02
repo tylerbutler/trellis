@@ -30,8 +30,7 @@ pub fn markdown_help() -> String {
     // supplies the page title, and a second H1 would double the heading.
     let body = body
         .find("**Command Overview:**")
-        .map(|idx| &body[idx..])
-        .unwrap_or(&body);
+        .map_or(body.as_str(), |idx| &body[idx..]);
     format!(
         "---\n\
          title: CLI reference\n\

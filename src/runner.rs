@@ -88,7 +88,7 @@ impl RunOptions {
         }
         jobs.unwrap_or_else(|| {
             std::thread::available_parallelism()
-                .map(|n| n.get())
+                .map(std::num::NonZero::get)
                 .unwrap_or(4)
         })
     }

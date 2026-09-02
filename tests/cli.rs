@@ -895,7 +895,7 @@ fn member_glob_skips_directories_without_gleam_toml() {
     std::fs::create_dir_all(root.join("pkgs/node_modules")).unwrap();
     let output = trellis(root).arg("list").assert().success();
     let stdout = String::from_utf8_lossy(&output.get_output().stdout).to_string();
-    assert!(stdout.contains("a"));
+    assert!(stdout.contains('a'));
     assert!(!stdout.contains("node_modules"));
 }
 
@@ -1168,7 +1168,7 @@ fn version_appends_git_describe_on_dev_builds() {
 
 // ---- doctor: unrecognized config keys ---------------------------------
 
-/// A two-member workspace, so the shared_dependency check has something to
+/// A two-member workspace, so the `shared_dependency` check has something to
 /// compare. `config` is spliced in under `[tools.trellis]`.
 fn workspace_with(root: &Path, config: &str, a_deps: &str, b_deps: &str) {
     write(

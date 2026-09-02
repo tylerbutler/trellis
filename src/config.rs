@@ -1219,14 +1219,14 @@ mod tests {
     #[test]
     fn hyphens_in_free_form_table_keys_are_not_deprecations() {
         let config = ConfigFile::from_gleam_toml(
-            r###"
+            r#"
             [tools.trellis]
             members = ["packages/*"]
             exclude = { "check-all" = ["examples/*"] }
 
             [tools.trellis.tasks.check-all]
             command = "gleam check"
-        "###,
+        "#,
         )
         .unwrap();
         assert!(config.tasks.contains_key("check-all"));
@@ -1260,13 +1260,13 @@ mod tests {
     #[test]
     fn keys_added_after_the_last_kebab_release_have_no_alias() {
         let config = ConfigFile::from_gleam_toml(
-            r###"
+            r#"
             [tools.trellis.changelog]
             dependency-kind = "Docs"
 
             [tools.trellis.doctor]
             shared-dependencies = "error"
-        "###,
+        "#,
         )
         .unwrap();
         // The defaults stand, and the keys are reported as unrecognized.
@@ -1337,11 +1337,11 @@ mod tests {
     #[test]
     fn lifecycle_parses_nested_table_and_inline_map() {
         let config = ConfigFile::from_gleam_toml(
-            r###"
+            r#"
             [tools.trellis.publish.lifecycle]
             default = "hex"
             packages = { "member/path/**" = "git_only", "examples/**" = "workspace" }
-            "###,
+            "#,
         )
         .unwrap();
         assert_eq!(config.publish.lifecycle.default, ReleaseLifecycle::Hex);
@@ -1391,10 +1391,10 @@ mod tests {
     #[test]
     fn dependency_kind_must_name_a_configured_kind() {
         let err = ConfigFile::from_gleam_toml(
-            r###"
+            r#"
             [tools.trellis.changelog]
             kinds = [{ label = "Docs", bump = "patch" }]
-        "###,
+        "#,
         )
         .unwrap_err();
         let message = format!("{err:#}");
@@ -1413,12 +1413,12 @@ mod tests {
     #[test]
     fn dependency_kind_may_point_at_an_existing_kind() {
         let config = ConfigFile::from_gleam_toml(
-            r###"
+            r#"
             [tools.trellis.changelog]
             dependency_kind = "Docs"
             dependency_body = "{{ dependency }} is now {{ dependency_version }}"
             kinds = [{ label = "Docs", bump = "patch" }]
-        "###,
+        "#,
         )
         .unwrap();
         assert_eq!(config.changelog.dependency_kind, "Docs");
@@ -1533,14 +1533,14 @@ mod tests {
     #[test]
     fn parses_package_tags_and_overrides() {
         let config = ConfigFile::from_gleam_toml(
-            r###"
+            r#"
             [tools.trellis]
             members = ["packages/*"]
 
             [tools.trellis.publish]
             package_tags = ["minor"]
             package_tags_overrides = { "packages/lat_*" = ["exact", "minor"], "packages/old" = ["exact"] }
-        "###,
+        "#,
         )
         .unwrap();
         assert_eq!(config.publish.package_tags, [TagLevel::Minor]);

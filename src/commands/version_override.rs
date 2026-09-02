@@ -280,8 +280,8 @@ mod tests {
     }
 
     fn overrides(bump: &[&str], set: &[&str], pre: Option<&str>) -> Overrides {
-        let bump: Vec<String> = bump.iter().map(|s| s.to_string()).collect();
-        let set: Vec<String> = set.iter().map(|s| s.to_string()).collect();
+        let bump: Vec<String> = bump.iter().map(|&s| s.to_string()).collect();
+        let set: Vec<String> = set.iter().map(|&s| s.to_string()).collect();
         Overrides::parse(&bump, &set, pre).unwrap()
     }
 

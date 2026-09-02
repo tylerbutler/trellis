@@ -178,8 +178,8 @@ fn name_color_code(name: &str) -> u8 {
 
 /// FNV-1a, so a package keeps its color across runs, machines, and releases.
 fn stable_name_hash(name: &str) -> u64 {
-    name.bytes().fold(0xcbf29ce484222325, |hash, byte| {
-        (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3)
+    name.bytes().fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
+        (hash ^ u64::from(byte)).wrapping_mul(0x0100_0000_01b3)
     })
 }
 

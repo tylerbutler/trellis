@@ -1293,7 +1293,7 @@ fn changelog_without_a_parseable_heading_is_dated_by_current_version() {
 }
 
 /// The ripple makes adoption matter for packages that never had a fragment of
-/// their own — before this, releasing lat_core would wipe lat_cli's history.
+/// their own — before this, releasing `lat_core` would wipe `lat_cli`'s history.
 #[test]
 fn rippled_packages_keep_their_changelog_history() {
     let tmp = tempfile::tempdir().unwrap();

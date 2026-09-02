@@ -1,6 +1,6 @@
 //! End-to-end tests for the tag/publish layer, using a fake gleam binary
-//! (TRELLIS_GLEAM_BIN), a mock GitHub API (TRELLIS_GITHUB_API_URL), a mock
-//! Hex API served from a local thread (TRELLIS_HEX_API_URL), and real git
+//! (`TRELLIS_GLEAM_BIN`), a mock GitHub API (`TRELLIS_GITHUB_API_URL`), a mock
+//! Hex API served from a local thread (`TRELLIS_HEX_API_URL`), and real git
 //! repos.
 
 // ponytail: changelog/gleam-log assertions use contains(); convert to insta::assert_snapshot! when next touched

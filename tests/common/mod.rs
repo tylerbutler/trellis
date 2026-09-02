@@ -2,8 +2,8 @@
 //! Shared e2e helpers: fixture/process/git utilities and a mock GitHub API
 //! served from a background thread.
 //!
-//! Point TRELLIS_GITHUB_API_URL at the returned base URL and set
-//! TRELLIS_GITHUB_REPO plus GITHUB_TOKEN; every request the binary makes is
+//! Point `TRELLIS_GITHUB_API_URL` at the returned base URL and set
+//! `TRELLIS_GITHUB_REPO` plus `GITHUB_TOKEN`; every request the binary makes is
 //! appended to `.fake/github-log` as `METHOD path?query`, then the JSON body,
 //! then `---`, so tests assert on the log the way they asserted on the old
 //! fake-gh log. State lives in `.fake/`: a created release becomes a
@@ -24,7 +24,7 @@ pub fn fixture(name: &str) -> PathBuf {
 }
 
 /// A trellis invocation in `dir` with deterministic changelog dates
-/// (SOURCE_DATE_EPOCH = 2026-07-11) and proxy variables stripped, so requests
+/// (`SOURCE_DATE_EPOCH` = 2026-07-11) and proxy variables stripped, so requests
 /// reach the localhost mocks instead of an agent proxy.
 pub fn trellis(dir: &Path) -> Command {
     let mut cmd = Command::cargo_bin("trellis").unwrap();
@@ -195,14 +195,13 @@ fn handle(stream: &mut TcpStream, root: &Path) {
     let mut chunk = [0u8; 4096];
     let header_end = loop {
         match stream.read(&mut chunk) {
-            Ok(0) => return,
+            Ok(0) | Err(_) => return,
             Ok(n) => {
                 buf.extend_from_slice(&chunk[..n]);
                 if let Some(pos) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
                     break pos + 4;
                 }
             }
-            Err(_) => return,
         }
     };
     let headers = String::from_utf8_lossy(&buf[..header_end]).to_string();
@@ -216,9 +215,8 @@ fn handle(stream: &mut TcpStream, root: &Path) {
         .unwrap_or(0);
     while buf.len() < header_end + content_length {
         match stream.read(&mut chunk) {
-            Ok(0) => break,
+            Ok(0) | Err(_) => break,
             Ok(n) => buf.extend_from_slice(&chunk[..n]),
-            Err(_) => break,
         }
     }
     let body = String::from_utf8_lossy(&buf[header_end..]).to_string();

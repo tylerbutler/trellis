@@ -428,8 +428,10 @@ fn preview(
             let version = releases
                 .iter()
                 .find(|release| release.name == status.name)
-                .map(|release| format!("{} → {}", release.current, release.next))
-                .unwrap_or_else(|| "—".to_string());
+                .map_or_else(
+                    || "—".to_string(),
+                    |release| format!("{} → {}", release.current, release.next),
+                );
             out.push_str(&format!("| {} | {cell} | {version} |\n", status.name));
         }
         if !needs_entry.is_empty() {

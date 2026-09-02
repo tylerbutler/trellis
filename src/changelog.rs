@@ -546,7 +546,7 @@ pub fn plan_adoption(
     let dir = versions_dir(workspace, package);
     let already_batched = std::fs::read_dir(&dir).is_ok_and(|entries| {
         entries
-            .filter_map(|entry| entry.ok())
+            .filter_map(Result::ok)
             .any(|entry| entry.path().extension().is_some_and(|ext| ext == "md"))
     });
     if already_batched {
@@ -578,7 +578,7 @@ pub fn plan_adoption(
 /// Everything after a leading `# ` header line and the blank lines under it.
 fn strip_header(text: &str) -> &str {
     let rest = match text.strip_prefix("# ") {
-        Some(after) => after.split_once('\n').map(|(_, rest)| rest).unwrap_or(""),
+        Some(after) => after.split_once('\n').map_or("", |(_, rest)| rest),
         None => text,
     };
     rest.trim()
@@ -598,7 +598,7 @@ pub fn latest_changelog_version(text: &str) -> Option<semver::Version> {
 pub(crate) fn heading_version(heading: &str) -> Option<semver::Version> {
     let token = heading.split_whitespace().next()?;
     let token = token.trim_matches(['[', ']']);
-    let token = token.rsplit_once("-v").map(|(_, v)| v).unwrap_or(token);
+    let token = token.rsplit_once("-v").map_or(token, |(_, v)| v);
     let token = token.strip_prefix('v').unwrap_or(token);
     semver::Version::parse(token).ok()
 }
@@ -618,7 +618,7 @@ pub fn render_merged_changelog(
 
     let mut sections: Vec<(semver::Version, String)> = Vec::new();
     if let Ok(entries) = std::fs::read_dir(&dir) {
-        for entry in entries.filter_map(|e| e.ok()) {
+        for entry in entries.filter_map(Result::ok) {
             let path = entry.path();
             let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
                 continue;

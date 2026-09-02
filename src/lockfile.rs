@@ -141,7 +141,7 @@ mod tests {
     fn versions(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
         pairs
             .iter()
-            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .map(|&(k, v)| (k.to_string(), v.to_string()))
             .collect()
     }
 

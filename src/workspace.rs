@@ -534,14 +534,14 @@ impl Workspace {
     }
 
     pub fn transitive_deps(&self, idx: usize) -> HashSet<usize> {
-        self.closure(idx, &self.deps)
+        Self::closure(idx, &self.deps)
     }
 
     pub fn transitive_dependents(&self, idx: usize) -> HashSet<usize> {
-        self.closure(idx, &self.dependents)
+        Self::closure(idx, &self.dependents)
     }
 
-    fn closure(&self, start: usize, adjacency: &[Vec<usize>]) -> HashSet<usize> {
+    fn closure(start: usize, adjacency: &[Vec<usize>]) -> HashSet<usize> {
         let mut seen = HashSet::new();
         let mut stack = adjacency[start].clone();
         while let Some(next) = stack.pop() {
@@ -1068,7 +1068,7 @@ mod tests {
     }
 
     fn globs(patterns: &[&str]) -> globset::GlobSet {
-        let patterns: Vec<String> = patterns.iter().map(|s| s.to_string()).collect();
+        let patterns: Vec<String> = patterns.iter().map(|&s| s.to_string()).collect();
         build_globset(&patterns).unwrap()
     }
 

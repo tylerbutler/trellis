@@ -550,7 +550,7 @@ fn local_tag_oid(root: &Path, tag: &str) -> Result<Option<String>> {
     match output.status.code() {
         Some(0) => output
             .stdout
-            .split(|byte| byte.is_ascii_whitespace())
+            .split(u8::is_ascii_whitespace)
             .find(|part| !part.is_empty())
             .map(|oid| String::from_utf8_lossy(oid).into_owned())
             .map(Some)
