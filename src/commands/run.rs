@@ -63,40 +63,19 @@ pub fn run(workspace: &Workspace, options: &TaskOptions) -> Result<bool> {
         });
     }
 
-    let results = runner::run_jobs(
-        workspace,
-        jobs,
-        &RunOptions {
-            parallelism: effective_jobs(options),
-            keep_going: options.keep_going,
-            json: options.json,
-        },
-    )?;
-    let ok = runner::all_succeeded(&results);
-    if options.json {
-        let document = crate::json::RunDocument {
+    let run_options = RunOptions {
+        parallelism: RunOptions::parallelism(options.serial, options.jobs),
+        keep_going: options.keep_going,
+        json: options.json,
+    };
+    runner::run_and_report(workspace, &jobs, &run_options, |ok, results| {
+        serde_json::to_string_pretty(&crate::json::RunDocument {
             schema: crate::json::RunDocument::SCHEMA,
             ok,
             task: &options.task,
             target: options.target.map(Target::as_str),
-            results: results
-                .iter()
-                .map(|result| crate::json::TaskResult::new(workspace, result))
-                .collect(),
-        };
-        println!("{}", serde_json::to_string_pretty(&document)?);
-    }
-    Ok(ok)
-}
-
-fn effective_jobs(options: &TaskOptions) -> usize {
-    if options.serial {
-        return 1;
-    }
-    options.jobs.unwrap_or_else(|| {
-        std::thread::available_parallelism()
-            .map(|n| n.get())
-            .unwrap_or(4)
+            results,
+        })
     })
 }
 

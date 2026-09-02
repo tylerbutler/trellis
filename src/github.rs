@@ -43,14 +43,8 @@ impl GitHubClient {
 
     /// The number of the open PR whose head is `branch`, if one exists.
     pub fn find_open_pr(&self, branch: &str) -> Result<Option<u64>> {
-        let url = format!(
-            "{}/repos/{}/{}/pulls?head={}:{branch}&state=open",
-            self.base, self.owner, self.repo, self.owner
-        );
-        let (status, body) = self.get(&url)?;
-        if status != 200 {
-            bail!("GitHub API GET {url} failed: {}", api_error(status, &body));
-        }
+        let url = self.url(&format!("/pulls?head={}:{branch}&state=open", self.owner));
+        let body = expect_status("GET", &url, 200, self.get(&url)?)?;
         Ok(body
             .as_array()
             .and_then(|prs| prs.first())
@@ -59,20 +53,14 @@ impl GitHubClient {
 
     /// Open a PR and return its URL.
     pub fn create_pr(&self, base: &str, head: &str, title: &str, body: &str) -> Result<String> {
-        let url = format!("{}/repos/{}/{}/pulls", self.base, self.owner, self.repo);
+        let url = self.url("/pulls");
         let payload = serde_json::json!({
             "base": base,
             "head": head,
             "title": title,
             "body": body,
         });
-        let (status, response) = self.send("POST", &url, &payload)?;
-        if status != 201 {
-            bail!(
-                "GitHub API POST {url} failed: {}",
-                api_error(status, &response)
-            );
-        }
+        let response = expect_status("POST", &url, 201, self.send(Write::Post, &url, &payload)?)?;
         response["html_url"]
             .as_str()
             .map(str::to_string)
@@ -81,27 +69,15 @@ impl GitHubClient {
 
     /// Retitle and re-body an existing PR.
     pub fn update_pr(&self, number: u64, title: &str, body: &str) -> Result<()> {
-        let url = format!(
-            "{}/repos/{}/{}/pulls/{number}",
-            self.base, self.owner, self.repo
-        );
+        let url = self.url(&format!("/pulls/{number}"));
         let payload = serde_json::json!({ "title": title, "body": body });
-        let (status, response) = self.send("PATCH", &url, &payload)?;
-        if status != 200 {
-            bail!(
-                "GitHub API PATCH {url} failed: {}",
-                api_error(status, &response)
-            );
-        }
+        expect_status("PATCH", &url, 200, self.send(Write::Patch, &url, &payload)?)?;
         Ok(())
     }
 
     /// Whether a GitHub Release exists for `tag`.
     pub fn release_exists(&self, tag: &str) -> Result<bool> {
-        let url = format!(
-            "{}/repos/{}/{}/releases/tags/{tag}",
-            self.base, self.owner, self.repo
-        );
+        let url = self.url(&format!("/releases/tags/{tag}"));
         let (status, body) = self.get(&url)?;
         match status {
             200 => Ok(true),
@@ -112,20 +88,19 @@ impl GitHubClient {
 
     /// Create a GitHub Release on `tag`.
     pub fn create_release(&self, tag: &str, title: &str, notes: &str) -> Result<()> {
-        let url = format!("{}/repos/{}/{}/releases", self.base, self.owner, self.repo);
+        let url = self.url("/releases");
         let payload = serde_json::json!({
             "tag_name": tag,
             "name": title,
             "body": notes,
         });
-        let (status, response) = self.send("POST", &url, &payload)?;
-        if status != 201 {
-            bail!(
-                "GitHub API POST {url} failed: {}",
-                api_error(status, &response)
-            );
-        }
+        expect_status("POST", &url, 201, self.send(Write::Post, &url, &payload)?)?;
         Ok(())
+    }
+
+    /// `tail` appended to this repository's API root.
+    fn url(&self, tail: &str) -> String {
+        format!("{}/repos/{}/{}{tail}", self.base, self.owner, self.repo)
     }
 
     fn get(&self, url: &str) -> Result<(u16, serde_json::Value)> {
@@ -134,26 +109,26 @@ impl GitHubClient {
             .headers(self.agent.get(url))
             .call()
             .with_context(|| format!("GitHub API request failed: GET {url}"))?;
-        read_response(response)
+        Ok(read_response(response))
     }
 
     fn send(
         &self,
-        method: &str,
+        method: Write,
         url: &str,
         payload: &serde_json::Value,
     ) -> Result<(u16, serde_json::Value)> {
-        crate::term::trace_http(method, url);
+        let name = method.name();
+        crate::term::trace_http(name, url);
         let request = match method {
-            "POST" => self.agent.post(url),
-            "PATCH" => self.agent.patch(url),
-            other => bail!("unsupported HTTP method {other}"),
+            Write::Post => self.agent.post(url),
+            Write::Patch => self.agent.patch(url),
         };
         let response = self
             .headers(request)
             .send_json(payload)
-            .with_context(|| format!("GitHub API request failed: {method} {url}"))?;
-        read_response(response)
+            .with_context(|| format!("GitHub API request failed: {name} {url}"))?;
+        Ok(read_response(response))
     }
 
     fn headers<B>(&self, request: ureq::RequestBuilder<B>) -> ureq::RequestBuilder<B> {
@@ -165,9 +140,23 @@ impl GitHubClient {
     }
 }
 
-fn read_response(
-    mut response: ureq::http::Response<ureq::Body>,
-) -> Result<(u16, serde_json::Value)> {
+/// The two methods trellis writes with.
+#[derive(Clone, Copy)]
+enum Write {
+    Post,
+    Patch,
+}
+
+impl Write {
+    fn name(self) -> &'static str {
+        match self {
+            Write::Post => "POST",
+            Write::Patch => "PATCH",
+        }
+    }
+}
+
+fn read_response(mut response: ureq::http::Response<ureq::Body>) -> (u16, serde_json::Value) {
     let status = response.status().as_u16();
     // Error bodies matter as much as success bodies (they carry the API's
     // "message"), but not every response is JSON — a 502 from a proxy, say.
@@ -175,7 +164,24 @@ fn read_response(
         .body_mut()
         .read_json()
         .unwrap_or(serde_json::Value::Null);
-    Ok((status, body))
+    (status, body)
+}
+
+/// The body of a response with the `expected` status; anything else is an
+/// error naming the call.
+fn expect_status(
+    method: &str,
+    url: &str,
+    expected: u16,
+    (status, body): (u16, serde_json::Value),
+) -> Result<serde_json::Value> {
+    if status != expected {
+        bail!(
+            "GitHub API {method} {url} failed: {}",
+            api_error(status, &body)
+        );
+    }
+    Ok(body)
 }
 
 /// A one-line description of a failed API call: the status plus whatever
@@ -189,13 +195,13 @@ fn api_error(status: u16, body: &serde_json::Value) -> String {
 
 /// The token, from the environment or a logged-in gh CLI.
 fn resolve_token() -> Result<String> {
-    for var in ["GITHUB_TOKEN", "GH_TOKEN"] {
-        if let Ok(token) = std::env::var(var) {
-            let token = token.trim().to_string();
-            if !token.is_empty() {
-                return Ok(token);
-            }
-        }
+    if let Some(token) = ["GITHUB_TOKEN", "GH_TOKEN"]
+        .into_iter()
+        .filter_map(|var| std::env::var(var).ok())
+        .map(|token| token.trim().to_string())
+        .find(|token| !token.is_empty())
+    {
+        return Ok(token);
     }
     let gh = crate::tools::gh_bin();
     if let Ok(output) = Command::new(&gh).args(["auth", "token"]).output()
@@ -254,12 +260,8 @@ pub fn parse_remote_url(url: &str) -> Option<(String, String)> {
 mod tests {
     use super::parse_remote_url;
 
-    fn parsed(url: &str) -> Option<(String, String)> {
-        parse_remote_url(url)
-    }
-
     fn owner_repo(url: &str) -> (String, String) {
-        parsed(url).unwrap()
+        parse_remote_url(url).unwrap()
     }
 
     #[test]
@@ -296,18 +298,18 @@ mod tests {
 
     #[test]
     fn rejects_non_github_urls() {
-        assert_eq!(parsed("git@gitlab.com:owner/repo.git"), None);
-        assert_eq!(parsed("https://gitlab.com/owner/repo"), None);
-        assert_eq!(parsed("/local/bare/repo.git"), None);
+        assert_eq!(parse_remote_url("git@gitlab.com:owner/repo.git"), None);
+        assert_eq!(parse_remote_url("https://gitlab.com/owner/repo"), None);
+        assert_eq!(parse_remote_url("/local/bare/repo.git"), None);
     }
 
     #[test]
     fn rejects_missing_owner_or_repo() {
-        assert_eq!(parsed("git@github.com:/repo"), None);
-        assert_eq!(parsed("git@github.com:owner/"), None);
-        assert_eq!(parsed("git@github.com:owner"), None);
-        assert_eq!(parsed("https://github.com//repo"), None);
-        assert_eq!(parsed("https://github.com/owner/"), None);
+        assert_eq!(parse_remote_url("git@github.com:/repo"), None);
+        assert_eq!(parse_remote_url("git@github.com:owner/"), None);
+        assert_eq!(parse_remote_url("git@github.com:owner"), None);
+        assert_eq!(parse_remote_url("https://github.com//repo"), None);
+        assert_eq!(parse_remote_url("https://github.com/owner/"), None);
     }
 
     #[test]

@@ -14,7 +14,6 @@ use anyhow::{Context, Result};
 use clap::CommandFactory;
 use clap_complete::aot::Shell;
 use std::fs;
-use std::io::Write;
 use std::path::Path;
 
 /// The environment variable the registration scripts set to ask `trellis` for
@@ -58,12 +57,15 @@ pub fn completions(shell: Shell) -> Result<()> {
     let completer = shells
         .completer(&name)
         .with_context(|| format!("no completion support for shell `{name}`"))?;
-    let mut buf = Vec::new();
     completer
-        .write_registration(COMPLETE_VAR, "trellis", "trellis", "trellis", &mut buf)
-        .with_context(|| format!("generating the {name} completion script"))?;
-    std::io::stdout().write_all(&buf)?;
-    Ok(())
+        .write_registration(
+            COMPLETE_VAR,
+            "trellis",
+            "trellis",
+            "trellis",
+            &mut std::io::stdout().lock(),
+        )
+        .with_context(|| format!("generating the {name} completion script"))
 }
 
 /// The preamble `roff::Roff::to_writer` emits on every call, defining the `\*(Aq`

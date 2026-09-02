@@ -45,21 +45,20 @@ pub fn with_retry<T>(
 ) -> Result<T> {
     let attempts = policy.attempts.max(1);
     let mut delay = parse_duration(&policy.initial_delay)?;
-    let mut last_attempt_error = None;
-    for attempt in 1..=attempts {
+    for attempt in 1..attempts {
         match operation() {
             Ok(value) => return Ok(value),
-            Err(err) if attempt < attempts => {
+            Err(err) => {
                 eprintln!(
                     "warning: {what} failed (attempt {attempt}/{attempts}): {err:#}; retrying in {delay:?}"
                 );
                 std::thread::sleep(delay);
                 delay *= policy.multiplier;
             }
-            Err(err) => last_attempt_error = Some(err),
         }
     }
-    Err(last_attempt_error.expect("loop ends with an error"))
+    // The last attempt is not retried, so its error is the caller's.
+    operation()
 }
 
 #[cfg(test)]

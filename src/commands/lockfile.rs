@@ -4,20 +4,15 @@
 //! retry policy.
 
 use crate::tools;
-use crate::workspace::Workspace;
+use crate::workspace::{SelectionFilter, Workspace};
 use anyhow::{Context, Result, bail};
 use std::process::Command;
 
 pub fn refresh(workspace: &Workspace, package: Option<&str>) -> Result<bool> {
-    let targets: Vec<usize> = match package {
-        Some(name) => {
-            let idx = workspace
-                .member_index(name)
-                .with_context(|| format!("unknown package `{name}`"))?;
-            vec![idx]
-        }
-        None => (0..workspace.members.len()).collect(),
-    };
+    let targets = workspace.select(&SelectionFilter {
+        names: package.map(str::to_string).into_iter().collect(),
+        ..SelectionFilter::default()
+    })?;
 
     let retry = &workspace.config.publish.retry;
     for idx in targets {

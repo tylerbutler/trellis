@@ -8,6 +8,7 @@
 
 use crate::workspace::{SelectionFilter, Workspace};
 use anyhow::{Context, Result};
+use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
 use toml_edit::DocumentMut;
@@ -153,10 +154,10 @@ fn apply_changes(
             .and_then(|raw| raw.as_str())
             .unwrap_or_default()
             .to_string();
-        let base = match old_suffix.find(MARKER) {
-            Some(idx) => old_suffix[..idx].trim_end(),
-            None => old_suffix.trim_end(),
-        };
+        let base = old_suffix
+            .find(MARKER)
+            .map_or(old_suffix.as_str(), |idx| &old_suffix[..idx])
+            .trim_end();
         let new_suffix = match &change.comment {
             Some(tracked) => format!("{base} {MARKER}{tracked}"),
             None => base.to_string(),
@@ -176,13 +177,12 @@ fn resolve(
     url: &str,
     refname: &str,
 ) -> Result<Option<String>> {
-    let key = (url.to_string(), refname.to_string());
-    if let Some(sha) = cache.get(&key) {
-        return Ok(sha.clone());
+    match cache.entry((url.to_string(), refname.to_string())) {
+        Entry::Occupied(hit) => Ok(hit.get().clone()),
+        Entry::Vacant(miss) => Ok(miss
+            .insert(crate::git::ls_remote_commit(root, url, refname)?)
+            .clone()),
     }
-    let sha = crate::git::ls_remote_commit(root, url, refname)?;
-    cache.insert(key, sha.clone());
-    Ok(sha)
 }
 
 pub fn run(workspace: &Workspace, options: &PinOptions) -> Result<bool> {
@@ -214,7 +214,9 @@ pub fn run(workspace: &Workspace, options: &PinOptions) -> Result<bool> {
         for dep in
             scan_git_deps(&text).with_context(|| format!("in {}/gleam.toml", member.rel_path))?
         {
-            match options.mode {
+            // Each mode decides the verb, the new `ref`, the tracked ref to
+            // record (`None` strips the pin comment), and the dimmed detail.
+            let (verb, new_ref, comment, detail) = match options.mode {
                 Mode::Pin => {
                     if is_full_sha(&dep.git_ref) {
                         continue; // already pinned, or a hand-written SHA
@@ -223,22 +225,8 @@ pub fn run(workspace: &Workspace, options: &PinOptions) -> Result<bool> {
                         .with_context(|| {
                             format!("ref `{}` not found on {}", dep.git_ref, dep.url)
                         })?;
-                    crate::status!(
-                        "[{}] {} {} {} {}",
-                        crate::term::package(&member.name),
-                        crate::term::ok("pinned"),
-                        dep.name,
-                        short(&sha),
-                        crate::term::dim(&format!("tracking {}", dep.git_ref))
-                    );
-                    commits.insert(dep.name.clone(), sha.clone());
-                    changes.insert(
-                        (dep.section.to_string(), dep.name),
-                        RefChange {
-                            new_ref: sha,
-                            comment: Some(dep.git_ref),
-                        },
-                    );
+                    let detail = format!("tracking {}", dep.git_ref);
+                    ("pinned", sha, Some(dep.git_ref), detail)
                 }
                 Mode::Update => {
                     let Some(tracked) = dep.pinned else {
@@ -251,47 +239,39 @@ pub fn run(workspace: &Workspace, options: &PinOptions) -> Result<bool> {
                     if sha == dep.git_ref {
                         continue;
                     }
-                    crate::status!(
-                        "[{}] {} {} {} {}",
-                        crate::term::package(&member.name),
-                        crate::term::ok("updated"),
-                        dep.name,
-                        short(&sha),
-                        crate::term::dim(&format!(
-                            "was {}, tracking {tracked}",
-                            short(&dep.git_ref)
-                        ))
-                    );
-                    commits.insert(dep.name.clone(), sha.clone());
-                    changes.insert(
-                        (dep.section.to_string(), dep.name),
-                        RefChange {
-                            new_ref: sha,
-                            comment: Some(tracked),
-                        },
-                    );
+                    let detail = format!("was {}, tracking {tracked}", short(&dep.git_ref));
+                    ("updated", sha, Some(tracked), detail)
                 }
                 Mode::Unpin => {
                     let Some(tracked) = dep.pinned else {
                         continue;
                     };
-                    crate::status!(
-                        "[{}] {} {} {}",
-                        crate::term::package(&member.name),
-                        crate::term::ok("unpinned"),
-                        dep.name,
-                        crate::term::dim(&format!("restored {tracked}"))
-                    );
-                    changes.insert(
-                        (dep.section.to_string(), dep.name),
-                        RefChange {
-                            new_ref: tracked,
-                            comment: None,
-                        },
-                    );
+                    let detail = format!("restored {tracked}");
+                    ("unpinned", tracked, None, detail)
                 }
                 Mode::Check => unreachable!("handled above"),
+            };
+            // Pinning and updating name the SHA they landed on; unpinning
+            // has none to show.
+            let sha = if comment.is_some() {
+                format!("{} ", short(&new_ref))
+            } else {
+                String::new()
+            };
+            crate::status!(
+                "[{}] {} {} {sha}{}",
+                crate::term::package(&member.name),
+                crate::term::ok(verb),
+                dep.name,
+                crate::term::dim(&detail)
+            );
+            if comment.is_some() {
+                commits.insert(dep.name.clone(), new_ref.clone());
             }
+            changes.insert(
+                (dep.section.to_string(), dep.name),
+                RefChange { new_ref, comment },
+            );
         }
         if changes.is_empty() {
             continue;

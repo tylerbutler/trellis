@@ -36,9 +36,10 @@ impl CommandSpec {
         if self.program == "sh" && self.args.first().map(String::as_str) == Some("-c") {
             return self.args.get(1).cloned().unwrap_or_default();
         }
-        let mut parts = vec![self.program.clone()];
-        parts.extend(self.args.iter().cloned());
-        parts.join(" ")
+        std::iter::once(self.program.as_str())
+            .chain(self.args.iter().map(String::as_str))
+            .collect::<Vec<_>>()
+            .join(" ")
     }
 }
 
@@ -77,6 +78,20 @@ pub struct RunOptions {
     /// Keep stdout clear for the caller's JSON document: no progress rows, no
     /// summary table, and the package stream on stderr.
     pub json: bool,
+}
+
+impl RunOptions {
+    /// `--serial` wins; then `--jobs N`; then one job per available core.
+    pub fn parallelism(serial: bool, jobs: Option<usize>) -> usize {
+        if serial {
+            return 1;
+        }
+        jobs.unwrap_or_else(|| {
+            std::thread::available_parallelism()
+                .map(|n| n.get())
+                .unwrap_or(4)
+        })
+    }
 }
 
 #[derive(Clone)]
@@ -171,12 +186,16 @@ impl JobDisplay {
         progress.set_style(
             ProgressStyle::with_template("{prefix}  {msg}").expect("progress template is valid"),
         );
-        let status = match status {
-            JobStatus::Success => crate::term::ok("✓ ok"),
-            JobStatus::Failed(_) => crate::term::err("✗ FAILED"),
-            JobStatus::Skipped => crate::term::warn("- skipped"),
+        let text = match status {
+            JobStatus::Success => "✓ ok",
+            JobStatus::Failed(_) => "✗ FAILED",
+            JobStatus::Skipped => "- skipped",
         };
-        progress.finish_with_message(format!("{status}  {:.1}s", duration.as_secs_f64()));
+        progress.finish_with_message(format!(
+            "{}  {:.1}s",
+            paint_status(status, text),
+            duration.as_secs_f64()
+        ));
     }
 }
 
@@ -192,7 +211,7 @@ impl JobDisplay {
 /// sequence.
 pub fn run_jobs(
     workspace: &Workspace,
-    jobs: Vec<Job>,
+    jobs: &[Job],
     options: &RunOptions,
 ) -> Result<Vec<JobResult>> {
     if jobs.is_empty() {
@@ -250,7 +269,8 @@ pub fn run_jobs(
     // Sparse until the run ends: a slot stays `None` if that job never started,
     // which is what distinguishes "skipped" from "ran" in the final pass.
     let mut results: Vec<Option<JobResult>> = (0..jobs.len()).map(|_| None).collect();
-    let (sender, receiver) = mpsc::channel::<JobResult>();
+    // Results arrive in completion order, so each carries its job index.
+    let (sender, receiver) = mpsc::channel::<(usize, JobOutcome)>();
     let mut running = 0usize;
     // Set once a job fails without `--keep-going`. It stops *new* starts only;
     // jobs already in flight are still awaited, never killed.
@@ -281,17 +301,7 @@ pub fn run_jobs(
                 scope.spawn(move || {
                     let outcome = execute_job(job, &name, prefix_width, &output, &display);
                     display.finish(&outcome.status, outcome.duration);
-                    // `member` smuggles the *job* index back over the channel so
-                    // the receiver can tell which job this is — results arrive in
-                    // completion order, not job order. It is overwritten with the
-                    // real member index on receipt.
-                    let _ = sender.send(JobResult {
-                        member: job_idx, // job index in-flight; remapped below
-                        status: outcome.status,
-                        duration: outcome.duration,
-                        exit_code: outcome.exit_code,
-                        failed_command: outcome.failed_command,
-                    });
+                    let _ = sender.send((job_idx, outcome));
                 });
             }
             // Nothing running and nothing startable: either every job finished, or
@@ -303,13 +313,15 @@ pub fn run_jobs(
             }
             // Reap phase. Blocking on one completion is what bounds the pool —
             // control returns to the fill phase with exactly one free slot.
-            let done = receiver.recv().expect("worker threads outlive the loop");
+            let (job_idx, outcome) = receiver.recv().expect("worker threads outlive the loop");
             running -= 1;
-            let job_idx = done.member; // see the send above: job index, not member
-            let failed = matches!(done.status, JobStatus::Failed(_));
+            let failed = matches!(outcome.status, JobStatus::Failed(_));
             results[job_idx] = Some(JobResult {
-                member: jobs[job_idx].member, // now the real member index
-                ..done
+                member: jobs[job_idx].member,
+                status: outcome.status,
+                duration: outcome.duration,
+                exit_code: outcome.exit_code,
+                failed_command: outcome.failed_command,
             });
             if failed && !options.keep_going {
                 halted = true;
@@ -346,8 +358,36 @@ pub fn run_jobs(
         .collect();
 
     output.clear_live();
-    print_summary(workspace, &results, &output);
+    print_summary(workspace, &results, &output, prefix_width);
     Ok(results)
+}
+
+/// [`run_jobs`], then under `--json` print the document `render` builds from
+/// the outcome. Returns whether every job succeeded.
+pub fn run_and_report(
+    workspace: &Workspace,
+    jobs: &[Job],
+    options: &RunOptions,
+    render: impl FnOnce(bool, Vec<crate::json::TaskResult<'_>>) -> serde_json::Result<String>,
+) -> Result<bool> {
+    let results = run_jobs(workspace, jobs, options)?;
+    let ok = all_succeeded(&results);
+    if options.json {
+        let results = results
+            .iter()
+            .map(|result| crate::json::TaskResult::new(workspace, result))
+            .collect();
+        println!("{}", render(ok, results)?);
+    }
+    Ok(ok)
+}
+
+fn paint_status(status: &JobStatus, text: &str) -> String {
+    match status {
+        JobStatus::Success => crate::term::ok(text),
+        JobStatus::Failed(_) => crate::term::err(text),
+        JobStatus::Skipped => crate::term::warn(text),
+    }
 }
 
 /// What one job produced, before it is paired back up with its member index.
@@ -446,17 +486,12 @@ fn run_streaming(
     Ok(child.wait()?)
 }
 
-fn print_summary(workspace: &Workspace, results: &[JobResult], output: &Output) {
+fn print_summary(workspace: &Workspace, results: &[JobResult], output: &Output, name_width: usize) {
     // `-q` drops it; `--json` replaces it with the payload the caller prints.
     if output.quiet || output.to_stderr {
         return;
     }
-    let width = results
-        .iter()
-        .map(|r| workspace.members[r.member].name.len())
-        .max()
-        .unwrap_or(0)
-        .max("package".len());
+    let width = name_width.max("package".len());
     println!();
     println!(
         "{}",
@@ -472,12 +507,7 @@ fn print_summary(workspace: &Workspace, results: &[JobResult], output: &Output) 
             JobStatus::Skipped => ("skipped", String::new()),
         };
         // Padded before painting: ANSI codes inside `{:8}` would defeat it.
-        let status = format!("{status:8}");
-        let status = match &result.status {
-            JobStatus::Success => crate::term::ok(&status),
-            JobStatus::Failed(_) => crate::term::err(&status),
-            JobStatus::Skipped => crate::term::warn(&status),
-        };
+        let status = paint_status(&result.status, &format!("{status:8}"));
         let time = if result.status == JobStatus::Skipped {
             String::new()
         } else {

@@ -27,7 +27,7 @@ pub fn run(workspace: &Workspace, options: &ExecOptions) -> Result<bool> {
         releasable_only: false,
     })?;
 
-    let jobs = selected
+    let jobs: Vec<Job> = selected
         .into_iter()
         .map(|idx| Job {
             member: idx,
@@ -39,36 +39,17 @@ pub fn run(workspace: &Workspace, options: &ExecOptions) -> Result<bool> {
         })
         .collect();
 
-    let parallelism = if options.serial {
-        1
-    } else {
-        options.jobs.unwrap_or_else(|| {
-            std::thread::available_parallelism()
-                .map(|n| n.get())
-                .unwrap_or(4)
-        })
+    let run_options = RunOptions {
+        parallelism: RunOptions::parallelism(options.serial, options.jobs),
+        keep_going: options.keep_going,
+        json: options.json,
     };
-    let results = runner::run_jobs(
-        workspace,
-        jobs,
-        &RunOptions {
-            parallelism,
-            keep_going: options.keep_going,
-            json: options.json,
-        },
-    )?;
-    let ok = runner::all_succeeded(&results);
-    if options.json {
-        let document = crate::json::ExecDocument {
+    runner::run_and_report(workspace, &jobs, &run_options, |ok, results| {
+        serde_json::to_string_pretty(&crate::json::ExecDocument {
             schema: crate::json::ExecDocument::SCHEMA,
             ok,
             command: &options.command,
-            results: results
-                .iter()
-                .map(|result| crate::json::TaskResult::new(workspace, result))
-                .collect(),
-        };
-        println!("{}", serde_json::to_string_pretty(&document)?);
-    }
-    Ok(ok)
+            results,
+        })
+    })
 }

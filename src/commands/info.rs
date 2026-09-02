@@ -41,42 +41,39 @@ pub fn run(workspace: &Workspace, name: &str, json: bool) -> Result<()> {
     for tag in workspace.series_tags_of(idx) {
         crate::status!("{} {tag}", label("series tag:"));
     }
-    let format_names = |indices: &[usize]| -> String {
-        if indices.is_empty() {
-            "(none)".to_string()
-        } else {
-            indices
-                .iter()
-                .map(|&i| workspace.members[i].name.clone())
-                .collect::<Vec<_>>()
-                .join(", ")
-        }
-    };
+    let names =
+        |indices: &[usize]| or_none(indices.iter().map(|&i| workspace.members[i].name.as_str()));
     crate::status!(
         "{}       {}",
         label("workspace deps:"),
-        format_names(workspace.deps_of(idx))
+        names(workspace.deps_of(idx))
     );
     crate::status!(
         "{} {}",
         label("workspace dependents:"),
-        format_names(workspace.dependents_of(idx))
+        names(workspace.dependents_of(idx))
     );
-    let hex_deps: Vec<String> = member
-        .manifest
-        .dependencies
-        .iter()
-        .filter(|dep| matches!(dep.requirement, Requirement::Hex(_)))
-        .map(|dep| dep.name.clone())
-        .collect();
     crate::status!(
         "{}             {}",
         label("hex deps:"),
-        if hex_deps.is_empty() {
-            "(none)".to_string()
-        } else {
-            hex_deps.join(", ")
-        }
+        or_none(
+            member
+                .manifest
+                .dependencies
+                .iter()
+                .filter(|dep| matches!(dep.requirement, Requirement::Hex(_)))
+                .map(|dep| dep.name.as_str())
+        )
     );
     Ok(())
+}
+
+/// Comma-separated, or `(none)` when empty.
+fn or_none<'a>(names: impl Iterator<Item = &'a str>) -> String {
+    let joined = names.collect::<Vec<_>>().join(", ");
+    if joined.is_empty() {
+        "(none)".to_string()
+    } else {
+        joined
+    }
 }
