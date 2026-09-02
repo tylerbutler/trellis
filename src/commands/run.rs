@@ -29,6 +29,8 @@ pub struct TaskOptions {
 
 impl Target {
     /// The flag value as the user gave it, for the JSON payload.
+    // ponytail: mirrors the clap ValueEnum names by hand; deriving Serialize
+    // and typing RunDocument.target as Target would delete it.
     fn as_str(self) -> &'static str {
         match self {
             Target::Erlang => "erlang",

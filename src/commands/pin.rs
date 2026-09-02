@@ -249,6 +249,8 @@ pub fn run(workspace: &Workspace, options: &PinOptions) -> Result<bool> {
                     let detail = format!("restored {tracked}");
                     ("unpinned", tracked, None, detail)
                 }
+                // ponytail: Check is handled before this match; splitting Mode into
+                // Check | Rewrite(..) in main.rs would remove this arm.
                 Mode::Check => unreachable!("handled above"),
             };
             // Pinning and updating name the SHA they landed on; unpinning
