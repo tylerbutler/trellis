@@ -8,9 +8,9 @@ import Callout from "../../../components/Callout.astro";
 import { TRELLIS_VERSION } from "../../../lib/version";
 
 Trellis runs identically locally and in CI, and emits the exact structures
-GitHub Actions consumes — so workspace workflows shrink to thin triggers
-around a few commands. The recipes below are the shapes a Gleam workspace
-actually needs.
+GitHub Actions consumes, so workspace workflows shrink to thin triggers around
+a few commands. The recipes below are the shapes a Gleam workspace actually
+needs.
 
 ## Installing trellis
 
@@ -105,10 +105,7 @@ that changes a package without logging it:
 - run: trellis changelog check --base "origin/${{ github.base_ref }}"
 ```
 
-A workspace with [pinned git dependencies](/docs/pinning/) can add
-`trellis pin --check`, which fails the PR when a pinned SHA is no longer
-reachable from its tracked ref — `doctor` reports the same drift, but only
-as a warning.
+A workspace with [pinned git dependencies](/docs/pinning/) can add `trellis pin --check`, which fails the PR when a pinned SHA is no longer reachable from its tracked ref. `doctor` reports the same drift, but only as a warning.
 
 When the tripwire fires on a mechanical finding, such as a missing
 `CHANGELOG.md` or a stale `manifest.toml` locked version, clear it locally with
@@ -120,8 +117,8 @@ anywhere; keep the bare `trellis doctor` in CI as the gate.
 ### The changelog comment
 
 A failing gate in a log is easy to miss. `changelog check --format github`
-emits `key=value` lines for `$GITHUB_OUTPUT`, so the same run that gates the PR
-also drives a sticky comment — no `jq`, no second tool:
+emits `key=value` lines for `$GITHUB_OUTPUT`, so the same run that gates the
+PR also drives a sticky comment, with no `jq` and no second tool:
 
 ```yaml
 # on: pull_request
@@ -164,17 +161,16 @@ steps:
     run: exit 1
 ```
 
-The comment appears when there is something to say — entries to preview, an
-entry missing, or a fragment that doesn't parse — and is deleted when there
+The comment appears when there is something to say (entries to preview, an
+entry missing, or a fragment that doesn't parse) and is deleted when there
 isn't, so a fixed PR doesn't keep a stale complaint. It shows each changed
 package's fragment count and planned next version, plus a collapsible release
-preview of the changelog sections this PR's own fragments would produce, ripple
-bumps included. Everything it counts is
-[scoped to the branch](/docs/changelog/#scope) — fragments already unreleased on
-the base branch answer for the PRs that added them, not this one. `ok` carries
-the verdict
-`continue-on-error` swallowed, and is empty if trellis could not run at all,
-which fails the job either way.
+preview of the changelog sections this PR's own fragments would produce,
+ripple bumps included. Everything it counts is [scoped to the
+branch](/docs/changelog/#scope): fragments already unreleased on the base
+branch answer for the PRs that added them, not this one. `ok` carries the
+verdict `continue-on-error` swallowed, and is empty if trellis could not run
+at all, which fails the job either way.
 
 `preview` is already the comment body, rendered from the same data as the
 `--format json` field of that name. `needs_entry_packages` and
@@ -191,10 +187,7 @@ A workspace that wants the comment without the gate sets
 
 ### Annotating the diff
 
-A `doctor` failure in a log tells a contributor a file is wrong; an annotation
-puts the message on the file itself in the PR's Files tab. `--format github`
-emits one workflow command per finding and nothing else, so it drops straight
-into the gate:
+A `doctor` failure in a log tells a contributor a file is wrong; an annotation puts the message on the file itself in the PR's Files tab. `--format github` emits one workflow command per finding and nothing else, so it drops straight into the gate:
 
 ```yaml
 # on: pull_request
@@ -202,13 +195,13 @@ into the gate:
 ```
 
 Errors become `::error`, advisory warnings become `::warning`, and the exit
-code is unchanged — the job still fails on any error. A healthy workspace
+code is unchanged, so the job still fails on any error. A healthy workspace
 prints nothing at all.
 
-For anything richer than annotations — grouping findings by package, rendering
-them into a sticky comment, filtering to the ones `--fix` would clear — use
-`--format json` and read `check`, `severity`, `file`, and `fixable` off each
-finding:
+For anything richer than annotations, such as grouping findings by package,
+rendering them into a sticky comment, or filtering to the ones `--fix` would
+clear, use `--format json` and read `check`, `severity`, `file`, and `fixable`
+off each finding:
 
 ```yaml
 - id: doctor
@@ -227,9 +220,7 @@ On every push to `main`, regenerate the release PR from pending fragments:
 - run: trellis release pr
 ```
 
-When the release PR merges, pick one of the
-[two release shapes](/docs/publishing/#two-release-shapes). Tags as trigger —
-a tag-push workflow publishes each package:
+When the release PR merges, pick one of the [two release shapes](/docs/publishing/#two-release-shapes). With tags as trigger, a tag-push workflow publishes each package:
 
 ```yaml title=".github/workflows/publish.yml"
 # on tag push '*-v*': publish the tagged package
@@ -237,14 +228,13 @@ a tag-push workflow publishes each package:
 - run: trellis lockfile refresh --package "$(trellis ci tag-package "$GITHUB_REF_NAME")"
 ```
 
-This shape needs per-version tags. A moving
-[series tag](/docs/configuration/#tags) matches `*-v*` too, but
-names no particular version, so `publish --tag` rejects it by design —
-`ci tag-package` still resolves it, so the workflow can route on it. Packages
-tagged `series`-only belong in the publish-then-tag shape below.
+This shape needs per-version tags. A moving [series
+tag](/docs/configuration/#tags) matches `*-v*` too, but names no particular
+version, so `publish --tag` rejects it by design. `ci tag-package` still
+resolves it, so the workflow can route on it. Packages tagged `series`-only
+belong in the publish-then-tag shape below.
 
-Or publish-then-tag — one idempotent run publishes everything not yet on Hex,
-in topological order, then records what shipped:
+Or publish-then-tag: one idempotent run publishes everything not yet on Hex, in topological order, then records what shipped.
 
 ```yaml
 # on release-PR merge: publish everything, then record tags

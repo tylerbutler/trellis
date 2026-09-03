@@ -7,16 +7,16 @@ import Callout from "../../../components/Callout.astro";
 
 Configuration is optional. With no configuration at all, the git repository
 root is the workspace root and every non-gitignored `gleam.toml` (outside
-`build/`) marks a member — a fresh Gleam monorepo, or a single-package repo,
+`build/`) marks a member. A fresh Gleam monorepo, or a single-package repo,
 works with zero setup.
 
 When you need to configure something, trellis uses a `[tools.trellis]` table
 in a `gleam.toml` to identify the workspace root, so it does not need a
-separate config file. The root manifest may be config-only, or a regular
-Gleam package that also anchors the workspace. Every key is optional,
-including `members` — omit it to keep auto-discovering members from git while
-configuring everything else; trellis derives the rest of its workspace model
-from the member manifests.
+separate config file. The root manifest may be config-only, or a regular Gleam
+package that also anchors the workspace. Every key is optional, including
+`members`: omit it to keep auto-discovering members from git while configuring
+everything else; trellis derives the rest of its workspace model from the
+member manifests.
 
 ```toml title="gleam.toml" wrap
 # gleam.toml at the repo root
@@ -48,9 +48,9 @@ error.
 
 ## Bootstrapping with `trellis init`
 
-`trellis init` writes the table for you, at the repository root — creating a
-config-only `gleam.toml` if the root is not itself a package, and adding to the
-existing manifest if it is.
+`trellis init` writes the table for you, at the repository root, creating a
+config-only `gleam.toml` if the root is not itself a package, and adding to
+the existing manifest if it is.
 
 ```console
 $ trellis init
@@ -71,7 +71,7 @@ finishes by running [`doctor`](#verifying-it).
 
 <Callout>
 
-You do not need `init` to start using trellis — configless mode already works.
+You do not need `init` to start using trellis. Configless mode already works.
 Reach for it when you want to configure something, or to make the workspace
 root explicit rather than inferred.
 
@@ -194,7 +194,7 @@ validates dependency availability across the release lifecycle: see
 
 `exclude.@release` is a single on/off switch: a package either participates in
 the full release pipeline or is invisible to all of it. Real monorepos often
-have packages in between — versioned and tagged in git, but never meant for
+have packages in between: versioned and tagged in git, but never meant for
 Hex, or not ready to release at all yet. `publish.lifecycle` resolves each
 member to one of three states:
 
@@ -213,7 +213,7 @@ packages = { "packages/experimental/**" = "workspace", "packages/providers/**" =
 `default` is the lifecycle for a member matched by no `packages` glob and no
 legacy `exclude.@release` glob. `packages` is a map of member-path glob to
 lifecycle; a member matched by globs resolving to *different* lifecycles is a
-`doctor` error, but matching several globs that agree is fine — that's how a
+`doctor` error, but matching several globs that agree is fine. That's how a
 directory-wide glob and a narrower one inside it can both claim a member.
 
 Resolution order, so a workspace can adopt `publish.lifecycle` incrementally
@@ -239,7 +239,7 @@ publishing something unresolvable.
 **A dependency must be at least as capable as its dependent.** `hex` may
 depend only on `hex`; `git_only` may depend on `git_only` or `hex`; `workspace`
 may depend on anything. `doctor`'s `release_boundary` check enforces this for
-runtime (`[dependencies]`) path deps only — a dev-only path dep never ships in
+runtime (`[dependencies]`) path deps only. A dev-only path dep never ships in
 any distribution, so it is exempt regardless of lifecycle.
 
 </Callout>
@@ -380,10 +380,11 @@ use the repository tag only for git path-dep consumers.
 
 ## Changelog configuration
 
-The changelog engine is native — no second tool to install, no config file to
-keep in sync. Changes live as TOML fragments in `.changes/unreleased/`;
-rendering is controlled by small minijinja templates, each with a context of
-`name`, `version`, `date`, `tag`, `series`, `kind`, and `body` as applicable:
+The changelog engine is native, so there is no second tool to install and no
+config file to keep in sync. Changes live as TOML fragments in
+`.changes/unreleased/`; rendering is controlled by small minijinja templates,
+each with a context drawn from `name`, `version`, `date`, `tag`, `series`,
+`category`, `kind`, and `body`:
 
 ```toml wrap
 [tools.trellis.changelog]
@@ -416,7 +417,7 @@ dependency_body = "Updated {{ dependency }} to {{ dependency_version }}"  # defa
 `dependency_kind` must name one of `kinds`; that kind's bump is what a package
 bumps by when a dependency bump is the only reason it is being released. If
 you replace the default `kinds` list, include a kind for it or point
-`dependency_kind` at one of yours — trellis refuses to load otherwise rather
+`dependency_kind` at one of yours. Trellis refuses to load otherwise rather
 than drop the entries silently.
 
 ### Categories
@@ -491,7 +492,7 @@ a changelog before adopting trellis keeps it — see
 ## Shared dependency agreement
 
 Nothing outside trellis notices when packages drift apart on an external
-dependency they share — `lat_core` requiring `gleam_stdlib >= 0.44.0` while
+dependency they share: `lat_core` requiring `gleam_stdlib >= 0.44.0` while
 `lat_cli` requires `>= 0.60.0`. `doctor` catches it:
 
 ```console
@@ -502,8 +503,8 @@ counts
 ```
 
 Requirements are compared **as written**, never parsed as ranges, so `>= 1.0`
-and `>=1.0` read as divergent. Path dependencies are out of scope — they carry
-no requirement to agree on, and lockfile drift already covers them.
+and `>=1.0` read as divergent. Path dependencies are out of scope, since they
+carry no requirement to agree on, and lockfile drift already covers them.
 
 Divergence is sometimes intended, so this warns rather than failing by
 default:
@@ -513,7 +514,7 @@ default:
 shared_dependencies = "error"   # warn (default), error, or off
 ```
 
-There is no `doctor --fix` for it — which requirement to unify on is a judgment
+There is no `doctor --fix` for it: which requirement to unify on is a judgment
 call.
 
 ## Deprecated and unrecognized keys
@@ -528,7 +529,7 @@ warning: [tools.trellis] key `publish.tag-format` is deprecated; rename it to
 `publish.tag_format` (trellis config keys are snake_case)
 ```
 
-A warning, not an error — the old spelling still configures what it always did.
+A warning, not an error. The old spelling still configures what it always did.
 Plan on the aliases going away at 1.0.
 
 A key that is not recognized in *any* spelling is also a warning, since it may
@@ -550,5 +551,6 @@ Run `trellis doctor` after any config change. It validates that member globs
 resolve, the graph is acyclic, task exclusion globs match members, release
 boundaries are safe, the tag format produces unique tags, locked versions
 match, [pinned git dependencies](/docs/pinning/) have not drifted from their
-tracked refs, packages agree on their shared dependencies, and `[tools.trellis]`
-carries no unrecognized or deprecated keys — exiting non-zero on any error.
+tracked refs, packages agree on their shared dependencies, and
+`[tools.trellis]` carries no unrecognized or deprecated keys, exiting non-zero
+on any error.

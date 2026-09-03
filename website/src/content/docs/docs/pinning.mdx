@@ -5,11 +5,11 @@ description: trellis pin rewrites symbolic git dependency refs to commit SHAs an
 
 import Callout from "../../../components/Callout.astro";
 
-A Gleam git dependency names a ref, and there are two ways to spell it, both
-wrong. A symbolic ref (`ref = "v0.4"`) is readable but not reproducible — the
-tag moves and the next resolve silently follows it. A bare commit SHA is
-reproducible but loses the intent, so nobody knows what to bump it to.
-`trellis pin` keeps both, in the same style
+A Gleam git dependency names a ref, and the two values you can give it are
+wrong in opposite ways. A symbolic ref (`ref = "v0.4"`) is readable but not
+reproducible: the tag moves and the next resolve silently follows it. A bare
+commit SHA is reproducible but loses the intent, so nobody knows what to bump
+it to. `trellis pin` keeps both, in the same style
 [ratchet](https://github.com/sethvargo/ratchet) uses for GitHub Actions: the
 `ref` becomes the SHA, and the ref it tracks moves into a comment on the same
 line.
@@ -29,12 +29,13 @@ It works the same on any moving ref — a branch, or another tool's tags.
 ## Pinning
 
 `pin` scans `[dependencies]` and `[dev-dependencies]` of the selected
-packages — all of them when none are named — for git requirements whose `ref`
-is not already a full commit SHA. Each ref is resolved with
-`git ls-remote <url> <ref>`: no clone, any host, authentication through git's
-own credential machinery. An annotated tag pins the commit it points at, not
-the tag object. Then `ref` is rewritten and the original recorded in a
-`# trellis:pin` comment on the dependency's own line:
+packages, all of them when none are named, for git requirements whose `ref` is
+not already a full commit SHA. Each ref is resolved with
+`git ls-remote <url> <ref>`, so there is no clone, any host works, and
+authentication goes through git's own credential machinery. An annotated tag
+pins the commit it points at, not the tag object. Then `ref` is rewritten and
+the original recorded in a `# trellis:pin` comment on the dependency's own
+line:
 
 ```diff lang="toml" title="packages/lat_cli/gleam.toml" wrap
   [dependencies]
@@ -48,14 +49,14 @@ $ trellis pin
 ```
 
 The rest of the file is preserved byte for byte, and the locked commit in
-`manifest.toml` is patched surgically — no `gleam update`, no Hex traffic. A
-package without a manifest is fine: gleam locks the pinned commit on its next
-download.
+`manifest.toml` is patched surgically, with no `gleam update` and no Hex
+traffic. A package without a manifest is fine: gleam locks the pinned commit
+on its next download.
 
-The comment is the record of intent. It lives on the dependency's own line,
-so it survives copy-paste between manifests, and there is no separate table
-to orphan when a dependency is removed. A dependency whose comment is deleted
-simply stops updating — still pinned, no longer followed. The converse also
+The comment is the record of intent. It lives on the dependency's own line, so
+it survives copy-paste between manifests, and there is no separate table to
+orphan when a dependency is removed. A dependency whose comment is deleted
+stops updating: it is still pinned, but no longer followed. The converse also
 holds: a hand-written SHA with no comment is left alone, because there is no
 recorded ref to follow.
 
@@ -68,7 +69,7 @@ $ trellis pin --update
 [lat_cli] updated vestibule 51cbad6 was 93deb4c, tracking v0.4
 ```
 
-The result is a plain `gleam.toml` diff to review — following a moving tag
+The result is a plain `gleam.toml` diff to review, so following a moving tag
 becomes a deliberate, visible bump instead of a silent re-resolution. A
 dependency already at its ref's tip is untouched.
 
@@ -84,8 +85,8 @@ $ trellis pin --unpin
 
 `--check` verifies that each pinned SHA is an ancestor of (or equal to) the
 commit its tracked ref points at now. A SHA no longer reachable from its ref
-means the tag or branch was force-moved *past* it — the supply-chain signal
-this exists to catch:
+means the tag or branch was force-moved *past* it, which is the supply-chain
+signal this exists to catch:
 
 ```console
 $ trellis pin --check

@@ -18,7 +18,7 @@ trellis exec [pkgs...] [--since <ref>] [--serial] [--keep-going] -- <command...>
 
 ## Built-in tasks
 
-Built-in tasks map 1:1 onto gleam verbs — no declaration needed:
+Built-in tasks map 1:1 onto gleam verbs, and need no declaration:
 
 | Task | Runs |
 | --- | --- |
@@ -79,8 +79,8 @@ failure instead of stopping at the first one.
 ## Selecting packages
 
 Name packages explicitly (`trellis run test lat_core`) or select them from git
-history. `--since <ref>` filters to packages owning changed files — committed,
-uncommitted, and untracked — and `--with-dependents` adds the
+history. `--since <ref>` filters to packages owning changed files (committed,
+uncommitted, and untracked), and `--with-dependents` adds the
 reverse-dependency closure:
 
 ```sh
