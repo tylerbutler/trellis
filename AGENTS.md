@@ -38,6 +38,14 @@ Every user-visible change needs one: a YAML file in `.changes/unreleased/` named
 `<Kind>-<YYYYMMDD>-<slug>.yaml`, with `component`, `kind`, `body`, and `time`. The
 audience is a stranger reading the release notes, not the reviewer of your PR.
 
+**This section is about trellis's own changelog, which changie manages — not
+about the fragments trellis writes.** The two formats are different and easy to
+confuse: changie fragments are YAML keyed on `component`, while trellis's native
+engine reads TOML keyed on `package`, `kind`, an optional `category`, and `body`
+(`src/changelog.rs`). Everything below applies to this repository's
+`.changes/unreleased/`; a Gleam workspace consuming trellis uses the TOML shape,
+documented on the [changelog page](website/src/content/docs/docs/changelog.mdx).
+
 Write the body as a `|-` block scalar with a **bolded lead-in sentence**, then
 paragraphs:
 
@@ -124,3 +132,31 @@ looking is a wire-format break accepted without looking.
 
 `website/src/content/docs/docs/reference.md` and `assets/man/` are generated.
 Edit the clap definitions, then run `just docs`.
+
+## Releasing trellis
+
+Releases are fully automated, fragment-driven, and hands-off after merge —
+the same pipeline as [repoverlay](https://github.com/tylerbutler/repoverlay):
+
+1. Every user-facing change lands with a changie fragment (`changie new`);
+   fragments accumulate in `.changes/unreleased/`.
+2. On each push to `main`, `changie-release.yml` batches the fragments into a
+   release PR that bumps `Cargo.toml`, regenerates `Cargo.lock`, and updates
+   `CHANGELOG.md`.
+3. Merging the release PR triggers `release-plz.yml`, which creates the
+   `v{version}` tag and publishes the crate to crates.io as `trellis-gleam`
+   (the `trellis` name itself is taken by an unrelated project — the `[[bin]]`
+   in `Cargo.toml` keeps the installed binary named `trellis`).
+4. The tag triggers the dist-generated `release.yml`: cargo-dist builds
+   binaries for five targets (Linux gnu, macOS, Windows; x86_64 and aarch64),
+   generates the shell/PowerShell installers and the Homebrew formula,
+   attaches SLSA provenance attestations, and creates the GitHub Release.
+   `publish-homebrew-tap.yml` then pushes the formula to
+   `tylerbutler/homebrew-tap` using a GitHub App token.
+
+The release workflows expect the `RELEASE_APP_ID` / `RELEASE_APP_PRIVATE_KEY`
+secrets (a GitHub App with `contents:write` here and on the tap), plus a
+`CARGO_REGISTRY_TOKEN` secret (a crates.io API token with publish access to
+`trellis-gleam`) for `release-plz.yml` to publish the crate. After changing
+`dist-workspace.toml`, regenerate the release workflow with `dist generate`
+and validate with `dist plan`.

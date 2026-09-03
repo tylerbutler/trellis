@@ -63,9 +63,9 @@ and is a no-op when there are no fragments.
 `tag plan` lists the tags the current versions call for and don't have yet.
 `tag create` reconciles them in topological order; `--push` pushes them, and
 `--github-release` (which implies `--push` and needs the same GitHub token
-as `release pr`) also
-creates a GitHub Release per tag with the matching CHANGELOG section as the
-body.
+as `release pr`) also creates a GitHub Release per *exact* tag, with the
+matching CHANGELOG section as the body. `--dry-run` reports every tag, push,
+and release it would perform without doing any of them.
 
 Each entry in a package's `package_tags` falls into one of two lifecycles:
 
@@ -117,9 +117,8 @@ releases, so neither `publish --tag` nor `ci tag-package` resolves them.
 ## Publishing to Hex
 
 `publish` selects members whose [release lifecycle](/docs/configuration/#release-lifecycle)
-is `hex` — `--package <name>` and `--tag <tag>` refuse a `workspace` or
-`git_only` package by name, and `--all-untagged` only ever considers `hex`
-members. It runs, per package and in dependency order:
+is `hex` — a named package and `--tag <tag>` both refuse a `workspace` or
+`git_only` package, and `--all-untagged` only ever considers `hex` members. It runs, per package and in dependency order:
 
 1. **Idempotency check** — one Hex API query; versions already published are
    skipped.

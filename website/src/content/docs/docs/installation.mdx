@@ -82,8 +82,10 @@ Evaluate the snippet on startup rather than saving it into a completions
 directory: an `eval` always matches the binary you have, while a saved copy
 silently goes stale after an upgrade.
 
-One limitation worth knowing: completing after `-C` uses the directory you're
-standing in, not the one you passed.
+Two limitations worth knowing. Completing after `-C` uses the directory you're
+standing in, not the one you passed. And `--bump` offers the three bare levels
+only — the `<pkg>=<level>` form is not completed, since the completer is handed
+just the partial word.
 
 ## Man pages
 
