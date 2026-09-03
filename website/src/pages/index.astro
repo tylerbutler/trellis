@@ -75,10 +75,10 @@ tag_format = "{name}-v{version}"`;
       <div class="section-head">
         <h2>Opinionated, but modular.</h2>
         <p>
-          Trellis has one way of doing each job — TOML change fragments, a
+          Trellis has one way of doing each job: TOML change fragments, a
           tag per package, bumps derived from fragment kinds. But the jobs
-          are independent: nothing requires the piece above it, so you adopt
-          a layer at a time and keep whatever already works.
+          are independent, and nothing requires the piece above it, so you
+          adopt a layer at a time and keep whatever already works.
         </p>
       </div>
       <ol class="adopt-paths">
@@ -86,8 +86,8 @@ tag_format = "{name}-v{version}"`;
           <h3>Just the task runner</h3>
           <p>
             <code>run</code>, <code>exec</code>, <code>list</code>, and{" "}
-            <code>graph</code> need no configuration at all — members are
-            auto-discovered from git. Your changelog tool and CI stay untouched.
+            <code>graph</code> need no configuration at all, because members
+            are auto-discovered from git. Your changelog tool and CI stay untouched.
           </p>
         </li>
         <li>
@@ -95,7 +95,7 @@ tag_format = "{name}-v{version}"`;
           <p>
             Fragments, <code>version plan</code>, and <code>version apply</code>{" "}
             manage bumps and changelogs without trellis owning your release
-            workflow — or any CI at all.
+            workflow, or any CI at all.
           </p>
         </li>
         <li>
@@ -124,7 +124,7 @@ tag_format = "{name}-v{version}"`;
         <h2>The glue this replaces.</h2>
         <p>
           Without a workspace concept, a multi-package repository builds one by
-          hand — bash loops, YAML blocks, duplicated config. Every row below is
+          hand out of bash loops, YAML blocks, and duplicated config. Every row below is
           something a Gleam repository has to maintain itself, and every row can
           go quietly wrong:
         </p>
@@ -191,21 +191,22 @@ tag_format = "{name}-v{version}"`;
           <h3>From that, trellis computes:</h3>
           <ul>
             <li>
-              <strong>The member set and its topological order</strong> — new
+              <strong>The member set and its topological order.</strong> New
               packages join every command the moment their directory matches a
               glob.
             </li>
             <li>
-              <strong>Change impact</strong> — <code>--since origin/main</code>{" "}
+              <strong>Change impact.</strong> <code>--since origin/main</code>{" "}
               maps a diff to owning packages, plus the reverse-dependency
               closure. Only test what a PR touched.
             </li>
             <li>
-              <strong>Publish order and path-dep rewrites</strong> — dependencies
-              publish first, path references become Hex versions automatically.
+              <strong>Publish order and path-dep rewrites.</strong> Dependencies
+              publish first, and path references become Hex versions
+              automatically.
             </li>
             <li>
-              <strong>A tag per releasable package</strong> — and a{" "}
+              <strong>A tag per releasable package,</strong> plus a{" "}
               <code>doctor</code> that fails loudly when anything drifts.
             </li>
           </ul>
@@ -283,7 +284,7 @@ tag_format = "{name}-v{version}"`;
         <h2>One binary across the lifecycle.</h2>
         <p>
           The same tool runs locally and in CI. Commands work from anywhere in
-          the workspace — the root is found by walking up, like{" "}
+          the workspace, since the root is found by walking up, like{" "}
           <code>git</code> or <code>cargo</code>.
         </p>
       </div>
@@ -293,7 +294,7 @@ tag_format = "{name}-v{version}"`;
           <dl class="cmds">
             <div><dt><code>init</code></dt><dd>Write the workspace table; only needed to configure something</dd></div>
             <div><dt><code>run</code></dt><dd>Run a task across packages, graph-parallel by default</dd></div>
-            <div><dt><code>list</code></dt><dd>Packages in topological order — dependencies first</dd></div>
+            <div><dt><code>list</code></dt><dd>Packages in topological order, dependencies first</dd></div>
             <div><dt><code>graph</code></dt><dd>The dependency graph, as text, DOT, Mermaid, or JSON</dd></div>
             <div><dt><code>exec</code></dt><dd>Any command, in each package directory</dd></div>
             <div><dt><code>doctor</code></dt><dd>Validate workspace invariants; non-zero exit on any error</dd></div>
@@ -302,7 +303,7 @@ tag_format = "{name}-v{version}"`;
         <li class="phase">
           <h3><span class="phase-index" aria-hidden="true">2</span>Cut a release</h3>
           <dl class="cmds">
-            <div><dt><code>changelog</code></dt><dd>Native fragment engine — no second tool to install</dd></div>
+            <div><dt><code>changelog</code></dt><dd>Native fragment engine, with no second tool to install</dd></div>
             <div><dt><code>version</code></dt><dd>Plan and apply bumps from unreleased fragments</dd></div>
             <div><dt><code>tag</code></dt><dd>Compare versions against git tags; create what's missing</dd></div>
             <div><dt><code>publish</code></dt><dd>To Hex, in dependency order, path deps rewritten</dd></div>
@@ -327,7 +328,7 @@ tag_format = "{name}-v{version}"`;
       <div class="section-head">
         <h2>Checks for drift.</h2>
         <p>
-          Some things can't be derived — locked versions, changelogs, tags,
+          Some things can't be derived: locked versions, changelogs, tags,
           toolchain pins. For those, <code>trellis doctor</code> checks the
           invariants that remain explicit and exits non-zero when one breaks.
         </p>
@@ -402,7 +403,7 @@ tag_format = "{name}-v{version}"`;
       <p class="install-coda">
         Windows installer and pinned-version URLs are on the
         <a href="https://github.com/tylerbutler/trellis/releases">releases page</a>.
-        From there, <code>trellis doctor</code> works immediately — no setup.
+        From there, <code>trellis doctor</code> works immediately, with no setup.
         Run <code>trellis init</code> only when you want to configure something;
         the <a href="/docs/configuration/">configuration guide</a> covers what it
         writes.

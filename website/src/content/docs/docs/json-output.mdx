@@ -25,7 +25,7 @@ its major version:
 }
 ```
 
-An unrecognized `schema` means an unsupported version — assert on it.
+An unrecognized `schema` means an unsupported version, so assert on it.
 
 ## What "stable" permits
 
@@ -33,7 +33,7 @@ An unrecognized `schema` means an unsupported version — assert on it.
 | --- | --- |
 | Adding a field | **Yes**, without a version bump — ignore fields you don't know. |
 | Adding an array element | **Yes**, per the command's documented selection rules. |
-| Renaming, removing, or retyping a field; changing a documented enum's values (`kind`, `action`, `tag_kind`) | **No** — bumps the major (`trellis.list/1` → `/2`). |
+| Renaming, removing, or retyping a field; changing a documented enum's values (`kind`, `action`, `tag_kind`) | **No.** Bumps the major (`trellis.list/1` → `/2`). |
 
 Not guaranteed: **key order** (parse as JSON) or **whitespace** (some
 commands pretty-print, some emit one line for shell-variable capture).
@@ -70,7 +70,7 @@ Notes:
   `current`, `next`, `fragments`, `updated_dependencies[]`).
   `fragments_retained` is true only under
   [`--pre <label>`](/docs/changelog/#prereleases).
-- `run`/`exec` share the `results[]` shape — `package`, `path`, `status`
+- `run`/`exec` share the `results[]` shape: `package`, `path`, `status`
   (`success` | `failed` | `skipped`), `duration_ms`. A failed entry also
   carries `exit_code` and `command`. `duration_ms`'s presence is stable, its
   value isn't.
@@ -112,8 +112,8 @@ summary renders the same data as compact counts:
 ```
 
 `severity` is `error` or `warning` (only `error` fails the run). `file`/
-`package` are absent, not null, when a finding isn't tied to one file. `message`
-is prose, not stable — branch on `check`:
+`package` are absent, not null, when a finding isn't tied to one file.
+`message` is prose, not stable, so branch on `check`:
 
 | `check` | Raised when |
 | --- | --- |
@@ -136,8 +136,7 @@ is prose, not stable — branch on `check`:
 | `toolchain` | the gleam on PATH disagrees with the `.tool-versions` pin |
 | `shared_dependency` | packages require different versions of the same external dependency |
 
-New `check` values may appear without a bump — handle unrecognized ones by
-reporting them, not dropping them.
+New `check` values may appear without a bump, so handle unrecognized ones by reporting them rather than dropping them.
 
 <Callout>
   **`--format github` is not JSON.** It emits workflow commands

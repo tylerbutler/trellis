@@ -4,9 +4,9 @@
 
 A workspace CLI for Gleam monorepos. A trellis is the frame a lattice grows on.
 
-Gleam has no native workspace concept — `gleam build`, `gleam test`, and
-`gleam publish` operate on a single package directory. Multi-package repos end
-up hand-building workspace features out of bash loops, YAML glue, and
+Gleam has no native workspace concept: `gleam build`, `gleam test`, and
+`gleam publish` each operate on a single package directory. Multi-package
+repos end up hand-building workspace features out of bash loops, YAML glue, and
 duplicated config. Trellis replaces that glue with one binary that runs
 identically locally and in CI.
 
@@ -17,12 +17,12 @@ The design principle:
 Everything trellis knows comes from one file format the ecosystem already
 uses: `gleam.toml`. The workspace root's manifest carries a `[tools.trellis]`
 table (member globs and options); each member's manifest supplies its name,
-version, and path dependencies. The dependency graph — topological order,
-publish order, change impact, path-dep rewrite maps — is computed, never
+version, and path dependencies. The dependency graph (topological order,
+publish order, change impact, path-dep rewrite maps) is computed, never
 declared.
 
-Throughout, a **package** is one Gleam package — a directory with its own
-`gleam.toml` — and a **member** is a package belonging to the workspace. The
+Throughout, a **package** is one Gleam package, a directory with its own
+`gleam.toml`, and a **member** is a package belonging to the workspace. The
 second word appears where membership itself is the point, as in the `members`
 key and the `@members` exclusion.
 
@@ -38,9 +38,9 @@ distribution.
 
 ## Installation
 
-Trellis ships as a single prebuilt binary — the same distribution model as
-`just`, `changie`, and `ratchet` — so it installs in CI in about a second
-with zero runtime dependencies. Releases are built and published by
+Trellis ships as a single prebuilt binary, the same distribution model as
+`just`, `changie`, and `ratchet`, so it installs in CI in about a second with
+zero runtime dependencies. Releases are built and published by
 [cargo-dist](https://opensource.axo.dev/cargo-dist/), with SLSA build
 provenance attestations.
 
@@ -71,8 +71,8 @@ other tools:
 mise use "github:tylerbutler/trellis@0.13.0"
 ```
 
-**From source:** the crate is `trellis-gleam` on crates.io — `trellis` was
-taken — but the installed binary is named `trellis` either way:
+**From source:** on crates.io the crate is `trellis-gleam` (`trellis` was
+taken), but the installed binary is named `trellis` either way:
 
 ```sh
 cargo install trellis-gleam
@@ -87,7 +87,7 @@ specific version in CI by replacing `latest/download` with
 
 ### Shell completions
 
-Add one line to your shell's startup file — `bash`, `zsh`, `fish`,
+Add one line to your shell's startup file. `bash`, `zsh`, `fish`,
 `powershell`, and `elvish` are supported:
 
 ```sh
@@ -105,24 +105,24 @@ shells and for man pages, which ship in the release archives under `man/`.
 
 Interactive commands print a one-line notice to stderr when a newer trellis
 has been published to crates.io. Successful checks are cached for a day, and
-the notice appears only after a fresh check. The check is best-effort — capped
-at a short timeout and silent on any error — so it never slows a command or
-changes its exit status. It runs only when stderr is a terminal, so scripts and
-structured output are never touched. It is additionally skipped in CI and when
-`DO_NOT_TRACK` or `TRELLIS_NO_UPDATE_CHECK` is set in the environment, and
-`--no-update-check` suppresses it for a single invocation.
+the notice appears only after a fresh check. The check is best-effort, capped
+at a short timeout and silent on any error, so it never slows a command or
+changes its exit status. It runs only when stderr is a terminal, so scripts
+and structured output are never touched. It is additionally skipped in CI and
+when `DO_NOT_TRACK` or `TRELLIS_NO_UPDATE_CHECK` is set in the environment,
+and `--no-update-check` suppresses it for a single invocation.
 
 ## Configuration
 
 Configuration is optional. With no configuration at all, the git repository
 root is the workspace root and every non-gitignored `gleam.toml` (outside
-`build/`) marks a member — a fresh Gleam monorepo, or a single-package repo,
+`build/`) marks a member. A fresh Gleam monorepo, or a single-package repo,
 works with zero setup.
 
 When you need to configure something, a `[tools.trellis]` table in a
-`gleam.toml` marks the workspace root — no separate config file. The root
-manifest may be config-only, or a regular gleam package that also anchors the
-workspace. Every key is optional, including `members`: omit it to keep
+`gleam.toml` marks the workspace root. There is no separate config file. The
+root manifest may be config-only, or a regular gleam package that also anchors
+the workspace. Every key is optional, including `members`: omit it to keep
 auto-discovering members from git while configuring everything else:
 
 ```toml
@@ -235,7 +235,7 @@ trellis graph [--format text|dot|mermaid|json]
 trellis info <package> [--json]
 ```
 
-`list` prints members in topological order — dependencies first. `--since
+`list` prints members in topological order, dependencies first. `--since
 origin/main` filters to packages owning changed files (committed, uncommitted,
 and untracked); `--with-dependents` adds the reverse-dependency closure. This
 is the primitive behind "only test what a PR touched."
@@ -309,11 +309,11 @@ packages = { "packages/experimental/**" = "workspace", "packages/providers/**" =
 ```
 
 Each member resolves to one of three lifecycles: `workspace` (build and test
-only — no changelog, version, tag, or publish), `git_only` (changelog,
+only, with no changelog, version, tag, or publish), `git_only` (changelog,
 version, and git tags/releases, but never published to Hex), or `hex` (the
 full pipeline, and the default). `default` sets the workspace-wide fallback;
-`packages` overrides it per member, keyed by member-path glob — a member
-matched by globs resolving to different lifecycles is a `doctor` error, but
+`packages` overrides it per member, keyed by member-path glob. A member
+matched by globs that resolve to different lifecycles is a `doctor` error, but
 globs agreeing on the same lifecycle are fine. `exclude.@release` keeps
 resolving matching packages to `workspace`, but an explicit `packages` rule
 for the same member takes precedence, so a package can graduate from
@@ -321,10 +321,10 @@ for the same member takes precedence, so a package can graduate from
 
 `--releasable` (on `list`, `ci matrix`, and elsewhere) still means `git_only`
 **or** `hex`; `publish` narrows further, since only `hex` packages ever reach
-Hex. `doctor` additionally enforces that a runtime path dependency is at
-least as capable as its dependent — `hex` may depend only on `hex`, `git_only`
-may depend on `git_only` or `hex`, and `workspace` may depend on anything —
-exempting dev-only path deps, which never ship in any distribution.
+Hex. `doctor` additionally enforces that a runtime path dependency is at least
+as capable as its dependent: `hex` may depend only on `hex`, `git_only` may
+depend on `git_only` or `hex`, and `workspace` may depend on anything.
+Dev-only path deps are exempt, since they never ship in any distribution.
 
 ### Changelog & versioning
 
@@ -339,29 +339,29 @@ trellis version apply [--bump <level>|<pkg>=<level>] [--set <pkg>=<version>]
                       [--pre <label>|none] [--json]
 ```
 
-The changelog engine is native — no second tool to install, no config file
-to keep in sync. Changes are recorded as TOML fragments in
+The changelog engine is native, so there is no second tool to install and no
+config file to keep in sync. Changes are recorded as TOML fragments in
 `.changes/unreleased/` — `package`, `kind`, `body`, and an optional
 `category`; `changelog new` writes one, non-interactively, which suits CI and
-agents as well as shells.
-`changelog check` maps a `base...head` diff to packages and fails if a
-changed releasable package has no unreleased fragment. How much that costs is
-configurable — `changelog.strictness` is `error` by default, `warn` to report
-without failing, `off` not to check (an *invalid* fragment fails either way).
-`--format json` emits the payload, including a markdown `preview` for a PR
-sticky comment; `--format github` emits the same facts as `key=value` lines for
-`$GITHUB_OUTPUT`, so a workflow can post that comment without a `jq` pipeline.
+agents as well as shells. `changelog check` maps a `base...head` diff to
+packages and fails if a changed releasable package has no unreleased fragment.
+How much that costs is set by `changelog.strictness`: `error` by default,
+`warn` to report without failing, `off` not to check (an *invalid* fragment
+fails either way). `--format json` emits the payload, including a markdown
+`preview` for a PR sticky comment; `--format github` emits the same facts as
+`key=value` lines for `$GITHUB_OUTPUT`, so a workflow can post that comment
+without a `jq` pipeline.
 
 `version plan` computes each pending package's next version from its
 fragments' kinds (the largest bump wins; kinds and their bumps are
-configurable under `[tools.trellis.changelog]`). `version apply` renders each package's
-version section (minijinja templates, see below), stores it under
+configurable under `[tools.trellis.changelog]`). `version apply` renders each
+package's version section (minijinja templates, see below), stores it under
 `.changes/<package>/`, reassembles the package's CHANGELOG.md newest-first,
-bumps `gleam.toml` with a surgical TOML edit — no regex — and finally patches
-each member's `manifest.toml` so locked workspace-internal deps match. Zero
-Hex network calls throughout. Invalid fragments (unknown package or kind,
+bumps `gleam.toml` with a surgical TOML edit rather than a regex, and finally
+patches each member's `manifest.toml` so locked workspace-internal deps match.
+Zero Hex network calls throughout. Invalid fragments (unknown package or kind,
 empty body, unparseable TOML) are hard errors for `plan`/`apply`: silently
-dropping a change is exactly the drift trellis exists to prevent.
+dropping a change is the drift trellis exists to prevent.
 
 A bump ripples to the bumping package's workspace dependents. When `lat_core`
 goes 1.2.0 → 1.3.0, every package that path-depends on it is released too —
@@ -377,7 +377,7 @@ A dependent needs no fragment of its own to ripple, and a package that has one
 keeps its own, larger bump. Ripples follow `[dev-dependencies]` path deps as
 well as `[dependencies]`. Packages excluded by `@release` never bump, and a
 ripple stops at one rather than skipping past it to its dependents. This is a
-correctness requirement, not a convenience —
+correctness requirement rather than a convenience;
 [why](https://trellis.tylerbutler.com/docs/changelog/#dependents-bump-too).
 
 #### Overriding the derived version
@@ -409,7 +409,7 @@ trellis version apply --pre none                      # 1.0.0
 ```
 
 **Fragments survive a prerelease.** The candidate renders its changelog
-section, but the fragments behind it stay in `.changes/unreleased/` — they are
+section, but the fragments behind it stay in `.changes/unreleased/`: they are
 still unreleased as far as `1.0.0` is concerned, and retiring them at `rc.1`
 would leave the final release with nothing to say. `--pre none` promotes the
 candidate to its final version and consumes them. This means an entry appears
@@ -423,7 +423,7 @@ after the RC was cut still bumps normally under `--pre none`, so a late arrival
 never blocks the promotion.
 
 Once a package is at a prerelease, a plain `version apply` is an error rather
-than a silent bump to the next release — resolving the cycle has to be
+than a silent bump to the next release; resolving the cycle has to be
 explicit. A prerelease belongs to no series, so it moves no
 [series tag](#release--publish); exact tags apply as usual, and Hex accepts
 prerelease versions.
@@ -449,7 +449,7 @@ dependency_body = "Updated {{ dependency }} to {{ dependency_version }}"  # defa
 
 `kinds` sets the change kinds and the bump each implies; setting it replaces
 the whole default list rather than adding to it, so copy the list before
-trimming it — a kind you drop turns every fragment naming it invalid. An
+trimming it. A kind you drop turns every fragment naming it invalid. An
 optional `categories` list adds a second grouping axis above the kind
 headings, carrying no bump. Both are on
 [configuration](https://trellis.tylerbutler.com/docs/configuration/#changelog-configuration).
@@ -472,14 +472,14 @@ trellis publish <pkg | --tag <tag> | --all-untagged> [--dry-run]
 trellis lockfile refresh [--package <pkg>]
 ```
 
-`release pr` turns pending changelog fragments into a release pull request:
-it runs `version apply` on a release branch (default `release/pending`),
-commits the bumps, force-pushes (so the branch is regenerated each run), and
-creates — or, when one is already open, updates — the PR through the GitHub
-REST API. The body carries the bump table and each package's new CHANGELOG
-section. Requires a clean working tree and a token from `GITHUB_TOKEN`
-(ambient in GitHub Actions), `GH_TOKEN`, or a logged-in `gh` CLI; a no-op when
-there are no fragments.
+`release pr` turns pending changelog fragments into a release pull request: it
+runs `version apply` on a release branch (default `release/pending`), commits
+the bumps, force-pushes (so the branch is regenerated each run), and creates
+the PR through the GitHub REST API, or updates it when one is already open.
+The body carries the bump table and each package's new CHANGELOG section.
+Requires a clean working tree and a token from `GITHUB_TOKEN` (ambient in
+GitHub Actions), `GH_TOKEN`, or a logged-in `gh` CLI; a no-op when there are
+no fragments.
 
 `tag plan` lists the tags the current versions call for and don't have yet;
 `tag create` reconciles them in topological order, optionally pushing them and
@@ -496,15 +496,15 @@ to two (`{name}-v1.2`). It defaults to `["exact"]`, and
 levels rather than templates so that `ci tag-package` can resolve a pushed tag
 back to its package.
 
-The level also picks the lifecycle. `exact` tags are immutable — created once,
-never rewritten — and substitute into `exact_tag_format`. Series levels move:
-releasing a new version in the series force-moves the tag to the release commit
-and force-pushes it, substituting into `series_tag_format`. A commit that does
-not change the package's version leaves its series tags where they are, so one
-package's release never drags another's forward. Because a moving tag names no
-particular version, it never carries a GitHub Release and `publish --tag`
-refuses it; `ci tag-package` still resolves it, and a workspace with no `exact`
-entry publishes with `--all-untagged`.
+The level also picks the lifecycle. `exact` tags are immutable, created once
+and never rewritten, and substitute into `exact_tag_format`. Series levels
+move: releasing a new version in the series force-moves the tag to the release
+commit and force-pushes it, substituting into `series_tag_format`. A commit
+that does not change the package's version leaves its series tags where they
+are, so one package's release never drags another's forward. Because a moving
+tag names no particular version, it never carries a GitHub Release and
+`publish --tag` refuses it; `ci tag-package` still resolves it, and a
+workspace with no `exact` entry publishes with `--all-untagged`.
 
 An optional repository tag is separate from every package's list.
 `repository_tag_package` is the anchor: trellis creates `repository_tag_format`
@@ -537,10 +537,10 @@ publish if the tag version doesn't match `gleam.toml`; `--all-untagged`
 publishes everything not yet on Hex, enabling a single publish run per release
 instead of one per tag.
 
-`lockfile refresh` scopes `gleam deps download` to one package (with retry),
-encoding the "don't refresh the whole workspace or you'll get rate-limited"
-rule as behavior. `trellis ci tag-package <tag>` resolves `$GITHUB_REF_NAME`
-to a package name for shell substitution.
+`lockfile refresh` scopes `gleam deps download` to one package, with retry.
+Refreshing the whole workspace at once is what gets a runner rate-limited by
+Hex. `trellis ci tag-package <tag>` resolves `$GITHUB_REF_NAME` to a package
+name for shell substitution.
 
 ### Dependency pinning
 
@@ -551,24 +551,25 @@ trellis pin --check [pkgs...]    # fail if a pinned SHA drifted from its tracked
 trellis pin --unpin [pkgs...]    # restore the symbolic refs
 ```
 
-A Gleam git dependency names a ref, and both spellings are wrong: `ref = "v0.4"`
-is readable but re-resolves silently when the tag moves, and a bare SHA is
-reproducible but loses what to bump to. `pin` keeps both — the `ref` becomes
-the commit SHA and the ref it tracks moves into a `# trellis:pin` comment on
-the same line, the style
+A Gleam git dependency names a ref, and the two values you can give it are
+wrong in opposite ways. `ref = "v0.4"` is readable but re-resolves silently
+when the tag moves, and a bare SHA is reproducible but loses what to bump to.
+`pin` keeps both: the `ref` becomes the commit SHA and the ref it tracks moves
+into a `# trellis:pin` comment on the same line, the style
 [ratchet](https://github.com/sethvargo/ratchet) uses for GitHub Actions:
 
 ```toml
 vestibule = { git = "https://github.com/example/monorepo.git", ref = "93deb4c38d4b3f5848681ff7e9d59883db751c67", path = "packages/vestibule" } # trellis:pin v0.4
 ```
 
-Refs resolve through `git ls-remote` — no clone, any host — and `manifest.toml`
-is patched surgically. `--update` re-resolves each recorded ref, so following a
-moving tag becomes a reviewable diff instead of a silent re-resolution.
-`--check` fails when a pinned SHA is no longer reachable from its tracked ref,
-which means the ref was force-moved past it; a pin merely *behind* its ref is
-not drift. `doctor` runs the same check as an advisory warning, since
-re-pinning past a force-move is a supply-chain call `--fix` must not make.
+Refs resolve through `git ls-remote`, so there is no clone and any host works,
+and `manifest.toml` is patched surgically. `--update` re-resolves each
+recorded ref, so following a moving tag becomes a reviewable diff instead of a
+silent re-resolution. `--check` fails when a pinned SHA is no longer reachable
+from its tracked ref, which means the ref was force-moved past it; a pin
+merely *behind* its ref is not drift. `doctor` runs the same check as an
+advisory warning, since re-pinning past a force-move is a supply-chain call
+`--fix` must not make.
 
 ### Validation
 
@@ -587,7 +588,7 @@ Two checks are advisory warnings rather than errors, because both need the
 network or the machine's own toolchain: pinned git dependency SHAs still
 reachable from their tracked refs, and a gleam on PATH matching the
 `.tool-versions` pin (enforcing toolchains stays mise/asdf's job). Non-zero
-exit on any error — run it on every PR.
+exit on any error. Run it on every PR.
 
 Two further checks cover things that must agree because they are duplicated:
 
