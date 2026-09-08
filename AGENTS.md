@@ -3,6 +3,20 @@
 Guidance for agents working in this repository. See [docs/DESIGN.md](docs/DESIGN.md)
 for what trellis is and why.
 
+## Product-name capitalization
+
+Use **trellis** in running text and **Trellis** at the start of a sentence and
+in document titles. Use sentence case for headings: "Installing trellis", not
+"Installing Trellis". This keeps the existing convention without rewriting
+CLI output or generated documentation.
+
+- Keep the visual wordmark lowercase: **trellis**.
+- Preserve literal spelling in commands (`trellis doctor`), binary and crate
+  names, paths, URLs, config keys (`[tools.trellis]`), schema names
+  (`trellis.doctor/1`), and environment variables (`TRELLIS_NO_UPDATE_CHECK`).
+  Do not capitalize a command just because it starts a sentence or heading.
+- Leave published release notes and quoted historical output unchanged.
+
 ## Naming: snake_case for everything we control
 
 **Every identifier trellis defines is snake_case.** That covers:
@@ -34,9 +48,13 @@ new keys never get one.
 
 ## Changelog fragments
 
-Every user-visible change needs one: a YAML file in `.changes/unreleased/` named
-`<Kind>-<YYYYMMDD>-<slug>.yaml`, with `component`, `kind`, `body`, and `time`. The
-audience is a stranger reading the release notes, not the reviewer of your PR.
+**Only user-facing product changes need a changelog fragment.** Documentation,
+tests, CI, infrastructure, and internal maintenance do not need one unless they
+also change user-facing product behavior.
+
+For a product change, add a YAML file in `.changes/unreleased/` named
+`<Kind>-<YYYYMMDD>-<slug>.yaml`, with `component`, `kind`, `body`, and `time`.
+The audience is a stranger reading the release notes, not the reviewer of your PR.
 
 **This section is about trellis's own changelog, which changie manages — not
 about the fragments trellis writes.** The two formats are different and easy to
@@ -138,8 +156,9 @@ Edit the clap definitions, then run `just docs`.
 Releases are fully automated, fragment-driven, and hands-off after merge —
 the same pipeline as [repoverlay](https://github.com/tylerbutler/repoverlay):
 
-1. Every user-facing change lands with a changie fragment (`changie new`);
-   fragments accumulate in `.changes/unreleased/`.
+1. Every user-facing product change lands with a changie fragment (`changie new`);
+   documentation, tests, and infrastructure alone do not need one. Fragments
+   accumulate in `.changes/unreleased/`.
 2. On each push to `main`, `changie-release.yml` batches the fragments into a
    release PR that bumps `Cargo.toml`, regenerates `Cargo.lock`, and updates
    `CHANGELOG.md`.
