@@ -3,6 +3,20 @@
 Guidance for agents working in this repository. See [docs/DESIGN.md](docs/DESIGN.md)
 for what trellis is and why.
 
+## Product-name capitalization
+
+Use **trellis** in running text and **Trellis** at the start of a sentence and
+in document titles. Use sentence case for headings: "Installing trellis", not
+"Installing Trellis". This keeps the existing convention without rewriting
+CLI output or generated documentation.
+
+- Keep the visual wordmark lowercase: **trellis**.
+- Preserve literal spelling in commands (`trellis doctor`), binary and crate
+  names, paths, URLs, config keys (`[tools.trellis]`), schema names
+  (`trellis.doctor/1`), and environment variables (`TRELLIS_NO_UPDATE_CHECK`).
+  Do not capitalize a command just because it starts a sentence or heading.
+- Leave published release notes and quoted historical output unchanged.
+
 ## Naming: snake_case for everything we control
 
 **Every identifier trellis defines is snake_case.** That covers:
