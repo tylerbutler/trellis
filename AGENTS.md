@@ -48,9 +48,13 @@ new keys never get one.
 
 ## Changelog fragments
 
-Every user-visible change needs one: a YAML file in `.changes/unreleased/` named
-`<Kind>-<YYYYMMDD>-<slug>.yaml`, with `component`, `kind`, `body`, and `time`. The
-audience is a stranger reading the release notes, not the reviewer of your PR.
+**Only user-facing product changes need a changelog fragment.** Documentation,
+tests, CI, infrastructure, and internal maintenance do not need one unless they
+also change user-facing product behavior.
+
+For a product change, add a YAML file in `.changes/unreleased/` named
+`<Kind>-<YYYYMMDD>-<slug>.yaml`, with `component`, `kind`, `body`, and `time`.
+The audience is a stranger reading the release notes, not the reviewer of your PR.
 
 **This section is about trellis's own changelog, which changie manages — not
 about the fragments trellis writes.** The two formats are different and easy to
@@ -152,8 +156,9 @@ Edit the clap definitions, then run `just docs`.
 Releases are fully automated, fragment-driven, and hands-off after merge —
 the same pipeline as [repoverlay](https://github.com/tylerbutler/repoverlay):
 
-1. Every user-facing change lands with a changie fragment (`changie new`);
-   fragments accumulate in `.changes/unreleased/`.
+1. Every user-facing product change lands with a changie fragment (`changie new`);
+   documentation, tests, and infrastructure alone do not need one. Fragments
+   accumulate in `.changes/unreleased/`.
 2. On each push to `main`, `changie-release.yml` batches the fragments into a
    release PR that bumps `Cargo.toml`, regenerates `Cargo.lock`, and updates
    `CHANGELOG.md`.

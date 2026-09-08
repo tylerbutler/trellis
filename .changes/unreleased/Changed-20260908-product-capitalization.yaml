@@ -1,5 +1,0 @@
-component: trellis
-kind: Changed
-body: |-
-  **The capitalization guide now documents sentence-case usage for trellis.** The product name stays lowercase in running text and becomes `Trellis` at sentence starts and in document titles. The wordmark, commands, and identifiers keep their existing spelling.
-time: 2026-09-08T14:14:15.264-07:00
