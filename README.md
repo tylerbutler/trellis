@@ -1,4 +1,4 @@
-# Trellis
+# trellis
 
 ![Crates.io Version](https://img.shields.io/crates/v/trellis-gleam) ![GitHub Release Date](https://img.shields.io/github/release-date/tylerbutler/trellis?display_date=published_at)
 
