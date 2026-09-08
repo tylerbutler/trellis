@@ -465,7 +465,7 @@ struct PreparedVersion {
     changelog: String,
     manifest_path: PathBuf,
     manifest: String,
-    /// Pre-trellis changelog history to preserve, on a first release.
+    /// Pre-Trellis changelog history to preserve, on a first release.
     adoption: Option<changelog::Adoption>,
 }
 

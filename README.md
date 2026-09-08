@@ -1,4 +1,4 @@
-# trellis
+# Trellis
 
 ![Crates.io Version](https://img.shields.io/crates/v/trellis-gleam) ![GitHub Release Date](https://img.shields.io/github/release-date/tylerbutler/trellis?display_date=published_at)
 
@@ -14,7 +14,7 @@ The design principle:
 
 > **Configure nothing that can be derived. Verify anything that must be duplicated.**
 
-Everything trellis knows comes from one file format the ecosystem already
+Everything Trellis knows comes from one file format the ecosystem already
 uses: `gleam.toml`. The workspace root's manifest carries a `[tools.trellis]`
 table (member globs and options); each member's manifest supplies its name,
 version, and path dependencies. The dependency graph (topological order,
@@ -64,7 +64,7 @@ brew install tylerbutler/tap/trellis
 
 **mise / asdf** (via the
 [github](https://mise.jdx.dev/dev-tools/backends/github.html) backend), which
-is how a consuming workspace pins trellis in `.tool-versions` alongside its
+is how a consuming workspace pins Trellis in `.tool-versions` alongside its
 other tools:
 
 ```sh
@@ -103,7 +103,7 @@ shells and for man pages, which ship in the release archives under `man/`.
 
 ### Update checks
 
-Interactive commands print a one-line notice to stderr when a newer trellis
+Interactive commands print a one-line notice to stderr when a newer Trellis
 has been published to crates.io. Successful checks are cached for a day, and
 the notice appears only after a fresh check. The check is best-effort, capped
 at a short timeout and silent on any error, so it never slows a command or
@@ -194,7 +194,7 @@ root and members are auto-discovered.
 -C, --directory <DIR>    Run as if started in this directory
     --color <WHEN>       auto (default), always, or never
 -q, --quiet              Drop the per-package stream and the summary table
--v, --verbose            Trace every command trellis shells out to, on stderr
+-v, --verbose            Trace every command Trellis shells out to, on stderr
     --no-update-check    Skip the release check for this invocation
 ```
 
@@ -223,7 +223,7 @@ workspace that has problems from a broken environment.
 | `2` | Usage error | Unknown flag, missing argument, bad subcommand |
 | `3` | Trellis itself could not run | Unparseable config, not a git repository, missing `gleam`, no GitHub token, Hex unreachable after retries |
 
-A failed task exits `1`; trellis does not propagate the child's exit code. See
+A failed task exits `1`; Trellis does not propagate the child's exit code. See
 [Compatibility](https://trellis.tylerbutler.com/docs/compatibility/) for what
 else the version number promises.
 
@@ -298,7 +298,7 @@ version, tag, and publish commands — read as the `workspace` state of the
 finer-grained release lifecycle described next — and `@members` removes
 directories from workspace membership entirely (in both auto-discovered and
 explicit-members modes). Special keys use a `@` prefix so they can never
-collide with a task name — trellis rejects any task named with that prefix.
+collide with a task name — Trellis rejects any task named with that prefix.
 
 ### Release lifecycle
 
@@ -361,7 +361,7 @@ bumps `gleam.toml` with a surgical TOML edit rather than a regex, and finally
 patches each member's `manifest.toml` so locked workspace-internal deps match.
 Zero Hex network calls throughout. Invalid fragments (unknown package or kind,
 empty body, unparseable TOML) are hard errors for `plan`/`apply`: silently
-dropping a change is the drift trellis exists to prevent.
+dropping a change is the drift Trellis exists to prevent.
 
 A bump ripples to the bumping package's workspace dependents. When `lat_core`
 goes 1.2.0 → 1.3.0, every package that path-depends on it is released too —
@@ -457,7 +457,7 @@ headings, carrying no bump. Both are on
 Each package's CHANGELOG.md is a generated file: the source of
 truth is the version sections under `.changes/<package>/`, and `apply`
 reassembles the changelog from them. A package that already had a changelog
-when it adopted trellis keeps it: on its first release, whatever sits below
+when it adopted Trellis keeps it: on its first release, whatever sits below
 the header is captured verbatim as one section under `.changes/<package>/`, so
 regenerating preserves the history rather than replacing it. `doctor` reports
 this before release day, and `doctor --fix` does the capture up front.
@@ -485,7 +485,7 @@ no fragments.
 `tag create` reconciles them in topological order, optionally pushing them and
 creating GitHub Releases — through the same API and token as `release pr` —
 with the matching CHANGELOG section as the body. `release bootstrap` is the
-same reconciliation without a version bump, for adopting trellis on a
+same reconciliation without a version bump, for adopting Trellis on a
 repository that already has the versions it wants but no tags.
 
 `package_tags` lists the tags a release maintains per package, one entry per
@@ -507,7 +507,7 @@ tag names no particular version, it never carries a GitHub Release and
 workspace with no `exact` entry publishes with `--all-untagged`.
 
 An optional repository tag is separate from every package's list.
-`repository_tag_package` is the anchor: trellis creates `repository_tag_format`
+`repository_tag_package` is the anchor: Trellis creates `repository_tag_format`
 for the anchor's stable series and moves it only when the anchor's manifest
 version differs from the version stored at that tag. Its `repository_tags` is
 stated rather than inherited from `package_tags`, and all three keys are
@@ -592,11 +592,11 @@ exit on any error. Run it on every PR.
 
 Two further checks cover things that must agree because they are duplicated:
 
-**Deprecated and unrecognized `[tools.trellis]` keys.** Every trellis config
+**Deprecated and unrecognized `[tools.trellis]` keys.** Every Trellis config
 key is snake_case. Through v0.7.0 they were kebab-case; the old spellings are
 still accepted, and each one is reported so a workspace can migrate at its own
 pace. A key that is not recognized in any spelling is also a warning, since it
-may belong to a newer trellis and erroring would make the workspace unloadable
+may belong to a newer Trellis and erroring would make the workspace unloadable
 under a pinned older one.
 
 **Shared external dependencies.** Members are checked for agreeing on the
@@ -638,7 +638,7 @@ workspace root; members stay auto-discovered, so `members` is derivable and
 therefore not written. What it leaves instead are comments pointing at what can
 be configured — the part a reference page answers badly. `init` reports the
 members it discovered so you can see whether they need narrowing, and refuses
-if the repository is already a trellis workspace.
+if the repository is already a Trellis workspace.
 
 ```console
 $ trellis init
@@ -675,7 +675,7 @@ against the fixture workspace in `tests/fixtures/`. `cargo fmt` and
 from the clap definitions — regenerate both with `just docs` after changing any
 command, flag, or help string. `cargo test` fails if they're stale.
 
-Contributor conventions — naming, changelog fragments, and how trellis itself
+Contributor conventions — naming, changelog fragments, and how Trellis itself
 is released — are in [AGENTS.md](AGENTS.md).
 
 ## License

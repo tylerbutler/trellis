@@ -8,7 +8,7 @@ trellis\-release\-bootstrap \- Reconcile tags against current manifest versions 
 .SH DESCRIPTION
 Reconcile tags against current manifest versions — no version bump, no unreleased changelog fragments required
 .PP
-An alias for `tag create`, for adopting trellis on a repository that already has the package versions and changelogs it wants, but no tags yet.
+An alias for `tag create`, for adopting Trellis on a repository that already has the package versions and changelogs it wants, but no tags yet.
 .SH OPTIONS
 .TP
 \fB\-C\fR, \fB\-\-directory\fR \fI<DIR>\fR
@@ -42,10 +42,10 @@ Report every tag/push/release action without doing anything (a conflicting tag s
 Suppress normal\-path output; JSON/report payloads and errors still print
 .TP
 \fB\-v\fR, \fB\-\-verbose\fR
-Trace every command trellis shells out to, on stderr
+Trace every command Trellis shells out to, on stderr
 .TP
 \fB\-\-no\-update\-check\fR
-Don\*(Aqt check whether a newer trellis release is available
+Don\*(Aqt check whether a newer Trellis release is available
 
 The check is also skipped in CI, when not attached to a terminal, and when `TRELLIS_NO_UPDATE_CHECK` or `DO_NOT_TRACK` is set.
 .TP

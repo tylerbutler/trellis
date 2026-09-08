@@ -1,4 +1,4 @@
-//! Minimal GitHub REST API client — the five calls trellis needs for release
+//! Minimal GitHub REST API client — the five calls Trellis needs for release
 //! PR management and GitHub Releases, previously delegated to the gh CLI.
 //! Speaking to the API directly removes the runtime gh dependency; the CLI
 //! remains only as a last-resort token source (`gh auth token`).

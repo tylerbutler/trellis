@@ -1,6 +1,6 @@
 ---
 title: JSON output
-description: What trellis's --json payloads guarantee — the schema field, what a stable shape permits, and where the guarantee stops.
+description: What Trellis's --json payloads guarantee — the schema field, what a stable shape permits, and where the guarantee stops.
 ---
 
 import Callout from "../../../components/Callout.astro";
@@ -130,7 +130,7 @@ summary renders the same data as compact counts:
 | `changelog_missing` | a releasable package has no `CHANGELOG.md` |
 | `changelog_unreadable` | a `CHANGELOG.md` exists but could not be read |
 | `changelog_behind` | a package's version is behind the newest one in its changelog |
-| `changelog_adoption` | a package has pre-trellis changelog history the next release will adopt |
+| `changelog_adoption` | a package has pre-Trellis changelog history the next release will adopt |
 | `package_version` | a package's version is not valid semver |
 | `changelog_fragment` | an unreleased fragment does not parse, or names an unknown package, kind, or category |
 | `toolchain` | the gleam on PATH disagrees with the `.tool-versions` pin |
@@ -147,7 +147,7 @@ New `check` values may appear without a bump, so handle unrecognized ones by rep
 ## Two exceptions
 
 `ci matrix` and `ci outputs` carry **no `schema`** — their shapes are
-dictated by GitHub Actions, not trellis.
+dictated by GitHub Actions, not Trellis.
 
 `ci matrix` emits one key, fed straight to `strategy.matrix` via
 `fromJSON()`:
@@ -184,5 +184,5 @@ See [CI recipes](/docs/ci/) for how these are consumed.
 
 ## Enforcement
 
-Every payload is snapshotted in trellis's test suite, so a change to a stable
+Every payload is snapshotted in Trellis's test suite, so a change to a stable
 shape fails CI before it can ship.

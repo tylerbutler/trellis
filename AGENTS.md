@@ -1,11 +1,19 @@
 # AGENTS.md
 
 Guidance for agents working in this repository. See [docs/DESIGN.md](docs/DESIGN.md)
-for what trellis is and why.
+for what Trellis is and why.
+
+## Product name
+
+Use **Trellis** for the product name in prose, headings, page titles, help text,
+and diagnostics. Keep the visual wordmark lowercase. Preserve literal spelling
+in commands (`trellis doctor`), paths, URLs, and identifiers (`[tools.trellis]`,
+`trellis.doctor/1`, `TRELLIS_NO_UPDATE_CHECK`). The ordinary noun in "a trellis is
+the frame a lattice grows on" stays lowercase.
 
 ## Naming: snake_case for everything we control
 
-**Every identifier trellis defines is snake_case.** That covers:
+**Every identifier Trellis defines is snake_case.** That covers:
 
 - `[tools.trellis]` config keys — `tag_format`, `needs_deps`, `series_tag_format`
 - `--json` object keys — `exit_code`, `duration_ms`, `auto_members`
@@ -17,7 +25,7 @@ The config table lives inside `gleam.toml`, which spells its own settings
 `internal_modules`, and snake_case is the Gleam convention generally. One rule
 for everything we emit means nobody has to remember which surface uses which.
 
-Two exclusions, both formats trellis does not own:
+Two exclusions, both formats Trellis does not own:
 
 - **Gleam manifest keys.** `dev-dependencies` stays as Gleam spells it — see
   `src/gleam.rs`, `src/rewrite.rs`, `src/commands/new.rs`.
@@ -38,12 +46,12 @@ Every user-visible change needs one: a YAML file in `.changes/unreleased/` named
 `<Kind>-<YYYYMMDD>-<slug>.yaml`, with `component`, `kind`, `body`, and `time`. The
 audience is a stranger reading the release notes, not the reviewer of your PR.
 
-**This section is about trellis's own changelog, which changie manages — not
-about the fragments trellis writes.** The two formats are different and easy to
-confuse: changie fragments are YAML keyed on `component`, while trellis's native
+**This section is about Trellis's own changelog, which changie manages — not
+about the fragments Trellis writes.** The two formats are different and easy to
+confuse: changie fragments are YAML keyed on `component`, while Trellis's native
 engine reads TOML keyed on `package`, `kind`, an optional `category`, and `body`
 (`src/changelog.rs`). Everything below applies to this repository's
-`.changes/unreleased/`; a Gleam workspace consuming trellis uses the TOML shape,
+`.changes/unreleased/`; a Gleam workspace consuming Trellis uses the TOML shape,
 documented on the [changelog page](website/src/content/docs/docs/changelog.mdx).
 
 Write the body as a `|-` block scalar with a **bolded lead-in sentence**, then
@@ -133,7 +141,7 @@ looking is a wire-format break accepted without looking.
 `website/src/content/docs/docs/reference.md` and `assets/man/` are generated.
 Edit the clap definitions, then run `just docs`.
 
-## Releasing trellis
+## Releasing Trellis
 
 Releases are fully automated, fragment-driven, and hands-off after merge —
 the same pipeline as [repoverlay](https://github.com/tylerbutler/repoverlay):

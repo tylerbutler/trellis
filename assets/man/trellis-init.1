@@ -8,7 +8,7 @@ trellis\-init \- Bootstrap a workspace: write a [tools.trellis] table at the rep
 .SH DESCRIPTION
 Bootstrap a workspace: write a [tools.trellis] table at the repo root
 .PP
-Everything trellis can derive it derives, so the table this writes is nearly empty by design — its presence is what marks the workspace root. Members stay auto\-discovered from git; the comments it leaves point at what can be configured. Refuses if the repository is already a trellis workspace, and finishes by running `doctor`.
+Everything Trellis can derive it derives, so the table this writes is nearly empty by design — its presence is what marks the workspace root. Members stay auto\-discovered from git; the comments it leaves point at what can be configured. Refuses if the repository is already a Trellis workspace, and finishes by running `doctor`.
 .SH OPTIONS
 .TP
 \fB\-C\fR, \fB\-\-directory\fR \fI<DIR>\fR
@@ -33,10 +33,10 @@ never
 Suppress normal\-path output; JSON/report payloads and errors still print
 .TP
 \fB\-v\fR, \fB\-\-verbose\fR
-Trace every command trellis shells out to, on stderr
+Trace every command Trellis shells out to, on stderr
 .TP
 \fB\-\-no\-update\-check\fR
-Don\*(Aqt check whether a newer trellis release is available
+Don\*(Aqt check whether a newer Trellis release is available
 
 The check is also skipped in CI, when not attached to a terminal, and when `TRELLIS_NO_UPDATE_CHECK` or `DO_NOT_TRACK` is set.
 .TP

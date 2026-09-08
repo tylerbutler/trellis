@@ -1,6 +1,6 @@
 ---
 title: Compatibility
-description: What trellis's version number promises — the exit-code contract, the surfaces semver covers, and the minimum supported Rust version.
+description: What Trellis's version number promises — the exit-code contract, the surfaces semver covers, and the minimum supported Rust version.
 ---
 
 import Callout from "../../../components/Callout.astro";
@@ -10,7 +10,7 @@ can bind a workflow to, and what may change under you.
 
 ## Exit codes
 
-Every command uses the same four codes. Branch on **1 versus 3** to tell a workspace that has problems from an environment where trellis could not run at all, such as a missing GitHub token, an unparseable config, or Hex being unreachable.
+Every command uses the same four codes. Branch on **1 versus 3** to tell a workspace that has problems from an environment where Trellis could not run at all, such as a missing GitHub token, an unparseable config, or Hex being unreachable.
 
 | Code | Meaning | Examples |
 | --- | --- | --- |
@@ -19,8 +19,8 @@ Every command uses the same four codes. Branch on **1 versus 3** to tell a works
 | `2` | Usage error | Unknown flag, missing argument, bad subcommand |
 | `3` | Trellis itself could not run | Unparseable config, not a git repository, missing `gleam`, no GitHub token, Hex unreachable after retries |
 
-A failed task exits `1`; trellis does not propagate the child's own exit code.
-If `gleam test` exits `3`, trellis still exits `1`.
+A failed task exits `1`; Trellis does not propagate the child's own exit code.
+If `gleam test` exits `3`, Trellis still exits `1`.
 
 ```yaml
 - name: Check the workspace
@@ -29,7 +29,7 @@ If `gleam test` exits `3`, trellis still exits `1`.
     case $? in
       0) echo "clean" ;;
       1) echo "::error::workspace has findings"; exit 1 ;;
-      *) echo "::error::trellis could not run"; exit 1 ;;
+      *) echo "::error::Trellis could not run"; exit 1 ;;
     esac
 ```
 

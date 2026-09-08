@@ -214,7 +214,7 @@ fn doctor_fix_seeds_missing_changelog() {
         ));
 }
 
-/// A CHANGELOG.md that trellis never batched would be regenerated away on the
+/// A CHANGELOG.md that Trellis never batched would be regenerated away on the
 /// next release, so doctor surfaces it and `--fix` captures it up front.
 #[test]
 fn doctor_fix_adopts_unbatched_changelog_history() {
@@ -238,7 +238,7 @@ fn doctor_fix_adopts_unbatched_changelog_history() {
         .assert()
         .success()
         .stdout(predicate::str::contains(
-            "package `a` has changelog history that trellis has not batched yet",
+            "package `a` has changelog history that Trellis has not batched yet",
         ));
 
     trellis(root)
@@ -559,7 +559,7 @@ fn a_pre_0_8_kebab_case_key_still_works_and_says_it_is_deprecated() {
         .success()
         .stdout(predicate::str::contains(
             "key `publish.series-tag-format` is deprecated; rename it to \
-             `publish.series_tag_format`",
+             `publish.series_tag_format` (Trellis config keys are snake_case)",
         ));
 
     // And it is still in effect — the old name is an alias, not a no-op. This
@@ -576,8 +576,8 @@ fn a_pre_0_8_kebab_case_key_still_works_and_says_it_is_deprecated() {
 fn an_unrecognized_config_key_warns_but_still_loads() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
-    // Not a real key in any spelling, so it may belong to a newer trellis.
-    // Erroring would make a workspace unloadable under a pinned older trellis,
+    // Not a real key in any spelling, so it may belong to a newer Trellis.
+    // Erroring would make a workspace unloadable under a pinned older Trellis,
     // which is a bad failure for a tool CI pins.
     workspace_with(root, "future_thing = true\n", "", "");
 
@@ -586,7 +586,8 @@ fn an_unrecognized_config_key_warns_but_still_loads() {
         .assert()
         .success()
         .stdout(predicate::str::contains(
-            "key `future_thing` is not recognized and is being ignored",
+            "key `future_thing` is not recognized and is being ignored; \
+             it may belong to a newer Trellis",
         ));
     trellis(root)
         .arg("list")

@@ -1,7 +1,7 @@
 //! `trellis init` — bootstrap a workspace by writing a `[tools.trellis]`
 //! table at the repo root.
 //!
-//! The output is almost empty: everything trellis can derive, it derives, so
+//! The output is almost empty: everything Trellis can derive, it derives, so
 //! the only thing `init` must write is the table itself — its presence is what
 //! marks the workspace root. The comments it leaves behind point at what
 //! *could* be configured, without declaring any of it.
@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 /// The comment block written above the table. It names the two things a reader
 /// most needs: that membership is derived, and where the rest is documented.
 const PREAMBLE: &str = "\
-# Workspace configuration for trellis. This table's presence is what marks the
+# Workspace configuration for Trellis. This table's presence is what marks the
 # workspace root; every key in it is optional.
 #
 # Members are auto-discovered — every gleam.toml git knows about, outside
@@ -73,14 +73,14 @@ pub fn run(start: &Path) -> Result<bool> {
 }
 
 /// Refuse rather than merge into an existing setup. Two `[tools.trellis]`
-/// tables is not a configuration trellis has semantics for — root discovery
+/// tables is not a configuration Trellis has semantics for — root discovery
 /// stops at the first one it walks up to — so the useful move is to say where
 /// the existing one is.
 fn refuse_if_already_a_workspace(root: &Path) -> Result<()> {
     if let Some(found) = trellis_table_at_or_above(root) {
         bail!(
             "{} already has a [tools.trellis] table; this repository is already a \
-             trellis workspace",
+             Trellis workspace",
             found.display()
         );
     }
@@ -100,7 +100,7 @@ fn refuse_if_already_a_workspace(root: &Path) -> Result<()> {
 
 /// The nearest `gleam.toml` at or above `root` carrying the table. Ancestors
 /// count: initializing inside an existing workspace would nest one workspace in
-/// another, which trellis has no notion of.
+/// another, which Trellis has no notion of.
 fn trellis_table_at_or_above(root: &Path) -> Option<PathBuf> {
     root.ancestors()
         .map(|dir| dir.join(GLEAM_TOML))

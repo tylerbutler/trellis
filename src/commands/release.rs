@@ -4,7 +4,7 @@
 //! open or refresh the PR. The tool already knows exactly what changed; the
 //! API does the PR mechanics.
 //!
-//! `trellis release bootstrap` — `tag create` for adopting trellis on a
+//! `trellis release bootstrap` — `tag create` for adopting Trellis on a
 //! repository that already has the versions and changelogs it wants; see
 //! [`bootstrap`].
 
@@ -61,7 +61,7 @@ pub fn pr(workspace: &Workspace, options: &PrOptions) -> Result<bool> {
 }
 
 /// `trellis release bootstrap` — an alias for `tag create` under the release
-/// umbrella, for the repository *adopting* trellis: versions and changelogs
+/// umbrella, for the repository *adopting* Trellis: versions and changelogs
 /// are already right, only the tags (and GitHub Releases) are missing.
 /// Unlike `release pr`, it never runs `version apply` and requires no
 /// unreleased changelog fragments — `tag::plan_tags` reads versions straight

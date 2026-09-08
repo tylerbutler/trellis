@@ -50,7 +50,7 @@ fn doctor_findings_exit_one() {
 
 #[test]
 fn a_failed_task_exits_one_and_does_not_propagate_the_child_code() {
-    // The child exits 3 — trellis reports its own outcome, not the child's,
+    // The child exits 3 — Trellis reports its own outcome, not the child's,
     // so 3 must not leak out and masquerade as an internal error.
     trellis(&fixture("basic"))
         .args(["exec", "lat_core", "--", "sh", "-c", "exit 3"])
@@ -87,7 +87,7 @@ fn json_together_with_format_exits_two() {
         .code(2);
 }
 
-// ---- 3: trellis itself could not run ---------------------------------
+// ---- 3: Trellis itself could not run ---------------------------------
 
 #[test]
 fn unparseable_root_manifest_exits_three() {

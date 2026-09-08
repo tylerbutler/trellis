@@ -65,7 +65,7 @@ enum Fix {
         path: PathBuf,
         contents: String,
     },
-    /// Capture a package's pre-trellis CHANGELOG.md body as a version section,
+    /// Capture a package's pre-Trellis CHANGELOG.md body as a version section,
     /// so regenerating the changelog preserves it. `version apply` does this on
     /// a first release anyway; doing it here makes it visible beforehand.
     AdoptChangelog {
@@ -421,10 +421,10 @@ fn check_fragments(workspace: &Workspace, report: &mut Report) {
 /// This is the purest instance of the design principle — *verify anything that
 /// must be duplicated*. Nothing else notices that `lat_core` requires
 /// `gleam_stdlib >= 0.44.0` while `lat_cli` requires `>= 0.60.0`; it is what
-/// people install syncpack for in other ecosystems, and trellis already has
+/// people install syncpack for in other ecosystems, and Trellis already has
 /// every input in the workspace model.
 ///
-/// Requirement strings are compared verbatim, never parsed as ranges: trellis
+/// Requirement strings are compared verbatim, never parsed as ranges: Trellis
 /// stores them as written, and a check that must-be-identical strings are
 /// identical is the honest reading of "these are duplicated". `>= 1.0` and
 /// `>=1.0` therefore read as divergent, which the message says out loud.
@@ -474,7 +474,7 @@ fn check_shared_dependencies(workspace: &Workspace, report: &mut Report) {
 
 /// Advisory (design §11 q4): when `.tool-versions` pins gleam, warn if the
 /// gleam on PATH is a different version. Enforcing toolchains is mise/asdf's
-/// job — trellis only surfaces the mismatch, and only as a warning.
+/// job — Trellis only surfaces the mismatch, and only as a warning.
 fn check_tool_versions(workspace: &Workspace, report: &mut Report) {
     let Ok(text) = std::fs::read_to_string(workspace.root.join(TOOL_VERSIONS)) else {
         return;
@@ -947,7 +947,7 @@ fn check_changelogs(workspace: &Workspace, report: &mut Report) {
                     Finding::warning(
                         Check::ChangelogAdoption,
                         format!(
-                            "package `{}` has changelog history that trellis has not batched \
+                            "package `{}` has changelog history that Trellis has not batched \
                              yet; it will be adopted on the next release",
                             member.name
                         ),

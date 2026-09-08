@@ -54,7 +54,7 @@ fn parse_github_output(text: &str) -> std::collections::BTreeMap<String, String>
 // ---- changelog new ---------------------------------------------------------
 
 /// `project` was the pre-1.0 spelling of a fragment's `package` key, inherited
-/// from changie. Fragments written by an older trellis sit in `.changes/` of
+/// from changie. Fragments written by an older Trellis sit in `.changes/` of
 /// real workspaces, so both spellings must parse until 1.0 removes the alias.
 /// (`add_fragment` above still writes `project`, which exercises the alias
 /// across the rest of this suite.)
@@ -68,7 +68,7 @@ fn fragments_parse_under_either_package_spelling() {
     fs::create_dir_all(&dir).unwrap();
     write(
         &dir.join("old-spelling.toml"),
-        "project = \"lat_core\"\nkind = \"Added\"\nbody = \"written by an older trellis\"\n",
+        "project = \"lat_core\"\nkind = \"Added\"\nbody = \"written by an older Trellis\"\n",
     );
     write(
         &dir.join("new-spelling.toml"),

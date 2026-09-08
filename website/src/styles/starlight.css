@@ -1,7 +1,7 @@
 /* ============================================================
    Trellis docs — Starlight themed as "The Calibrated Instrument".
    Maps Starlight's variables onto the Harbor Steel tokens and
-   restyles the chrome so the docs read as trellis, never as a
+   restyles the chrome so the docs read as Trellis, never as a
    default docs theme (PRODUCT.md anti-reference).
    ============================================================ */
 
@@ -124,6 +124,7 @@ starlight-menu-button button {
 }
 
 .site-title {
+  text-transform: lowercase;
   color: var(--ink);
   font-weight: 640;
   font-stretch: 118%;

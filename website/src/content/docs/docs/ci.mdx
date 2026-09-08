@@ -12,7 +12,7 @@ GitHub Actions consumes, so workspace workflows shrink to thin triggers around
 a few commands. The recipes below are the shapes a Gleam workspace actually
 needs.
 
-## Installing trellis
+## Installing Trellis
 
 The shell installer puts a prebuilt binary on the runner in about a second.
 Pin the version so CI doesn't move under you (see
@@ -21,7 +21,7 @@ Pin the version so CI doesn't move under you (see
 
 <Code
   lang="yaml"
-  code={`- name: Install trellis
+  code={`- name: Install Trellis
   run: |
     curl --proto '=https' --tlsv1.2 -LsSf \\
       https://github.com/tylerbutler/trellis/releases/download/v${TRELLIS_VERSION}/trellis-gleam-installer.sh | sh
@@ -89,7 +89,7 @@ each covering only the packages whose
 workspace with no `exact` entry reports an empty `tags`. Repository tags are
 deliberately absent from both outputs because they do not identify packages.
 
-Both `ci matrix` and `ci outputs` are shaped by GitHub rather than by trellis,
+Both `ci matrix` and `ci outputs` are shaped by GitHub rather than by Trellis,
 which is why neither carries the `schema` field every other payload does — see
 [JSON output](/docs/json-output/) for what each one promises.
 
@@ -169,7 +169,7 @@ preview of the changelog sections this PR's own fragments would produce,
 ripple bumps included. Everything it counts is [scoped to the
 branch](/docs/changelog/#scope): fragments already unreleased on the base
 branch answer for the PRs that added them, not this one. `ok` carries the
-verdict `continue-on-error` swallowed, and is empty if trellis could not run
+verdict `continue-on-error` swallowed, and is empty if Trellis could not run
 at all, which fails the job either way.
 
 `preview` is already the comment body, rendered from the same data as the

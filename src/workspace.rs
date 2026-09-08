@@ -104,7 +104,7 @@ impl Workspace {
     /// (gleam.toml without the table) are skipped, so commands work from
     /// inside a package, like `git` or `cargo`.
     ///
-    /// When no manifest anywhere up the tree has the table, trellis runs
+    /// When no manifest anywhere up the tree has the table, Trellis runs
     /// configless: the enclosing git repository root becomes the workspace
     /// root and members are auto-discovered from git. An unparseable ancestor
     /// manifest blocks the fallback — it may be the intended root hiding
@@ -327,7 +327,7 @@ impl Workspace {
                         let message = if configless {
                             format!(
                                 "`{rel_path}/gleam.toml` has a [tools.trellis] table but the \
-                                 workspace root was inferred as `{}`; run trellis from \
+                                 workspace root was inferred as `{}`; run Trellis from \
                                  `{rel_path}`, or move the table to the repository root",
                                 root.display()
                             )
@@ -699,11 +699,11 @@ pub fn toposort(
     }
 }
 
-/// Report keys under `[tools.trellis]` that trellis does not recognize, and
+/// Report keys under `[tools.trellis]` that Trellis does not recognize, and
 /// keys still spelled the pre-0.8 kebab-case way.
 ///
 /// Both are **warnings**. An unrecognized key may simply belong to a newer
-/// trellis, so a workspace using one still loads under a pinned older one; a
+/// Trellis, so a workspace using one still loads under a pinned older one; a
 /// deprecated key still configures what it always did, so failing on it would
 /// break working repositories for a spelling change.
 fn report_unknown_config_keys(config: &ConfigFile, diagnostics: &mut Diagnostics) {
@@ -713,7 +713,7 @@ fn report_unknown_config_keys(config: &ConfigFile, diagnostics: &mut Diagnostics
                 Check::WorkspaceConfig,
                 format!(
                     "[tools.trellis] key `{}` is deprecated; rename it to `{}` \
-                     (trellis config keys are snake_case)",
+                     (Trellis config keys are snake_case)",
                     key.path, key.replacement
                 ),
             )
@@ -726,7 +726,7 @@ fn report_unknown_config_keys(config: &ConfigFile, diagnostics: &mut Diagnostics
                 Check::WorkspaceConfig,
                 format!(
                     "[tools.trellis] key `{path}` is not recognized and is being ignored; \
-                     it may belong to a newer trellis"
+                     it may belong to a newer Trellis"
                 ),
             )
             .at(GLEAM_TOML),

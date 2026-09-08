@@ -160,7 +160,7 @@ A committed steel-cobalt system anchored at hue 230, with one warm brass accent 
 - **Code** (400, 0.875rem, 1.75, Martian Mono): code samples and terminal output; ligatures disabled globally.
 
 ### Named Rules
-**The Proof-in-Mono Rule.** Terminal output shown on the site is real trellis output, set in the mono, unretouched. Never fabricate or prettify command output.
+**The Proof-in-Mono Rule.** Terminal output shown on the site is real Trellis output, set in the mono, unretouched. Never fabricate or prettify command output.
 
 **The Two-Voices Rule.** Archivo carries meaning, Martian Mono carries evidence. Mono never sets prose; Archivo never sets output.
 
@@ -196,6 +196,8 @@ Expressive Code with the `vesper` theme, overridden to the system: Surface backg
 ### Navigation
 Sticky header on a 94% Harbor Steel fill with a hairline bottom border; wordmark is the lattice glyph (brass + cobalt strokes) beside lowercase "trellis" in stretched Archivo. Links are Ink Soft at 520, brass on hover. Docs are Starlight (`@astrojs/starlight`), fully re-themed to this system via `src/styles/starlight.css` (dark-only: ThemeProvider/ThemeSelect overridden): sidebar active item gets Surface-2 fill + brass text; Pagefind search, mono "On this page" rail, heading anchor links, and a themed 404 come from the framework. The landing page keeps its own Base layout; both consume the same `tokens.css`.
 
+Use **Trellis** in prose, headings, and page titles. Only the visual wordmark stays lowercase; commands, paths, URLs, and identifiers keep their literal spelling. See [AGENTS.md](AGENTS.md#product-name).
+
 ### Derived Version Strings
 No page carries a hand-maintained version number. `src/lib/version.ts` derives `TRELLIS_VERSION` from the root `Cargo.toml` at build time (a `?raw` import), and every install command interpolates it — the site obeys the tool's own derive-don't-declare doctrine. Statements about when a feature shipped ("Trellis 0.2.0 added…") are historical facts and stay literal.
 
@@ -203,7 +205,7 @@ No page carries a hand-maintained version number. `src/lib/version.ts` derives `
 
 ### Do:
 - **Do** keep steel cobalt carrying real surface area — bands, panels, terminal figures (The Committed Surface Rule).
-- **Do** use real trellis output for every terminal figure, captured from an actual workspace (The Proof-in-Mono Rule).
+- **Do** use real Trellis output for every terminal figure, captured from an actual workspace (The Proof-in-Mono Rule).
 - **Do** draw all structure with 1px hairlines and tonal steps; state changes recolor, never lift (The Flat Field Rule).
 - **Do** hold WCAG AA everywhere: Chart Ink 16.3:1, Fog Gray 9.1:1, Ink Dark on brass 9.9:1 — verified numerically, re-verify when tokens move.
 - **Do** give docs pages landing-page-level craft; the docs are the pitch.

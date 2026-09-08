@@ -255,13 +255,13 @@ fn parse_bump(level: &str) -> Result<Bump> {
 }
 
 /// Reject a label that would not survive being written into a version. The
-/// numeric counter is appended by trellis, so the label itself carries no dot.
+/// numeric counter is appended by Trellis, so the label itself carries no dot.
 fn validate_label(label: &str) -> Result<()> {
     if label.is_empty() {
         bail!("--pre needs a label, e.g. `--pre rc`");
     }
     if label.contains('.') {
-        bail!("prerelease label `{label}` must not contain a dot; trellis appends the counter");
+        bail!("prerelease label `{label}` must not contain a dot; Trellis appends the counter");
     }
     semver::Prerelease::new(&format!("{label}.1"))
         .map_err(|err| anyhow::anyhow!("`{label}` is not a usable prerelease label: {err}"))?;

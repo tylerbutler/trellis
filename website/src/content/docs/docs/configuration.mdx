@@ -10,12 +10,12 @@ root is the workspace root and every non-gitignored `gleam.toml` (outside
 `build/`) marks a member. A fresh Gleam monorepo, or a single-package repo,
 works with zero setup.
 
-When you need to configure something, trellis uses a `[tools.trellis]` table
+When you need to configure something, Trellis uses a `[tools.trellis]` table
 in a `gleam.toml` to identify the workspace root, so it does not need a
 separate config file. The root manifest may be config-only, or a regular Gleam
 package that also anchors the workspace. Every key is optional, including
 `members`: omit it to keep auto-discovering members from git while configuring
-everything else; trellis derives the rest of its workspace model from the
+everything else; Trellis derives the rest of its workspace model from the
 member manifests.
 
 ```toml title="gleam.toml" wrap
@@ -61,17 +61,17 @@ members are auto-discovered; found 2:
 ```
 
 What it writes is nearly empty. The table's *presence* is what marks the
-workspace root, and everything else trellis derives, so `members` is not
+workspace root, and everything else Trellis derives, so `members` is not
 written — in its place are comments pointing at the keys you might want.
 
 `init` reports the members it discovered so you can see whether they need
-narrowing, refuses to run if the repository is already a trellis workspace (or
+narrowing, refuses to run if the repository is already a Trellis workspace (or
 if a member manifest carries the table, which would hijack root discovery), and
 finishes by running [`doctor`](#verifying-it).
 
 <Callout>
 
-You do not need `init` to start using trellis. Configless mode already works.
+You do not need `init` to start using Trellis. Configless mode already works.
 Reach for it when you want to configure something, or to make the workspace
 root explicit rather than inferred.
 
@@ -312,7 +312,7 @@ it ambiguous.
 
 <Callout>
 
-Series tags are the one ref trellis rewrites — they are force-moved and
+Series tags are the one ref Trellis rewrites — they are force-moved and
 force-pushed on every release. That is also why they never carry a GitHub
 Release: the release would silently retarget on the next move. See
 [Publishing](/docs/publishing/#tags) for how the two lifecycles differ.
@@ -486,12 +486,12 @@ The details worth knowing:
 Each package's `CHANGELOG.md` is a generated file: the source of truth is the
 version sections stored under `.changes/<package>/`, and `version apply`
 reassembles the changelog from them, newest first. A package that already had
-a changelog before adopting trellis keeps it — see
+a changelog before adopting Trellis keeps it — see
 [adopting an existing changelog](/docs/changelog/#adopting-an-existing-changelog).
 
 ## Shared dependency agreement
 
-Nothing outside trellis notices when packages drift apart on an external
+Nothing outside Trellis notices when packages drift apart on an external
 dependency they share: `lat_core` requiring `gleam_stdlib >= 0.44.0` while
 `lat_cli` requires `>= 0.60.0`. `doctor` catches it:
 
@@ -525,20 +525,18 @@ itself. Through v0.7.0 they were kebab-case. The old spellings still work, and
 
 ```console
 $ trellis doctor
-warning: [tools.trellis] key `publish.tag-format` is deprecated; rename it to
-`publish.tag_format` (trellis config keys are snake_case)
+warning: [tools.trellis] key `publish.series-tag-format` is deprecated; rename it to `publish.series_tag_format` (Trellis config keys are snake_case)
 ```
 
 A warning, not an error. The old spelling still configures what it always did.
 Plan on the aliases going away at 1.0.
 
 A key that is not recognized in *any* spelling is also a warning, since it may
-belong to a newer trellis than the one CI has pinned:
+belong to a newer Trellis than the one CI has pinned:
 
 ```console
 $ trellis doctor
-warning: [tools.trellis] key `publish.tag_frmat` is not recognized and is being
-ignored; it may belong to a newer trellis
+warning: [tools.trellis] key `publish.tag_frmat` is not recognized and is being ignored; it may belong to a newer Trellis
 ```
 
 The free-form tables — `exclude`, `tasks`, `publish.package_tags_overrides`,

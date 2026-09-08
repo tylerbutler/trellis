@@ -1,4 +1,4 @@
-# trellis - a workspace CLI for Gleam monorepos
+# Trellis - a workspace CLI for Gleam monorepos
 
 # === ALIASES ===
 alias b := build

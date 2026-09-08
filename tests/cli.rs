@@ -6,6 +6,31 @@ use assert_cmd::Command;
 use common::{fixture, trellis};
 use predicates::prelude::*;
 
+#[test]
+fn help_capitalizes_the_product_but_keeps_commands_lowercase() {
+    let cases: &[(&[&str], &str)] = &[
+        (&["--help"], "Trace every command Trellis shells out to"),
+        (&["init", "--help"], "Everything Trellis can derive"),
+        (
+            &["completions", "--help"],
+            "The snippet asks Trellis for candidates",
+        ),
+        (
+            &["release", "bootstrap", "--help"],
+            "for adopting Trellis on a repository",
+        ),
+    ];
+    for (args, prose) in cases {
+        Command::cargo_bin("trellis")
+            .unwrap()
+            .args(*args)
+            .assert()
+            .success()
+            .stdout(predicate::str::contains(*prose))
+            .stdout(predicate::str::contains("Usage: trellis"));
+    }
+}
+
 // ---- global flags ----------------------------------------------------
 
 #[test]

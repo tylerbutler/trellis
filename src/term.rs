@@ -56,7 +56,7 @@ pub enum Verbosity {
     Quiet,
     #[default]
     Normal,
-    /// `-v`: trace every command trellis shells out to, on stderr.
+    /// `-v`: trace every command Trellis shells out to, on stderr.
     Verbose,
 }
 
@@ -202,7 +202,7 @@ macro_rules! status {
     };
 }
 
-/// Echo a command trellis is about to run, on stderr, when `-v` is set.
+/// Echo a command Trellis is about to run, on stderr, when `-v` is set.
 ///
 /// stderr rather than stdout so the trace never lands in a `--json` payload or
 /// a piped package list. The `+ ` prefix follows `set -x`.
@@ -218,7 +218,7 @@ pub fn trace_command(program: &str, args: &[impl AsRef<str>], cwd: &Path) {
     eprintln!("{}", dim(&format!("+ {line}  ({})", cwd.display())));
 }
 
-/// Echo an HTTP request trellis is about to make, on stderr, when `-v` is
+/// Echo an HTTP request Trellis is about to make, on stderr, when `-v` is
 /// set. The API sibling of [`trace_command`]; bodies are elided.
 pub fn trace_http(method: &str, url: &str) {
     if !verbose() {

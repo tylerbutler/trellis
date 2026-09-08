@@ -8,7 +8,7 @@ use std::fs;
 use std::path::Path;
 
 /// Two packages in a git repo, with no workspace configuration at all — the
-/// state someone adopting trellis actually starts from.
+/// state someone adopting Trellis actually starts from.
 fn repo_with_packages(root: &Path) {
     write(
         &root.join("packages/a/gleam.toml"),
@@ -46,6 +46,10 @@ fn init_writes_a_table_that_declares_nothing_derivable() {
 
     let config = root_config(root);
     assert!(config.contains("[tools.trellis]"), "{config}");
+    assert!(
+        config.contains("Workspace configuration for Trellis."),
+        "{config}"
+    );
     // The point of the command: `members` is derivable, so it is not declared.
     // The comment block mentions it, so this looks for a real key, not the word.
     let declared: Vec<&str> = config
@@ -115,7 +119,7 @@ fn init_refuses_a_repository_that_is_already_a_workspace() {
         .arg("init")
         .assert()
         .failure()
-        .stderr(predicate::str::contains("already a trellis workspace"));
+        .stderr(predicate::str::contains("already a Trellis workspace"));
     // Refusing means refusing: the existing config is untouched.
     assert_eq!(root_config(root), before);
 }

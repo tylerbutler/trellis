@@ -2,7 +2,7 @@
 //! `#[arg(add = ...)]`. These closures run only inside a `COMPLETE=<shell>`
 //! invocation — a normal run never calls them.
 //!
-//! This is the reason trellis uses clap_complete's runtime completion rather
+//! This is the reason Trellis uses clap_complete's runtime completion rather
 //! than pre-generated scripts: a static script can only ever offer flags and
 //! fixed value enums, while these read the workspace in front of you and offer
 //! its actual package and task names.

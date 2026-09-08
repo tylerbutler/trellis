@@ -138,7 +138,7 @@ fn configless_errors_on_a_stray_trellis_table() {
         .assert()
         .failure()
         .stderr(predicate::str::contains("workspace root was inferred as"))
-        .stderr(predicate::str::contains("run trellis from `nested`"));
+        .stderr(predicate::str::contains("run Trellis from `nested`"));
 }
 
 #[test]

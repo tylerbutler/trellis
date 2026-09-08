@@ -11,7 +11,7 @@ expression: "json_output(&fixture(\"basic\"), &[\"doctor\", \"--format\", \"json
       "check": "changelog_adoption",
       "file": "packages/lat_core/CHANGELOG.md",
       "fixable": true,
-      "message": "package `lat_core` has changelog history that trellis has not batched yet; it will be adopted on the next release",
+      "message": "package `lat_core` has changelog history that Trellis has not batched yet; it will be adopted on the next release",
       "package": "lat_core",
       "severity": "warning"
     },
@@ -19,7 +19,7 @@ expression: "json_output(&fixture(\"basic\"), &[\"doctor\", \"--format\", \"json
       "check": "changelog_adoption",
       "file": "packages/lat_mid/CHANGELOG.md",
       "fixable": true,
-      "message": "package `lat_mid` has changelog history that trellis has not batched yet; it will be adopted on the next release",
+      "message": "package `lat_mid` has changelog history that Trellis has not batched yet; it will be adopted on the next release",
       "package": "lat_mid",
       "severity": "warning"
     },
@@ -27,7 +27,7 @@ expression: "json_output(&fixture(\"basic\"), &[\"doctor\", \"--format\", \"json
       "check": "changelog_adoption",
       "file": "packages/lat_cli/CHANGELOG.md",
       "fixable": true,
-      "message": "package `lat_cli` has changelog history that trellis has not batched yet; it will be adopted on the next release",
+      "message": "package `lat_cli` has changelog history that Trellis has not batched yet; it will be adopted on the next release",
       "package": "lat_cli",
       "severity": "warning"
     }

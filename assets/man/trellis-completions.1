@@ -8,7 +8,7 @@ trellis\-completions \- Print the shell snippet that enables tab\-completion
 .SH DESCRIPTION
 Print the shell snippet that enables tab\-completion
 .PP
-The snippet asks trellis for candidates on each tab\-press, so completions offer real package and task names from the surrounding workspace and can never drift from the flags you have. Evaluate it on shell startup rather than saving it to a completions directory — it talks to trellis over an interface that changes between releases, so an `eval` stays in sync where a saved copy goes stale. For zsh, in ~/.zshrc after compinit:
+The snippet asks Trellis for candidates on each tab\-press, so completions offer real package and task names from the surrounding workspace and can never drift from the flags you have. Evaluate it on shell startup rather than saving it to a completions directory — it talks to Trellis over an interface that changes between releases, so an `eval` stays in sync where a saved copy goes stale. For zsh, in ~/.zshrc after compinit:
 .PP
 eval "$(trellis completions zsh)"
 .SH OPTIONS
@@ -35,10 +35,10 @@ never
 Suppress normal\-path output; JSON/report payloads and errors still print
 .TP
 \fB\-v\fR, \fB\-\-verbose\fR
-Trace every command trellis shells out to, on stderr
+Trace every command Trellis shells out to, on stderr
 .TP
 \fB\-\-no\-update\-check\fR
-Don\*(Aqt check whether a newer trellis release is available
+Don\*(Aqt check whether a newer Trellis release is available
 
 The check is also skipped in CI, when not attached to a terminal, and when `TRELLIS_NO_UPDATE_CHECK` or `DO_NOT_TRACK` is set.
 .TP

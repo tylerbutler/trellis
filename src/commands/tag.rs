@@ -160,7 +160,7 @@ pub(crate) fn plan_tags(workspace: &Workspace) -> Result<Vec<PlannedTag>> {
 /// to package series tags.
 ///
 /// A manifest that cannot be read at the tag (a package that has since moved,
-/// or a tag predating it) falls back to moving the tag, which is what trellis
+/// or a tag predating it) falls back to moving the tag, which is what Trellis
 /// did for every series tag before the signal was scoped.
 fn series_tag_is_current(
     workspace: &Workspace,
@@ -334,7 +334,7 @@ pub fn create(workspace: &Workspace, options: &CreateOptions) -> Result<()> {
     };
 
     // An immutable tag whose local and remote objects disagree is the one
-    // conflict trellis refuses to resolve. Check every planned tag before
+    // conflict Trellis refuses to resolve. Check every planned tag before
     // mutating any of them, so one package's conflict fails the whole run
     // rather than leaving an earlier package half-tagged.
     if push {
@@ -418,7 +418,7 @@ fn reconcile_remote_repository_series_tag(workspace: &Workspace) -> Result<()> {
 
 /// An immutable tag: created once, fetched when origin already has it, and
 /// never rewritten. Local and remote disagreeing about what it names is a
-/// history problem trellis refuses to paper over.
+/// history problem Trellis refuses to paper over.
 fn create_exact_tag(
     workspace: &Workspace,
     planned: &PlannedTag,
@@ -485,7 +485,7 @@ fn create_exact_tag(
     Ok(())
 }
 
-/// A series tag is the one ref trellis rewrites: it is force-moved to the
+/// A series tag is the one ref Trellis rewrites: it is force-moved to the
 /// release commit and force-pushed. Local and remote pointing at different
 /// objects is the normal state between releases, not an error, and no GitHub
 /// Release is ever attached — it would silently retarget on the next move.

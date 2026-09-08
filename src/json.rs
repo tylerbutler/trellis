@@ -1,6 +1,6 @@
 //! The `--json` output contract.
 //!
-//! Every payload trellis emits for machine consumption is defined here, once,
+//! Every payload Trellis emits for machine consumption is defined here, once,
 //! as a `Serialize` struct — so the wire format is reviewable in one file
 //! instead of inferred from `json!` literals spread across seven commands.
 //!
@@ -11,7 +11,7 @@
 //! `tests/json_contract.rs` snapshots every shape below so a breaking change
 //! fails here rather than in a consumer's repository.
 //!
-//! Key naming is snake_case — as is every identifier trellis controls, from
+//! Key naming is snake_case — as is every identifier Trellis controls, from
 //! `[tools.trellis]` keys to the enum values below. `#[serde(rename_all =
 //! "snake_case")]` sits on every struct: a no-op for single-word fields, but it
 //! means a later multi-word field cannot silently arrive as kebab-case.
@@ -66,7 +66,7 @@ pub enum Check {
     ChangelogUnreadable,
     /// A package's version is behind the newest one in its changelog.
     ChangelogBehind,
-    /// A package has pre-trellis changelog history not yet batched into
+    /// A package has pre-Trellis changelog history not yet batched into
     /// `.changes/<pkg>/`, which the next release will adopt.
     ChangelogAdoption,
     /// A package's version is not valid semver, or no header could be rendered

@@ -1,0 +1,5 @@
+component: trellis
+kind: Changed
+body: |-
+  **The product name is now capitalized as Trellis in documentation and CLI messages.** Commands, paths, URLs, and identifiers keep their existing spelling, and the visual wordmark stays lowercase.
+time: 2026-09-08T13:49:07-07:00

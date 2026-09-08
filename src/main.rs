@@ -74,11 +74,11 @@ struct Cli {
     #[arg(short, long, global = true, conflicts_with = "verbose")]
     quiet: bool,
 
-    /// Trace every command trellis shells out to, on stderr
+    /// Trace every command Trellis shells out to, on stderr
     #[arg(short, long, global = true)]
     verbose: bool,
 
-    /// Don't check whether a newer trellis release is available
+    /// Don't check whether a newer Trellis release is available
     ///
     /// The check is also skipped in CI, when not attached to a terminal, and
     /// when `TRELLIS_NO_UPDATE_CHECK` or `DO_NOT_TRACK` is set.
@@ -193,10 +193,10 @@ enum Command {
     },
     /// Bootstrap a workspace: write a [tools.trellis] table at the repo root
     ///
-    /// Everything trellis can derive it derives, so the table this writes is
+    /// Everything Trellis can derive it derives, so the table this writes is
     /// nearly empty by design — its presence is what marks the workspace root.
     /// Members stay auto-discovered from git; the comments it leaves point at
-    /// what can be configured. Refuses if the repository is already a trellis
+    /// what can be configured. Refuses if the repository is already a Trellis
     /// workspace, and finishes by running `doctor`.
     Init,
     /// Release orchestration
@@ -274,10 +274,10 @@ enum Command {
     },
     /// Print the shell snippet that enables tab-completion
     ///
-    /// The snippet asks trellis for candidates on each tab-press, so completions
+    /// The snippet asks Trellis for candidates on each tab-press, so completions
     /// offer real package and task names from the surrounding workspace and can
     /// never drift from the flags you have. Evaluate it on shell startup rather
-    /// than saving it to a completions directory — it talks to trellis over an
+    /// than saving it to a completions directory — it talks to Trellis over an
     /// interface that changes between releases, so an `eval` stays in sync where
     /// a saved copy goes stale. For zsh, in ~/.zshrc after compinit:
     ///
@@ -407,7 +407,7 @@ enum ReleaseCommand {
     /// Reconcile tags against current manifest versions — no version bump,
     /// no unreleased changelog fragments required
     ///
-    /// An alias for `tag create`, for adopting trellis on a repository that
+    /// An alias for `tag create`, for adopting Trellis on a repository that
     /// already has the package versions and changelogs it wants, but no tags
     /// yet.
     Bootstrap {
@@ -539,7 +539,7 @@ fn main() -> ExitCode {
         update_check::notify();
     }
     // The exit-code contract: 0 success, 1 the command ran and found problems,
-    // 2 usage (clap's own), 3 trellis could not run. See the Compatibility page
+    // 2 usage (clap's own), 3 Trellis could not run. See the Compatibility page
     // in website/src/content/docs/docs/.
     match result {
         Ok(true) => ExitCode::SUCCESS,

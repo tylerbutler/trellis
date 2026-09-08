@@ -10,18 +10,18 @@ Gleam monorepo maintainers: developers already running (or about to run) multi-p
 
 ## Product Purpose
 
-This surface is the public website for trellis — a landing page that introduces the tool plus reference documentation for its commands and configuration. Trellis itself is a single Rust binary that offers workspace tooling for multi-package Gleam repositories: task fan-out, dependency-graph introspection, versioning, changelogs, and publish orchestration, all derived from `gleam.toml` files that already exist. Success for the site is adoption: a visitor reads enough of the docs to trust the model, then installs trellis and adds it to their workspace.
+This surface is the public website for Trellis — a landing page that introduces the tool plus reference documentation for its commands and configuration. Trellis itself is a single Rust binary that offers workspace tooling for multi-package Gleam repositories: task fan-out, dependency-graph introspection, versioning, changelogs, and publish orchestration, all derived from `gleam.toml` files that already exist. Success for the site is adoption: a visitor reads enough of the docs to trust the model, then installs Trellis and adds it to their workspace.
 
 ## Positioning
 
-Workspace tooling for multi-package Gleam repositories. Present trellis as one practical option, not the canonical way to organize Gleam projects. Describe the scope of Gleam's package commands factually when relevant, without framing the language's design as a failure. Lead with what trellis does and how it derives its workspace model from existing manifests.
+Workspace tooling for multi-package Gleam repositories. Present Trellis as one practical option, not the canonical way to organize Gleam projects. Describe the scope of Gleam's package commands factually when relevant, without framing the language's design as a failure. Lead with what Trellis does and how it derives its workspace model from existing manifests.
 
 ## Conversion & proof
 
 - Primary CTA: read the docs — the conversion path is evaluation-first, so the site's job is to get visitors into the documentation. Secondary CTA: the one-line install command (shell installer, Homebrew, or mise) for visitors ready to try it now.
 - The line a visitor remembers after 10 seconds: "Workspace tooling for multi-package Gleam repositories, derived from gleam.toml."
 - Belief ladder: (1) Coordinating a growing multi-package repository can involve repeated package lists, shell loops, and CI configuration. (2) Trellis can derive much of that information from the `gleam.toml` files already present. (3) It's safe to try: one binary, no lock-in, and `doctor` checks the invariants that remain explicit.
-- Proof on hand: lattice as the case study — a real inventory of hand-maintained glue (justfile package lists, changie project blocks, workflow sed scripts, an external SHA-pinned action) that lattice replaced with trellis. The before/after table lives in `docs/DESIGN.md` §1.
+- Proof on hand: lattice as the case study — a real inventory of hand-maintained glue (justfile package lists, changie project blocks, workflow sed scripts, an external SHA-pinned action) that lattice replaced with Trellis. The before/after table lives in `docs/DESIGN.md` §1.
 
 ## Brand Personality
 

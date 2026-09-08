@@ -1,6 +1,6 @@
 name: trellis
 version: 1.0.0
-description: APM project for trellis
+description: APM project for Trellis
 author: Tyler Butler
 targets:
   - copilot

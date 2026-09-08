@@ -318,7 +318,7 @@ fn hand_written_dependency_entries_merge_with_generated_ones() {
 // ---- changelog adoption ---------------------------------------------------
 
 /// CHANGELOG.md is regenerated from `.changes/<pkg>/`, so a package's first
-/// release under trellis has to capture whatever history it already had.
+/// release under Trellis has to capture whatever history it already had.
 #[test]
 fn version_apply_adopts_existing_changelog_history() {
     let tmp = tempfile::tempdir().unwrap();

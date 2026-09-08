@@ -3,7 +3,7 @@
 //! facts, living in the manifest format the ecosystem already uses.
 //! Everything is optional: when `members` is omitted, workspace members are
 //! auto-discovered from git (every non-ignored `gleam.toml`), and when the
-//! whole table is absent trellis runs configless with the same discovery.
+//! whole table is absent Trellis runs configless with the same discovery.
 
 use anyhow::{Context, Result, bail};
 use serde::Deserialize;
@@ -68,7 +68,7 @@ pub struct ConfigFile {
 pub struct DeprecatedKey {
     /// Dotted path beneath `[tools.trellis]`, e.g. `publish.tag-format`.
     pub path: String,
-    /// The same path in the spelling trellis documents, e.g.
+    /// The same path in the spelling Trellis documents, e.g.
     /// `publish.tag_format`.
     pub replacement: String,
 }
@@ -102,7 +102,7 @@ pub struct DoctorConfig {
 ///
 /// Parsing stays lenient — an unrecognized key does not stop the workspace
 /// loading. Straight `deny_unknown_fields` would mean a workspace using a key
-/// from a newer trellis becomes unloadable under a pinned older one, which is a
+/// from a newer Trellis becomes unloadable under a pinned older one, which is a
 /// bad failure for a tool CI pins. The keys are reported by `doctor` instead.
 ///
 /// The free-form tables ([`FREE_FORM_TABLES`]) accept any key by construction,
@@ -115,7 +115,7 @@ fn deserialize_collecting_unknown(trellis: &toml::Value) -> Result<(ConfigFile, 
 }
 
 /// Tables under `[tools.trellis]` whose *keys* are chosen by the user rather
-/// than by trellis: task names, `exclude` selectors, and the member-path globs
+/// than by Trellis: task names, `exclude` selectors, and the member-path globs
 /// of `publish.package_tags_overrides` and `publish.lifecycle.packages`. A
 /// hyphen in one of those is the user's own naming (or a directory name inside
 /// a glob), not a stale spelling. Entries are full snake-cased dotted paths,
@@ -130,7 +130,7 @@ const FREE_FORM_TABLES: [&str; 4] = [
 
 /// Find the keys still spelled the pre-0.8 kebab-case way.
 ///
-/// Every key trellis defines is snake_case, and the old spellings are [`serde`]
+/// Every key Trellis defines is snake_case, and the old spellings are [`serde`]
 /// aliases — so serde consumes them and `serde_ignored` never sees them. This
 /// walks the raw table instead. A hyphenated key that is *not* in `ignored`
 /// deserialized into some field, which at a schema position can only mean an
@@ -149,7 +149,7 @@ fn collect_deprecated_keys(trellis: &toml::Value, ignored: &[String]) -> Vec<Dep
     found
 }
 
-/// Visit every key that trellis itself names, in dotted-path form, skipping the
+/// Visit every key that Trellis itself names, in dotted-path form, skipping the
 /// key level of each [`FREE_FORM_TABLES`] entry — a task named `check-all` is
 /// not a deprecated key. The tables *beneath* those keys are still visited, so
 /// `tasks.check-all.needs-deps` is.
@@ -908,7 +908,7 @@ impl ConfigFile {
 /// error names.
 ///
 /// These are rejected rather than reported as unrecognized. Trellis is lenient
-/// about unknown keys on purpose — one may belong to a newer trellis — but
+/// about unknown keys on purpose — one may belong to a newer Trellis — but
 /// leniency is wrong here: silently ignoring a workspace's `tag_format` or
 /// `tag_mode` falls back to a default that writes *different tags*, and a
 /// series tag that stops moving or an exact tag under a new name is not
@@ -997,7 +997,7 @@ mod tests {
     fn parses_full_config_from_tools_trellis() {
         let text = r###"
             # The root gleam.toml may also be a regular package manifest;
-            # trellis only reads [tools.trellis].
+            # Trellis only reads [tools.trellis].
             name = "lattice_root"
             version = "0.0.0"
 
@@ -1247,7 +1247,7 @@ mod tests {
         );
     }
 
-    /// ...but the schema keys *beneath* a user-named task are still trellis's,
+    /// ...but the schema keys *beneath* a user-named task are still Trellis's,
     /// so a stale one there is still reported — and reported at a path that
     /// leaves the task's own name alone.
     #[test]

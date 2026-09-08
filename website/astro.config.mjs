@@ -10,7 +10,7 @@ export default defineConfig({
   trailingSlash: "ignore",
   integrations: [
     starlight({
-      title: "trellis",
+      title: "Trellis",
       description:
         "A workspace CLI for Gleam monorepos, derived from gleam.toml.",
       logo: { src: "./src/assets/logo.svg", alt: "" },

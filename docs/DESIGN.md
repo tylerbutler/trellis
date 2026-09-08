@@ -51,19 +51,19 @@ dependencies). The design principle of this tool is therefore:
 ### Non-goals
 
 - **Not a build system.** No caching, no incremental compilation, no artifact
-  hashing. `gleam` does the building; trellis decides *where* and *in what order*
-  to run it. (If Gleam ever grows native workspaces, trellis's task layer should
+  hashing. `gleam` does the building; Trellis decides *where* and *in what order*
+  to run it. (If Gleam ever grows native workspaces, Trellis's task layer should
   become obsolete and its release layer should still work.)
 - **Not a changelog engine (initially).** changie's project mode works well; we
   wrap and generate for it rather than reimplement it. See §7.
-  *(Revised pre-release: trellis now IS the changelog engine — §7 explains
+  *(Revised pre-release: Trellis now IS the changelog engine — §7 explains
   why the wrap was retired before it shipped.)*
 - **Not a general task runner.** Trellis fans a task out across members; it does
   not own a repo's chores. `just` remains fine for everything unrelated to the
   workspace (the justfile shrinks; it doesn't have to die). Whether tasks can
   depend on *each other* is a separate question, and an open one — see
   "Deferred" below.
-- **GitHub is the only forge trellis integrates with.** This is a statement of
+- **GitHub is the only forge Trellis integrates with.** This is a statement of
   what 1.0 supports, not a closed door. `release pr` and `tag create
   --github-release` talk to the GitHub REST API (a minimal client in
   `src/github.rs`; the gh CLI survives only as a fallback token source); the
@@ -89,8 +89,8 @@ but the ambiguity this list removes.
   be additive configuration whenever it is decided.
 - **Watch mode.** `trellis run test --watch`. Not covered by "not a build
   system" — that non-goal is about caching, and watching is scheduling.
-  External watchers (`watchexec -- trellis run test`) compose with trellis
-  today; whether trellis should grow its own is undecided.
+  External watchers (`watchexec -- trellis run test`) compose with Trellis
+  today; whether Trellis should grow its own is undecided.
 - **Task dependency graphs.** `needs = ["build"]` — one task requiring another
   to run first. Note that the existing `needs_deps` is not a precedent for it:
   `needs_deps` is a precondition of the workspace model (dependencies have to
@@ -123,7 +123,7 @@ starts by loading the **workspace model**:
    inside a package, like `git` or `cargo` — member manifests along the way
    are skipped, and a `[tools.trellis]` table in a member manifest is a
    doctor error because it would hijack this walk). When no manifest up the
-   tree has the table, trellis runs configless: the enclosing git repository
+   tree has the table, Trellis runs configless: the enclosing git repository
    root becomes the workspace root with an entirely defaulted configuration.
    An unparseable ancestor manifest blocks this fallback — it may be the
    intended root hiding behind a syntax error, and guessing would silently
@@ -253,7 +253,7 @@ Resolution, per member, in order:
 
 1. Start from `publish.lifecycle.default` (itself defaulting to `hex`).
 2. Apply the legacy `exclude.@release` mapping to `workspace`, when the member
-   matches one of those globs — the same boundary trellis has always drawn,
+   matches one of those globs — the same boundary Trellis has always drawn,
    read as the lifecycle model's most restrictive state.
 3. Apply an explicit `publish.lifecycle.packages` glob, when matched — this
    takes precedence over both of the above, which is what lets a package
@@ -386,7 +386,7 @@ trellis version apply                             # batch + merge + lockfile pat
   special case at all.
 - **CHANGELOG.md is generated, so adoption has to be explicit.** Reassembling
   from `.changes/<package>/` alone would delete the history of any package that
-  had a changelog before trellis. On a package's first release the body below
+  had a changelog before Trellis. On a package's first release the body below
   the header is captured verbatim as one section, dated by the newest version
   its headings mention. Verbatim and once-only: no heading parsing to get wrong,
   and afterwards the file is fully generated. `doctor` surfaces the pending
@@ -403,7 +403,7 @@ trellis lockfile refresh [--package <pkg>]
 ```
 
 - **`release bootstrap`** is `tag create` under the release umbrella, for the
-  repository *adopting* trellis: versions and CHANGELOGs are already right,
+  repository *adopting* Trellis: versions and CHANGELOGs are already right,
   only the tags (and, pre-1.0, the accompanying GitHub Releases) are missing.
   Where `release pr` → `tag create --github-release` is the steady-state loop
   (bump from fragments, then tag what the PR merged), bootstrap skips straight
@@ -428,7 +428,7 @@ trellis lockfile refresh [--package <pkg>]
   the whole run rather than half-tagging the rest, in dry-run or for real.
 - A member may instead (or also) carry a **series tag** — `{name}-v{series}`,
   where the series is the version truncated at each level `package_tags` lists:
-  `major` to one part, `minor` to two. It is the one ref trellis rewrites: each release in the series
+  `major` to one part, `minor` to two. It is the one ref Trellis rewrites: each release in the series
   force-moves it to the release commit and force-pushes it, so consumers can
   pin a series rather than chase patch tags. Divergence between local and
   origin is the normal state for a moving tag, so the divergence check that
@@ -569,7 +569,7 @@ Checks, each of which is an unenforced invariant in lattice today:
 
 `doctor` is the CI tripwire for the duplication that can't be eliminated. Today,
 publish.yml's `replace-path-deps` being one package short would only be discovered
-when a published package fails to resolve on Hex; under trellis the list doesn't
+when a published package fails to resolve on Hex; under Trellis the list doesn't
 exist, and everything that still must be duplicated is checked on every PR.
 
 ### Scaffolding
@@ -603,7 +603,7 @@ tag push → publish.yml:   read-gleam-workspace maps tag→path,
                           lockfile-refresh job opens a follow-up PR
 ```
 
-With trellis, each workflow keeps its trigger and becomes a few commands:
+With Trellis, each workflow keeps its trigger and becomes a few commands:
 
 ```yaml
 # release.yml (on push to main)
@@ -618,7 +618,7 @@ With trellis, each workflow keeps its trigger and becomes a few commands:
 - run: trellis lockfile refresh --package "$(trellis ci tag-package)"
 ```
 
-An alternative worth considering once trellis exists: drop per-package tags as the
+An alternative worth considering once Trellis exists: drop per-package tags as the
 publish *trigger* entirely — on release-PR merge, run `trellis publish
 --all-untagged` (idempotent, topologically ordered, one workflow run instead of N),
 then `trellis tag create --github-release` to record what shipped. Tags become an
@@ -632,15 +632,15 @@ requirement of the tool; both shapes are supported.
 don't replace it (initially)", with a native fragment engine as the escape
 hatch if the two-tool dependency chafed. It chafed before it ever shipped:
 the wrap needed a generated `.changie.yaml` projects section plus a doctor
-drift-check whose only purpose was telling changie things trellis already
+drift-check whose only purpose was telling changie things Trellis already
 knew; `changie next`'s output had to be parsed defensively; version bumps ran
-through user-supplied regex "replacements" where trellis has a real TOML
+through user-supplied regex "replacements" where Trellis has a real TOML
 editor; and every consuming workspace had to install a second binary in CI.
-Since trellis was pre-release, the native engine slotted in behind the same
+Since Trellis was pre-release, the native engine slotted in behind the same
 `trellis changelog`/`version` commands with no compatibility burden:
 
 - Fragments are TOML (`package`, `kind`, `body`) in `.changes/unreleased/` —
-  consistent with everything else trellis reads, and validated by `doctor`
+  consistent with everything else Trellis reads, and validated by `doctor`
   on every PR (an invalid fragment can't hide until release time).
 - Version bumps derive from the kinds' configured `bump` (largest wins);
   `gleam.toml` is bumped with toml_edit, not regex.
@@ -653,7 +653,7 @@ Since trellis was pre-release, the native engine slotted in behind the same
 - All formats are minijinja templates with a small context, so rendering
   stays user-configurable without a second tool or a Go-template engine.
 
-(This applies to the workspaces trellis manages. Trellis's own repo releases
+(This applies to the workspaces Trellis manages. Trellis's own repo releases
 via the changie-release/release-plz/cargo-dist pipeline, which is a separate
 concern and unaffected.)
 
@@ -666,7 +666,7 @@ chores that aren't workspace fan-out stay pure just.
 CI workflow (`gleam-workspace-ci.yml`) can be reduced to setup + `trellis run …`,
 which also fixes today's asymmetry where local runs are serial-bash and CI runs are
 a separately-implemented matrix. The composite setup action gains a
-`taiki-e/install-action`-style step that installs the trellis release binary.
+`taiki-e/install-action`-style step that installs the Trellis release binary.
 
 ## 8. CI matrix example
 
@@ -706,7 +706,7 @@ toposort + cycle detection), `globset`, `serde_json` (CI output), `ureq` or
 `reqwest` (Hex API for idempotency checks).
 
 **Hex interaction budget** is a first-class design constraint (three workflow
-comment blocks in this repo exist because of it): trellis never runs a
+comment blocks in this repo exist because of it): Trellis never runs a
 Hex-resolving gleam command when it can edit a TOML file locally, batches what it
 must, and applies the configured retry policy to everything else.
 
@@ -767,7 +767,7 @@ end-to-end suite runs against a fixture workspace with a mocked Hex API.
    end-to-end with a fake gleam.
 4. **Extract.** Once stable in lattice, move to its own repo and publish binaries;
    lattice pins a version in `.tool-versions` like every other tool.
-   **Status: implemented** (trellis was built in its own repo from the start,
+   **Status: implemented** (Trellis was built in its own repo from the start,
    so extraction reduces to distribution). The publishing pipeline mirrors
    tylerbutler/repoverlay's: changie fragments (`.changes/unreleased/`) →
    `changie-release.yml` opens a release PR bumping `Cargo.toml` +
@@ -818,7 +818,7 @@ the `[tools.trellis]` table in the root `gleam.toml` (§4).
    with a bump table and
    per-package CHANGELOG sections in the body. (With the native changelog
    engine of §7, `trellis release pr` is the only release-PR path for gleam
-   workspaces — the changie-release action drives changie, which trellis no
+   workspaces — the changie-release action drives changie, which Trellis no
    longer uses.)
 3. **Affected-only CI as default.**
    **Resolved: full fan-out stays the default.** `--since` is opt-in for
@@ -826,7 +826,7 @@ the `[tools.trellis]` table in the root `gleam.toml` (§4).
    between packages that the path-dep graph can't see) shouldn't be silent.
    A repo that wants affected-only CI writes `--since origin/main` into its
    workflow explicitly.
-4. **Should trellis own `.tool-versions` awareness?**
+4. **Should Trellis own `.tool-versions` awareness?**
    **Resolved: advisory only.** `doctor` warns when `.tool-versions` pins a
    gleam version different from the gleam on PATH, but never errors —
    installing and enforcing toolchains remains mise/asdf's job.

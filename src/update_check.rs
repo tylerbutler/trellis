@@ -1,4 +1,4 @@
-//! Best-effort "a newer trellis is available" notice.
+//! Best-effort "a newer Trellis is available" notice.
 //!
 //! The check hits crates.io for the published crate (`trellis-gleam`; the
 //! installed binary is `trellis`), caches the result for a day, and prints a
@@ -51,7 +51,7 @@ fn notice_versions(info: &DetailedUpdateInfo) -> Option<(&str, &str)> {
         .map(|_| (info.current.as_str(), info.latest.as_str()))
 }
 
-/// Print a notice to stderr if a newer trellis has been published. Best-effort:
+/// Print a notice to stderr if a newer Trellis has been published. Best-effort:
 /// returns quietly on any error or when suppressed.
 pub fn notify() {
     if !notice_enabled(std::io::stderr().is_terminal(), |key| {
@@ -67,7 +67,7 @@ pub fn notify() {
         && let Some((current, latest)) = notice_versions(&info)
     {
         eprintln!();
-        eprintln!("A new release of trellis is available: {current} → {latest}");
+        eprintln!("A new release of Trellis is available: {current} → {latest}");
         eprintln!("{RELEASES_URL}");
     }
 }

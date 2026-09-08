@@ -33,7 +33,7 @@ pub struct Fragment {
     /// configured `uncategorized_label`.
     pub category: Option<String>,
     pub body: String,
-    /// `None` for a fragment trellis generated rather than read from disk, so
+    /// `None` for a fragment Trellis generated rather than read from disk, so
     /// `consume_fragments` can never mistake one for a file to delete.
     pub path: Option<PathBuf>,
 }
@@ -43,13 +43,13 @@ pub struct Fragment {
 struct RawFragment {
     /// The package the change belongs to. `project` is the original spelling,
     /// inherited from changie; it still parses so fragments written by an
-    /// older trellis keep working. Removed at 1.0.
+    /// older Trellis keep working. Removed at 1.0.
     #[serde(alias = "project")]
     package: String,
     kind: String,
     /// Optional: a fragment need not name a category. This struct denies
     /// unknown fields, so a fragment carrying one will not parse under a
-    /// trellis older than 0.8.
+    /// Trellis older than 0.8.
     #[serde(default)]
     category: Option<String>,
     body: String,
@@ -495,13 +495,13 @@ fn render_kinds(
 
 // ---- adoption ----------------------------------------------------------------
 
-/// A package's pre-trellis CHANGELOG.md body, captured as one version section.
+/// A package's pre-Trellis CHANGELOG.md body, captured as one version section.
 ///
 /// CHANGELOG.md is a generated file: it is rebuilt from `<dir>/<package>/v*.md`
 /// alone. Without this, the first release of a package that already had a
 /// changelog would silently delete all of its history. Capturing the body
 /// verbatim keeps it byte-for-byte and needs no heading parsing — it simply
-/// sorts below every section trellis goes on to write.
+/// sorts below every section Trellis goes on to write.
 #[derive(Debug)]
 pub struct Adoption {
     pub version: semver::Version,
@@ -509,7 +509,7 @@ pub struct Adoption {
     pub contents: String,
 }
 
-/// The history to adopt for `package`, if any. `None` once trellis has batched
+/// The history to adopt for `package`, if any. `None` once Trellis has batched
 /// a version for it: from then on CHANGELOG.md is fully generated, so leftover
 /// content is drift rather than history.
 pub fn plan_adoption(
@@ -580,7 +580,7 @@ pub fn latest_changelog_version(text: &str) -> Option<semver::Version> {
 // ---- batch + merge -----------------------------------------------------------
 
 /// Render a package's complete CHANGELOG.md with an optional pending section
-/// and an optional block of adopted pre-trellis history.
+/// and an optional block of adopted pre-Trellis history.
 pub fn render_merged_changelog(
     workspace: &Workspace,
     package: &str,

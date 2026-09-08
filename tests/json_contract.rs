@@ -1,4 +1,4 @@
-//! Snapshot tests over every `--json` payload trellis emits.
+//! Snapshot tests over every `--json` payload Trellis emits.
 //!
 //! These exist so that a breaking change to a documented shape fails *here*
 //! rather than in a consumer's workflow. They assert the wire format and

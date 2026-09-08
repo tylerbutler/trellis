@@ -401,7 +401,7 @@ prerelease versions.
 ## Adopting an existing changelog
 
 Because `CHANGELOG.md` is regenerated from `.changes/<package>/`, a package
-that already had a changelog before adopting trellis would lose it the first
+that already had a changelog before adopting Trellis would lose it the first
 time it was released, since there is nothing under `.changes/<package>/` to
 reassemble from.
 
@@ -416,7 +416,7 @@ adopted existing changelog history as .changes/lat_core/v1.2.0.md
 ```
 
 The captured block is byte-for-byte, with no heading parsing and no
-reformatting, and sorts below every section trellis goes on to write. It
+reformatting, and sorts below every section Trellis goes on to write. It
 happens once; after that the changelog is fully generated.
 
 `doctor` reports pending adoptions so this is never a surprise mid-release, and
@@ -425,8 +425,7 @@ own reviewable diff:
 
 ```console
 $ trellis doctor
-warning: package `lat_core` has changelog history that trellis has not batched
-yet; it will be adopted on the next release
+warning: package `lat_core` has changelog history that Trellis has not batched yet; it will be adopted on the next release
 ```
 
 From here, [publishing](/docs/publishing/) covers turning pending fragments
