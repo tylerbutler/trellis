@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.13.2 - 2026-09-14
+
+
+### lockfile
+
+#### Changed
+
+- **`trellis lockfile refresh` lists valid members for an unknown package.** The error now uses the same package-selection output as other commands, so a misspelled `--package` value shows the available workspace package names.
+
+### doctor
+
+#### Fixed
+
+- **`trellis doctor` reports each invalid exclusion glob once.** Invalid `@release` and `@members` patterns no longer produce duplicate findings for the same configuration error.
+
 ## v0.13.1 - 2026-09-08
 
 
