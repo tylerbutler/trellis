@@ -61,7 +61,7 @@ pub fn outputs(workspace: &Workspace) -> Result<()> {
         .members
         .iter()
         .filter(|m| m.releasable())
-        .map(|m| m.rel_file("gleam.toml"))
+        .map(|m| m.rel_file(workspace.manifest_rel()))
         .collect();
     let tags: Vec<String> = workspace
         .members

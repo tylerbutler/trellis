@@ -55,6 +55,7 @@ toml = "1.1.2"
 toml_edit = "0.25.12"
 ureq = { version = "3.3.0", features = ["json"] }
 serde_ignored = "0.1.14"
+saphyr-parser = "0.0.12"
 
 [dev-dependencies]
 assert_cmd = "2.2.2"
