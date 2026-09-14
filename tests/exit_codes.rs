@@ -10,7 +10,7 @@
 
 mod common;
 
-use common::*;
+use common::{fixture, trellis, write};
 use predicates::prelude::*;
 use std::path::Path;
 

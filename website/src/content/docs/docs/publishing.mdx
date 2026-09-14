@@ -5,12 +5,11 @@ description: Trellis turns changelog fragments into a release PR, creates per-pa
 
 import Callout from "../../../components/Callout.astro";
 
-Publishing a workspace means turning pending
-[changelog fragments](/docs/changelog/) into version bumps, recording what
-shipped as git tags, and pushing packages to Hex in dependency order with
-workspace path dependencies rewritten to real Hex requirements. Trellis
-covers each step, and every step is idempotent — re-running a partially
-failed release is safe.
+Publishing a workspace means turning pending [changelog
+fragments](/docs/changelog/) into version bumps, recording what shipped as git
+tags, and pushing packages to Hex in dependency order with workspace path
+dependencies rewritten to real Hex requirements. Trellis covers each step, and
+every step is idempotent, so re-running a partially failed release is safe.
 
 ```txt wrap
 trellis release pr [--base <branch>] [--branch <branch>]
@@ -63,23 +62,23 @@ and is a no-op when there are no fragments.
 `tag plan` lists the tags the current versions call for and don't have yet.
 `tag create` reconciles them in topological order; `--push` pushes them, and
 `--github-release` (which implies `--push` and needs the same GitHub token
-as `release pr`) also
-creates a GitHub Release per tag with the matching CHANGELOG section as the
-body.
+as `release pr`) also creates a GitHub Release per *exact* tag, with the
+matching CHANGELOG section as the body. `--dry-run` reports every tag, push,
+and release it would perform without doing any of them.
 
 Each entry in a package's `package_tags` falls into one of two lifecycles:
 
 - **Exact tags** (`{name}-v{version}`) are immutable. They are created once,
-  fetched when origin already has them, and never rewritten — local and remote
+  fetched when origin already has them, and never rewritten. Local and remote
   disagreeing about what one names is an error, not something to reconcile.
 - **Series tags** (`{name}-v{series}`) move. Releasing a new version in the
   series force-moves its tag to the release commit and force-pushes it, so
   consumers can track `lat_cli-v0.4` and follow the series instead of chasing
-  patch tags — [`trellis pin`](/docs/pinning/) gives git-dependency consumers
+  patch tags. [`trellis pin`](/docs/pinning/) gives git-dependency consumers
   a reviewable way to do exactly that. The signal is the package's manifest version stored at the tag,
-  so a commit that does not release the package — another package's release, a
-  docs change — leaves its series tags alone. The series is derived from the
-  version — see [series tags](/docs/configuration/#tags).
+  so a commit that does not release the package, such as another package's
+  release or a docs change, leaves its series tags alone. The series is
+  derived from the version; see [series tags](/docs/configuration/#tags).
 - **Repository tags** are independent of any package's list. Trellis moves the
   configured tag only when the anchor package's manifest version differs from
   the version at that tag. A series change creates a new tag and leaves the
@@ -106,33 +105,34 @@ to a moving tag would silently retarget on the next release, so only immutable
 per-version tags carry one.
 </Callout>
 
-With no `exact` entry a package has no per-version tags at all, so there
-is no tag to trigger a publish from: run `trellis publish --all-untagged` on
-release-PR merge instead. Passing a series tag to `publish --tag` is an error
-— it names a package, but no particular version.
+With no `exact` entry a package has no per-version tags at all, so there is no
+tag to trigger a publish from: run `trellis publish --all-untagged` on
+release-PR merge instead. Passing a series tag to `publish --tag` is an error,
+because it names a package but no particular version.
 
 Repository tags identify repository snapshots rather than package
 releases, so neither `publish --tag` nor `ci tag-package` resolves them.
 
 ## Publishing to Hex
 
-`publish` selects members whose [release lifecycle](/docs/configuration/#release-lifecycle)
-is `hex` — `--package <name>` and `--tag <tag>` refuse a `workspace` or
-`git_only` package by name, and `--all-untagged` only ever considers `hex`
-members. It runs, per package and in dependency order:
+`publish` selects members whose [release
+lifecycle](/docs/configuration/#release-lifecycle) is `hex`. A named package
+and `--tag <tag>` both refuse a `workspace` or `git_only` package, and
+`--all-untagged` only ever considers `hex` members. It runs, per package and
+in dependency order:
 
-1. **Idempotency check** — one Hex API query; versions already published are
+1. **Idempotency check.** One Hex API query; versions already published are
    skipped.
-2. **Validation** — `gleam format --check`, `gleam build --warnings-as-errors`,
-   `gleam test`, run against the original manifest with path deps intact.
-3. **Path-dep rewrite** — computed from the graph, never hand-listed: each
+2. **Validation.** `gleam format --check`, `gleam build --warnings-as-errors`,
+   and `gleam test`, run against the original manifest with path deps intact.
+3. **Path-dep rewrite.** Computed from the graph, never hand-listed: each
    workspace path dependency becomes the Hex requirement derived from that
    dep's current version, per `path_dep_requirement`. The version map only
    ever holds `hex` members, so a path dependency on a `git_only` or
    `workspace` member fails the rewrite rather than publishing something Hex
    could never resolve.
-4. **Publish** — `gleam publish --yes`.
-5. **Restore** — the original `gleam.toml` comes back even when publishing
+4. **Publish.** `gleam publish --yes`.
+5. **Restore.** The original `gleam.toml` comes back even when publishing
    fails; the repo never shows rewritten files.
 
 Every Hex-touching step runs under the configured `retry` backoff policy.
@@ -155,11 +155,11 @@ release instead of one per tag.
 
 <Callout>
 
-Dev-only path deps to a non-`hex` package are left alone — Hex doesn't ship
-dev dependencies. A regular `[dependencies]` path dep to a package whose
+Dev-only path deps to a non-`hex` package are left alone, because Hex doesn't
+ship dev dependencies. A regular `[dependencies]` path dep to a package whose
 lifecycle is less capable than its dependent's refuses to publish, and
-`doctor` catches that boundary on every PR — see
-[Release lifecycle](/docs/configuration/#release-lifecycle).
+`doctor` catches that boundary on every PR; see [Release
+lifecycle](/docs/configuration/#release-lifecycle).
 
 </Callout>
 

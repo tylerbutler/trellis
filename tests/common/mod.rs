@@ -1,21 +1,13 @@
-#![allow(dead_code)]
-//! Shared e2e helpers: fixture/process/git utilities and a mock GitHub API
-//! served from a background thread.
-//!
-//! Point `TRELLIS_GITHUB_API_URL` at the returned base URL and set
-//! `TRELLIS_GITHUB_REPO` plus `GITHUB_TOKEN`; every request the binary makes is
-//! appended to `.fake/github-log` as `METHOD path?query`, then the JSON body,
-//! then `---`, so tests assert on the log the way they asserted on the old
-//! fake-gh log. State lives in `.fake/`: a created release becomes a
-//! `release-<tag>` marker file (so existence checks respond 200 afterwards),
-//! and the PR listing replies with `.fake/pr-list` or `[]`.
+//! Shared support for the independently compiled integration-test targets.
 
-use std::io::{Read, Write};
-use std::net::{TcpListener, TcpStream};
-use std::path::{Path, PathBuf};
+#![allow(dead_code)]
 
 use assert_cmd::Command;
 use std::fs;
+use std::io::{Read, Write};
+use std::net::{TcpListener, TcpStream};
+use std::os::unix::fs::PermissionsExt;
+use std::path::{Path, PathBuf};
 
 pub fn fixture(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -23,13 +15,20 @@ pub fn fixture(name: &str) -> PathBuf {
         .join(name)
 }
 
-/// A trellis invocation in `dir` with deterministic changelog dates
-/// (`SOURCE_DATE_EPOCH` = 2026-07-11) and proxy variables stripped, so requests
-/// reach the localhost mocks instead of an agent proxy.
 pub fn trellis(dir: &Path) -> Command {
     let mut cmd = Command::cargo_bin("trellis").unwrap();
     cmd.current_dir(dir);
+    cmd
+}
+
+pub fn trellis_with_stable_date(dir: &Path) -> Command {
+    let mut cmd = trellis(dir);
     cmd.env("SOURCE_DATE_EPOCH", "1783728000");
+    cmd
+}
+
+pub fn trellis_with_local_http(dir: &Path) -> Command {
+    let mut cmd = trellis(dir);
     for var in [
         "HTTP_PROXY",
         "HTTPS_PROXY",
@@ -43,29 +42,12 @@ pub fn trellis(dir: &Path) -> Command {
     cmd
 }
 
-/// A trellis invocation aimed at the mock GitHub API: base URL and repo
-/// overridden, and a token in the environment.
 pub fn trellis_github(dir: &Path, api: &str) -> Command {
-    let mut cmd = trellis(dir);
+    let mut cmd = trellis_with_local_http(dir);
     cmd.env("TRELLIS_GITHUB_API_URL", api)
         .env("TRELLIS_GITHUB_REPO", "example/repo")
         .env("GITHUB_TOKEN", "test-token");
     cmd
-}
-
-/// Run a command and parse its stdout as JSON. Takes the expected exit status
-/// because `changelog check` reports failure through it while still emitting a
-/// well-formed payload.
-pub fn json_output(dir: &Path, args: &[&str], expect_success: bool) -> serde_json::Value {
-    let output = trellis(dir).args(args).output().unwrap();
-    assert_eq!(
-        output.status.success(),
-        expect_success,
-        "unexpected exit for {args:?}: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    serde_json::from_slice(&output.stdout)
-        .unwrap_or_else(|err| panic!("{args:?} did not emit JSON: {err}"))
 }
 
 pub fn write(path: &Path, content: &str) {
@@ -73,7 +55,6 @@ pub fn write(path: &Path, content: &str) {
     fs::write(path, content).unwrap();
 }
 
-/// Copy the `basic` fixture into `root`.
 pub fn copy_fixture_to(root: &Path) {
     fn walk(dir: &Path, files: &mut Vec<PathBuf>) {
         for entry in fs::read_dir(dir).unwrap() {
@@ -85,6 +66,7 @@ pub fn copy_fixture_to(root: &Path) {
             }
         }
     }
+
     let from = fixture("basic");
     let mut files = Vec::new();
     walk(&from, &mut files);
@@ -110,39 +92,25 @@ pub fn git(root: &Path, args: &[&str]) {
     assert!(status.success(), "git {args:?} failed");
 }
 
-pub fn git_stdout(dir: &Path, args: &[&str]) -> String {
-    let output = std::process::Command::new("git")
-        .args(args)
-        .current_dir(dir)
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "git {args:?} failed in {}: {}",
-        dir.display(),
-        String::from_utf8_lossy(&output.stderr)
-    );
-    String::from_utf8(output.stdout).unwrap().trim().to_string()
-}
-
-/// A committed repository on `main`, for the commands that read git state.
 pub fn init_repo(root: &Path) {
     git(root, &["init", "-q", "-b", "main"]);
     git(root, &["add", "."]);
     git(root, &["commit", "-q", "-m", "init"]);
 }
 
-/// Write the next unreleased fragment for `project`. Uses the pre-1.0
-/// `project` key on purpose, so the alias stays exercised across the suite.
-pub fn add_fragment(root: &Path, project: &str, kind: &str, body: &str) {
+pub fn make_executable(path: &Path) {
+    fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
+}
+
+pub fn add_fragment(root: &Path, package: &str, kind: &str, body: &str) {
     let dir = root.join(".changes/unreleased");
     fs::create_dir_all(&dir).unwrap();
     for n in 1u32.. {
-        let path = dir.join(format!("{project}-{n}.toml"));
+        let path = dir.join(format!("{package}-{n}.toml"));
         if !path.exists() {
             write(
                 &path,
-                &format!("project = \"{project}\"\nkind = \"{kind}\"\nbody = \"{body}\"\n"),
+                &format!("project = \"{package}\"\nkind = \"{kind}\"\nbody = \"{body}\"\n"),
             );
             return;
         }
@@ -150,14 +118,62 @@ pub fn add_fragment(root: &Path, project: &str, kind: &str, body: &str) {
 }
 
 pub fn version_of(root: &Path, package: &str) -> String {
-    let manifest = fs::read_to_string(root.join("packages").join(package).join("gleam.toml"))
-        .unwrap_or_else(|err| panic!("no gleam.toml for {package}: {err}"));
+    let manifest =
+        fs::read_to_string(root.join("packages").join(package).join("gleam.toml")).unwrap();
     manifest
         .lines()
-        .find_map(|line| line.trim().strip_prefix("version = "))
-        .unwrap_or_else(|| panic!("no version in {package}'s gleam.toml"))
-        .trim_matches('"')
+        .find_map(|line| line.strip_prefix("version = \""))
+        .and_then(|line| line.strip_suffix('"'))
+        .unwrap()
         .to_string()
+}
+
+pub fn install_fake_gleam(root: &Path) -> PathBuf {
+    let script = root.join("fake-gleam.sh");
+    write(
+        &script,
+        &format!(
+            concat!(
+                "#!/bin/sh\n",
+                "set -eu\n",
+                "root=\"{root}\"\n",
+                "echo \"$(basename \"$PWD\") gleam $*\" >> \"$root/.fake/gleam-log\"\n",
+                "if [ -d build/packages ]; then state=present; else state=absent; fi\n",
+                "echo \"$(basename \"$PWD\") $1 $state\" >> \"$root/.fake/build-state\"\n",
+                "if [ \"$1\" = publish ]; then\n",
+                "  cp gleam.toml \"$root/.fake/published-$(basename \"$PWD\").toml\"\n",
+                "fi\n",
+            ),
+            root = root.display()
+        ),
+    );
+    make_executable(&script);
+    fs::create_dir_all(root.join(".fake")).unwrap();
+    script
+}
+
+pub fn bare_origin(root: &Path) -> tempfile::TempDir {
+    let remote = tempfile::tempdir().unwrap();
+    git(remote.path(), &["init", "-q", "--bare"]);
+    git(
+        root,
+        &["remote", "add", "origin", remote.path().to_str().unwrap()],
+    );
+    remote
+}
+
+pub fn series_repo(root: &Path, publish: &str) -> tempfile::TempDir {
+    copy_fixture_to(root);
+    write(
+        &root.join("gleam.toml"),
+        &format!(
+            "[tools.trellis]\nmembers = [\"packages/*\", \"examples/*\"]\n\
+             exclude = {{ \"@release\" = [\"examples/*\"] }}\n\n\
+             [tools.trellis.publish]\n{publish}\n"
+        ),
+    );
+    init_repo(root);
+    bare_origin(root)
 }
 
 pub fn set_version(root: &Path, package: &str, version: &str) {
@@ -176,6 +192,31 @@ pub fn set_version(root: &Path, package: &str, version: &str) {
     fs::write(&path, text.join("\n") + "\n").unwrap();
 }
 
+pub fn git_stdout(dir: &Path, args: &[&str]) -> String {
+    let output = std::process::Command::new("git")
+        .args(["-c", "safe.bareRepository=all"])
+        .args(args)
+        .current_dir(dir)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "git {args:?} failed in {}: {}",
+        dir.display(),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8_lossy(&output.stdout).trim().to_string()
+}
+
+pub fn commit_of(dir: &Path, revision: &str) -> String {
+    git_stdout(dir, &["rev-parse", &format!("{revision}^{{commit}}")])
+}
+
+/// Start a mock GitHub API and return its base URL.
+///
+/// Requests are appended to `.fake/github-log`. Created releases become
+/// `.fake/release-<tag>` marker files, and pull-request listings read
+/// `.fake/pr-list` or default to an empty list.
 pub fn mock_github(root: &Path) -> String {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
@@ -195,13 +236,14 @@ fn handle(stream: &mut TcpStream, root: &Path) {
     let mut chunk = [0u8; 4096];
     let header_end = loop {
         match stream.read(&mut chunk) {
-            Ok(0) | Err(_) => return,
+            Ok(0) => return,
             Ok(n) => {
                 buf.extend_from_slice(&chunk[..n]);
                 if let Some(pos) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
                     break pos + 4;
                 }
             }
+            Err(_) => return,
         }
     };
     let headers = String::from_utf8_lossy(&buf[..header_end]).to_string();
@@ -215,8 +257,9 @@ fn handle(stream: &mut TcpStream, root: &Path) {
         .unwrap_or(0);
     while buf.len() < header_end + content_length {
         match stream.read(&mut chunk) {
-            Ok(0) | Err(_) => break,
+            Ok(0) => break,
             Ok(n) => buf.extend_from_slice(&chunk[..n]),
+            Err(_) => break,
         }
     }
     let body = String::from_utf8_lossy(&buf[header_end..]).to_string();

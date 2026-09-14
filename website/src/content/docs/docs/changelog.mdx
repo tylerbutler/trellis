@@ -5,10 +5,10 @@ description: Trellis has a native changelog engine — TOML fragments in .change
 
 import Callout from "../../../components/Callout.astro";
 
-The changelog engine is native — no second tool to install in CI, no config
-file to keep in sync with the workspace. Changes are recorded as small TOML
-fragments, one per change; version bumps and changelog sections are derived
-from them.
+The changelog engine is native, so there is no second tool to install in CI
+and no config file to keep in sync with the workspace. Changes are recorded as
+small TOML fragments, one per change; version bumps and changelog sections are
+derived from them.
 
 ```txt wrap
 trellis changelog new [--package <pkg>] --kind <kind> --body <text>
@@ -19,7 +19,7 @@ trellis version apply [--json]
 
 ## Fragments
 
-A fragment is one file in `.changes/unreleased/` with three keys — the package
+A fragment is one file in `.changes/unreleased/` with three keys: the package
 it belongs to, a configured change kind, and the entry text:
 
 ```toml title=".changes/unreleased/lat_core-add-graph-parallel-task.toml"
@@ -36,7 +36,7 @@ fragments already sitting in `.changes/unreleased/` keep working, but
 
 </Callout>
 
-`changelog new` writes one non-interactively — `--kind` and `--body` are
+`changelog new` writes one non-interactively. `--kind` and `--body` are
 explicit flags, which suits CI and agents as well as shells (`--package` can
 be omitted when the workspace has exactly one releasable package):
 
@@ -52,14 +52,14 @@ rarely pick the same name. A clash takes the next free `-2`, `-3` suffix.
 
 <Callout>
 
-Invalid fragments — unknown package, kind, or category, empty body,
-unparseable TOML — are hard errors for `check`, `plan`, and `apply`, and
+Invalid fragments (an unknown package, kind, or category, an empty body,
+unparseable TOML) are hard errors for `check`, `plan`, and `apply`, and
 `doctor` flags them on every PR.
 
 </Callout>
 
 A fragment takes one more optional key, `category`, when the workspace
-configures [categories](/docs/configuration/#categories) — a second grouping
+configures [categories](/docs/configuration/#categories), a second grouping
 axis that carries no version bump and sections the changelog by which part of
 a package changed:
 
@@ -80,9 +80,9 @@ lat_cli: needs a changelog entry
 ```
 
 A package counts as changed when the diff touches *any* file under its
-directory — a README edit trips the same gate as a behavior change. That makes
-the gate stricter than some repositories want; [`strictness`](#strictness)
-turns it down.
+directory, so a README edit trips the same gate as a behavior change. That
+makes the gate stricter than some repositories want;
+[`strictness`](#strictness) turns it down.
 
 ### Scope
 
@@ -92,10 +92,10 @@ outright or edited what the base branch already had. Fragments the branch left
 untouched document the PRs that added them.
 
 This is what makes the gate per-PR. A package with an unreleased fragment from
-an earlier PR does not satisfy the check for a *later* PR that touches the same
-package — otherwise one entry excuses every change until the next release. It
-also keeps the [PR comment](#driving-a-pr-comment) honest: `version` is the bump
-this PR causes rather than what the accumulated backlog adds up to, and a
+an earlier PR does not satisfy the check for a *later* PR that touches the
+same package; otherwise one entry excuses every change until the next release.
+It also keeps the [PR comment](#driving-a-pr-comment) honest: `version` is the
+bump this PR causes rather than what the accumulated backlog adds up to, and a
 package whose only unreleased fragment came from the base branch shows `—`.
 
 Comparing contents rather than reading the diff means an uncommitted fragment
@@ -105,8 +105,8 @@ CI gives afterwards.
 <Callout>
 
 **Invalid fragments are not scoped.** A fragment that does not parse fails
-`check` wherever it came from, because it blocks the next release for everyone
-— scoping it would leave every PR green while the release stayed stuck.
+`check` wherever it came from, because it blocks the next release for everyone.
+Scoping it would leave every PR green while the release stayed stuck.
 
 </Callout>
 
@@ -127,7 +127,7 @@ land the reporting without failing builds while the open PRs catch up.
 | Value | Effect |
 | --- | --- |
 | `error` | Default. A missing entry fails the run. |
-| `warn` | Reported, exit 0 — advisory, so the comment still appears but the check stays green. |
+| `warn` | Reported, exit 0. Advisory, so the comment still appears but the check stays green. |
 | `off` | Not checked. Packages and fragment counts are still reported. |
 
 ```toml title="gleam.toml"
@@ -143,7 +143,7 @@ the manifest.
 
 **Strictness governs missing entries, not broken ones.** A fragment that does
 not parse, or that names an unknown package or kind, fails `check` at every
-setting including `off` — that is malformed input, not a policy call.
+setting including `off`. That is malformed input, not a policy call.
 
 </Callout>
 
@@ -169,12 +169,12 @@ sticky comment:
 ```
 
 `needs_entry` states the fact; `ok` states the verdict after strictness is
-applied, and matches the exit code. `fragments`, `has_entry`, and `has_entries`
-count only the fragments this branch wrote (see [Scope](#scope)). The `schema`
-field is there so a workflow
-can assert on the shape it expects; the [JSON output](/docs/json-output/) page
-covers what it promises. Note that `preview` is guaranteed to be present and a
-string, but its Markdown is prose — render it rather than parsing it.
+applied, and matches the exit code. `fragments`, `has_entry`, and
+`has_entries` count only the fragments this branch wrote (see
+[Scope](#scope)). The `schema` field is there so a workflow can assert on the
+shape it expects; the [JSON output](/docs/json-output/) page covers what it
+promises. `preview` is guaranteed to be present and a string, but its Markdown
+is prose, so render it rather than parsing it.
 
 <Callout>
 
@@ -239,9 +239,9 @@ TRELLIS_PREVIEW
 `fromJSON()`; `preview` uses GitHub's heredoc form because it is multi-line.
 See [CI recipes](/docs/ci/#the-changelog-comment) for the workflow.
 
-The table covers the packages the PR's diff touched; the release preview covers
-every package this PR's fragments would release, computed the same way
-`version plan` computes it — so a dependent that merely ripples (like `lat_cli`
+The table covers the packages the PR's diff touched; the release preview
+covers every package this PR's fragments would release, computed the same way
+`version plan` computes it, so a dependent that merely ripples (like `lat_cli`
 above) appears with its generated `Dependencies` entry. Each collapsed section
 is the version section `version apply` would write for these fragments. When a
 fragment does not parse, no plan can be computed, so the versions and the
@@ -266,12 +266,12 @@ lat_cli: 0.4.2 -> 0.4.3 (1 fragment(s), dependencies: lat_core, lat_mid)
 `lat_mid` owns no fragment, yet it is in that plan. When a package bumps, so
 does everything that path-depends on it, transitively.
 
-This is a correctness requirement, not a convenience. A path dependency carries
-no version in the repository; it becomes a Hex requirement at publish time,
-derived from whatever version the dependency is on *then*. Holding `lat_mid` at
-0.5.0 while `lat_core` moved would leave one published `lat_mid` 0.5.0 meaning
-two different things — `>= 1.1.0` to whoever fetched it before the release,
-`>= 1.2.0` to whoever fetched it after.
+This is a correctness requirement, not a convenience. A path dependency
+carries no version in the repository; it becomes a Hex requirement at publish
+time, derived from whatever version the dependency is on *then*. Holding
+`lat_mid` at 0.5.0 while `lat_core` moved would leave one published `lat_mid`
+0.5.0 meaning two different things: `>= 1.1.0` to whoever fetched it before
+the release, `>= 1.2.0` to whoever fetched it after.
 
 The rules:
 
@@ -279,7 +279,7 @@ The rules:
   patch by default. It needs no fragment of its own.
 - A package with its own fragments keeps its own bump; a ripple never lowers
   it. `lat_cli` above is `0.4.3` from its own fragment, not `0.4.3` from the
-  ripple — whichever is larger wins.
+  ripple; whichever is larger wins.
 - Ripples follow `[dev-dependencies]` path deps as well as `[dependencies]`.
 - A package excluded by `@release` never bumps, and a ripple stops there rather
   than skipping past it to its dependents.
@@ -295,10 +295,10 @@ Each rippled package gets a generated changelog entry, rendered like any other:
 ```
 
 The entries are generated at plan time and never written to
-`.changes/unreleased/` — the body embeds the dependency's new version, which is
-only settled once the whole plan is computed. Hand-written entries of the same
-kind share the heading rather than producing a second section. A ripple entry
-names no category, so in a workspace using them it files under
+`.changes/unreleased/`, because the body embeds the dependency's new version,
+which is only settled once the whole plan is computed. Hand-written entries of
+the same kind share the heading rather than producing a second section. A
+ripple entry names no category, so in a workspace using them it files under
 `uncategorized_label`.
 
 ## Applying it
@@ -310,8 +310,8 @@ package, it:
    configurable) and stores it under `.changes/<package>/`.
 2. Reassembles the package's `CHANGELOG.md` from its stored sections, newest
    first.
-3. Bumps the version in `gleam.toml` with a surgical TOML edit — no regex,
-   formatting preserved.
+3. Bumps the version in `gleam.toml` with a surgical TOML edit rather than a
+   regex, preserving the formatting.
 4. Patches every package's `manifest.toml` so locked workspace-internal
    dependencies match the new versions.
 
@@ -372,10 +372,10 @@ but the fragments behind it stay in `.changes/unreleased/`: they are still
 unreleased as far as `1.0.0` is concerned, and retiring them at `rc.1` would
 leave the final release with nothing to say.
 
-The consequence is that an entry appears twice in `CHANGELOG.md` — once under
+The consequence is that an entry appears twice in `CHANGELOG.md`: once under
 the RC that shipped it, once under the final version. `version --json` reports
-[`fragments_retained`](/docs/json-output/) so a workflow can tell a cut RC from
-a completed release.
+[`fragments_retained`](/docs/json-output/) so a workflow can tell a cut RC
+from a completed release.
 
 </Callout>
 
@@ -384,8 +384,9 @@ included, so the workspace moves as one coherent candidate. A package that only
 gained fragments *after* the RC was cut still bumps normally under `--pre none`,
 so a late arrival never blocks the promotion.
 
-Once a package sits at a prerelease, a plain `version apply` is an error rather
-than a silent bump to the next release — leaving a cycle has to be explicit:
+Once a package sits at a prerelease, a plain `version apply` is an error
+rather than a silent bump to the next release; leaving a cycle has to be
+explicit:
 
 ```console
 $ trellis version plan
@@ -401,7 +402,7 @@ prerelease versions.
 
 Because `CHANGELOG.md` is regenerated from `.changes/<package>/`, a package
 that already had a changelog before adopting trellis would lose it the first
-time it was released — there is nothing under `.changes/<package>/` to
+time it was released, since there is nothing under `.changes/<package>/` to
 reassemble from.
 
 Trellis handles this on a package's first release: everything below the header
@@ -414,9 +415,9 @@ bumped lat_core: 1.2.0 -> 1.3.0
 adopted existing changelog history as .changes/lat_core/v1.2.0.md
 ```
 
-The captured block is byte-for-byte — no heading parsing, no reformatting — and
-sorts below every section trellis goes on to write. It happens once; after that
-the changelog is fully generated.
+The captured block is byte-for-byte, with no heading parsing and no
+reformatting, and sorts below every section trellis goes on to write. It
+happens once; after that the changelog is fully generated.
 
 `doctor` reports pending adoptions so this is never a surprise mid-release, and
 `doctor --fix` performs the capture up front, so the restructuring lands in its

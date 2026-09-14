@@ -2,7 +2,7 @@
 
 mod common;
 
-use common::*;
+use common::{git, trellis, write};
 use predicates::prelude::*;
 use std::fs;
 use std::path::Path;

@@ -2,8 +2,8 @@
 //!
 //! These exist so that a breaking change to a documented shape fails *here*
 //! rather than in a consumer's workflow. They assert the wire format and
-//! nothing else — behavior is covered by `cli.rs`, `changelog_version.rs`,
-//! and `tag_publish.rs`.
+//! nothing else — behavior is covered by the command-focused integration
+//! suites.
 //!
 //! A failing snapshot is not automatically a bug: adding a field is permitted
 //! by the contract. Renaming, removing, or retyping one is not, and needs the
@@ -12,8 +12,27 @@
 
 mod common;
 
-use common::*;
+use common::{
+    add_fragment, copy_fixture_to, fixture, git, init_repo, trellis_with_stable_date as trellis,
+    write,
+};
 use std::fs;
+use std::path::Path;
+
+/// Run a command and parse its stdout as JSON. Takes the expected exit status
+/// because `changelog check` reports failure through it while still emitting a
+/// well-formed payload.
+fn json_output(dir: &Path, args: &[&str], expect_success: bool) -> serde_json::Value {
+    let output = trellis(dir).args(args).output().unwrap();
+    assert_eq!(
+        output.status.success(),
+        expect_success,
+        "unexpected exit for {args:?}: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    serde_json::from_slice(&output.stdout)
+        .unwrap_or_else(|err| panic!("{args:?} did not emit JSON: {err}"))
+}
 
 // ---- introspection -------------------------------------------------------
 

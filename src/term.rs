@@ -86,13 +86,15 @@ fn resolve_colors(choice: ColorChoice) -> bool {
     match choice {
         ColorChoice::Always => true,
         ColorChoice::Never => false,
-        ColorChoice::Auto => {
-            std::io::stdout().is_terminal()
-                && std::env::var("TERM").as_deref() != Ok("dumb")
-                && std::env::var_os("NO_COLOR").is_none()
-                && std::env::var("CLICOLOR").as_deref() != Ok("0")
-        }
+        ColorChoice::Auto => auto_colors(std::io::stdout().is_terminal()),
     }
+}
+
+fn auto_colors(is_terminal: bool) -> bool {
+    is_terminal
+        && std::env::var("TERM").as_deref() != Ok("dumb")
+        && std::env::var_os("NO_COLOR").is_none()
+        && std::env::var("CLICOLOR").as_deref() != Ok("0")
 }
 
 fn settings() -> &'static Settings {
@@ -248,20 +250,23 @@ mod tests {
     }
 
     #[test]
-    fn auto_is_off_when_not_a_terminal() {
-        // The test harness pipes stdout, so auto-detection must say no.
-        assert!(!resolve_colors(ColorChoice::Auto));
+    fn auto_is_off_when_output_is_not_a_terminal() {
+        assert!(!auto_colors(false));
     }
 
     #[test]
     fn painting_wraps_in_one_sgr_sequence() {
         assert_eq!(paint("error:", "1;31", true), "\x1b[1;31merror:\x1b[0m");
+        assert_eq!(
+            paint("lat_core   ", "1;35", true),
+            "\x1b[1;35mlat_core   \x1b[0m"
+        );
     }
 
     #[test]
     fn painting_disabled_is_a_passthrough() {
         assert_eq!(paint("error:", "1;31", false), "error:");
-        assert_eq!(paint("lat_core", "1;35", false), "lat_core");
+        assert_eq!(paint("lat_core   ", "1;35", false), "lat_core   ");
     }
 
     #[test]
@@ -269,14 +274,6 @@ mod tests {
         assert_eq!(name_color_code("lat_core"), 35);
         assert_eq!(name_color_code("lat_core"), name_color_code("lat_core"));
         assert_ne!(name_color_code("lat_core"), name_color_code("lat_mid"));
-    }
-
-    #[test]
-    fn padded_names_paint_the_display_with_the_name_color() {
-        // The test harness pipes stdout, so the public functions are the
-        // colors-off path; the invariant they must keep is returning the
-        // padded display untouched.
-        assert_eq!(package_padded("lat_core", "lat_core   "), "lat_core   ");
     }
 
     #[test]
