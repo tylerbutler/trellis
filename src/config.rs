@@ -8,7 +8,6 @@
 use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 use std::collections::BTreeMap;
-use std::path::Path;
 
 /// Prefix reserved for special `exclude` keys ([`RELEASE_EXCLUDE_KEY`] and
 /// [`MEMBERS_EXCLUDE_KEY`]) so they can never collide with a task name —
@@ -49,7 +48,7 @@ pub struct ConfigFile {
     #[serde(default)]
     pub doctor: DoctorConfig,
     /// Keys under `[tools.trellis]` that no field claimed. Collected rather
-    /// than deserialized — see [`ConfigFile::from_gleam_toml`].
+    /// than deserialized — see [`ConfigFile::from_document`].
     #[serde(skip)]
     pub unknown_keys: Vec<String>,
     /// Keys spelled in the pre-0.8 kebab-case style. Accepted, then reported —
@@ -87,6 +86,17 @@ pub enum Strictness {
     Off,
 }
 
+impl Strictness {
+    /// The configuration spelling, for output that is not serde.
+    pub fn key(self) -> &'static str {
+        match self {
+            Strictness::Warn => "warn",
+            Strictness::Error => "error",
+            Strictness::Off => "off",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct DoctorConfig {
@@ -95,23 +105,6 @@ pub struct DoctorConfig {
     /// Divergence is sometimes intended, so this does not fail CI by default.
     #[serde(default)]
     pub shared_dependencies: Strictness,
-}
-
-/// Deserialize the `[tools.trellis]` table, recording the keys no field
-/// claimed rather than dropping them on the floor.
-///
-/// Parsing stays lenient — an unrecognized key does not stop the workspace
-/// loading. Straight `deny_unknown_fields` would mean a workspace using a key
-/// from a newer trellis becomes unloadable under a pinned older one, which is a
-/// bad failure for a tool CI pins. The keys are reported by `doctor` instead.
-///
-/// The free-form tables ([`FREE_FORM_TABLES`]) accept any key by construction,
-/// so serde consumes them and they are never reported.
-fn deserialize_collecting_unknown(trellis: &toml::Value) -> Result<(ConfigFile, Vec<String>)> {
-    let mut ignored = Vec::new();
-    let config = serde_ignored::deserialize(trellis.clone(), |path| ignored.push(path.to_string()))
-        .context("invalid [tools.trellis] configuration")?;
-    Ok((config, ignored))
 }
 
 /// Tables under `[tools.trellis]` whose *keys* are chosen by the user rather
@@ -695,20 +688,24 @@ fn default_dependency_body() -> String {
 }
 
 impl ConfigFile {
-    /// Load from the workspace root's `gleam.toml`, reading the
-    /// `[tools.trellis]` table.
-    pub fn load(path: &Path) -> Result<Self> {
-        let text = std::fs::read_to_string(path)
-            .with_context(|| format!("failed to read {}", path.display()))?;
-        Self::from_gleam_toml(&text).with_context(|| format!("in {}", path.display()))
-    }
-
+    #[cfg(test)]
     pub fn from_gleam_toml(text: &str) -> Result<Self> {
         let document: toml::Value = toml::from_str(text).context("failed to parse gleam.toml")?;
+        Self::from_document(&document)
+    }
+
+    /// Load from an already-parsed `gleam.toml`, reading the `[tools.trellis]`
+    /// table. Unknown keys are recorded (see [`ConfigFile::unknown_keys`])
+    /// rather than rejected, so a workspace using a key from a newer trellis
+    /// still loads under a pinned older one; `doctor` reports them.
+    pub fn from_document(document: &toml::Value) -> Result<Self> {
         let Some(trellis) = document.get("tools").and_then(|tools| tools.get("trellis")) else {
             bail!("gleam.toml has no [tools.trellis] table");
         };
-        let (mut config, ignored) = deserialize_collecting_unknown(trellis)?;
+        let mut ignored = Vec::new();
+        let mut config: Self =
+            serde_ignored::deserialize(trellis.clone(), |path| ignored.push(path.to_string()))
+                .context("invalid [tools.trellis] configuration")?;
         config.deprecated_keys = collect_deprecated_keys(trellis, &ignored);
         config.unknown_keys = ignored;
         config.validate()?;
@@ -789,30 +786,23 @@ impl ConfigFile {
         // what the tag is called, and which series it tracks. Defaulting any
         // of them would let a half-written config publish a tag nobody asked
         // for, or configure one that silently produces nothing.
-        let declared: Vec<&str> = [
-            self.publish
-                .repository_tag_package
-                .is_some()
-                .then_some("repository_tag_package"),
-            self.publish
-                .repository_tag_format
-                .is_some()
-                .then_some("repository_tag_format"),
-            (!self.publish.repository_tags.is_empty()).then_some("repository_tags"),
-        ]
-        .into_iter()
-        .flatten()
-        .collect();
-        if !declared.is_empty() && declared.len() < 3 {
-            let missing: Vec<String> = [
+        let keys = [
+            (
                 "repository_tag_package",
+                self.publish.repository_tag_package.is_some(),
+            ),
+            (
                 "repository_tag_format",
-                "repository_tags",
-            ]
-            .into_iter()
-            .filter(|key| !declared.contains(key))
-            .map(|key| format!("`{key}`"))
+                self.publish.repository_tag_format.is_some(),
+            ),
+            ("repository_tags", !self.publish.repository_tags.is_empty()),
+        ];
+        let missing: Vec<String> = keys
+            .iter()
+            .filter(|(_, present)| !present)
+            .map(|(key, _)| format!("`{key}`"))
             .collect();
+        if !missing.is_empty() && missing.len() < keys.len() {
             bail!(
                 "the repository tag needs `repository_tag_package`, `repository_tag_format`, \
                  and a non-empty `repository_tags`; missing {}",
@@ -1229,14 +1219,14 @@ mod tests {
     #[test]
     fn hyphens_in_free_form_table_keys_are_not_deprecations() {
         let config = ConfigFile::from_gleam_toml(
-            r###"
+            r#"
             [tools.trellis]
             members = ["packages/*"]
             exclude = { "check-all" = ["examples/*"] }
 
             [tools.trellis.tasks.check-all]
             command = "gleam check"
-        "###,
+        "#,
         )
         .unwrap();
         assert!(config.tasks.contains_key("check-all"));
@@ -1270,13 +1260,13 @@ mod tests {
     #[test]
     fn keys_added_after_the_last_kebab_release_have_no_alias() {
         let config = ConfigFile::from_gleam_toml(
-            r###"
+            r#"
             [tools.trellis.changelog]
             dependency-kind = "Docs"
 
             [tools.trellis.doctor]
             shared-dependencies = "error"
-        "###,
+        "#,
         )
         .unwrap();
         // The defaults stand, and the keys are reported as unrecognized.
@@ -1347,11 +1337,11 @@ mod tests {
     #[test]
     fn lifecycle_parses_nested_table_and_inline_map() {
         let config = ConfigFile::from_gleam_toml(
-            r###"
+            r#"
             [tools.trellis.publish.lifecycle]
             default = "hex"
             packages = { "member/path/**" = "git_only", "examples/**" = "workspace" }
-            "###,
+            "#,
         )
         .unwrap();
         assert_eq!(config.publish.lifecycle.default, ReleaseLifecycle::Hex);
@@ -1401,10 +1391,10 @@ mod tests {
     #[test]
     fn dependency_kind_must_name_a_configured_kind() {
         let err = ConfigFile::from_gleam_toml(
-            r###"
+            r#"
             [tools.trellis.changelog]
             kinds = [{ label = "Docs", bump = "patch" }]
-        "###,
+        "#,
         )
         .unwrap_err();
         let message = format!("{err:#}");
@@ -1423,12 +1413,12 @@ mod tests {
     #[test]
     fn dependency_kind_may_point_at_an_existing_kind() {
         let config = ConfigFile::from_gleam_toml(
-            r###"
+            r#"
             [tools.trellis.changelog]
             dependency_kind = "Docs"
             dependency_body = "{{ dependency }} is now {{ dependency_version }}"
             kinds = [{ label = "Docs", bump = "patch" }]
-        "###,
+        "#,
         )
         .unwrap();
         assert_eq!(config.changelog.dependency_kind, "Docs");
@@ -1543,14 +1533,14 @@ mod tests {
     #[test]
     fn parses_package_tags_and_overrides() {
         let config = ConfigFile::from_gleam_toml(
-            r###"
+            r#"
             [tools.trellis]
             members = ["packages/*"]
 
             [tools.trellis.publish]
             package_tags = ["minor"]
             package_tags_overrides = { "packages/lat_*" = ["exact", "minor"], "packages/old" = ["exact"] }
-        "###,
+        "#,
         )
         .unwrap();
         assert_eq!(config.publish.package_tags, [TagLevel::Minor]);

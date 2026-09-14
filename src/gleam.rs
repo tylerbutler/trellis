@@ -46,8 +46,7 @@ struct RawManifest {
     dependencies: BTreeMap<String, RawDep>,
     #[serde(default, rename = "dev-dependencies")]
     dev_dependencies: BTreeMap<String, RawDep>,
-    #[serde(default)]
-    tools: Option<toml::Value>,
+    tools: Option<toml::Table>,
 }
 
 fn default_version() -> String {
@@ -75,21 +74,21 @@ impl GleamManifest {
     pub fn parse(text: &str) -> Result<Self> {
         let raw: RawManifest = toml::from_str(text)?;
         let mut dependencies = Vec::new();
-        for (deps, dev) in [(&raw.dependencies, false), (&raw.dev_dependencies, true)] {
+        for (deps, dev) in [(raw.dependencies, false), (raw.dev_dependencies, true)] {
             for (name, dep) in deps {
                 let requirement = match dep {
-                    RawDep::Requirement(req) => Requirement::Hex(req.clone()),
+                    RawDep::Requirement(req) => Requirement::Hex(req),
                     // `git` wins over `path`: since Gleam 1.18 a git dep may
                     // carry a `path` key selecting a subdirectory of the
                     // remote repo, which is not a workspace-local path.
-                    RawDep::Detailed { git: Some(git), .. } => Requirement::Git(git.clone()),
+                    RawDep::Detailed { git: Some(git), .. } => Requirement::Git(git),
                     RawDep::Detailed {
                         path: Some(path), ..
-                    } => Requirement::Path(path.clone()),
+                    } => Requirement::Path(path),
                     RawDep::Detailed {
                         version: Some(version),
                         ..
-                    } => Requirement::Hex(version.clone()),
+                    } => Requirement::Hex(version),
                     RawDep::Detailed { .. } => {
                         anyhow::bail!(
                             "dependency `{name}` has neither a version, a path, nor a git source"
@@ -97,17 +96,18 @@ impl GleamManifest {
                     }
                 };
                 dependencies.push(Dependency {
-                    name: name.clone(),
+                    name,
                     requirement,
                     dev,
                 });
             }
         }
+        // The same test root discovery applies: a `trellis` *table*.
         let has_trellis_config = raw
             .tools
             .as_ref()
             .and_then(|tools| tools.get("trellis"))
-            .is_some();
+            .is_some_and(toml::Value::is_table);
         Ok(Self {
             name: raw.name,
             version: raw.version,

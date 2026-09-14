@@ -1,0 +1,5 @@
+component: lockfile
+kind: Changed
+body: |-
+  **`trellis lockfile refresh` lists valid members for an unknown package.** The error now uses the same package-selection output as other commands, so a misspelled `--package` value shows the available workspace package names.
+time: 2026-09-14T11:23:18.928000-07:00

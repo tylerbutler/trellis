@@ -1,0 +1,5 @@
+component: doctor
+kind: Fixed
+body: |-
+  **`trellis doctor` reports each invalid exclusion glob once.** Invalid `@release` and `@members` patterns no longer produce duplicate findings for the same configuration error.
+time: 2026-09-14T11:23:18.928000-07:00

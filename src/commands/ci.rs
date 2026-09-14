@@ -61,7 +61,7 @@ pub fn outputs(workspace: &Workspace) -> Result<()> {
         .members
         .iter()
         .filter(|m| m.releasable())
-        .map(|m| format!("{}/gleam.toml", m.rel_path))
+        .map(|m| m.rel_file("gleam.toml"))
         .collect();
     let tags: Vec<String> = workspace
         .members
@@ -72,18 +72,15 @@ pub fn outputs(workspace: &Workspace) -> Result<()> {
     // Deduplicated: a repository-wide series tag is one tag, however many
     // members move it.
     let mut series_tags: Vec<String> = Vec::new();
-    for member in workspace
+    for tag in workspace
         .members
         .iter()
-        .filter(|m| m.releasable() && m.tags.iter().any(|t| t.is_series()))
+        .enumerate()
+        .filter(|(_, m)| m.releasable())
+        .flat_map(|(idx, _)| workspace.series_tags_of(idx))
     {
-        for tag in workspace
-            .config
-            .series_tags(&member.name, member.version(), &member.tags)
-        {
-            if !series_tags.contains(&tag) {
-                series_tags.push(tag);
-            }
+        if !series_tags.contains(&tag) {
+            series_tags.push(tag);
         }
     }
 
