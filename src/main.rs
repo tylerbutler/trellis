@@ -200,18 +200,6 @@ enum Command {
     /// what can be configured. Refuses if the repository is already a trellis
     /// workspace, and finishes by running `doctor`.
     Init,
-    /// Scaffold a new package in the workspace
-    New {
-        /// Package name (lowercase letters, digits, and _)
-        name: String,
-        /// Template to scaffold from
-        #[arg(long, default_value = "lib")]
-        template: String,
-        /// Parent directory relative to the workspace root (derived from
-        /// existing members when omitted)
-        #[arg(long)]
-        path: Option<String>,
-    },
     /// Release orchestration
     Release {
         #[command(subcommand)]
@@ -241,6 +229,30 @@ enum Command {
     Lockfile {
         #[command(subcommand)]
         command: LockfileCommand,
+    },
+    /// Pin git dependency refs to commit SHAs, recording the tracked ref
+    ///
+    /// Rewrites each symbolic `ref` in `[dependencies]`/`[dev-dependencies]`
+    /// to the commit it resolves to and records the original in a trailing
+    /// `# trellis:pin <ref>` comment, ratchet-style: the dependency becomes
+    /// reproducible without losing what to bump it to. Following the ref
+    /// again is a deliberate, reviewable `--update` diff instead of a silent
+    /// re-resolution; deleting the comment simply stops updates.
+    Pin {
+        /// Packages whose git dependencies to pin; all packages when omitted
+        #[arg(add = completion::packages())]
+        packages: Vec<String>,
+        /// Re-resolve every recorded `# trellis:pin` ref and rewrite the SHAs
+        /// that moved
+        #[arg(long, conflicts_with_all = ["check", "unpin"])]
+        update: bool,
+        /// Verify each pinned SHA is still reachable from its tracked ref;
+        /// non-zero exit on drift (for CI)
+        #[arg(long, conflicts_with = "unpin")]
+        check: bool,
+        /// Restore the symbolic refs and remove the pin comments
+        #[arg(long)]
+        unpin: bool,
     },
     /// Validate workspace invariants; non-zero exit on any error
     Doctor {
@@ -706,21 +718,6 @@ fn dispatch(cli: Cli) -> Result<bool> {
                 commands::version::apply(&workspace, &overrides.parse()?, json)
             }
         },
-        Command::New {
-            name,
-            template,
-            path,
-        } => {
-            commands::new::run(
-                &workspace,
-                &commands::new::NewOptions {
-                    name,
-                    template,
-                    path,
-                },
-            )?;
-            Ok(true)
-        }
         Command::Release { command } => match command {
             ReleaseCommand::Pr { base, branch } => {
                 commands::release::pr(&workspace, &commands::release::PrOptions { base, branch })
@@ -763,6 +760,21 @@ fn dispatch(cli: Cli) -> Result<bool> {
                 commands::lockfile::refresh(&workspace, package.as_deref())
             }
         },
+        Command::Pin {
+            packages,
+            update,
+            check,
+            unpin,
+        } => {
+            let mode = match (update, check, unpin) {
+                (false, false, false) => commands::pin::Mode::Pin,
+                (true, false, false) => commands::pin::Mode::Update,
+                (false, true, false) => commands::pin::Mode::Check,
+                (false, false, true) => commands::pin::Mode::Unpin,
+                _ => unreachable!("clap conflicts prevent combining pin flags"),
+            };
+            commands::pin::run(&workspace, &commands::pin::PinOptions { mode, packages })
+        }
         Command::Doctor { .. }
         | Command::Init
         | Command::MarkdownHelp
@@ -780,5 +792,55 @@ fn dispatch(cli: Cli) -> Result<bool> {
             }
             Ok(true)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::CommandFactory;
+
+    /// Every visible command must appear in a hand-written website docs page.
+    /// reference.md is generated from the CLI itself, so it cannot count.
+    #[test]
+    fn every_command_is_documented_on_the_website() {
+        let docs_dir =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("website/src/content/docs/docs");
+        let mut pages = String::new();
+        for entry in std::fs::read_dir(&docs_dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.file_name().is_some_and(|n| n == "reference.md") {
+                continue;
+            }
+            if path.extension().is_some_and(|e| e == "md" || e == "mdx") {
+                pages.push_str(&std::fs::read_to_string(&path).unwrap());
+            }
+        }
+        assert!(
+            !pages.is_empty(),
+            "no docs pages found in {}",
+            docs_dir.display()
+        );
+
+        let missing: Vec<String> = Cli::command()
+            .get_subcommands()
+            .filter(|c| !c.is_hide_set())
+            .map(|c| c.get_name().to_string())
+            .filter(|name| name != "help")
+            .filter(|name| {
+                [
+                    format!("trellis {name}"),
+                    format!("`{name}`"),
+                    format!("`{name} "),
+                ]
+                .iter()
+                .all(|needle| !pages.contains(needle))
+            })
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "commands with no mention in website/src/content/docs/docs \
+             (reference.md is generated and does not count): {missing:?}"
+        );
     }
 }

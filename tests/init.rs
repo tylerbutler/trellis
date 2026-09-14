@@ -1,31 +1,11 @@
 //! End-to-end tests for `trellis init` — bootstrapping a workspace.
 
-use assert_cmd::Command;
+mod common;
+
+use common::{git, trellis, write};
 use predicates::prelude::*;
 use std::fs;
 use std::path::Path;
-
-fn trellis(dir: &Path) -> Command {
-    let mut cmd = Command::cargo_bin("trellis").unwrap();
-    cmd.current_dir(dir);
-    cmd
-}
-
-fn write(path: &Path, content: &str) {
-    fs::create_dir_all(path.parent().unwrap()).unwrap();
-    fs::write(path, content).unwrap();
-}
-
-fn git(root: &Path, args: &[&str]) {
-    let status = std::process::Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .unwrap();
-    assert!(status.success(), "git {args:?} failed");
-}
 
 /// Two packages in a git repo, with no workspace configuration at all — the
 /// state someone adopting trellis actually starts from.

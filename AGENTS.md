@@ -3,6 +3,20 @@
 Guidance for agents working in this repository. See [docs/DESIGN.md](docs/DESIGN.md)
 for what trellis is and why.
 
+## Product-name capitalization
+
+Use **trellis** in running text and **Trellis** at the start of a sentence and
+in document titles. Use sentence case for headings: "Installing trellis", not
+"Installing Trellis". This keeps the existing convention without rewriting
+CLI output or generated documentation.
+
+- Keep the visual wordmark lowercase: **trellis**.
+- Preserve literal spelling in commands (`trellis doctor`), binary and crate
+  names, paths, URLs, config keys (`[tools.trellis]`), schema names
+  (`trellis.doctor/1`), and environment variables (`TRELLIS_NO_UPDATE_CHECK`).
+  Do not capitalize a command just because it starts a sentence or heading.
+- Leave published release notes and quoted historical output unchanged.
+
 ## Naming: snake_case for everything we control
 
 **Every identifier trellis defines is snake_case.** That covers:
@@ -34,9 +48,21 @@ new keys never get one.
 
 ## Changelog fragments
 
-Every user-visible change needs one: a YAML file in `.changes/unreleased/` named
-`<Kind>-<YYYYMMDD>-<slug>.yaml`, with `component`, `kind`, `body`, and `time`. The
-audience is a stranger reading the release notes, not the reviewer of your PR.
+**Only user-facing product changes need a changelog fragment.** Documentation,
+tests, CI, infrastructure, and internal maintenance do not need one unless they
+also change user-facing product behavior.
+
+For a product change, add a YAML file in `.changes/unreleased/` named
+`<Kind>-<YYYYMMDD>-<slug>.yaml`, with `component`, `kind`, `body`, and `time`.
+The audience is a stranger reading the release notes, not the reviewer of your PR.
+
+**This section is about trellis's own changelog, which changie manages — not
+about the fragments trellis writes.** The two formats are different and easy to
+confuse: changie fragments are YAML keyed on `component`, while trellis's native
+engine reads TOML keyed on `package`, `kind`, an optional `category`, and `body`
+(`src/changelog.rs`). Everything below applies to this repository's
+`.changes/unreleased/`; a Gleam workspace consuming trellis uses the TOML shape,
+documented on the [changelog page](website/src/content/docs/docs/changelog.mdx).
 
 Write the body as a `|-` block scalar with a **bolded lead-in sentence**, then
 paragraphs:
@@ -124,3 +150,32 @@ looking is a wire-format break accepted without looking.
 
 `website/src/content/docs/docs/reference.md` and `assets/man/` are generated.
 Edit the clap definitions, then run `just docs`.
+
+## Releasing trellis
+
+Releases are fully automated, fragment-driven, and hands-off after merge —
+the same pipeline as [repoverlay](https://github.com/tylerbutler/repoverlay):
+
+1. Every user-facing product change lands with a changie fragment (`changie new`);
+   documentation, tests, and infrastructure alone do not need one. Fragments
+   accumulate in `.changes/unreleased/`.
+2. On each push to `main`, `changie-release.yml` batches the fragments into a
+   release PR that bumps `Cargo.toml`, regenerates `Cargo.lock`, and updates
+   `CHANGELOG.md`.
+3. Merging the release PR triggers `release-plz.yml`, which creates the
+   `v{version}` tag and publishes the crate to crates.io as `trellis-gleam`
+   (the `trellis` name itself is taken by an unrelated project — the `[[bin]]`
+   in `Cargo.toml` keeps the installed binary named `trellis`).
+4. The tag triggers the dist-generated `release.yml`: cargo-dist builds
+   binaries for five targets (Linux gnu, macOS, Windows; x86_64 and aarch64),
+   generates the shell/PowerShell installers and the Homebrew formula,
+   attaches SLSA provenance attestations, and creates the GitHub Release.
+   `publish-homebrew-tap.yml` then pushes the formula to
+   `tylerbutler/homebrew-tap` using a GitHub App token.
+
+The release workflows expect the `RELEASE_APP_ID` / `RELEASE_APP_PRIVATE_KEY`
+secrets (a GitHub App with `contents:write` here and on the tap), plus a
+`CARGO_REGISTRY_TOKEN` secret (a crates.io API token with publish access to
+`trellis-gleam`) for `release-plz.yml` to publish the crate. After changing
+`dist-workspace.toml`, regenerate the release workflow with `dist generate`
+and validate with `dist plan`.

@@ -20,7 +20,6 @@ description: Every trellis command, flag, and argument — generated from the CL
 * [`trellis version plan`↴](#trellis-version-plan)
 * [`trellis version apply`↴](#trellis-version-apply)
 * [`trellis init`↴](#trellis-init)
-* [`trellis new`↴](#trellis-new)
 * [`trellis release`↴](#trellis-release)
 * [`trellis release pr`↴](#trellis-release-pr)
 * [`trellis release bootstrap`↴](#trellis-release-bootstrap)
@@ -30,6 +29,7 @@ description: Every trellis command, flag, and argument — generated from the CL
 * [`trellis publish`↴](#trellis-publish)
 * [`trellis lockfile`↴](#trellis-lockfile)
 * [`trellis lockfile refresh`↴](#trellis-lockfile-refresh)
+* [`trellis pin`↴](#trellis-pin)
 * [`trellis doctor`↴](#trellis-doctor)
 * [`trellis ci`↴](#trellis-ci)
 * [`trellis ci matrix`↴](#trellis-ci-matrix)
@@ -53,11 +53,11 @@ A workspace CLI for Gleam monorepos: task fan-out, introspection, and release or
 * `changelog` — Changelog fragment management (see [tools.trellis.changelog])
 * `version` — Plan and apply version bumps from unreleased changelog fragments
 * `init` — Bootstrap a workspace: write a [tools.trellis] table at the repo root
-* `new` — Scaffold a new package in the workspace
 * `release` — Release orchestration
 * `tag` — Compare package versions against git tags; create what's missing
 * `publish` — Publish packages to Hex, in dependency order, with path deps rewritten
 * `lockfile` — Lockfile maintenance
+* `pin` — Pin git dependency refs to commit SHAs, recording the tracked ref
 * `doctor` — Validate workspace invariants; non-zero exit on any error
 * `ci` — Structured output for CI
 * `completions` — Print the shell snippet that enables tab-completion
@@ -288,25 +288,6 @@ Everything trellis can derive it derives, so the table this writes is nearly emp
 
 
 
-## `trellis new`
-
-Scaffold a new package in the workspace
-
-**Usage:** `trellis new [OPTIONS] <NAME>`
-
-###### **Arguments:**
-
-* `<NAME>` — Package name (lowercase letters, digits, and _)
-
-###### **Options:**
-
-* `--template <TEMPLATE>` — Template to scaffold from
-
-  Default value: `lib`
-* `--path <PATH>` — Parent directory relative to the workspace root (derived from existing members when omitted)
-
-
-
 ## `trellis release`
 
 Release orchestration
@@ -431,6 +412,26 @@ Run `gleam deps download`, scoped to one package (with retry/backoff)
 ###### **Options:**
 
 * `--package <PACKAGE>` — Refresh only this package instead of the whole workspace
+
+
+
+## `trellis pin`
+
+Pin git dependency refs to commit SHAs, recording the tracked ref
+
+Rewrites each symbolic `ref` in `[dependencies]`/`[dev-dependencies]` to the commit it resolves to and records the original in a trailing `# trellis:pin <ref>` comment, ratchet-style: the dependency becomes reproducible without losing what to bump it to. Following the ref again is a deliberate, reviewable `--update` diff instead of a silent re-resolution; deleting the comment simply stops updates.
+
+**Usage:** `trellis pin [OPTIONS] [PACKAGES]...`
+
+###### **Arguments:**
+
+* `<PACKAGES>` — Packages whose git dependencies to pin; all packages when omitted
+
+###### **Options:**
+
+* `--update` — Re-resolve every recorded `# trellis:pin` ref and rewrite the SHAs that moved
+* `--check` — Verify each pinned SHA is still reachable from its tracked ref; non-zero exit on drift (for CI)
+* `--unpin` — Restore the symbolic refs and remove the pin comments
 
 
 

@@ -1,6 +1,5 @@
 lockfile_version: '1'
-generated_at: '2026-08-11T19:23:49.801525+00:00'
-generated_at: '2026-08-11T19:23:49.801525+00:00'
+generated_at: '2026-08-23T01:58:05.783917+00:00'
 apm_version: 0.28.0
 dependencies:
 - repo_url: dietrichgebert/ponytail
@@ -86,7 +85,6 @@ dependencies:
     .github/hooks/scripts/ponytail/hooks/ponytail-subagent.js: sha256:7f6bee86702a488d29ef0dcaabf424bbe2aca345a6a642319d43a1fe0276792e
   content_hash: sha256:17a5d405c7a1b9ef17969bc14deacaa78ae420fb453c0f2b1f7170d530e55b26
   is_dev: true
-  is_dev: true
 - repo_url: juliusbrussee/caveman
   materialization_repo_url: JuliusBrussee/caveman
   name: caveman-commit
@@ -110,26 +108,69 @@ dependencies:
     .claude/skills/caveman-commit/SKILL.md: sha256:58db7b8efab911a629c26e7132517d9076e4e3645009eb604cb8c25663477841
   content_hash: sha256:790a4eeace0be35c6691faf923518ba5bd50f1f1305d1101d09dd4971be94e00
   is_dev: true
+- repo_url: tylerbutler/apm-base
+  name: apm-base
+  host: github.com
+  resolved_commit: a810769689c28268488834cfacb0f704ecbc1f9d
+  version: 0.2.2
+  package_type: apm_package
+  deployed_files:
+  - .agents/skills/prose-banlist
+  - .agents/skills/prose-banlist/SKILL.md
+  - .claude/rules/use-ste.md
+  - .claude/skills/prose-banlist
+  - .claude/skills/prose-banlist/SKILL.md
+  - .github/instructions/use-ste.instructions.md
+  deployed_file_hashes:
+    .agents/skills/prose-banlist/SKILL.md: sha256:48330781d0d69dc91cf4ef295fadc04d6d14f5a195d82b293d31677829e6f2b0
+    .claude/rules/use-ste.md: sha256:6bfec65cbeaf6e78cf7885d6119fb868ad789db4a34a7dd28c2e71abfe69f803
+    .claude/skills/prose-banlist/SKILL.md: sha256:48330781d0d69dc91cf4ef295fadc04d6d14f5a195d82b293d31677829e6f2b0
+    .github/instructions/use-ste.instructions.md: sha256:c4512aac8ae85c13578effb80b704cc72a14a6a13a3c5f3db036ca2e899513de
+  content_hash: sha256:b10858094b9c569b54852cc3f84556cf28bc1662d9cf6d8316753e2018cf1791
+  is_dev: true
+- repo_url: hardikpandya/stop-slop
+  name: stop-slop
+  host: github.com
+  resolved_commit: 8da1f030185bdfe8471220585162991eaeb970e9
+  version: unknown
+  depth: 2
+  resolved_by: tylerbutler/apm-base
+  package_type: claude_skill
+  deployed_files:
+  - .agents/skills/stop-slop
+  - .agents/skills/stop-slop/CHANGELOG.md
+  - .agents/skills/stop-slop/LICENSE
+  - .agents/skills/stop-slop/README.md
+  - .agents/skills/stop-slop/SKILL.md
+  - .agents/skills/stop-slop/references/examples.md
+  - .agents/skills/stop-slop/references/phrases.md
+  - .agents/skills/stop-slop/references/structures.md
+  - .claude/skills/stop-slop
+  - .claude/skills/stop-slop/CHANGELOG.md
+  - .claude/skills/stop-slop/LICENSE
+  - .claude/skills/stop-slop/README.md
+  - .claude/skills/stop-slop/SKILL.md
+  - .claude/skills/stop-slop/references/examples.md
+  - .claude/skills/stop-slop/references/phrases.md
+  - .claude/skills/stop-slop/references/structures.md
+  deployed_file_hashes:
+    .agents/skills/stop-slop/CHANGELOG.md: sha256:fe2f1484ef02abf22efc09def89bac186a2235831fd0da13d4895edb19cc6dd0
+    .agents/skills/stop-slop/LICENSE: sha256:2e2b2beaf41cc0ce28485455a62aed81777cdcdf68702e142427aef1cd720f2c
+    .agents/skills/stop-slop/README.md: sha256:d5c699e712e62d286aa4314e6b4ba02cde7a9da36ce56102660f98d1a8ceebba
+    .agents/skills/stop-slop/SKILL.md: sha256:7432a1d9ebdd42b27666da8458af252edf549f723fb14bcd4791425103930310
+    .agents/skills/stop-slop/references/examples.md: sha256:49c592899eb4457f95d0767e15e3143569e2cef50f2927c3174e62432984cd3d
+    .agents/skills/stop-slop/references/phrases.md: sha256:4ca1b7e97123b5c67eff3dc97e5e977332e0b24021265c1553888a93ec33fa93
+    .agents/skills/stop-slop/references/structures.md: sha256:ffbf1316c7fb5aaf552de005609a64a9639b546ecd76bfb0e482864d5bbe6f58
+    .claude/skills/stop-slop/CHANGELOG.md: sha256:fe2f1484ef02abf22efc09def89bac186a2235831fd0da13d4895edb19cc6dd0
+    .claude/skills/stop-slop/LICENSE: sha256:2e2b2beaf41cc0ce28485455a62aed81777cdcdf68702e142427aef1cd720f2c
+    .claude/skills/stop-slop/README.md: sha256:d5c699e712e62d286aa4314e6b4ba02cde7a9da36ce56102660f98d1a8ceebba
+    .claude/skills/stop-slop/SKILL.md: sha256:7432a1d9ebdd42b27666da8458af252edf549f723fb14bcd4791425103930310
+    .claude/skills/stop-slop/references/examples.md: sha256:49c592899eb4457f95d0767e15e3143569e2cef50f2927c3174e62432984cd3d
+    .claude/skills/stop-slop/references/phrases.md: sha256:4ca1b7e97123b5c67eff3dc97e5e977332e0b24021265c1553888a93ec33fa93
+    .claude/skills/stop-slop/references/structures.md: sha256:ffbf1316c7fb5aaf552de005609a64a9639b546ecd76bfb0e482864d5bbe6f58
+  content_hash: sha256:2e93df9fc59dbc268f98b75b51be8751f8db4e8c3943bb7f4beafa244a05785a
   is_dev: true
 deployments:
-- kind: project-relative
-  target: agents
-  value: .agents/skills/trellis-onboarding
-  runtime: null
-  scope: project
-  owners:
-  - .
-  active_owner: .
-  content_hash: null
-- kind: project-relative
-  target: agents
-  value: .agents/skills/trellis-onboarding/SKILL.md
-  runtime: null
-  scope: project
-  owners:
-  - .
-  active_owner: .
-  content_hash: sha256:2b147d03e89aca49126605bf858828428c6c6f3640d71c0e018d7fde7eaa3ef3
 - kind: project-relative
   target: agents
   value: .agents/skills/trellis-onboarding
@@ -238,6 +279,15 @@ deployments:
   - .
   active_owner: .
   content_hash: sha256:7bfa0b61b27e7f8aa782881e243ff010a542615ce14f0ce917615b23dcea1cd4
+- kind: project-relative
+  target: claude
+  value: .claude/rules/use-ste.md
+  runtime: null
+  scope: project
+  owners:
+  - tylerbutler/apm-base
+  active_owner: tylerbutler/apm-base
+  content_hash: sha256:6bfec65cbeaf6e78cf7885d6119fb868ad789db4a34a7dd28c2e71abfe69f803
 - kind: project-relative
   target: claude
   value: .claude/skills/caveman-commit
@@ -375,22 +425,94 @@ deployments:
   content_hash: sha256:1316a2f3f95741d2300b116fe0c2d81ce4a9568656ed0a62643f54aaf09957f2
 - kind: project-relative
   target: claude
-  value: .claude/skills/trellis-onboarding
+  value: .claude/skills/prose-banlist
   runtime: null
   scope: project
   owners:
-  - .
-  active_owner: .
+  - tylerbutler/apm-base
+  active_owner: tylerbutler/apm-base
   content_hash: null
 - kind: project-relative
   target: claude
-  value: .claude/skills/trellis-onboarding/SKILL.md
+  value: .claude/skills/prose-banlist/SKILL.md
   runtime: null
   scope: project
   owners:
-  - .
-  active_owner: .
-  content_hash: sha256:2b147d03e89aca49126605bf858828428c6c6f3640d71c0e018d7fde7eaa3ef3
+  - tylerbutler/apm-base
+  active_owner: tylerbutler/apm-base
+  content_hash: sha256:48330781d0d69dc91cf4ef295fadc04d6d14f5a195d82b293d31677829e6f2b0
+- kind: project-relative
+  target: claude
+  value: .claude/skills/stop-slop
+  runtime: null
+  scope: project
+  owners:
+  - hardikpandya/stop-slop
+  active_owner: hardikpandya/stop-slop
+  content_hash: null
+- kind: project-relative
+  target: claude
+  value: .claude/skills/stop-slop/CHANGELOG.md
+  runtime: null
+  scope: project
+  owners:
+  - hardikpandya/stop-slop
+  active_owner: hardikpandya/stop-slop
+  content_hash: sha256:fe2f1484ef02abf22efc09def89bac186a2235831fd0da13d4895edb19cc6dd0
+- kind: project-relative
+  target: claude
+  value: .claude/skills/stop-slop/LICENSE
+  runtime: null
+  scope: project
+  owners:
+  - hardikpandya/stop-slop
+  active_owner: hardikpandya/stop-slop
+  content_hash: sha256:2e2b2beaf41cc0ce28485455a62aed81777cdcdf68702e142427aef1cd720f2c
+- kind: project-relative
+  target: claude
+  value: .claude/skills/stop-slop/README.md
+  runtime: null
+  scope: project
+  owners:
+  - hardikpandya/stop-slop
+  active_owner: hardikpandya/stop-slop
+  content_hash: sha256:d5c699e712e62d286aa4314e6b4ba02cde7a9da36ce56102660f98d1a8ceebba
+- kind: project-relative
+  target: claude
+  value: .claude/skills/stop-slop/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - hardikpandya/stop-slop
+  active_owner: hardikpandya/stop-slop
+  content_hash: sha256:7432a1d9ebdd42b27666da8458af252edf549f723fb14bcd4791425103930310
+- kind: project-relative
+  target: claude
+  value: .claude/skills/stop-slop/references/examples.md
+  runtime: null
+  scope: project
+  owners:
+  - hardikpandya/stop-slop
+  active_owner: hardikpandya/stop-slop
+  content_hash: sha256:49c592899eb4457f95d0767e15e3143569e2cef50f2927c3174e62432984cd3d
+- kind: project-relative
+  target: claude
+  value: .claude/skills/stop-slop/references/phrases.md
+  runtime: null
+  scope: project
+  owners:
+  - hardikpandya/stop-slop
+  active_owner: hardikpandya/stop-slop
+  content_hash: sha256:4ca1b7e97123b5c67eff3dc97e5e977332e0b24021265c1553888a93ec33fa93
+- kind: project-relative
+  target: claude
+  value: .claude/skills/stop-slop/references/structures.md
+  runtime: null
+  scope: project
+  owners:
+  - hardikpandya/stop-slop
+  active_owner: hardikpandya/stop-slop
+  content_hash: sha256:ffbf1316c7fb5aaf552de005609a64a9639b546ecd76bfb0e482864d5bbe6f58
 - kind: project-relative
   target: claude
   value: .claude/skills/trellis-onboarding
@@ -546,6 +668,96 @@ deployments:
   content_hash: sha256:1316a2f3f95741d2300b116fe0c2d81ce4a9568656ed0a62643f54aaf09957f2
 - kind: project-relative
   target: copilot
+  value: .agents/skills/prose-banlist
+  runtime: null
+  scope: project
+  owners:
+  - tylerbutler/apm-base
+  active_owner: tylerbutler/apm-base
+  content_hash: null
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/prose-banlist/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - tylerbutler/apm-base
+  active_owner: tylerbutler/apm-base
+  content_hash: sha256:48330781d0d69dc91cf4ef295fadc04d6d14f5a195d82b293d31677829e6f2b0
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/stop-slop
+  runtime: null
+  scope: project
+  owners:
+  - hardikpandya/stop-slop
+  active_owner: hardikpandya/stop-slop
+  content_hash: null
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/stop-slop/CHANGELOG.md
+  runtime: null
+  scope: project
+  owners:
+  - hardikpandya/stop-slop
+  active_owner: hardikpandya/stop-slop
+  content_hash: sha256:fe2f1484ef02abf22efc09def89bac186a2235831fd0da13d4895edb19cc6dd0
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/stop-slop/LICENSE
+  runtime: null
+  scope: project
+  owners:
+  - hardikpandya/stop-slop
+  active_owner: hardikpandya/stop-slop
+  content_hash: sha256:2e2b2beaf41cc0ce28485455a62aed81777cdcdf68702e142427aef1cd720f2c
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/stop-slop/README.md
+  runtime: null
+  scope: project
+  owners:
+  - hardikpandya/stop-slop
+  active_owner: hardikpandya/stop-slop
+  content_hash: sha256:d5c699e712e62d286aa4314e6b4ba02cde7a9da36ce56102660f98d1a8ceebba
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/stop-slop/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - hardikpandya/stop-slop
+  active_owner: hardikpandya/stop-slop
+  content_hash: sha256:7432a1d9ebdd42b27666da8458af252edf549f723fb14bcd4791425103930310
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/stop-slop/references/examples.md
+  runtime: null
+  scope: project
+  owners:
+  - hardikpandya/stop-slop
+  active_owner: hardikpandya/stop-slop
+  content_hash: sha256:49c592899eb4457f95d0767e15e3143569e2cef50f2927c3174e62432984cd3d
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/stop-slop/references/phrases.md
+  runtime: null
+  scope: project
+  owners:
+  - hardikpandya/stop-slop
+  active_owner: hardikpandya/stop-slop
+  content_hash: sha256:4ca1b7e97123b5c67eff3dc97e5e977332e0b24021265c1553888a93ec33fa93
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/stop-slop/references/structures.md
+  runtime: null
+  scope: project
+  owners:
+  - hardikpandya/stop-slop
+  active_owner: hardikpandya/stop-slop
+  content_hash: sha256:ffbf1316c7fb5aaf552de005609a64a9639b546ecd76bfb0e482864d5bbe6f58
+- kind: project-relative
+  target: copilot
   value: .github/hooks/ponytail-copilot-hooks.json
   runtime: null
   scope: project
@@ -634,6 +846,15 @@ deployments:
   - .
   active_owner: .
   content_hash: sha256:d0f928dfdf98b1ddee5e676e212cff34c866c65cf839952c9d62c730068d7c1e
+- kind: project-relative
+  target: copilot
+  value: .github/instructions/use-ste.instructions.md
+  runtime: null
+  scope: project
+  owners:
+  - tylerbutler/apm-base
+  active_owner: tylerbutler/apm-base
+  content_hash: sha256:c4512aac8ae85c13578effb80b704cc72a14a6a13a3c5f3db036ca2e899513de
 local_deployed_files:
 - .agents/skills/trellis-onboarding
 - .agents/skills/trellis-onboarding/SKILL.md

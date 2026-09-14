@@ -216,7 +216,6 @@ fn gleam_only_commands_are_refused() {
         vec!["publish", "alpha"],
         vec!["lockfile", "refresh"],
         vec!["run", "test"],
-        vec!["new", "gamma"],
     ] {
         trellis(root)
             .args(&args)

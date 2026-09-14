@@ -635,8 +635,8 @@ pub fn render_merged_changelog(
     Ok(out)
 }
 
-/// Render the CHANGELOG header for a package (also used by `trellis new`
-/// for the initial stub, so scaffolded changelogs match regenerated ones).
+/// Render the CHANGELOG header for a package (also the `doctor --fix`
+/// stub, so seeded changelogs match regenerated ones).
 pub fn render_header(config: &ChangelogConfig, name: &str) -> Result<String> {
     render(
         &config.header_format,

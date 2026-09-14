@@ -12,6 +12,7 @@
 
 use std::io::IsTerminal;
 use std::time::Duration;
+use tiny_update_check::DetailedUpdateInfo;
 
 /// crates.io crate name. The binary is `trellis`, but the crate publishes as
 /// `trellis-gleam` (see Cargo.toml), so the version lives under that name.
@@ -42,6 +43,14 @@ fn notice_enabled(stderr_is_terminal: bool, env: impl Fn(&str) -> Option<String>
     true
 }
 
+fn notice_versions(info: &DetailedUpdateInfo) -> Option<(&str, &str)> {
+    // The response body is absent on cache hits, so only a fresh daily check
+    // produces a notice.
+    info.response_body
+        .as_ref()
+        .map(|_| (info.current.as_str(), info.latest.as_str()))
+}
+
 /// Print a notice to stderr if a newer trellis has been published. Best-effort:
 /// returns quietly on any error or when suppressed.
 pub fn notify() {
@@ -54,12 +63,11 @@ pub fn notify() {
     let checker = tiny_update_check::UpdateChecker::new(CRATE_NAME, env!("CARGO_PKG_VERSION"))
         .timeout(CHECK_TIMEOUT);
 
-    if let Ok(Some(info)) = checker.check() {
+    if let Ok(Some(info)) = checker.check_detailed()
+        && let Some((current, latest)) = notice_versions(&info)
+    {
         eprintln!();
-        eprintln!(
-            "A new release of trellis is available: {} → {}",
-            info.current, info.latest
-        );
+        eprintln!("A new release of trellis is available: {current} → {latest}");
         eprintln!("{RELEASES_URL}");
     }
 }
@@ -68,6 +76,7 @@ pub fn notify() {
 mod tests {
     use super::*;
     use std::collections::HashMap;
+    use tiny_update_check::UpdateInfo;
 
     fn env_from(pairs: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> {
         let map: HashMap<String, String> = pairs
@@ -103,5 +112,27 @@ mod tests {
             true,
             env_from(&[("TRELLIS_NO_UPDATE_CHECK", "1")])
         ));
+    }
+
+    fn update_info(response_body: Option<&str>) -> DetailedUpdateInfo {
+        let mut info = DetailedUpdateInfo::from(UpdateInfo {
+            current: "0.13.0".to_string(),
+            latest: "0.14.0".to_string(),
+        });
+        info.response_body = response_body.map(str::to_string);
+        info
+    }
+
+    #[test]
+    fn suppresses_update_notice_on_cache_hit() {
+        assert_eq!(notice_versions(&update_info(None)), None);
+    }
+
+    #[test]
+    fn shows_update_notice_after_fresh_check() {
+        assert_eq!(
+            notice_versions(&update_info(Some("{}"))),
+            Some(("0.13.0", "0.14.0"))
+        );
     }
 }

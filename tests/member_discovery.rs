@@ -1,20 +1,10 @@
 //! End-to-end tests for workspace member discovery.
 
-use assert_cmd::Command;
+mod common;
+
+use common::{trellis, write};
 use predicates::prelude::*;
-use std::fs;
 use std::path::Path;
-
-fn trellis(dir: &Path) -> Command {
-    let mut cmd = Command::cargo_bin("trellis").unwrap();
-    cmd.current_dir(dir);
-    cmd
-}
-
-fn write(path: &Path, content: &str) {
-    fs::create_dir_all(path.parent().unwrap()).unwrap();
-    fs::write(path, content).unwrap();
-}
 
 fn write_package(root: &Path, path: &str, name: &str) {
     write(

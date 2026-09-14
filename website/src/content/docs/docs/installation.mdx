@@ -6,10 +6,10 @@ description: Trellis ships as a single prebuilt binary that installs in about a 
 import { Code } from "@astrojs/starlight/components";
 import { TRELLIS_VERSION } from "../../../lib/version";
 
-One prebuilt binary, no runtime dependencies, about a second to install on a CI
-runner. Every release ships five targets — Linux (glibc) and macOS on x86_64
-and aarch64, Windows on x86_64 — with SLSA build provenance attestations
-attached.
+One prebuilt binary, no runtime dependencies, about a second to install on a
+CI runner. Every release ships five targets, with SLSA build provenance
+attestations attached: Linux (glibc) and macOS on x86_64 and aarch64, and
+Windows on x86_64.
 
 ## Shell installer
 
@@ -43,8 +43,7 @@ its other tools, so every contributor and CI runner gets the same version:
 
 ## From source
 
-On crates.io the crate is `trellis-gleam` — `trellis` was taken — but the
-installed binary is named `trellis` either way:
+On crates.io the crate is `trellis-gleam` (`trellis` was taken), but the installed binary is named `trellis` either way:
 
 ```sh
 cargo install trellis-gleam
@@ -55,9 +54,9 @@ cargo install --git https://github.com/tylerbutler/trellis
 ## Shell completions
 
 Completions are computed by the binary as you type rather than baked into a
-static script, so they never drift from the flags you actually have — and they
-offer real values: package names, task names, and changelog kinds read from the
-workspace you're standing in.
+static script, so they never drift from the flags you actually have. They also
+offer real values: package names, task names, and changelog kinds read from
+the workspace you're standing in.
 
 Add one line to your shell's startup file:
 
@@ -82,8 +81,10 @@ Evaluate the snippet on startup rather than saving it into a completions
 directory: an `eval` always matches the binary you have, while a saved copy
 silently goes stale after an upgrade.
 
-One limitation worth knowing: completing after `-C` uses the directory you're
-standing in, not the one you passed.
+Two limitations worth knowing. Completing after `-C` uses the directory you're
+standing in, not the one you passed. And `--bump` offers the three bare levels
+only. The `<pkg>=<level>` form is not completed, since the completer is handed
+just the partial word.
 
 ## Man pages
 
@@ -114,9 +115,7 @@ Prebuilt archives for every target are on the
 
 ## Verifying it
 
-From anywhere inside a workspace — trellis finds the root by walking up, like
-`git` or `cargo`, to the first `gleam.toml` carrying a `[tools.trellis]` table,
-or to the git repository root when no manifest carries one:
+From anywhere inside a workspace. Trellis finds the root by walking up, like `git` or `cargo`, to the first `gleam.toml` carrying a `[tools.trellis]` table, or to the git repository root when no manifest carries one:
 
 <Code
   lang="console"

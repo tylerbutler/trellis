@@ -1,0 +1,56 @@
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
+.TH trellis-pin 1 "" trellis "Trellis Manual"
+.SH NAME
+trellis\-pin \- Pin git dependency refs to commit SHAs, recording the tracked ref
+.SH SYNOPSIS
+\fBtrellis pin\fR [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-\-update\fR] [\fB\-\-check\fR] [\fB\-\-color\fR] [\fB\-q\fR|\fB\-\-quiet\fR] [\fB\-\-unpin\fR] [\fB\-v\fR|\fB\-\-verbose\fR] [\fB\-\-no\-update\-check\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fIPACKAGES\fR] 
+.SH DESCRIPTION
+Pin git dependency refs to commit SHAs, recording the tracked ref
+.PP
+Rewrites each symbolic `ref` in `[dependencies]`/`[dev\-dependencies]` to the commit it resolves to and records the original in a trailing `# trellis:pin <ref>` comment, ratchet\-style: the dependency becomes reproducible without losing what to bump it to. Following the ref again is a deliberate, reviewable `\-\-update` diff instead of a silent re\-resolution; deleting the comment simply stops updates.
+.SH OPTIONS
+.TP
+\fB\-C\fR, \fB\-\-directory\fR \fI<DIR>\fR
+Run as if started in this directory
+.TP
+\fB\-\-update\fR
+Re\-resolve every recorded `# trellis:pin` ref and rewrite the SHAs that moved
+.TP
+\fB\-\-check\fR
+Verify each pinned SHA is still reachable from its tracked ref; non\-zero exit on drift (for CI)
+.TP
+\fB\-\-color\fR \fI<WHEN>\fR [default: auto]
+When to color output. `auto` follows the terminal, `NO_COLOR`, and `CLICOLOR=0`; the other two override that detection
+.br
+
+.br
+\fIPossible values:\fR
+.RS 14
+.IP \(bu 2
+auto
+.IP \(bu 2
+always
+.IP \(bu 2
+never
+.RE
+.TP
+\fB\-q\fR, \fB\-\-quiet\fR
+Suppress normal\-path output; JSON/report payloads and errors still print
+.TP
+\fB\-\-unpin\fR
+Restore the symbolic refs and remove the pin comments
+.TP
+\fB\-v\fR, \fB\-\-verbose\fR
+Trace every command trellis shells out to, on stderr
+.TP
+\fB\-\-no\-update\-check\fR
+Don\*(Aqt check whether a newer trellis release is available
+
+The check is also skipped in CI, when not attached to a terminal, and when `TRELLIS_NO_UPDATE_CHECK` or `DO_NOT_TRACK` is set.
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Print help (see a summary with \*(Aq\-h\*(Aq)
+.TP
+[\fIPACKAGES\fR]
+Packages whose git dependencies to pin; all packages when omitted

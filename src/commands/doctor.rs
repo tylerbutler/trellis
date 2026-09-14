@@ -49,8 +49,8 @@ pub struct DoctorOptions {
 /// Every variant carries a package and a workspace-relative path, because
 /// `--format json` reports a fix the same way whichever check produced it.
 enum Fix {
-    /// Seed a releasable member's missing CHANGELOG.md with the same header
-    /// `trellis new` scaffolds, so it matches regenerated output byte-for-byte.
+    /// Seed a releasable member's missing CHANGELOG.md with the rendered
+    /// header, so it matches regenerated output byte-for-byte.
     SeedChangelog {
         package: String,
         rel_path: String,
@@ -205,6 +205,7 @@ fn inspect(root: &Path) -> Result<(Report, Option<String>)> {
         check_tag_collisions(workspace, &mut report);
         if gleam {
             check_lockfiles(workspace, &mut report);
+            check_pinned_refs(workspace, &mut report);
         }
         check_changelogs(workspace, &mut report);
         check_fragments(workspace, &mut report);
@@ -292,6 +293,10 @@ pub fn run(root: &Path, options: &DoctorOptions) -> Result<bool> {
             checked.push(format!(
                 "manifest.toml locked versions match workspace-internal {manifest} versions"
             ));
+            checked.push(
+                "pinned git dependency SHAs remain reachable from their tracked refs (advisory)"
+                    .to_string(),
+            );
         }
         checked.push("each releasable package's version is not behind its CHANGELOG".to_string());
         checked.push("unreleased changelog fragments parse and reference valid packages, kinds, and categories".to_string());
@@ -910,6 +915,29 @@ fn check_lockfiles(workspace: &Workspace, report: &mut Report) {
     }
 }
 
+/// Advisory: each `# trellis:pin` tracked ref should still contain its pinned
+/// SHA. Warnings, not errors — the check needs the network, and re-pinning is
+/// a supply-chain decision `--fix` must not make. `trellis pin --check` is the
+/// enforcing form.
+fn check_pinned_refs(workspace: &Workspace, report: &mut Report) {
+    let indices: Vec<usize> = (0..workspace.members.len()).collect();
+    match crate::commands::pin::check_pins(workspace, &indices) {
+        Ok(drifts) => {
+            for drift in drifts {
+                report.push(
+                    Finding::warning(Check::PinnedRef, drift.message)
+                        .at(&drift.rel_path)
+                        .in_package(&drift.package),
+                );
+            }
+        }
+        Err(err) => report.push(Finding::warning(
+            Check::PinnedRef,
+            format!("could not verify pinned refs: {err:#}"),
+        )),
+    }
+}
+
 /// Check 4 (best-effort until the changelog layer lands): each releasable
 /// member should have a CHANGELOG.md, and its gleam.toml version must not be
 /// behind the newest version mentioned in it.
@@ -918,7 +946,7 @@ fn check_changelogs(workspace: &Workspace, report: &mut Report) {
         let changelog = member.path.join("CHANGELOG.md");
         let rel_changelog = format!("{}/CHANGELOG.md", member.rel_path);
         if !changelog.is_file() {
-            // The stub is the same header `trellis new` scaffolds, so a later
+            // The stub is the rendered header alone, so a later
             // `version apply` regenerates it byte-for-byte. Rendering it first
             // is what decides whether the warning is fixable at all.
             let header = crate::changelog::render_header(&workspace.config.changelog, &member.name);

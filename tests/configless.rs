@@ -2,21 +2,11 @@
 //! (no [tools.trellis] anywhere, root inferred from git), configured
 //! workspaces without `members`, and the `@members` exclusion key.
 
-use assert_cmd::Command;
+mod common;
+
+use common::{trellis, write};
 use predicates::prelude::*;
-use std::fs;
 use std::path::Path;
-
-fn trellis(dir: &Path) -> Command {
-    let mut cmd = Command::cargo_bin("trellis").unwrap();
-    cmd.current_dir(dir);
-    cmd
-}
-
-fn write(path: &Path, content: &str) {
-    fs::create_dir_all(path.parent().unwrap()).unwrap();
-    fs::write(path, content).unwrap();
-}
 
 fn git_init(root: &Path) {
     let status = std::process::Command::new("git")
@@ -248,23 +238,4 @@ fn at_members_also_filters_explicit_member_globs() {
         .assert()
         .success()
         .stdout("core  hex\n");
-}
-
-#[test]
-fn new_package_is_discovered_without_a_members_glob() {
-    let tmp = tempfile::tempdir().unwrap();
-    let root = tmp.path();
-    git_init(root);
-    scaffold_two_packages(root);
-
-    trellis(root)
-        .args(["new", "extra"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("created packages/extra/"));
-    trellis(root)
-        .arg("list")
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("extra"));
 }

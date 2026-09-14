@@ -57,6 +57,9 @@ pub enum Check {
     TagCollision,
     /// A `manifest.toml` locks a workspace-internal dep at a stale version.
     LockfileDrift,
+    /// A pinned git dependency's SHA is no longer reachable from its tracked
+    /// ref, or its `# trellis:pin` comment disagrees with its ref.
+    PinnedRef,
     /// A releasable package has no `CHANGELOG.md`.
     ChangelogMissing,
     /// A `CHANGELOG.md` exists but could not be read.
@@ -93,6 +96,7 @@ impl Check {
             Check::ReleaseBoundary => "release_boundary",
             Check::TagCollision => "tag_collision",
             Check::LockfileDrift => "lockfile_drift",
+            Check::PinnedRef => "pinned_ref",
             Check::ChangelogMissing => "changelog_missing",
             Check::ChangelogUnreadable => "changelog_unreadable",
             Check::ChangelogBehind => "changelog_behind",
@@ -116,6 +120,7 @@ impl Check {
         Check::ReleaseBoundary,
         Check::TagCollision,
         Check::LockfileDrift,
+        Check::PinnedRef,
         Check::ChangelogMissing,
         Check::ChangelogUnreadable,
         Check::ChangelogBehind,
