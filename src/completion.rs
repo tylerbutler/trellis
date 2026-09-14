@@ -48,12 +48,12 @@ pub fn packages() -> ArgValueCandidates {
 /// Only members that participate in releases — the ones `changelog new`
 /// accepts (release lifecycle `git_only` or `hex`).
 pub fn releasable_packages() -> ArgValueCandidates {
-    ArgValueCandidates::new(|| member_candidates(|m| m.releasable()))
+    ArgValueCandidates::new(|| member_candidates(crate::workspace::Member::releasable))
 }
 
 /// Only members `publish` will actually accept: release lifecycle `hex`.
 pub fn hex_packages() -> ArgValueCandidates {
-    ArgValueCandidates::new(|| member_candidates(|m| m.publishes_to_hex()))
+    ArgValueCandidates::new(|| member_candidates(crate::workspace::Member::publishes_to_hex))
 }
 
 /// Built-in verbs plus every `[tools.trellis.tasks]` entry. The built-ins are

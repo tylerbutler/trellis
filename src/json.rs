@@ -85,6 +85,7 @@ impl Check {
     /// The serialized identifier, for renderings that are not serde — the
     /// `title=` of a GitHub annotation, say. Kept beside the `Serialize` derive
     /// so the two cannot disagree; `check_names_match_serde` asserts it.
+    // ponytail: as_str mirrors serde names by hand; serde_plain would delete it but adds a dep
     pub fn as_str(self) -> &'static str {
         match self {
             Check::MemberGlob => "member_glob",
@@ -558,8 +559,8 @@ pub struct UpdatedDependency<'a> {
 #[serde(rename_all = "snake_case")]
 pub struct Bump<'a> {
     pub name: &'a str,
-    pub current: &'a str,
-    pub next: &'a str,
+    pub current: String,
+    pub next: String,
     /// Fragments the package owns on disk. Zero for a package bumping only
     /// because a dependency did.
     pub fragments: usize,
