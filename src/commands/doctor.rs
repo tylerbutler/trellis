@@ -185,7 +185,7 @@ pub fn run(root: &Path, options: &DoctorOptions) -> Result<bool> {
             "pinned git dependency SHAs remain reachable from their tracked refs (advisory)",
             "each releasable package's version is not behind its CHANGELOG",
             "unreleased changelog fragments parse and reference valid packages, kinds, and categories",
-            "[tools.trellis] carries no unrecognized keys",
+            "[tools.trellis] has no unrecognized keys",
             "packages agree on the external dependencies they share",
             "gleam on PATH matches the .tool-versions pin (advisory)",
         ];
