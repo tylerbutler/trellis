@@ -40,8 +40,8 @@ components:
     - ci
     - completions
 kinds:
-    - label: Breaking
-      auto: minor
+    - label: Major
+      auto: major
     - label: Added
       auto: minor
     - label: Fixed
