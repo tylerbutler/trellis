@@ -1,5 +1,0 @@
-component: trellis
-kind: Major
-body: |-
-  **Pre-1.0 kebab-case configuration keys are no longer accepted.** Rename `needs-deps`, `series-tag-format`, `path-dep-requirement`, `initial-delay`, `header-format`, `version-format`, `kind-format`, and `change-format` to their snake_case forms; trellis now stops with an error that names the replacement.
-time: 2026-09-18T12:52:57.903-07:00

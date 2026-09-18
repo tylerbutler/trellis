@@ -1,5 +1,0 @@
-component: trellis
-kind: Changed
-body: |-
-  **Building trellis from source now requires Rust 1.88.** Prebuilt installers and the Homebrew package still require no Rust toolchain.
-time: 2026-09-18T12:52:57.903-07:00

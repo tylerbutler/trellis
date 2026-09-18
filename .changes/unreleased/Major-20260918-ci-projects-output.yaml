@@ -1,5 +1,0 @@
-component: ci
-kind: Major
-body: |-
-  **`trellis ci outputs` no longer emits `projects`.** Read the identical `packages` output instead.
-time: 2026-09-18T12:52:57.903-07:00
