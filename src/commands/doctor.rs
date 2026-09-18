@@ -185,7 +185,7 @@ pub fn run(root: &Path, options: &DoctorOptions) -> Result<bool> {
             "pinned git dependency SHAs remain reachable from their tracked refs (advisory)",
             "each releasable package's version is not behind its CHANGELOG",
             "unreleased changelog fragments parse and reference valid packages, kinds, and categories",
-            "[tools.trellis] carries no unrecognized or deprecated keys",
+            "[tools.trellis] carries no unrecognized keys",
             "packages agree on the external dependencies they share",
             "gleam on PATH matches the .tool-versions pin (advisory)",
         ];
@@ -571,16 +571,6 @@ fn check_member_glob(workspace: &Workspace, label: &str, pattern: &str, report: 
 
 /// Check 7: no two releasable members produce the same tag, for series tags as
 /// well as exact ones.
-///
-/// A `series_tag_format` without `{name}` is the exception: it is deprecated
-/// in favour of the `repository_tag_*` keys, and warns rather than errors so
-/// that repositories using it keep releasing. The warning is keyed on the
-/// format alone, not on today's versions or member count — `resolve_tag`
-/// substitutes `{name}` per member, so with no `{name}` to substitute *every*
-/// series tag matches every member regardless of what they're versioned at.
-/// Warning only on a version collision, or only once a second package makes it
-/// ambiguous, would go quiet on exactly the configurations that break as soon
-/// as the workspace grows.
 fn check_tag_collisions(workspace: &Workspace, report: &mut Report) {
     fn insert(
         seen: &mut std::collections::HashMap<String, String>,
@@ -618,61 +608,11 @@ fn check_tag_collisions(workspace: &Workspace, report: &mut Report) {
         }
     }
 
-    let series_members: Vec<&str> = workspace
-        .members
-        .iter()
-        .filter(|m| m.releasable() && m.has_series_tag())
-        .map(|m| m.name.as_str())
-        .collect();
-    let names = |members: &[&str]| {
-        members
-            .iter()
-            .map(|name| format!("`{name}`"))
-            .collect::<Vec<_>>()
-            .join(", ")
-    };
-
-    let repo_wide = workspace.config.series_tag_is_repo_wide();
-    if repo_wide && !series_members.is_empty() {
-        // A deprecation, not a collision: the shape is wrong even where it
-        // happens to be unambiguous today, because one more series-mode
-        // package makes it ambiguous with no other config change.
-        let ambiguity = if series_members.len() > 1 {
-            format!(
-                ", so one repository-wide series tag covers {} and `trellis ci tag-package` \
-                 cannot resolve it to one package",
-                names(&series_members)
-            )
-        } else {
-            String::new()
-        };
-        report.push(
-            Finding::warning(
-                Check::WorkspaceConfig,
-                format!(
-                    "`series_tag_format` `{}` has no {{name}}{ambiguity}. A `{{name}}`-less \
-                     `series_tag_format` is deprecated and will be removed at 1.0; declare \
-                     `[tools.trellis.publish.repository_series]` with an anchor `package` \
-                     instead, and restore `{{name}}` here. Note the repository tag is not \
-                     resolved by `ci tag-package` or `publish --tag`",
-                    workspace.config.publish.series_tag_format,
-                ),
-            )
-            .at(crate::workspace::GLEAM_TOML),
-        );
-    }
-
-    // Members sharing a legacy `{name}`-less series tag is intentional — the
-    // ambiguity warning above covers it — so claim each such tag only once.
-    let mut legacy_claimed: std::collections::HashSet<String> = std::collections::HashSet::new();
     for (idx, member) in workspace.members.iter().enumerate() {
         if !member.releasable() {
             continue;
         }
         for tag in workspace.series_tags_of(idx) {
-            if repo_wide && !legacy_claimed.insert(tag.clone()) {
-                continue;
-            }
             insert(
                 &mut seen,
                 report,

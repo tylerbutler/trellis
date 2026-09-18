@@ -34,12 +34,6 @@ impl Member {
         format!("{}/{name}", self.rel_path)
     }
 
-    /// True when a release maintains at least one moving series tag for this
-    /// member (any level but [`TagLevel::Exact`]).
-    pub fn has_series_tag(&self) -> bool {
-        self.tags.iter().any(|level| level.is_series())
-    }
-
     /// True when this member is published to Hex (`lifecycle == hex`).
     pub fn publishes_to_hex(&self) -> bool {
         self.lifecycle == ReleaseLifecycle::Hex
@@ -678,21 +672,11 @@ pub fn toposort(
     }
 }
 
-/// Report keys under `[tools.trellis]` that trellis does not recognize, and
-/// keys still spelled the pre-0.8 kebab-case way.
+/// Report keys under `[tools.trellis]` that trellis does not recognize.
 ///
-/// Both are **warnings**. An unrecognized key may simply belong to a newer
-/// trellis, so a workspace using one still loads under a pinned older one; a
-/// deprecated key still configures what it always did, so failing on it would
-/// break working repositories for a spelling change.
+/// An unrecognized key may simply belong to a newer trellis, so a workspace
+/// using one still loads under a pinned older one.
 fn report_unknown_config_keys(config: &ConfigFile, diagnostics: &mut Diagnostics) {
-    for key in &config.deprecated_keys {
-        diagnostics.config_warning(format!(
-            "[tools.trellis] key `{}` is deprecated; rename it to `{}` \
-                     (trellis config keys are snake_case)",
-            key.path, key.replacement
-        ));
-    }
     for path in &config.unknown_keys {
         diagnostics.config_warning(format!(
             "[tools.trellis] key `{path}` is not recognized and is being ignored; \

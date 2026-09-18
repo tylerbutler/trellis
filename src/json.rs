@@ -506,7 +506,7 @@ impl<'a> GraphDocument<'a> {
     }
 }
 
-/// One package `trellis changelog check --json` has something to say about:
+/// One package `trellis changelog check --format json` has something to say about:
 /// the diff touched it, the branch wrote it a fragment, or both.
 #[derive(Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -520,7 +520,7 @@ pub struct ChangelogPackage<'a> {
     pub fragments: usize,
 }
 
-/// `trellis changelog check --json`.
+/// `trellis changelog check --format json`.
 #[derive(Serialize)]
 #[serde(rename_all = "snake_case")]
 pub struct ChangelogCheckDocument<'a> {

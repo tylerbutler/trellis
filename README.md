@@ -516,12 +516,8 @@ A new series creates a new tag and leaves the old series intact.
 Repository tags are mutable, never get GitHub Releases, and cannot be passed to
 `publish --tag` or `ci tag-package`.
 
-It replaces the older way of reaching a repository-wide tag: dropping `{name}`
-from `series_tag_format`. That form is deprecated and removed at 1.0, because
-without the discriminator every package's series tag matches every member and
-`ci tag-package` can no longer resolve one. `doctor` warns on it. To migrate,
-restore `{name}` in `series_tag_format` and declare the three repository tag
-keys above.
+`series_tag_format` must contain `{name}`. For a repository-wide tag, declare
+the three repository tag keys above.
 
 `publish` runs, per package and in dependency order: an idempotency check
 against the Hex API (already-published versions are skipped, so re-running a
@@ -592,12 +588,11 @@ exit on any error. Run it on every PR.
 
 Two further checks cover things that must agree because they are duplicated:
 
-**Deprecated and unrecognized `[tools.trellis]` keys.** Every trellis config
-key is snake_case. Through v0.7.0 they were kebab-case; the old spellings are
-still accepted, and each one is reported so a workspace can migrate at its own
-pace. A key that is not recognized in any spelling is also a warning, since it
-may belong to a newer trellis and erroring would make the workspace unloadable
-under a pinned older one.
+**Removed and unrecognized `[tools.trellis]` keys.** Every trellis config key
+is snake_case. The kebab-case spellings from releases through v0.7.0 are
+errors that name their snake_case replacements. A key that is not recognized
+in any spelling is a warning, since it may belong to a newer trellis and
+erroring would make the workspace unloadable under a pinned older one.
 
 **Shared external dependencies.** Members are checked for agreeing on the
 non-path dependencies they share — `lat_core` requiring `gleam_stdlib >=

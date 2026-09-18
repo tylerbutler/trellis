@@ -83,7 +83,7 @@ Notes:
   Markdown prose can change without a version bump. `needs_entry` reports
   whether an entry is missing; `ok` reports what
   [`changelog.strictness`](/docs/configuration/#keys) made of that, and matches
-  the exit code. `--json` is a deprecated alias for `--format json`.
+  the exit code. Select this payload with `--format json`.
 
 <Callout>
   **`--json` moves package output to stderr.** `run`/`exec` normally stream
@@ -166,14 +166,11 @@ array of strings:
 
 ```
 packages=["lat_core","lat_mid","lat_cli","lat_example"]
-projects=["lat_core","lat_mid","lat_cli","lat_example"]
 releasable=["lat_core","lat_mid","lat_cli"]
 version_files=["packages/lat_core/gleam.toml","packages/lat_mid/gleam.toml","packages/lat_cli/gleam.toml"]
 tags=["lat_core-v1.2.0","lat_mid-v0.5.1","lat_cli-v0.4.3"]
 series_tags=[]
 ```
-
-`projects` duplicates `packages` and is deprecated; it goes away at 1.0.
 
 `changelog check --format github` emits the same style of lines — scalars
 plain, arrays as JSON, and the multi-line `preview` in GitHub's heredoc form.

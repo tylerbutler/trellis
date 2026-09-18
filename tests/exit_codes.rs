@@ -70,19 +70,9 @@ fn usage_error_exits_two() {
 }
 
 #[test]
-fn json_together_with_format_exits_two() {
-    // `--json` is a deprecated alias for `--format json`. Passing both is
-    // ambiguous rather than redundant, so clap rejects it as usage.
+fn removed_changelog_check_json_flag_exits_two() {
     trellis(&fixture("basic"))
-        .args([
-            "changelog",
-            "check",
-            "--base",
-            "main",
-            "--json",
-            "--format",
-            "github",
-        ])
+        .args(["changelog", "check", "--base", "main", "--json"])
         .assert()
         .code(2);
 }

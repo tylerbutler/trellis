@@ -110,7 +110,7 @@ pub fn add_fragment(root: &Path, package: &str, kind: &str, body: &str) {
         if !path.exists() {
             write(
                 &path,
-                &format!("project = \"{package}\"\nkind = \"{kind}\"\nbody = \"{body}\"\n"),
+                &format!("package = \"{package}\"\nkind = \"{kind}\"\nbody = \"{body}\"\n"),
             );
             return;
         }

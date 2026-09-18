@@ -27,7 +27,7 @@ pub fn new_fragment(
         .filter(|m| m.releasable())
         .map(|m| m.name.as_str())
         .collect();
-    let project = match package {
+    let package = match package {
         Some(name) => {
             let idx = workspace
                 .member_index(name)
@@ -77,7 +77,7 @@ pub fn new_fragment(
         bail!("--body must not be empty");
     }
 
-    let path = changelog::write_fragment(workspace, project, kind, category, body.trim())?;
+    let path = changelog::write_fragment(workspace, package, kind, category, body.trim())?;
     crate::status!(
         "{} {}",
         crate::term::ok("created"),

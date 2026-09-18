@@ -73,15 +73,11 @@ affected-only CI writes `--since origin/main` into its workflow explicitly.
 ```console
 $ trellis ci outputs
 packages=["lat_core","lat_mid","lat_cli","lat_example"]
-projects=["lat_core","lat_mid","lat_cli","lat_example"]
 releasable=["lat_core","lat_mid","lat_cli"]
 version_files=["packages/lat_core/gleam.toml","packages/lat_mid/gleam.toml","packages/lat_cli/gleam.toml"]
 tags=["lat_core-v1.2.0","lat_mid-v0.5.1","lat_cli-v0.4.3"]
 series_tags=["lat_cli-v0.4"]
 ```
-
-`projects` is a deprecated alias of `packages` carrying an identical value.
-Read `packages`; the alias goes away at 1.0.
 
 `tags` lists the immutable per-version tags and `series_tags` the moving ones,
 each covering only the packages whose

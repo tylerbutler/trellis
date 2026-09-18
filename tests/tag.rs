@@ -609,7 +609,7 @@ fn a_series_tag_names_a_package_but_never_a_release() {
 }
 
 #[test]
-fn doctor_warns_about_a_repo_wide_series_tag_whatever_the_versions() {
+fn a_name_less_series_tag_format_is_rejected() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
     let _remote = series_repo(
@@ -617,58 +617,13 @@ fn doctor_warns_about_a_repo_wide_series_tag_whatever_the_versions() {
         "package_tags = [\"exact\", \"minor\"]\nseries_tag_format = \"v{series}\"",
     );
 
-    // lat_core 1.2.0, lat_mid 0.5.0 and lat_cli 0.3.1 are three distinct
-    // series, so no two members render the same tag — and it is ambiguous
-    // anyway, because a `{name}`-less format matches every member.
     trellis(root)
-        .args(["doctor"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains(
-            "`series_tag_format` `v{series}` has no {name}, so one repository-wide series tag \
-             covers `lat_core`, `lat_mid`, `lat_cli`",
-        ));
-    trellis(root)
-        .args(["ci", "tag-package", "v0.3"])
+        .arg("doctor")
         .assert()
         .failure()
-        .stderr(predicate::str::contains("names no single package"));
-
-    // Colliding versions are the same warning, not a new one.
-    set_version(root, "lat_cli", "0.5.2");
-    git(root, &["commit", "-qam", "lat_cli 0.5.2"]);
-    trellis(root)
-        .args(["doctor"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("has no {name}"));
-}
-
-/// The format is deprecated for its shape, so one series-mode package — where
-/// nothing is ambiguous yet — is warned too. Adding a second series package is
-/// a one-line change that would otherwise silently break `ci tag-package`.
-#[test]
-fn doctor_deprecates_a_name_less_series_tag_format_even_when_unambiguous() {
-    let tmp = tempfile::tempdir().unwrap();
-    let root = tmp.path();
-    let _remote = series_repo(
-        root,
-        "series_tag_format = \"v{series}\"\n\
-         package_tags_overrides = { \"packages/lat_cli\" = [\"minor\"] }",
-    );
-
-    // The named-format case — no warning at all — is `a_named_series_format
-    // _stays_unambiguous`.
-    trellis(root)
-        .args(["doctor"])
-        .assert()
-        .success()
         .stdout(predicate::str::contains(
-            "is deprecated and will be removed at 1.0",
-        ))
-        .stdout(predicate::str::contains("repository_series"))
-        // Only one series-mode package, so no ambiguity clause.
-        .stdout(predicate::str::contains("cannot resolve it to one package").not());
+            "`series_tag_format` `v{series}` has no {name} placeholder",
+        ));
 }
 
 #[test]

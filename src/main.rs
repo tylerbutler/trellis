@@ -338,9 +338,6 @@ enum ChangelogCommand {
         /// a missing entry, report it advisorily, or don't check
         #[arg(long, value_enum)]
         strictness: Option<Strictness>,
-        /// Deprecated alias for `--format json`
-        #[arg(long, conflicts_with = "format")]
-        json: bool,
     },
 }
 
@@ -531,7 +528,7 @@ fn main() -> ExitCode {
                     command: ChangelogCommand::Check {
                         format: CheckFormat::Json | CheckFormat::Github,
                         ..
-                    } | ChangelogCommand::Check { json: true, .. },
+                    },
                 }
         );
     let result = dispatch(cli);
@@ -690,21 +687,15 @@ fn dispatch(cli: Cli) -> Result<bool> {
                 head,
                 format,
                 strictness,
-                json,
-            } => {
-                // `--json` predates `--format` and clap rejects the two
-                // together, so this only ever upgrades the default.
-                let format = if json { CheckFormat::Json } else { format };
-                commands::changelog::check(
-                    &workspace,
-                    &commands::changelog::CheckOptions {
-                        base,
-                        head,
-                        format,
-                        strictness,
-                    },
-                )
-            }
+            } => commands::changelog::check(
+                &workspace,
+                &commands::changelog::CheckOptions {
+                    base,
+                    head,
+                    format,
+                    strictness,
+                },
+            ),
         },
         Command::Version { command } => match command {
             VersionCommand::Plan { overrides, json } => {
