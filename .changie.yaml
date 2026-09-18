@@ -31,7 +31,6 @@ components:
     - changelog
     - version
     - init
-    - new
     - release
     - tag
     - publish

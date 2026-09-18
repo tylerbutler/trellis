@@ -179,9 +179,8 @@ needs_deps = true            # run `gleam deps download` first if not cached
 package_tags = ["exact"]
 package_tags_overrides = { "packages/lattice_cli" = ["exact", "minor"] }
 # `exact` substitutes into the first, every series level into the second.
-# {version} and {series} are derived, never written by hand. Keep {name} in
-# series_tag_format: omitting it for a repository-wide tag is deprecated, see
-# repository_tag_* below.
+# {version} and {series} are derived, never written by hand. series_tag_format
+# requires {name}; use repository_tag_* for a repository-wide tag.
 exact_tag_format = "{name}-v{version}"    # lattice_core-v1.1.0
 series_tag_format = "{name}-v{series}"    # lattice_core-v1.2, lattice_cli-v0.4
 # Optional repository-wide moving tag, anchored to one package's version.
@@ -347,15 +346,14 @@ What this replaces: every bash loop in the justfile (~180 of its 240 lines).
 
 ```
 trellis changelog new [--package <pkg>] --kind <kind> --body <text>
-trellis changelog check --base <sha> --head <sha> [--json]
+trellis changelog check --base <sha> --head <sha> [--format text|json|github]
 trellis version plan [--json]                     # dry-run: what would be bumped
 trellis version apply                             # batch + merge + lockfile patch
 ```
 
 - The engine is native (§7). Fragments are TOML files in
   `.changes/unreleased/` (`package`, `kind`, `body`, and an optional
-  `category`; `project` is the pre-0.8 spelling of `package`, still accepted
-  as an alias); `changelog new` writes one non-interactively. There is no
+  `category`); `changelog new` writes one non-interactively. There is no
   per-package changelog wiring to generate or keep in sync — the lattice
   failure mode of "forgotten config block means a package cannot be released"
   has no equivalent, because there is no config block.
@@ -447,12 +445,8 @@ trellis lockfile refresh [--package <pkg>]
   tag; exact package tags are not a release signal. Entering a new series
   creates a new tag and preserves the old one. Repository tags are mutable,
   get no GitHub Release, and never participate in `publish --tag` or
-  `ci tag-package` resolution. A `{name}`-less `series_tag_format` — the
-  pre-`repository_tag_*` way to reach the same thing — is deprecated and
-  removed at 1.0: it is a *package* template with the discriminator taken out,
-  so every package's series tag matches every member and `ci tag-package`
-  cannot resolve it. `doctor` warns on the shape whether or not a second
-  series-mode package has yet made it ambiguous.
+  `ci tag-package` resolution. `series_tag_format` requires `{name}`; use the
+  repository tag keys for a repository-wide series tag.
 - `publish` performs, per package:
   1. **Idempotency check** — query Hex once; skip if this exact version is already
      published (makes re-runs of a partially failed release safe).
@@ -529,7 +523,7 @@ lattice_core = { git = "https://github.com/x/lattice", ref = "4f2a9c81…", path
 
 ```
 trellis ci matrix [--since <ref>] [--json]   # {"include":[{"name","path","version"},…]}
-trellis ci outputs                            # projects/version_files/etc. as GHA outputs
+trellis ci outputs                            # packages/version_files/etc. as GHA outputs
 ```
 
 Emits the exact structures workflows consume, replacing every
@@ -559,13 +553,9 @@ Checks, each of which is an unenforced invariant in lattice today:
    dependency must be at least as capable as its dependent (§4.1) — a `hex`
    package cannot require a package that will never exist on Hex, and neither
    `hex` nor `git_only` may depend on a `workspace`-only one.
-7. Tag-format collisions (two members whose names would produce ambiguous tags),
-   for series tags as well as exact ones — except a `series_tag_format` without
-   `{name}`, which warns instead — it is deprecated rather than an error, so
-   repositories using it keep releasing, and it costs the ability to resolve a
-   tag back to a single package. That warning keys on the
-   format, not on today's versions: with no `{name}` to substitute, every
-   series tag matches every member whatever they are versioned at.
+7. Tag-format collisions (two members whose names would produce ambiguous
+   tags), for series tags as well as exact ones. `series_tag_format` requires
+   `{name}`, so every package series tag remains invertible.
 
 `doctor` is the CI tripwire for the duplication that can't be eliminated. Today,
 publish.yml's `replace-path-deps` being one package short would only be discovered

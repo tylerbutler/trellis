@@ -53,13 +53,8 @@ fn parse_github_output(text: &str) -> std::collections::BTreeMap<String, String>
 
 // ---- changelog new ---------------------------------------------------------
 
-/// `project` was the pre-1.0 spelling of a fragment's `package` key, inherited
-/// from changie. Fragments written by an older trellis sit in `.changes/` of
-/// real workspaces, so both spellings must parse until 1.0 removes the alias.
-/// (`add_fragment` above still writes `project`, which exercises the alias
-/// across the rest of this suite.)
 #[test]
-fn fragments_parse_under_either_package_spelling() {
+fn fragment_project_key_is_rejected() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
     copy_fixture_to(root);
@@ -70,17 +65,13 @@ fn fragments_parse_under_either_package_spelling() {
         &dir.join("old-spelling.toml"),
         "project = \"lat_core\"\nkind = \"Added\"\nbody = \"written by an older trellis\"\n",
     );
-    write(
-        &dir.join("new-spelling.toml"),
-        "package = \"lat_core\"\nkind = \"Added\"\nbody = \"written by this one\"\n",
-    );
 
     trellis(root)
         .args(["version", "plan"])
         .assert()
-        .success()
-        .stdout(predicate::str::contains("lat_core"))
-        .stdout(predicate::str::contains("2 fragment(s)"));
+        .failure()
+        .stderr(predicate::str::contains("old-spelling.toml"))
+        .stderr(predicate::str::contains("project"));
 }
 
 #[test]
@@ -385,7 +376,7 @@ fn changelog_check_maps_diff_to_missing_fragments() {
     git(root, &["commit", "-q", "-m", "change"]);
 
     let output = trellis(root)
-        .args(["changelog", "check", "--base", "main", "--json"])
+        .args(["changelog", "check", "--base", "main", "--format", "json"])
         .output()
         .unwrap();
     assert!(!output.status.success(), "lat_mid lacks a fragment");
@@ -761,7 +752,7 @@ fn editing_a_base_branch_fragment_counts_as_this_prs_entry() {
     // it for a second fragment would be a false alarm.
     write(
         &root.join(".changes/unreleased/lat_core-1.toml"),
-        "project = \"lat_core\"\nkind = \"Added\"\nbody = \"reworded by this pr\"\n",
+        "package = \"lat_core\"\nkind = \"Added\"\nbody = \"reworded by this pr\"\n",
     );
     git(root, &["add", "."]);
     git(root, &["commit", "-q", "-m", "reword"]);
@@ -866,7 +857,7 @@ fn json_stays_an_alias_for_format_json() {
 
     // Deprecated, but workflows in the wild pass it — it must keep working.
     let output = trellis(root)
-        .args(["changelog", "check", "--base", "main", "--json"])
+        .args(["changelog", "check", "--base", "main", "--format", "json"])
         .output()
         .unwrap();
     let payload: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
@@ -878,7 +869,7 @@ fn invalid_fragments_fail_check_and_doctor() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
     copy_fixture_to(root);
-    add_fragment(root, "lat_typo", "Added", "x"); // unknown project
+    add_fragment(root, "lat_typo", "Added", "x"); // unknown package
     add_fragment(root, "lat_core", "Invented", "x"); // unknown kind
     write(
         &root.join(".changes/unreleased/broken-1.toml"),

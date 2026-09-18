@@ -1,0 +1,5 @@
+component: tag
+kind: Breaking
+body: |-
+  **`series_tag_format` now requires `{name}`.** For one repository-wide moving tag, restore `{name}` in the package format and configure `repository_tag_package`, `repository_tag_format`, and `repository_tags`.
+time: 2026-09-18T12:52:57.903-07:00

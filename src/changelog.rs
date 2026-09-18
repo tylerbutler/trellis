@@ -41,10 +41,6 @@ pub struct Fragment {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawFragment {
-    /// The package the change belongs to. `project` is the original spelling,
-    /// inherited from changie; it still parses so fragments written by an
-    /// older trellis keep working. Removed at 1.0.
-    #[serde(alias = "project")]
     package: String,
     kind: String,
     /// Optional: a fragment need not name a category. This struct denies
@@ -229,13 +225,13 @@ pub fn dependency_fragment(
     dependency: &str,
     dependency_version: &str,
 ) -> Result<Fragment> {
+    let mut env = minijinja::Environment::new();
+    env.set_undefined_behavior(minijinja::UndefinedBehavior::Strict);
     let body = render(
-        &minijinja::Environment::new(),
+        &env,
         &config.dependency_body,
         "dependency_body",
-        // `project` is the pre-1.0 spelling of `package`, kept so existing
-        // `dependency_body` templates keep rendering. Removed at 1.0.
-        minijinja::context! { dependency, dependency_version, package, project => package },
+        minijinja::context! { dependency, dependency_version, package },
     )?;
     Ok(Fragment {
         package: package.to_string(),
@@ -1076,6 +1072,20 @@ mod tests {
         };
         let generated = dependency_fragment(&config, "lat_mid", "lat_core", "1.3.0").unwrap();
         assert_eq!(generated.body, "lat_mid now needs lat_core 1.3.0");
+    }
+
+    #[test]
+    fn dependency_body_template_rejects_the_removed_project_variable() {
+        let config = ChangelogConfig {
+            dependency_body: "{{ project }}".to_string(),
+            ..Default::default()
+        };
+        let error = dependency_fragment(&config, "lat_mid", "lat_core", "1.3.0").unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("failed to render dependency_body")
+        );
     }
 
     /// A pure ripple bumps by whatever `dependency_kind` is configured to bump,

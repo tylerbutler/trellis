@@ -231,7 +231,6 @@ Verify changed packages have changelog fragments; non-zero exit if not
 
   Possible values: `warn`, `error`, `off`
 
-* `--json` — Deprecated alias for `--format json`
 
 
 

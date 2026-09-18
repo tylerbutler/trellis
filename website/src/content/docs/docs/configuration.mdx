@@ -120,7 +120,7 @@ their roots.
 | `publish.package_tags` | no | Which tags a release maintains per package, one entry per tag: `exact` (the whole version — `v1.2.3`), `major` (`v1`), `minor` (`v1.2`). Default: `["exact"]`. Must not be empty. |
 | `publish.package_tags_overrides` | no | Per-package overrides: a map of member-path glob to tag list. A member matched by globs resolving to different lists is an error; matches agreeing on the same list are fine. |
 | `publish.exact_tag_format` | no | Template the `exact` level substitutes into; `{name}` and `{version}`. Default: `{name}-v{version}`. |
-| `publish.series_tag_format` | no | Template every series level substitutes into; `{name}` and `{series}`. Default: `{name}-v{series}`. Omitting `{name}` is deprecated and removed at 1.0 — use the repository tag keys below. |
+| `publish.series_tag_format` | no | Template every series level substitutes into; must contain `{name}` and `{series}`. Default: `{name}-v{series}`. Use the repository tag keys below for a repository-wide tag. |
 | `publish.repository_tag_package` | with the other two | Anchor package whose manifest version drives one repository-wide moving tag. Must be releasable. |
 | `publish.repository_tag_format` | with the other two | Repository tag template; must contain `{series}` and no `{name}`. |
 | `publish.repository_tags` | with the other two | Which repository tags to maintain, from the same vocabulary minus `exact`. Required alongside `repository_tag_package` and `repository_tag_format`; declare all three or none. |
@@ -134,7 +134,7 @@ their roots.
 | `changelog.uncategorized_label` | no | Heading for entries naming no category, rendered last. Default: `Other`. Read only when `categories` is set. |
 | `changelog.*_format` | no | Minijinja templates for the rendered changelog: `header_format`, `version_format`, `category_format`, `kind_format`, `change_format`. |
 | `changelog.dependency_kind` | no | Kind used for the entries generated when a workspace dependency bumps. Must name one of `kinds`. |
-| `changelog.dependency_body` | no | Minijinja template for one such entry's body. Context: `dependency`, `dependency_version`, `package` (also as `project`, deprecated). |
+| `changelog.dependency_body` | no | Minijinja template for one such entry's body. Context: `dependency`, `dependency_version`, `package`. |
 | `changelog.strictness` | no | How `changelog check` treats a changed releasable package with no unreleased fragment: `error` (default, fails the run), `warn`, or `off`. An *invalid* fragment fails at every setting. |
 | `doctor.shared_dependencies` | no | How `doctor` treats packages disagreeing on a shared external dependency: `warn` (default), `error`, or `off`. |
 
@@ -304,11 +304,8 @@ force-pushed.
 
 </Callout>
 
-Keep `{name}` in `series_tag_format`. Dropping it — `series_tag_format =
-"v{series}"` — gives the whole repository one shared series tag, which is
-deprecated and removed at 1.0; see [Repository tags](#repository-tags) for what
-replaces it. `doctor` warns on it whether or not a second package has yet made
-it ambiguous.
+Keep `{name}` in `series_tag_format`; omitting it is a configuration error.
+See [Repository tags](#repository-tags) to configure one shared series tag.
 
 <Callout>
 
@@ -351,16 +348,8 @@ never receive GitHub Releases, and never resolve through `publish --tag` or
 
 <Callout>
 
-**A `{name}`-less `series_tag_format` is deprecated and will be removed at
-1.0.** It was the way to get a repository-wide moving tag before the
-repository tag keys existed, but it is a *package* template with the
-discriminator removed: every package's series tag then matches every member,
-so `trellis ci tag-package` cannot resolve one to a package, and a second
-series-mode package turns a working config ambiguous with no edit to the
-format. `doctor` warns on the shape whether or not that has happened yet.
-
-To migrate, restore `{name}` in `series_tag_format` and declare the repository
-tag explicitly:
+**A `{name}`-less `series_tag_format` is invalid.** Restore `{name}` in the
+package tag format and declare the repository tag explicitly:
 
 ```diff lang="toml" title="gleam.toml"
   [tools.trellis.publish]
@@ -517,20 +506,17 @@ shared_dependencies = "error"   # warn (default), error, or off
 There is no `doctor --fix` for it: which requirement to unify on is a judgment
 call.
 
-## Deprecated and unrecognized keys
+## Removed and unrecognized keys
 
 Every key above is snake_case, matching `gleam.toml`'s own settings and Gleam
-itself. Through v0.7.0 they were kebab-case. The old spellings still work, and
-`doctor` reports each one so a workspace can migrate at its own pace:
+itself. Through v0.7.0 they were kebab-case. Those spellings are now errors
+that name the replacement:
 
 ```console
 $ trellis doctor
-warning: [tools.trellis] key `publish.tag-format` is deprecated; rename it to
-`publish.tag_format` (trellis config keys are snake_case)
+error: in gleam.toml: `publish.series-tag-format` was removed; use
+`publish.series_tag_format`
 ```
-
-A warning, not an error. The old spelling still configures what it always did.
-Plan on the aliases going away at 1.0.
 
 A key that is not recognized in *any* spelling is also a warning, since it may
 belong to a newer trellis than the one CI has pinned:
@@ -552,5 +538,4 @@ resolve, the graph is acyclic, task exclusion globs match members, release
 boundaries are safe, the tag format produces unique tags, locked versions
 match, [pinned git dependencies](/docs/pinning/) have not drifted from their
 tracked refs, packages agree on their shared dependencies, and
-`[tools.trellis]` carries no unrecognized or deprecated keys, exiting non-zero
-on any error.
+`[tools.trellis]` has no unrecognized keys, exiting non-zero on any error.

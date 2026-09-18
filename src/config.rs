@@ -51,25 +51,6 @@ pub struct ConfigFile {
     /// than deserialized — see [`ConfigFile::from_document`].
     #[serde(skip)]
     pub unknown_keys: Vec<String>,
-    /// Keys spelled in the pre-0.8 kebab-case style. Accepted, then reported —
-    /// see [`collect_deprecated_keys`].
-    #[serde(skip)]
-    pub deprecated_keys: Vec<DeprecatedKey>,
-}
-
-/// A key under `[tools.trellis]` still spelled the pre-0.8 kebab-case way.
-///
-/// Goal #5 in the design is "fail loudly on drift". The old spelling is a
-/// [`serde`] alias, so it still configures what it always did — but a workspace
-/// that never migrates is a workspace whose config quietly diverges from every
-/// example in the documentation, so `doctor` says so.
-#[derive(Debug, Clone)]
-pub struct DeprecatedKey {
-    /// Dotted path beneath `[tools.trellis]`, e.g. `publish.tag-format`.
-    pub path: String,
-    /// The same path in the spelling trellis documents, e.g.
-    /// `publish.tag_format`.
-    pub replacement: String,
 }
 
 /// What a check that is a judgment call does about what it finds: fail the
@@ -107,81 +88,12 @@ pub struct DoctorConfig {
     pub shared_dependencies: Strictness,
 }
 
-/// Tables under `[tools.trellis]` whose *keys* are chosen by the user rather
-/// than by trellis: task names, `exclude` selectors, and the member-path globs
-/// of `publish.package_tags_overrides` and `publish.lifecycle.packages`. A
-/// hyphen in one of those is the user's own naming (or a directory name inside
-/// a glob), not a stale spelling. Entries are full snake-cased dotted paths,
-/// so a schema table that happens to share a segment name (`packages`, say) is
-/// not silently exempted.
-const FREE_FORM_TABLES: [&str; 4] = [
-    "exclude",
-    "tasks",
-    "publish.package_tags_overrides",
-    "publish.lifecycle.packages",
-];
-
-/// Find the keys still spelled the pre-0.8 kebab-case way.
-///
-/// Every key trellis defines is snake_case, and the old spellings are [`serde`]
-/// aliases — so serde consumes them and `serde_ignored` never sees them. This
-/// walks the raw table instead. A hyphenated key that is *not* in `ignored`
-/// deserialized into some field, which at a schema position can only mean an
-/// alias fired. Deriving it this way rather than from a hand-listed set of old
-/// names keeps the two from drifting apart.
-fn collect_deprecated_keys(trellis: &toml::Value, ignored: &[String]) -> Vec<DeprecatedKey> {
-    let mut found = Vec::new();
-    walk_schema_keys(trellis, &mut String::new(), &mut |path, key| {
-        if key.contains('-') && !ignored.iter().any(|ignored| ignored == path) {
-            found.push(DeprecatedKey {
-                path: path.to_string(),
-                replacement: snake_case_path(path),
-            });
-        }
-    });
-    found
-}
-
-/// Visit every key that trellis itself names, in dotted-path form, skipping the
-/// key level of each [`FREE_FORM_TABLES`] entry — a task named `check-all` is
-/// not a deprecated key. The tables *beneath* those keys are still visited, so
-/// `tasks.check-all.needs-deps` is.
-fn walk_schema_keys(value: &toml::Value, path: &mut String, visit: &mut impl FnMut(&str, &str)) {
-    let Some(table) = value.as_table() else {
-        return;
-    };
-    for (key, value) in table {
-        let restore = path.len();
-        if !path.is_empty() {
-            path.push('.');
-        }
-        path.push_str(key);
-        visit(path, key);
-        if FREE_FORM_TABLES.contains(&snake_case(path).as_str()) {
-            // The next level down is user-named; the one after that is ours.
-            if let Some(entries) = value.as_table() {
-                for (name, value) in entries {
-                    let restore = path.len();
-                    path.push('.');
-                    path.push_str(name);
-                    walk_schema_keys(value, path, visit);
-                    path.truncate(restore);
-                }
-            }
-        } else {
-            walk_schema_keys(value, path, visit);
-        }
-        path.truncate(restore);
-    }
-}
-
 fn snake_case(key: &str) -> String {
     key.replace('-', "_")
 }
 
 /// Snake-case only the *last* segment of a dotted path: the segments above it
-/// may be user-chosen names ([`FREE_FORM_TABLES`]) that must be quoted back
-/// unchanged.
+/// may be user-chosen names that must be quoted back unchanged.
 fn snake_case_path(path: &str) -> String {
     match path.rsplit_once('.') {
         Some((parent, key)) => format!("{parent}.{}", snake_case(key)),
@@ -204,7 +116,7 @@ pub struct TaskConfig {
     /// Shell command run in each member directory.
     pub command: String,
     /// Run `gleam deps download` first if the package's deps aren't cached.
-    #[serde(default, alias = "needs-deps")]
+    #[serde(default)]
     pub needs_deps: bool,
 }
 
@@ -217,7 +129,7 @@ pub struct PublishConfig {
     pub exact_tag_format: String,
     /// Naming scheme for the moving series tags — the format every series
     /// [`TagLevel`] substitutes into. `{name}` and `{series}`.
-    #[serde(default = "default_series_tag_format", alias = "series-tag-format")]
+    #[serde(default = "default_series_tag_format")]
     pub series_tag_format: String,
     /// Which tags a release maintains for each package, one entry per tag, for
     /// members without an override. See [`TagLevel`].
@@ -242,7 +154,7 @@ pub struct PublishConfig {
     #[serde(default)]
     pub repository_tags: Vec<TagLevel>,
     /// How a path dep is rewritten to a Hex requirement at publish time.
-    #[serde(default, alias = "path-dep-requirement")]
+    #[serde(default)]
     pub path_dep_requirement: PathDepRequirement,
     /// Retry/backoff policy for Hex-touching steps.
     #[serde(default)]
@@ -330,8 +242,8 @@ impl ReleaseLifecycle {
 }
 
 /// `[tools.trellis.publish.lifecycle]`: the workspace default plus per-package
-/// overrides matched by member-path glob. `packages` is free-form — see
-/// [`FREE_FORM_TABLES`] — since its keys are globs, not schema names.
+/// overrides matched by member-path glob. `packages` is free-form because its
+/// keys are globs, not schema names.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct LifecycleConfig {
@@ -466,7 +378,7 @@ impl PathDepRequirement {
 pub struct RetryConfig {
     #[serde(default = "default_attempts")]
     pub attempts: u32,
-    #[serde(default = "default_initial_delay", alias = "initial-delay")]
+    #[serde(default = "default_initial_delay")]
     pub initial_delay: String,
     #[serde(default = "default_multiplier")]
     pub multiplier: u32,
@@ -518,11 +430,11 @@ pub struct ChangelogConfig {
     pub categories: Vec<String>,
     /// Template for the first line of a package's CHANGELOG.md.
     /// Context: `name`.
-    #[serde(default = "default_header_format", alias = "header-format")]
+    #[serde(default = "default_header_format")]
     pub header_format: String,
     /// Template for a version heading. Context: `name`, `version`, `date`,
     /// `tag`, `series`.
-    #[serde(default = "default_version_format", alias = "version-format")]
+    #[serde(default = "default_version_format")]
     pub version_format: String,
     /// Template for a category heading within a version. Context: `category`,
     /// `name`, `version`. Also renders the `uncategorized_label` block, so a
@@ -540,11 +452,11 @@ pub struct ChangelogConfig {
     /// at `###` normally, but one level deeper once categories occupy that
     /// level. Read it through [`ChangelogConfig::kind_format`], never
     /// directly.
-    #[serde(default, rename = "kind_format", alias = "kind-format")]
+    #[serde(default, rename = "kind_format")]
     pub kind_format_override: Option<String>,
     /// Template for one change entry. Context: `body`, `kind`, `category`,
     /// `name`, `version`.
-    #[serde(default = "default_change_format", alias = "change-format")]
+    #[serde(default = "default_change_format")]
     pub change_format: String,
     /// Kind used for the entries generated when a workspace dependency bumps.
     /// Must name one of `kinds`; that kind's `bump` is what a package bumps by
@@ -552,7 +464,7 @@ pub struct ChangelogConfig {
     #[serde(default = "default_dependency_kind")]
     pub dependency_kind: String,
     /// Template for the *body* of one such entry — it still goes through
-    /// `change_format`. Context: `dependency`, `dependency_version`, `project`.
+    /// `change_format`. Context: `dependency`, `dependency_version`, `package`.
     #[serde(default = "default_dependency_body")]
     pub dependency_body: String,
     /// What `changelog check` does when a changed releasable package owns no
@@ -706,7 +618,6 @@ impl ConfigFile {
         let mut config: Self =
             serde_ignored::deserialize(trellis.clone(), |path| ignored.push(path.to_string()))
                 .context("invalid [tools.trellis] configuration")?;
-        config.deprecated_keys = collect_deprecated_keys(trellis, &ignored);
         config.unknown_keys = ignored;
         config.validate()?;
         Ok(config)
@@ -722,9 +633,7 @@ impl ConfigFile {
             publish: PublishConfig::default(),
             changelog: ChangelogConfig::default(),
             doctor: DoctorConfig::default(),
-            // There is no table, so there is nothing in it to misspell.
             unknown_keys: Vec::new(),
-            deprecated_keys: Vec::new(),
         }
     }
 
@@ -766,6 +675,14 @@ impl ConfigFile {
         if !self.publish.series_tag_format.contains("{series}") {
             bail!(
                 "`series_tag_format` `{}` has no {{series}} placeholder",
+                self.publish.series_tag_format
+            );
+        }
+        if !self.publish.series_tag_format.contains("{name}") {
+            bail!(
+                "`series_tag_format` `{}` has no {{name}} placeholder; use \
+                 `repository_tag_package`, `repository_tag_format`, and `repository_tags` \
+                 for repository-wide series tags",
                 self.publish.series_tag_format
             );
         }
@@ -875,13 +792,6 @@ impl ConfigFile {
         })
     }
 
-    /// True when the series tag is repository-wide — one tag shared by every
-    /// series-mode member rather than one per package. Deprecated; see
-    /// `doctor`'s tag checks.
-    pub fn series_tag_is_repo_wide(&self) -> bool {
-        !self.publish.series_tag_format.contains("{name}")
-    }
-
     /// The anchored repository tags for `version`. Empty when the feature is
     /// unconfigured or the anchor is on a prerelease.
     pub fn repository_tags(&self, version: &str) -> Vec<String> {
@@ -926,6 +836,16 @@ const REMOVED_KEYS: [(&str, &str); 4] = [
     ),
 ];
 
+const REMOVED_KEBAB_KEYS: [&str; 7] = [
+    "publish.series-tag-format",
+    "publish.path-dep-requirement",
+    "publish.retry.initial-delay",
+    "changelog.header-format",
+    "changelog.version-format",
+    "changelog.kind-format",
+    "changelog.change-format",
+];
+
 impl ConfigFile {
     /// Fail on any key the redesign removed, naming its replacement.
     ///
@@ -934,6 +854,11 @@ impl ConfigFile {
     /// prefix, and a pre-0.8 kebab spelling, matched after snake-casing.
     fn reject_removed_keys(&self) -> Result<()> {
         for path in &self.unknown_keys {
+            if REMOVED_KEBAB_KEYS.contains(&path.as_str())
+                || (path.starts_with("tasks.") && path.ends_with(".needs-deps"))
+            {
+                bail!("`{path}` was removed; use `{}`", snake_case_path(path));
+            }
             let path = snake_case(path);
             for (removed, replacement) in REMOVED_KEYS {
                 if path == removed || path.starts_with(&format!("{removed}.")) {
@@ -1030,7 +955,6 @@ mod tests {
         assert_eq!(config.changelog.dependency_kind, "Docs");
         assert_eq!(config.changelog.categories, ["build", "publish"]);
         assert_eq!(config.changelog.uncategorized_label, "Everything else");
-        assert!(config.deprecated_keys.is_empty());
         assert!(config.unknown_keys.is_empty());
     }
 
@@ -1064,17 +988,14 @@ mod tests {
         }
     }
 
-    /// Categories are a plain string array, not a table, so `walk_schema_keys`
-    /// never descends into the labels — a category named after a hyphenated
-    /// CLI command is the user's business, not a deprecated key.
+    /// Category labels are user-defined values, not config keys.
     #[test]
-    fn hyphens_in_category_labels_are_not_deprecations() {
+    fn hyphens_in_category_labels_are_allowed() {
         let config = ConfigFile::from_gleam_toml(
             "[tools.trellis.changelog]\ncategories = [\"markdown-help\", \"no-color\"]\n",
         )
         .unwrap();
         assert_eq!(config.changelog.categories, ["markdown-help", "no-color"]);
-        assert!(config.deprecated_keys.is_empty());
         assert!(config.unknown_keys.is_empty());
     }
 
@@ -1122,75 +1043,57 @@ mod tests {
         .unwrap();
     }
 
-    /// Every key released through v0.7.0 was kebab-case, so the old spelling
-    /// still parses to exactly what it always did.
     #[test]
-    fn pre_0_8_kebab_case_keys_still_parse() {
-        let text = r####"
-            [tools.trellis]
-            members = ["packages/*"]
-
-            [tools.trellis.tasks.lint]
-            command = "gleam run -m glinter"
-            needs-deps = true
-
-            [tools.trellis.publish]
-            series-tag-format = "{name}@{series}"
-            path-dep-requirement = "patch"
-            retry = { attempts = 3, initial-delay = "10ms", multiplier = 4 }
-
-            [tools.trellis.changelog]
-            header-format = "# {{ name }}"
-            version-format = "## {{ version }}"
-            kind-format = "### {{ kind }}"
-            change-format = "* {{ body }}"
-        "####;
-        let config = ConfigFile::from_gleam_toml(text).unwrap();
-        assert!(config.tasks["lint"].needs_deps);
-        assert_eq!(config.publish.series_tag_format, "{name}@{series}");
-        assert_eq!(
-            config.publish.path_dep_requirement,
-            PathDepRequirement::Patch
-        );
-        assert_eq!(config.publish.retry.initial_delay, "10ms");
-        assert_eq!(config.changelog.header_format, "# {{ name }}");
-        assert_eq!(config.changelog.version_format, "## {{ version }}");
-        assert_eq!(config.changelog.kind_format(), "### {{ kind }}");
-        assert_eq!(config.changelog.change_format, "* {{ body }}");
-        // Nothing was dropped, and every old spelling is reported once. The
-        // pre-0.8 `tag-*` keys are absent because the keys they aliased were
-        // removed outright — see `removed_tag_keys_fail_with_their_replacement`.
-        assert!(config.unknown_keys.is_empty());
-        let deprecated = deprecated_paths(&config);
-        assert_eq!(
-            deprecated,
-            [
-                "changelog.change-format",
-                "changelog.header-format",
-                "changelog.kind-format",
-                "changelog.version-format",
-                "publish.path-dep-requirement",
-                "publish.retry.initial-delay",
-                "publish.series-tag-format",
+    fn pre_0_8_kebab_case_keys_name_their_replacements() {
+        let cases = [
+            (
+                "[tools.trellis.tasks.lint]\ncommand = \"true\"\nneeds-deps = true\n",
                 "tasks.lint.needs-deps",
-            ]
-        );
-    }
-
-    #[test]
-    fn a_deprecated_key_names_its_replacement() {
-        let config = ConfigFile::from_gleam_toml(
-            "[tools.trellis]\n[tools.trellis.publish]\nseries-tag-format = \"v{series}\"\n",
-        )
-        .unwrap();
-        let [key] = &config.deprecated_keys[..] else {
-            panic!(
-                "expected one deprecated key, got {:?}",
-                config.deprecated_keys
+                "tasks.lint.needs_deps",
+            ),
+            (
+                "[tools.trellis.publish]\nseries-tag-format = \"{name}@{series}\"\n",
+                "publish.series-tag-format",
+                "publish.series_tag_format",
+            ),
+            (
+                "[tools.trellis.publish]\npath-dep-requirement = \"patch\"\n",
+                "publish.path-dep-requirement",
+                "publish.path_dep_requirement",
+            ),
+            (
+                "[tools.trellis.publish.retry]\ninitial-delay = \"10ms\"\n",
+                "publish.retry.initial-delay",
+                "publish.retry.initial_delay",
+            ),
+            (
+                "[tools.trellis.changelog]\nheader-format = \"# {{ name }}\"\n",
+                "changelog.header-format",
+                "changelog.header_format",
+            ),
+            (
+                "[tools.trellis.changelog]\nversion-format = \"## {{ version }}\"\n",
+                "changelog.version-format",
+                "changelog.version_format",
+            ),
+            (
+                "[tools.trellis.changelog]\nkind-format = \"### {{ kind }}\"\n",
+                "changelog.kind-format",
+                "changelog.kind_format",
+            ),
+            (
+                "[tools.trellis.changelog]\nchange-format = \"* {{ body }}\"\n",
+                "changelog.change-format",
+                "changelog.change_format",
+            ),
+        ];
+        for (text, old, new) in cases {
+            let message = ConfigFile::from_gleam_toml(text).unwrap_err().to_string();
+            assert!(
+                message.contains(&format!("`{old}` was removed; use `{new}`")),
+                "{message}"
             );
-        };
-        assert_eq!(key.path, "publish.series-tag-format");
-        assert_eq!(key.replacement, "publish.series_tag_format");
+        }
     }
 
     /// Kebab aliases exist only for keys that predate the 0.8 rename. A key
@@ -1203,21 +1106,14 @@ mod tests {
             "[tools.trellis]\n[tools.trellis.publish]\nseries-tags = [\"major\"]\n",
         )
         .unwrap();
-        assert!(
-            config.deprecated_keys.is_empty(),
-            "{:?}",
-            config.deprecated_keys
-        );
         assert_eq!(config.unknown_keys, ["publish.series-tags"]);
         // The typo did not silently configure anything.
         assert_eq!(config.publish.package_tags, [TagLevel::Exact]);
     }
 
-    /// The keys of `exclude`, `tasks`, and `tag_mode_overrides` are the user's
-    /// own names. A hyphen in one is not a stale spelling, and saying so would
-    /// be a warning nobody can act on.
+    /// The keys of `exclude` and `tasks` are user-defined names.
     #[test]
-    fn hyphens_in_free_form_table_keys_are_not_deprecations() {
+    fn hyphens_in_free_form_table_keys_are_allowed() {
         let config = ConfigFile::from_gleam_toml(
             r#"
             [tools.trellis]
@@ -1230,28 +1126,22 @@ mod tests {
         )
         .unwrap();
         assert!(config.tasks.contains_key("check-all"));
-        assert!(
-            config.deprecated_keys.is_empty(),
-            "{:?}",
-            config.deprecated_keys
-        );
     }
 
-    /// ...but the schema keys *beneath* a user-named task are still trellis's,
-    /// so a stale one there is still reported — and reported at a path that
-    /// leaves the task's own name alone.
     #[test]
-    fn a_stale_key_under_a_hyphenated_task_name_is_still_reported() {
-        let config = ConfigFile::from_gleam_toml(
+    fn a_stale_key_under_a_hyphenated_task_name_is_rejected() {
+        let message = ConfigFile::from_gleam_toml(
             "[tools.trellis.tasks.check-all]\ncommand = \"gleam check\"\nneeds-deps = true\n",
         )
-        .unwrap();
-        assert!(config.tasks["check-all"].needs_deps);
-        assert_eq!(deprecated_paths(&config), ["tasks.check-all.needs-deps"]);
-        let [key] = &config.deprecated_keys[..] else {
-            unreachable!()
-        };
-        assert_eq!(key.replacement, "tasks.check-all.needs_deps");
+        .unwrap_err()
+        .to_string();
+        assert!(
+            message.contains(
+                "`tasks.check-all.needs-deps` was removed; use \
+                 `tasks.check-all.needs_deps`"
+            ),
+            "{message}"
+        );
     }
 
     /// `dependency-kind`, `dependency-body`, and `shared-dependencies` were
@@ -1272,19 +1162,10 @@ mod tests {
         // The defaults stand, and the keys are reported as unrecognized.
         assert_eq!(config.changelog.dependency_kind, "Dependencies");
         assert_eq!(config.doctor.shared_dependencies, Strictness::Warn);
-        assert!(config.deprecated_keys.is_empty());
         assert_eq!(
             config.unknown_keys,
             ["changelog.dependency-kind", "doctor.shared-dependencies"]
         );
-    }
-
-    fn deprecated_paths(config: &ConfigFile) -> Vec<&str> {
-        config
-            .deprecated_keys
-            .iter()
-            .map(|key| key.path.as_str())
-            .collect()
     }
 
     #[test]
@@ -1353,8 +1234,6 @@ mod tests {
             config.publish.lifecycle.packages["examples/**"],
             ReleaseLifecycle::Workspace
         );
-        // Glob keys carrying `-`/`/`/`*` are user-chosen, not deprecated spellings.
-        assert!(config.deprecated_keys.is_empty());
         assert!(config.unknown_keys.is_empty());
     }
 
@@ -1523,11 +1402,11 @@ mod tests {
                 .is_empty()
         );
 
-        let repo_wide = ConfigFile::from_gleam_toml(
+        let error = ConfigFile::from_gleam_toml(
             "[tools.trellis]\n[tools.trellis.publish]\nseries_tag_format = \"v{series}\"\n",
         )
-        .unwrap();
-        assert_eq!(repo_wide.series_tags("core", "0.0.3", &minor), ["v0.0"]);
+        .unwrap_err();
+        assert!(error.to_string().contains("has no {name} placeholder"));
     }
 
     #[test]

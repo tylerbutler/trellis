@@ -1,0 +1,5 @@
+component: changelog
+kind: Breaking
+body: |-
+  **`changelog` removes its pre-1.0 aliases.** Unreleased fragments must use `package`, dependency templates must use `package`, and `changelog check` machine output must use `--format json` instead of `--json`.
+time: 2026-09-18T12:52:57.903-07:00

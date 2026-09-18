@@ -33,14 +33,11 @@ use workspace::Workspace;
 const EXIT_INTERNAL_ERROR: u8 = 3;
 
 /// Crate version, with `git describe` output appended for builds that aren't
-/// a clean release tag. "VERGEN_IDEMPOTENT_OUTPUT" is the placeholder build.rs
-/// emits when git metadata is unavailable (e.g. a crates.io tarball).
+/// a clean release tag.
 fn version() -> String {
     let base = env!("CARGO_PKG_VERSION");
     match option_env!("VERGEN_GIT_DESCRIBE") {
-        Some(describe)
-            if describe != "VERGEN_IDEMPOTENT_OUTPUT" && describe != format!("v{base}") =>
-        {
+        Some(describe) if describe != format!("v{base}") => {
             format!("{base} ({describe})")
         }
         _ => base.to_string(),
@@ -338,9 +335,6 @@ enum ChangelogCommand {
         /// a missing entry, report it advisorily, or don't check
         #[arg(long, value_enum)]
         strictness: Option<Strictness>,
-        /// Deprecated alias for `--format json`
-        #[arg(long, conflicts_with = "format")]
-        json: bool,
     },
 }
 
@@ -531,7 +525,7 @@ fn main() -> ExitCode {
                     command: ChangelogCommand::Check {
                         format: CheckFormat::Json | CheckFormat::Github,
                         ..
-                    } | ChangelogCommand::Check { json: true, .. },
+                    },
                 }
         );
     let result = dispatch(cli);
@@ -690,21 +684,15 @@ fn dispatch(cli: Cli) -> Result<bool> {
                 head,
                 format,
                 strictness,
-                json,
-            } => {
-                // `--json` predates `--format` and clap rejects the two
-                // together, so this only ever upgrades the default.
-                let format = if json { CheckFormat::Json } else { format };
-                commands::changelog::check(
-                    &workspace,
-                    &commands::changelog::CheckOptions {
-                        base,
-                        head,
-                        format,
-                        strictness,
-                    },
-                )
-            }
+            } => commands::changelog::check(
+                &workspace,
+                &commands::changelog::CheckOptions {
+                    base,
+                    head,
+                    format,
+                    strictness,
+                },
+            ),
         },
         Command::Version { command } => match command {
             VersionCommand::Plan { overrides, json } => {
