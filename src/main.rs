@@ -33,14 +33,11 @@ use workspace::Workspace;
 const EXIT_INTERNAL_ERROR: u8 = 3;
 
 /// Crate version, with `git describe` output appended for builds that aren't
-/// a clean release tag. "VERGEN_IDEMPOTENT_OUTPUT" is the placeholder build.rs
-/// emits when git metadata is unavailable (e.g. a crates.io tarball).
+/// a clean release tag.
 fn version() -> String {
     let base = env!("CARGO_PKG_VERSION");
     match option_env!("VERGEN_GIT_DESCRIBE") {
-        Some(describe)
-            if describe != "VERGEN_IDEMPOTENT_OUTPUT" && describe != format!("v{base}") =>
-        {
+        Some(describe) if describe != format!("v{base}") => {
             format!("{base} ({describe})")
         }
         _ => base.to_string(),
