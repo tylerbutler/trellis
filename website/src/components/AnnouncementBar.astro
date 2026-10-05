@@ -40,6 +40,23 @@ const href = `https://github.com/tylerbutler/trellis/releases/tag/v${TRELLIS_VER
   const bar = document.querySelector<HTMLElement>(".announce");
   const dismiss = bar?.querySelector<HTMLButtonElement>(".announce-dismiss");
 
+  if (bar) {
+    const announcement_height = bar.offsetHeight;
+    const update_announcement = () => {
+      // Restore only at the top so the height change cannot retrigger collapse.
+      if (window.scrollY <= 0) {
+        document.documentElement.removeAttribute("data-announce-collapsed");
+      } else if (
+        window.scrollY > announcement_height &&
+        !bar.contains(document.activeElement)
+      ) {
+        document.documentElement.setAttribute("data-announce-collapsed", "");
+      }
+    };
+    window.addEventListener("scroll", update_announcement, { passive: true });
+    update_announcement();
+  }
+
   dismiss?.addEventListener("click", () => {
     const version = bar?.dataset.version;
     if (version) {
@@ -71,7 +88,8 @@ const href = `https://github.com/tylerbutler/trellis/releases/tag/v${TRELLIS_VER
     max-width: 100%;
     /* Keeps the message centred in the bar rather than in the space left
        over by the dismiss button. */
-    padding-inline: 2.75rem;
+    padding-inline: 3.75rem;
+    min-height: 2.75rem;
     color: var(--ink-soft);
     font-size: var(--text-fine);
     text-decoration: none;
@@ -124,8 +142,8 @@ const href = `https://github.com/tylerbutler/trellis/releases/tag/v${TRELLIS_VER
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 1.75rem;
-    height: 1.75rem;
+    width: 2.75rem;
+    height: 2.75rem;
     padding: 0;
     border: 0;
     border-radius: var(--radius-sm);

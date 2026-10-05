@@ -19,7 +19,7 @@ colors:
 typography:
   display:
     fontFamily: "Archivo Variable, Helvetica Neue, Arial, sans-serif"
-    fontSize: "clamp(2.3rem, 1.1rem + 4.6vw, 4.4rem)"
+    fontSize: "clamp(2.3rem, 1.1rem + 3.2vw, 3.5rem)"
     fontWeight: 680
     lineHeight: 1.12
     letterSpacing: "-0.022em"
@@ -152,7 +152,7 @@ A committed steel-cobalt system anchored at hue 230, with one warm brass accent 
 **Character:** One grotesque with committed width/weight contrast, plus a wide technical mono. Archivo speaks; Martian Mono proves. The pairing contrasts on the proportion axis — expanded display against fixed-pitch evidence.
 
 ### Hierarchy
-- **Display** (680, `clamp(2.3rem → 4.4rem)`, 1.12, 'wdth' 118): hero headline only. The brass sentence inside it is the page's one color-emphasis moment.
+- **Display** (680, `clamp(2.3rem → 3.5rem)`, 1.12, 'wdth' 118): hero headline only. The brass sentence inside it is the page's one color-emphasis moment.
 - **Headline** (620, `clamp(1.6rem → 2.5rem)`, 1.12, 'wdth' 114): section headings.
 - **Title** (620, 1.3rem): phase and panel headings.
 - **Body** (400, 1.0625rem, 1.65): prose, capped at 68ch measure (`--measure`).
@@ -190,11 +190,15 @@ The brand's hero imagery: a `<figure>` with a mono title bar (`$ trellis graph` 
 ### Ledger Tables
 Full-width tables inside a hairline-bordered, 8px-radius scroll container. Mono Fog Gray column headers on Surface-2; brass first column for file/key names; Fog Gray for failure/description columns. Row dividers are Line Soft hairlines; no zebra striping.
 
+Below 50rem, the configuration keys table stacks each description below its key and requirement. The column headers remain available to assistive technology. Other tables retain their horizontal scroll containers.
+
 ### Code Frames
 Expressive Code with the `vesper` theme, overridden to the system: Surface background, Surface-2 tab bar, brass active-tab indicator, shadow disabled (`shadowColor: transparent`), Martian Mono, word wrap on by default (`defaultProps: { wrap: true }`). TOML section headers land near-brass, strings in the cobalt family — the frames belong to the same instrument. Terminal frames follow the site's `$`-prompt convention: no macOS traffic-light dots (dots are display:none'd and zeroed in styleOverrides), titles left-aligned in mono with a brass `$` prefix; untitled terminal frames show a plain hairline bar.
 
 ### Navigation
-Sticky header on a 94% Harbor Steel fill with a hairline bottom border; wordmark is the lattice glyph (brass + cobalt strokes) beside lowercase "trellis" in stretched Archivo. Links are Ink Soft at 520, brass on hover. Docs are Starlight (`@astrojs/starlight`), fully re-themed to this system via `src/styles/starlight.css` (dark-only: ThemeProvider/ThemeSelect overridden): sidebar active item gets Surface-2 fill + brass text; Pagefind search, mono "On this page" rail, heading anchor links, and a themed 404 come from the framework. The landing page keeps its own Base layout; both consume the same `tokens.css`.
+Sticky header on an opaque Harbor Steel fill with a hairline bottom border; wordmark is the lattice glyph (brass + cobalt strokes) beside lowercase "trellis" in stretched Archivo. Links are Ink Soft at 520, brass on hover. Docs are Starlight (`@astrojs/starlight`), fully re-themed to this system via `src/styles/starlight.css` (dark-only: ThemeProvider/ThemeSelect overridden): sidebar active item gets Surface-2 fill + brass text; Pagefind search, mono "On this page" rail, heading anchor links, and a themed 404 come from the framework. The landing page keeps its own Base layout; both consume the same `tokens.css`.
+
+The release announcement uses a 44px bar and a 44px dismiss target. Below 50rem, it collapses after the reader scrolls past one bar height and returns at the top of the page. It remains visible while a control inside it has focus. Explicit dismissal still persists for the current release.
 
 ### Derived Version Strings
 No page carries a hand-maintained version number. `src/lib/version.ts` derives `TRELLIS_VERSION` from the root `Cargo.toml` at build time (a `?raw` import), and every install command interpolates it — the site obeys the tool's own derive-don't-declare doctrine. Statements about when a feature shipped ("Trellis 0.2.0 added…") are historical facts and stay literal.
