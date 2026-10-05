@@ -110,6 +110,8 @@ their roots.
 
 ## Keys
 
+<div class="configuration_keys">
+
 | Key | Required | What it does |
 | --- | --- | --- |
 | `members` | no | Literal directories and wildcard patterns relative to the workspace root. Entries containing `*`, `?`, or `[` use repository-aware wildcard discovery; only matching directories with a `gleam.toml` become members. When omitted, every non-gitignored `gleam.toml` in the repository (outside `build/`) marks a member. An explicitly empty list is an error. |
@@ -137,6 +139,8 @@ their roots.
 | `changelog.dependency_body` | no | Minijinja template for one such entry's body. Context: `dependency`, `dependency_version`, `package`. |
 | `changelog.strictness` | no | How `changelog check` treats a changed releasable package with no unreleased fragment: `error` (default, fails the run), `warn`, or `off`. An *invalid* fragment fails at every setting. |
 | `doctor.shared_dependencies` | no | How `doctor` treats packages disagreeing on a shared external dependency: `warn` (default), `error`, or `off`. |
+
+</div>
 
 ## Package exclusions
 

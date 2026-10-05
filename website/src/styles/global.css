@@ -126,7 +126,7 @@ kbd {
   position: sticky;
   top: var(--announce-h);
   z-index: var(--z-sticky);
-  background: color-mix(in oklch, var(--bg) 94%, transparent);
+  background: var(--bg);
   border-bottom: 1px solid var(--line-soft);
 }
 

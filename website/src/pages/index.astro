@@ -25,23 +25,19 @@ tag_format = "{name}-v{version}"`;
 
 <Base
   title="Trellis — a workspace CLI for Gleam monorepos"
-  description="A workspace CLI for Gleam monorepos: task fan-out, dependency-graph introspection, changelogs, versioning, and publishing, all derived from gleam.toml."
+  description="Workspace tooling for multi-package Gleam repositories, derived from gleam.toml. Run tasks, inspect dependencies, and manage releases with one binary."
 >
   <!-- ============ HERO ============ -->
   <section class="hero">
     <div class="shell hero-grid">
       <div class="hero-copy">
         <h1>
-          Gleam has no workspaces.
-          <em>Trellis adds them.</em>
+          Workspace tooling for Gleam monorepos.
+          <em>Derived from gleam.toml.</em>
         </h1>
         <p class="lead">
-          <code>gleam build</code>, <code>gleam test</code>, and{" "}
-          <code>gleam publish</code> each operate on a single package directory.
-          Trellis is one binary that fans them across every package in the
-          repository, then adds changelogs, versioning, and publishing on top.
-          Everything it knows comes from the <code>gleam.toml</code> files you
-          already have.
+          Run tasks across your Gleam packages, inspect their dependencies, and
+          manage changelogs, versions, and publishing from one binary.
         </p>
         <div class="hero-actions">
           <a class="btn btn-primary" href="/docs/">Read the docs</a>
