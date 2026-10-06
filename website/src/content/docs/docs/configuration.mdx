@@ -10,6 +10,45 @@ root is the workspace root and every non-gitignored `gleam.toml` (outside
 `build/`) marks a member. A fresh Gleam monorepo, or a single-package repo,
 works with zero setup.
 
+## Find a setting
+
+<nav class="task_index" aria-label="Configuration topics">
+  <div>
+    <p class="task_index_label">Setup</p>
+    <ul>
+      <li><a href="#workspace-setup">Minimal setup</a></li>
+      <li><a href="#bootstrapping-with-trellis-init">Initialize the workspace</a></li>
+      <li><a href="#keys">All configuration keys</a></li>
+    </ul>
+  </div>
+  <div>
+    <p class="task_index_label">Package selection</p>
+    <ul>
+      <li><a href="#member-discovery">Discover packages</a></li>
+      <li><a href="#package-exclusions">Exclude packages from tasks</a></li>
+    </ul>
+  </div>
+  <div>
+    <p class="task_index_label">Releases and changelogs</p>
+    <ul>
+      <li><a href="#release-lifecycle">Choose a release lifecycle</a></li>
+      <li><a href="#tags">Configure package tags</a></li>
+      <li><a href="#repository-tags">Configure repository tags</a></li>
+      <li><a href="#changelog-configuration">Configure changelogs</a></li>
+    </ul>
+  </div>
+  <div>
+    <p class="task_index_label">Checks and migration</p>
+    <ul>
+      <li><a href="#shared-dependency-agreement">Check shared dependencies</a></li>
+      <li><a href="#removed-and-unrecognized-keys">Replace removed keys</a></li>
+      <li><a href="#verifying-it">Verify the workspace</a></li>
+    </ul>
+  </div>
+</nav>
+
+## Workspace setup
+
 When you need to configure something, trellis uses a `[tools.trellis]` table
 in a `gleam.toml` to identify the workspace root, so it does not need a
 separate config file. The root manifest may be config-only, or a regular Gleam

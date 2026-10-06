@@ -7,6 +7,41 @@ use std::path::Path;
 // ---- markdown reference ----------------------------------------------
 
 #[test]
+fn markdown_reference_groups_every_visible_command() {
+    let output = Command::cargo_bin("trellis")
+        .unwrap()
+        .arg("markdown-help")
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let generated = String::from_utf8(output.stdout).unwrap();
+    assert!(!generated.contains("**Command Overview:**"));
+    let (index, _) = generated.split_once("</nav>").expect("command index");
+    assert!(index.contains(r#"<nav class="task_index" aria-label="Command topics">"#));
+    for group in [
+        "Workspace tasks",
+        "Releases",
+        "Setup and checks",
+        "Automation",
+    ] {
+        assert!(index.contains(group), "missing command group: {group}");
+    }
+    for command in generated.lines().filter_map(|line| {
+        line.strip_prefix("## `")
+            .and_then(|heading| heading.strip_suffix('`'))
+    }) {
+        let anchor = command.replace(' ', "-");
+        assert_eq!(
+            index.matches(&format!(r##"href="#{anchor}""##)).count(),
+            1,
+            "command must appear once in the index: {command}"
+        );
+    }
+    assert!(!index.contains("href=\"#trellis-markdown-help\""));
+    assert!(!index.contains("href=\"#trellis-man\""));
+}
+
+#[test]
 fn markdown_reference_page_is_up_to_date() {
     let output = Command::cargo_bin("trellis")
         .unwrap()
