@@ -153,6 +153,14 @@ kbd {
 
 .brand img {
   display: block;
+  width: auto;
+  height: 2rem;
+}
+
+@media (min-width: 50em) {
+  .brand img {
+    height: 2.5rem;
+  }
 }
 
 .site-nav {
