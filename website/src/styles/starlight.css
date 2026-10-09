@@ -360,7 +360,37 @@ h1[data-page-title] {
   color: var(--brass);
 }
 
-@media (width < 50rem) {
+.main-frame:has(.configuration_keys) {
+  --sl-content-width: 52rem;
+}
+
+.main-frame:has(.configuration_keys) .sl-markdown-content > :is(p, ul, ol, blockquote) {
+  max-width: min(38rem, var(--measure));
+}
+
+.configuration_keys {
+  container-type: inline-size;
+}
+
+.sl-markdown-content .configuration_keys table {
+  display: table;
+  width: 100%;
+  table-layout: fixed;
+}
+
+.sl-markdown-content .configuration_keys th:first-child {
+  width: 32%;
+}
+
+.sl-markdown-content .configuration_keys th:nth-child(2) {
+  width: 14%;
+}
+
+.sl-markdown-content .configuration_keys td:first-child code {
+  overflow-wrap: anywhere;
+}
+
+@container (width < 40rem) {
   .sl-markdown-content .configuration_keys :is(tbody, tr, td) {
     margin-top: 0;
   }
@@ -388,10 +418,6 @@ h1[data-page-title] {
   .sl-markdown-content .configuration_keys tr:last-child,
   .sl-markdown-content .configuration_keys td {
     border-bottom: none;
-  }
-
-  .sl-markdown-content .configuration_keys td:first-child code {
-    overflow-wrap: anywhere;
   }
 
   .sl-markdown-content .configuration_keys td:nth-child(2) {
