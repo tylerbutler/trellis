@@ -14,7 +14,7 @@ devDependencies:
     - JuliusBrussee/caveman/skills/caveman-commit
     # - git: https://github.com/obra/superpowers
     - DietrichGebert/ponytail
-    - pbakaus/impeccable/plugin#skill-v4.1.2
+    - pbakaus/impeccable/plugin#skill-v4.5.2
   mcp: []
   lsp:
     - name: rust-analyzer

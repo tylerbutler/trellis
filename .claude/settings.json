@@ -7,7 +7,18 @@
           {
             "type": "command",
             "statusMessage": "Loading ponytail mode...",
-            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/ponytail/hooks/ponytail-activate.js\"",
+            "command": "node -e \"require(require('node:path').join(process.env.CLAUDE_PLUGIN_ROOT.replaceAll(String.fromCharCode(92), '/'), 'hooks/ponytail-activate.js'))\"",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "statusMessage": "Preparing build session",
+            "command": "[ ! -f \"${CLAUDE_PROJECT_DIR}/.claude/hooks/plugin/skills/impeccable/scripts/impeccable\" ] || \"${CLAUDE_PROJECT_DIR}/.claude/hooks/plugin/skills/impeccable/scripts/impeccable\" hook",
             "timeout": 5
           }
         ]
@@ -20,7 +31,7 @@
           {
             "type": "command",
             "statusMessage": "Loading ponytail mode...",
-            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/ponytail/hooks/ponytail-subagent.js\"",
+            "command": "node -e \"require(require('node:path').join(process.env.CLAUDE_PLUGIN_ROOT.replaceAll(String.fromCharCode(92), '/'), 'hooks/ponytail-subagent.js'))\"",
             "timeout": 5
           }
         ]
@@ -33,7 +44,7 @@
           {
             "type": "command",
             "statusMessage": "Tracking ponytail mode...",
-            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/ponytail/hooks/ponytail-mode-tracker.js\"",
+            "command": "node -e \"require(require('node:path').join(process.env.CLAUDE_PLUGIN_ROOT.replaceAll(String.fromCharCode(92), '/'), 'hooks/ponytail-mode-tracker.js'))\"",
             "timeout": 5
           }
         ]
@@ -46,7 +57,7 @@
           {
             "type": "command",
             "statusMessage": "Checking UI changes",
-            "command": "[ ! -f \"${CLAUDE_PROJECT_DIR}/.claude/hooks/plugin/skills/impeccable/scripts/hook.mjs\" ] || ! { node -e \"process.exit(Math.min(parseInt(process.versions.node,10),22)===22?0:1)\" 2>/dev/null || { D=\"$HOME/.impeccable\"; [ -f \"$D/node-unsupported\" ] || { mkdir -p \"$D\" 2>/dev/null && : > \"$D/node-unsupported\" 2>/dev/null && printf '%s' '{\"systemMessage\":\"The impeccable design hook is not running: no Node 22 or newer on PATH. Install one, or remove the impeccable hook from your harness settings.\"}'; }; exit 0; }; } || node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/plugin/skills/impeccable/scripts/hook.mjs\"",
+            "command": "[ ! -f \"${CLAUDE_PROJECT_DIR}/.claude/hooks/plugin/skills/impeccable/scripts/impeccable\" ] || \"${CLAUDE_PROJECT_DIR}/.claude/hooks/plugin/skills/impeccable/scripts/impeccable\" hook",
             "timeout": 5
           }
         ]
@@ -59,7 +70,7 @@
           {
             "type": "command",
             "statusMessage": "Design deep pass",
-            "command": "[ ! -f \"${CLAUDE_PROJECT_DIR}/.claude/hooks/plugin/skills/impeccable/scripts/hook.mjs\" ] || ! { node -e \"process.exit(Math.min(parseInt(process.versions.node,10),22)===22?0:1)\" 2>/dev/null || { D=\"$HOME/.impeccable\"; [ -f \"$D/node-unsupported\" ] || { mkdir -p \"$D\" 2>/dev/null && : > \"$D/node-unsupported\" 2>/dev/null && printf '%s' '{\"systemMessage\":\"The impeccable design hook is not running: no Node 22 or newer on PATH. Install one, or remove the impeccable hook from your harness settings.\"}'; }; exit 0; }; } || node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/plugin/skills/impeccable/scripts/hook.mjs\"",
+            "command": "[ ! -f \"${CLAUDE_PROJECT_DIR}/.claude/hooks/plugin/skills/impeccable/scripts/impeccable\" ] || \"${CLAUDE_PROJECT_DIR}/.claude/hooks/plugin/skills/impeccable/scripts/impeccable\" hook",
             "timeout": 30
           }
         ]
