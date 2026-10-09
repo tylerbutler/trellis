@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "astro dev",
+    "test": "node --test scripts/*.test.mjs",
     "build": "astro build",
     "preview": "astro preview",
     "og": "node scripts/generate-og.ts"

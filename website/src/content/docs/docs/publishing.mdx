@@ -78,7 +78,7 @@ Each entry in a package's `package_tags` falls into one of two lifecycles:
   a reviewable way to do exactly that. The signal is the package's manifest version stored at the tag,
   so a commit that does not release the package, such as another package's
   release or a docs change, leaves its series tags alone. The series is
-  derived from the version; see [series tags](/docs/configuration/#tags).
+  derived from the version; see [series tags](/docs/configuration-reference/#tags).
 - **Repository tags** are independent of any package's list. Trellis moves the
   configured tag only when the anchor package's manifest version differs from
   the version at that tag. A series change creates a new tag and leaves the
@@ -116,7 +116,7 @@ releases, so neither `publish --tag` nor `ci tag-package` resolves them.
 ## Publishing to Hex
 
 `publish` selects members whose [release
-lifecycle](/docs/configuration/#release-lifecycle) is `hex`. A named package
+lifecycle](/docs/configuration-reference/#release-lifecycle) is `hex`. A named package
 and `--tag <tag>` both refuse a `workspace` or `git_only` package, and
 `--all-untagged` only ever considers `hex` members. It runs, per package and
 in dependency order:
@@ -159,7 +159,7 @@ Dev-only path deps to a non-`hex` package are left alone, because Hex doesn't
 ship dev dependencies. A regular `[dependencies]` path dep to a package whose
 lifecycle is less capable than its dependent's refuses to publish, and
 `doctor` catches that boundary on every PR; see [Release
-lifecycle](/docs/configuration/#release-lifecycle).
+lifecycle](/docs/configuration-reference/#release-lifecycle).
 
 </Callout>
 

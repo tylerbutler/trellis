@@ -43,6 +43,10 @@ export default defineConfig({
         {
           label: "Reference",
           items: [
+            {
+              label: "Configuration reference",
+              slug: "docs/configuration-reference",
+            },
             { label: "JSON output", slug: "docs/json-output" },
             { label: "Compatibility", slug: "docs/compatibility" },
             { label: "CLI reference", slug: "docs/reference" },
