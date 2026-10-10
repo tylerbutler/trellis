@@ -8,7 +8,7 @@
     "dev": "astro dev",
     "test": "node --test scripts/*.test.mjs",
     "build": "astro build",
-    "deploy": "astro build && wrangler deploy",
+    "deploy": "wrangler deploy",
     "preview": "astro preview",
     "og": "node scripts/generate-og.ts"
   },
