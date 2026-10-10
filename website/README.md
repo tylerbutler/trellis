@@ -26,7 +26,7 @@ the generated `404.html` for missing pages.
 
 Use [Workers Builds](https://developers.cloudflare.com/workers/ci-cd/builds/)
 to connect `tylerbutler/trellis` in the Cloudflare dashboard. Create a Worker
-named `trellis-website`; its name must match `wrangler.jsonc`.
+named `trellis`; its name must match `wrangler.jsonc`.
 
 | Build setting | Value |
 | --- | --- |
