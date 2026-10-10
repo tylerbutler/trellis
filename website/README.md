@@ -38,6 +38,8 @@ named `trellis-website`; its name must match `wrangler.jsonc`.
 | Build variable | `PNPM_VERSION=11.9.0` |
 
 Workers Builds installs dependencies before running the deploy or preview command.
+If the log shows no detected tools or dependencies, confirm that **Root directory**
+is `website`, where `package.json` and the pnpm lockfile are located.
 The build command in `wrangler.jsonc` generates `dist/` before uploading assets.
 Do not also set a dashboard build command; that would build the site twice.
 `.node-version` selects Node.js 24. Set `PNPM_VERSION` to match the
@@ -45,8 +47,10 @@ Do not also set a dashboard build command; that would build the site twice.
 `allowBuilds` settings for native dependencies.
 
 Enable builds for non-production branches to replace Netlify deploy previews.
-The preview command does not deploy to production. Cloudflare manages the build
-API token, so this setup does not need GitHub Actions deployment secrets.
+The empty `previews` block in `wrangler.jsonc` enables `wrangler preview` and
+keeps the asset and compatibility settings shared with production.
+The preview command does not deploy to production. Cloudflare manages the
+build API token, so this setup does not need GitHub Actions deployment secrets.
 
 For a manual deployment from `website/`, run `pnpm exec wrangler login`, then
 `pnpm run deploy`. Wrangler builds the site before deploying it to production.
