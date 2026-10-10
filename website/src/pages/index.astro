@@ -20,7 +20,7 @@ exclude = { docs = ["examples/*"], "@release" = ["examples/*"] }
 command = "gleam run -m glinter"
 
 [tools.trellis.publish]
-tag_format = "{name}-v{version}"`;
+exact_tag_format = "{name}-v{version}"`;
 ---
 
 <Base
@@ -51,65 +51,18 @@ tag_format = "{name}-v{version}"`;
       <figure class="term hero-term">
         <figcaption class="term-bar"><span class="prompt">$</span>trellis graph</figcaption>
         <pre class="term-out"><code><span class="name">lat_core</span> <span class="dim">(1.2.0)</span>
-<span class="name">lat_mid</span> <span class="dim">(0.5.1)</span>
+<span class="name">lat_mid</span> <span class="dim">(0.5.0)</span>
 <span class="dim">  └─</span> lat_core
-<span class="name">lat_cli</span> <span class="dim">(0.4.3)</span>
+<span class="name">lat_cli</span> <span class="dim">(0.3.1)</span>
 <span class="dim">  ├─</span> lat_core
 <span class="dim">  └─</span> lat_mid
-<span class="name">lat_example</span> <span class="dim">(0.0.0)</span>
+<span class="name">package_a</span> <span class="dim">(0.0.0)</span>
 <span class="dim">  └─</span> lat_cli</code></pre>
         <figcaption class="term-note">
-          Real output. Trellis computes the graph from path dependencies.
+          Output from the <a href="https://github.com/tylerbutler/trellis/tree/main/tests/fixtures/basic">example workspace</a>.{" "}
+          Trellis computes the graph from path dependencies.
         </figcaption>
       </figure>
-    </div>
-  </section>
-
-  <!-- ============ OPINIONATED, BUT MODULAR ============ -->
-  <section class="adopt">
-    <div class="shell">
-      <div class="section-head">
-        <h2>Opinionated, but modular.</h2>
-        <p>
-          Trellis has one way of doing each job: TOML change fragments, a
-          tag per package, bumps derived from fragment kinds. But the jobs
-          are independent, and nothing requires the piece above it, so you
-          adopt a layer at a time and keep whatever already works.
-        </p>
-      </div>
-      <ol class="adopt-paths">
-        <li>
-          <h3>Just the task runner</h3>
-          <p>
-            <code>run</code>, <code>exec</code>, <code>list</code>, and{" "}
-            <code>graph</code> need no configuration at all, because members
-            are auto-discovered from git. Your changelog tool and CI stay untouched.
-          </p>
-        </li>
-        <li>
-          <h3>Add changelogs and versioning</h3>
-          <p>
-            Fragments, <code>version plan</code>, and <code>version apply</code>{" "}
-            manage bumps and changelogs without trellis owning your release
-            workflow, or any CI at all.
-          </p>
-        </li>
-        <li>
-          <h3>Add publishing</h3>
-          <p>
-            <code>tag</code> and <code>publish</code> push to Hex in dependency
-            order, from your own scripts or workflows.
-          </p>
-        </li>
-        <li>
-          <h3>The full pipeline</h3>
-          <p>
-            <code>ci</code>, <code>changelog check</code>, and{" "}
-            <code>release pr</code> turn GitHub Actions workflows into thin
-            triggers around trellis commands.
-          </p>
-        </li>
-      </ol>
     </div>
   </section>
 
@@ -119,10 +72,9 @@ tag_format = "{name}-v{version}"`;
       <div class="section-head">
         <h2>The glue this replaces.</h2>
         <p>
-          Without a workspace concept, a multi-package repository builds one by
-          hand out of bash loops, YAML blocks, and duplicated config. Every row below is
-          something a Gleam repository has to maintain itself, and every row can
-          go quietly wrong:
+          The <a href="https://github.com/tylerbutler/trellis/blob/main/docs/DESIGN.md#inventory-of-manual-wiring-in-lattice">lattice inventory</a>{" "}
+          records the bash loops, YAML blocks, and duplicated configuration
+          below. Each row is workspace information that was maintained by hand.
         </p>
       </div>
       <div class="ledger-scroll">
@@ -211,6 +163,54 @@ tag_format = "{name}-v{version}"`;
     </div>
   </section>
 
+  <!-- ============ OPINIONATED, BUT MODULAR ============ -->
+  <section class="adopt">
+    <div class="shell">
+      <div class="section-head">
+        <h2>Opinionated, but modular.</h2>
+        <p>
+          Trellis has one way of doing each job: TOML change fragments, a
+          tag per package, bumps derived from fragment kinds. But the jobs
+          are independent, and nothing requires the piece above it, so you
+          adopt a layer at a time and keep whatever already works.
+        </p>
+      </div>
+      <ol class="adopt-paths">
+        <li>
+          <h3>Just the task runner</h3>
+          <p>
+            <code>run</code>, <code>exec</code>, <code>list</code>, and{" "}
+            <code>graph</code> need no configuration at all, because members
+            are auto-discovered from git. Your changelog tool and CI stay untouched.
+          </p>
+        </li>
+        <li>
+          <h3>Add changelogs and versioning</h3>
+          <p>
+            Fragments, <code>version plan</code>, and <code>version apply</code>{" "}
+            manage bumps and changelogs without trellis owning your release
+            workflow, or any CI at all.
+          </p>
+        </li>
+        <li>
+          <h3>Add publishing</h3>
+          <p>
+            <code>tag</code> and <code>publish</code> push to Hex in dependency
+            order, from your own scripts or workflows.
+          </p>
+        </li>
+        <li>
+          <h3>The full pipeline</h3>
+          <p>
+            <code>ci</code>, <code>changelog check</code>, and{" "}
+            <code>release pr</code> turn GitHub Actions workflows into thin
+            triggers around trellis commands.
+          </p>
+        </li>
+      </ol>
+    </div>
+  </section>
+
   <!-- ============ PACKAGE EXCLUSIONS ============ -->
   <section class="exclusions">
     <div class="shell exclusions-grid">
@@ -263,7 +263,7 @@ tag_format = "{name}-v{version}"`;
 <span class="name">lat_mid</span>   <span class="dim">hex</span>
 <span class="name">lat_cli</span>   <span class="dim">hex</span></code></pre>
           <figcaption class="term-note">
-            <code>lat_example</code> — the <code>examples/</code> member — still
+            <code>package_a</code> — the <code>examples/</code> member — still
             appears in <code>trellis list</code>, <code>graph</code>,{" "}
             <code>exec</code>, and tasks that do not exclude it. Only the
             configured task sets change.
@@ -286,33 +286,28 @@ tag_format = "{name}-v{version}"`;
       </div>
       <ol class="phases">
         <li class="phase">
-          <h3><span class="phase-index" aria-hidden="true">1</span>Every day</h3>
-          <dl class="cmds">
-            <div><dt><code>init</code></dt><dd>Write the workspace table; only needed to configure something</dd></div>
-            <div><dt><code>run</code></dt><dd>Run a task across packages, graph-parallel by default</dd></div>
-            <div><dt><code>list</code></dt><dd>Packages in topological order, dependencies first</dd></div>
-            <div><dt><code>graph</code></dt><dd>The dependency graph, as text, DOT, Mermaid, or JSON</dd></div>
-            <div><dt><code>exec</code></dt><dd>Any command, in each package directory</dd></div>
-            <div><dt><code>doctor</code></dt><dd>Validate workspace invariants; non-zero exit on any error</dd></div>
-          </dl>
+          <h3><span class="phase-index" aria-hidden="true">1</span>Run tasks across packages</h3>
+          <p>
+            Build, test, and run custom tasks in dependency order. Select the
+            packages affected by a change, locally or in CI.
+          </p>
+          <a href="/docs/task-running/">Read the task-running guide →</a>
         </li>
         <li class="phase">
-          <h3><span class="phase-index" aria-hidden="true">2</span>Cut a release</h3>
-          <dl class="cmds">
-            <div><dt><code>changelog</code></dt><dd>Native fragment engine, with no second tool to install</dd></div>
-            <div><dt><code>version</code></dt><dd>Plan and apply bumps from unreleased fragments</dd></div>
-            <div><dt><code>tag</code></dt><dd>Compare versions against git tags; create what's missing</dd></div>
-            <div><dt><code>publish</code></dt><dd>To Hex, in dependency order, path deps rewritten</dd></div>
-            <div><dt><code>lockfile</code></dt><dd>Patch locked versions without touching the network</dd></div>
-          </dl>
+          <h3><span class="phase-index" aria-hidden="true">2</span>Plan versions and changelogs</h3>
+          <p>
+            Record changes as TOML fragments. Review the version plan before
+            applying package bumps and generated changelogs.
+          </p>
+          <a href="/docs/changelog/">Read the versioning guide →</a>
         </li>
         <li class="phase">
-          <h3><span class="phase-index" aria-hidden="true">3</span>In CI</h3>
-          <dl class="cmds">
-            <div><dt><code>ci</code></dt><dd>Structured JSON for GitHub Actions matrices and outputs</dd></div>
-            <div><dt><code>changelog check</code></dt><dd>Fail a PR that changes a package without logging it</dd></div>
-            <div><dt><code>release pr</code></dt><dd>Open the release pull request, versions applied</dd></div>
-          </dl>
+          <h3><span class="phase-index" aria-hidden="true">3</span>Automate release workflows</h3>
+          <p>
+            Generate GitHub Actions matrices, check changelog coverage, and open
+            release pull requests from the same workspace model.
+          </p>
+          <a href="/docs/ci/">Read the CI recipes →</a>
         </li>
       </ol>
     </div>
@@ -738,31 +733,18 @@ tag_format = "{name}-v{version}"`;
     color: var(--brass);
   }
 
-  .cmds {
-    margin: 0;
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-    gap: var(--sp-md) var(--sp-xl);
-    margin-top: var(--sp-lg);
+  .phase p {
+    margin-top: var(--sp-sm);
+    max-width: var(--measure);
+    color: var(--ink-soft);
   }
 
-  .cmds > div {
-    display: grid;
-    grid-template-columns: 9.5rem minmax(0, 1fr);
-    gap: var(--sp-md);
-    align-items: baseline;
-  }
-
-  .cmds dt code {
-    color: var(--brass);
-    font-size: var(--text-code);
-    font-weight: 560;
-  }
-
-  .cmds dd {
-    margin: 0;
-    color: var(--muted);
-    font-size: var(--text-small);
+  .phase a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.75rem;
+    margin-top: var(--sp-xs);
+    font-weight: 620;
   }
 
   /* ---- opinionated, but modular ---- */
@@ -859,9 +841,10 @@ tag_format = "{name}-v{version}"`;
       padding-block: var(--sp-2xl) var(--sp-section);
     }
 
-    .cmds > div {
-      grid-template-columns: 8rem minmax(0, 1fr);
+    .hero-install {
+      display: none;
     }
+
   }
 </style>
 

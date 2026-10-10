@@ -786,6 +786,15 @@ mod tests {
     use super::*;
     use clap::CommandFactory;
 
+    #[test]
+    fn homepage_config_uses_recognized_keys() {
+        let page = include_str!("../website/src/pages/index.astro");
+        let (_, sample) = page.split_once("const configSample = `").unwrap();
+        let (sample, _) = sample.split_once("`;").unwrap();
+        let config = config::ConfigFile::from_gleam_toml(sample).unwrap();
+        assert!(config.unknown_keys.is_empty(), "{:?}", config.unknown_keys);
+    }
+
     /// Every visible command must appear in a hand-written website docs page.
     /// reference.md is generated from the CLI itself, so it cannot count.
     #[test]

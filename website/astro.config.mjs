@@ -17,21 +17,45 @@ export default defineConfig({
       favicon: "/favicon.svg",
       social: [{ icon: "github", label: "GitHub", href: github }],
       sidebar: [
-        { label: "Overview", slug: "docs" },
-        { label: "Installation", slug: "docs/installation" },
-        { label: "Configuration", slug: "docs/configuration" },
-        { label: "Task running", slug: "docs/task-running" },
-        { label: "Changelog & versioning", slug: "docs/changelog" },
-        { label: "Publishing", slug: "docs/publishing" },
-        { label: "Dependency pinning", slug: "docs/pinning" },
-        { label: "CI recipes", slug: "docs/ci" },
-        { label: "JSON output", slug: "docs/json-output" },
-        { label: "Compatibility", slug: "docs/compatibility" },
-        { label: "CLI reference", slug: "docs/reference" },
         {
-          label: "Full README ↗",
-          link: `${github}#readme`,
-          attrs: { target: "_blank", rel: "noopener" },
+          label: "Start",
+          items: [
+            { label: "Overview", slug: "docs" },
+            { label: "Installation", slug: "docs/installation" },
+            { label: "Configuration", slug: "docs/configuration" },
+          ],
+        },
+        {
+          label: "Workspace tasks",
+          items: [
+            { label: "Task running", slug: "docs/task-running" },
+            { label: "Dependency pinning", slug: "docs/pinning" },
+          ],
+        },
+        {
+          label: "Releases",
+          items: [
+            { label: "Changelog & versioning", slug: "docs/changelog" },
+            { label: "Publishing", slug: "docs/publishing" },
+            { label: "CI recipes", slug: "docs/ci" },
+          ],
+        },
+        {
+          label: "Reference",
+          items: [
+            {
+              label: "Configuration reference",
+              slug: "docs/configuration-reference",
+            },
+            { label: "JSON output", slug: "docs/json-output" },
+            { label: "Compatibility", slug: "docs/compatibility" },
+            { label: "CLI reference", slug: "docs/reference" },
+            {
+              label: "Full README ↗",
+              link: `${github}#readme`,
+              attrs: { target: "_blank", rel: "noopener" },
+            },
+          ],
         },
       ],
       customCss: [

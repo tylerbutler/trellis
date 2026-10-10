@@ -7,6 +7,75 @@ use std::path::Path;
 // ---- markdown reference ----------------------------------------------
 
 #[test]
+fn markdown_reference_headings_do_not_skip_levels() {
+    let output = Command::cargo_bin("trellis")
+        .unwrap()
+        .arg("markdown-help")
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let generated = String::from_utf8(output.stdout).unwrap();
+    let mut previous_level = 1;
+    let mut in_code_block = false;
+    for line in generated.lines() {
+        if line.starts_with("```") {
+            in_code_block = !in_code_block;
+            continue;
+        }
+        if in_code_block {
+            continue;
+        }
+        let level = line.bytes().take_while(|byte| *byte == b'#').count();
+        if level > 0 && line.as_bytes().get(level) == Some(&b' ') {
+            assert!(
+                level <= previous_level + 1,
+                "heading skips a level after h{previous_level}: {line}"
+            );
+            previous_level = level;
+        }
+    }
+    assert!(generated.contains("### **Subcommands:**"));
+    assert!(generated.contains("### **Arguments:**"));
+    assert!(generated.contains("### **Options:**"));
+    assert!(generated.contains("tableOfContents:\n  maxHeadingLevel: 2"));
+}
+
+#[test]
+fn markdown_reference_groups_every_visible_command() {
+    let output = Command::cargo_bin("trellis")
+        .unwrap()
+        .arg("markdown-help")
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let generated = String::from_utf8(output.stdout).unwrap();
+    assert!(!generated.contains("**Command Overview:**"));
+    let (index, _) = generated.split_once("</nav>").expect("command index");
+    assert!(index.contains(r#"<nav class="task_index" aria-label="Command topics">"#));
+    for group in [
+        "Workspace tasks",
+        "Releases",
+        "Setup and checks",
+        "Automation",
+    ] {
+        assert!(index.contains(group), "missing command group: {group}");
+    }
+    for command in generated.lines().filter_map(|line| {
+        line.strip_prefix("## `")
+            .and_then(|heading| heading.strip_suffix('`'))
+    }) {
+        let anchor = command.replace(' ', "-");
+        assert_eq!(
+            index.matches(&format!(r##"href="#{anchor}""##)).count(),
+            1,
+            "command must appear once in the index: {command}"
+        );
+    }
+    assert!(!index.contains("href=\"#trellis-markdown-help\""));
+    assert!(!index.contains("href=\"#trellis-man\""));
+}
+
+#[test]
 fn markdown_reference_page_is_up_to_date() {
     let output = Command::cargo_bin("trellis")
         .unwrap()

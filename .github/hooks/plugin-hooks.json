@@ -1,0 +1,42 @@
+{
+  "hooks": {
+    "sessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ ! -f \".github/hooks/scripts/plugin/skills/impeccable/scripts/impeccable\" ] || \".github/hooks/scripts/plugin/skills/impeccable/scripts/impeccable\" hook",
+            "timeout": 5,
+            "statusMessage": "Preparing build session"
+          }
+        ]
+      }
+    ],
+    "postToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ ! -f \".github/hooks/scripts/plugin/skills/impeccable/scripts/impeccable\" ] || \".github/hooks/scripts/plugin/skills/impeccable/scripts/impeccable\" hook",
+            "timeout": 5,
+            "statusMessage": "Checking UI changes"
+          }
+        ]
+      }
+    ],
+    "agentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ ! -f \".github/hooks/scripts/plugin/skills/impeccable/scripts/impeccable\" ] || \".github/hooks/scripts/plugin/skills/impeccable/scripts/impeccable\" hook",
+            "timeout": 30,
+            "statusMessage": "Design deep pass"
+          }
+        ]
+      }
+    ]
+  },
+  "version": 1
+}

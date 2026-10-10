@@ -8,6 +8,27 @@ is the workspace layer on top: it fans those commands across a whole
 repository and adds changelogs, versioning, and publishing, deriving its model
 of the workspace from the `gleam.toml` files already in it.
 
+For example, the [example workspace](https://github.com/tylerbutler/trellis/tree/main/tests/fixtures/basic)
+selects packages from two directories:
+
+```toml title="Workspace gleam.toml (excerpt)"
+[tools.trellis]
+members = ["packages/*", "examples/*"]
+```
+
+Their path dependencies form this graph:
+
+```text title="trellis graph" frame="terminal"
+lat_core (1.2.0)
+lat_mid (0.5.0)
+  └─ lat_core
+lat_cli (0.3.1)
+  ├─ lat_core
+  └─ lat_mid
+package_a (0.0.0)
+  └─ lat_cli
+```
+
 Throughout these docs, a **package** is one Gleam package, a directory with
 its own `gleam.toml`. A **member** is a package that belongs to the workspace;
 that word appears where membership itself is the point, as in the `members`

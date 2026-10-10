@@ -53,7 +53,7 @@ unparseable TOML) are hard errors for `check`, `plan`, and `apply`, and
 </Callout>
 
 A fragment takes one more optional key, `category`, when the workspace
-configures [categories](/docs/configuration/#categories), a second grouping
+configures [categories](/docs/configuration-reference/#categories), a second grouping
 axis that carries no version bump and sections the changelog by which part of
 a package changed:
 
@@ -239,7 +239,7 @@ release preview are omitted and the problem is reported instead.
 `version plan` is the dry run: each pending package's next version, computed
 from its fragments' kinds. The largest bump among a package's fragments wins;
 kinds and the bump each implies are configurable under
-[`[tools.trellis.changelog]`](/docs/configuration/#changelog-configuration).
+[`[tools.trellis.changelog]`](/docs/configuration-reference/#changelog-configuration).
 
 ```console
 $ trellis version plan

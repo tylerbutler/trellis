@@ -182,7 +182,7 @@ Machined and quiet: flat faces, exact 1px edges, small radii (4px controls, 8px 
 - **Focus:** 2px Signal Brass outline, 3px offset — everywhere, keyboard-visible.
 
 ### Copy Command Row (signature)
-A flex row: `$`-prompted mono command on a Surface fill, hairline border, with an attached Copy button (Surface-2 fill, 44px minimum target). On copy, the button reads "Copied" in brass for 1.6s. In the hero the command wraps (`pre-wrap`); in install lists it scrolls.
+A flex row: `$`-prompted mono command on a Surface fill, hairline border, with an attached Copy button (Surface-2 fill, 44px minimum target). On copy, the button reads "Copied" in brass for 1.6s. In the two-column hero the command wraps (`pre-wrap`); in install lists it scrolls. When the hero stacks at 56rem and below, its duplicate command row is hidden so the graph follows the primary actions. The Install link still leads to the full installation section.
 
 ### Terminal Figure (signature)
 The brand's hero imagery: a `<figure>` with a mono title bar (`$ trellis graph` — brass prompt, Surface-2 bar), real command output at 0.875rem/1.75, and an optional Fog Gray footnote. Output coloring is semantic and minimal: package names at weight 560, structural glyphs and versions in Fog Gray, success lines in brass.
@@ -190,7 +190,7 @@ The brand's hero imagery: a `<figure>` with a mono title bar (`$ trellis graph` 
 ### Ledger Tables
 Full-width tables inside a hairline-bordered, 8px-radius scroll container. Mono Fog Gray column headers on Surface-2; brass first column for file/key names; Fog Gray for failure/description columns. Row dividers are Line Soft hairlines; no zebra striping.
 
-Below 50rem, the configuration keys table stacks each description below its key and requirement. The column headers remain available to assistive technology. Other tables retain their horizontal scroll containers.
+The configuration reference uses a 52rem content track for tables while prose stays capped at the 68ch reading measure. When the configuration keys table has less than 40rem of available width, it stacks each description below its key and requirement. The column headers remain available to assistive technology. Other tables retain their horizontal scroll containers.
 
 ### Code Frames
 Expressive Code with the `vesper` theme, overridden to the system: Surface background, Surface-2 tab bar, brass active-tab indicator, shadow disabled (`shadowColor: transparent`), Martian Mono, word wrap on by default (`defaultProps: { wrap: true }`). TOML section headers land near-brass, strings in the cobalt family — the frames belong to the same instrument. Terminal frames follow the site's `$`-prompt convention: no macOS traffic-light dots (dots are display:none'd and zeroed in styleOverrides), titles left-aligned in mono with a brass `$` prefix; untitled terminal frames show a plain hairline bar.

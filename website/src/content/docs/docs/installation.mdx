@@ -60,7 +60,41 @@ cargo install trellis-gleam
 cargo install --git https://github.com/tylerbutler/trellis
 ```
 
-## Shell completions
+## Verifying it
+
+From anywhere inside a workspace. Trellis finds the root by walking up, like `git` or `cargo`, to the first `gleam.toml` carrying a `[tools.trellis]` table, or to the git repository root when no manifest carries one:
+
+<Code
+  lang="console"
+  code={`$ trellis --version
+trellis ${TRELLIS_VERSION}
+
+$ trellis doctor
+checked: member globs resolve and every package has a parseable gleam.toml
+checked: path dependencies stay inside the workspace; graph is acyclic
+...
+ok: 4 package(s) (1 workspace, 0 git_only, 3 hex), 0 warning(s)`}
+/>
+
+If the workspace isn't set up yet, start with the
+[configuration guide](/docs/configuration/).
+
+## Pinning a version in CI
+
+The installer URLs above resolve `latest`. To pin a specific version, replace
+`latest/download` with `download/v<version>`:
+
+<Code
+  lang="sh"
+  code={`curl --proto '=https' --tlsv1.2 -LsSf https://github.com/tylerbutler/trellis/releases/download/v${TRELLIS_VERSION}/trellis-gleam-installer.sh | sh`}
+/>
+
+Prebuilt archives for every target are on the
+[releases page](https://github.com/tylerbutler/trellis/releases).
+
+## After installation
+
+### Shell completions
 
 Completions are computed by the binary as you type rather than baked into a
 static script, so they never drift from the flags you actually have. They also
@@ -95,7 +129,7 @@ standing in, not the one you passed. And `--bump` offers the three bare levels
 only. The `<pkg>=<level>` form is not completed, since the completer is handed
 just the partial word.
 
-## Man pages
+### Man pages
 
 `trellis.1` and a page per subcommand ship inside the release archives under
 `man/`. Neither the shell installer nor the Homebrew formula installs them
@@ -108,35 +142,3 @@ man trellis-run
 ```
 
 Everything in those pages is also on the [CLI reference](/docs/reference/) page.
-
-## Pinning a version in CI
-
-The installer URLs above resolve `latest`. To pin a specific version, replace
-`latest/download` with `download/v<version>`:
-
-<Code
-  lang="sh"
-  code={`curl --proto '=https' --tlsv1.2 -LsSf https://github.com/tylerbutler/trellis/releases/download/v${TRELLIS_VERSION}/trellis-gleam-installer.sh | sh`}
-/>
-
-Prebuilt archives for every target are on the
-[releases page](https://github.com/tylerbutler/trellis/releases).
-
-## Verifying it
-
-From anywhere inside a workspace. Trellis finds the root by walking up, like `git` or `cargo`, to the first `gleam.toml` carrying a `[tools.trellis]` table, or to the git repository root when no manifest carries one:
-
-<Code
-  lang="console"
-  code={`$ trellis --version
-trellis ${TRELLIS_VERSION}
-
-$ trellis doctor
-checked: member globs resolve and every package has a parseable gleam.toml
-checked: path dependencies stay inside the workspace; graph is acyclic
-...
-ok: 4 package(s) (1 workspace, 0 git_only, 3 hex), 0 warning(s)`}
-/>
-
-If the workspace isn't set up yet, start with the
-[configuration guide](/docs/configuration/).

@@ -3,9 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "packageManager": "pnpm@11.9.0",
   "scripts": {
     "dev": "astro dev",
+    "test": "node --test scripts/*.test.mjs",
     "build": "astro build",
+    "deploy": "astro build && wrangler deploy",
     "preview": "astro preview",
     "og": "node scripts/generate-og.ts"
   },
@@ -20,6 +23,7 @@
     "culori": "^4.0.2",
     "satori": "^0.28.0",
     "sharp": "^0.35.4",
-    "subset-font": "^2.5.0"
+    "subset-font": "^2.5.0",
+    "wrangler": "^4.149.0"
   }
 }

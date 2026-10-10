@@ -452,7 +452,7 @@ the whole default list rather than adding to it, so copy the list before
 trimming it. A kind you drop turns every fragment naming it invalid. An
 optional `categories` list adds a second grouping axis above the kind
 headings, carrying no bump. Both are on
-[configuration](https://trellis.tylerbutler.com/docs/configuration/#changelog-configuration).
+[configuration reference](https://trellis.tylerbutler.com/docs/configuration-reference/#changelog-configuration).
 
 Each package's CHANGELOG.md is a generated file: the source of
 truth is the version sections under `.changes/<package>/`, and `apply`

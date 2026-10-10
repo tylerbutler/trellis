@@ -1,0 +1,11 @@
+<script>
+  function redirect_reference_anchor() {
+    const target = document.getElementById(window.location.hash.slice(1));
+    if (target instanceof HTMLAnchorElement && target.hasAttribute("data-reference")) {
+      window.location.replace(target.href);
+    }
+  }
+
+  redirect_reference_anchor();
+  window.addEventListener("hashchange", redirect_reference_anchor);
+</script>

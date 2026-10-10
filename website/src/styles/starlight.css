@@ -48,6 +48,7 @@
 
   /* layout */
   --sl-content-width: 38rem;
+  --sl-menu-button-size: 2.75rem;
 
   /* The announcement bar lives inside the fixed header, so the nav height
      grows to cover both. Every other offset Starlight computes — sidebar
@@ -121,6 +122,16 @@ starlight-menu-button button {
   top: calc(
     var(--announce-h) + (var(--sl-nav-height) - var(--announce-h) - var(--sl-menu-button-size)) / 2
   );
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: none;
+}
+
+starlight-menu-button button:hover {
+  border-color: var(--brass);
+  color: var(--brass-bright);
 }
 
 .site-title {
@@ -173,6 +184,8 @@ starlight-toc a {
 /* -- search --------------------------------------------------- */
 
 site-search button[data-open-modal] {
+  min-width: 2.75rem;
+  min-height: 2.75rem;
   border: 1px solid var(--line-soft);
   border-radius: var(--radius-sm);
   background: var(--surface);
@@ -188,6 +201,11 @@ site-search kbd {
   background: var(--surface-2);
   border-radius: var(--radius-sm);
   color: var(--muted);
+}
+
+site-search button[data-close-modal] {
+  min-width: 2.75rem;
+  min-height: 2.75rem;
 }
 
 /* -- content typography --------------------------------------- */
@@ -242,6 +260,57 @@ h1[data-page-title] {
   padding: 0.1em 0.35em;
 }
 
+/* -- in-page topic directories -------------------------------- */
+
+.sl-markdown-content .task_index {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  gap: var(--sp-lg) var(--sp-xl);
+  margin-block: var(--sp-lg) var(--sp-xl);
+  padding-block: var(--sp-lg);
+  border-block: 1px solid var(--line-soft);
+}
+
+.sl-markdown-content .task_index > div {
+  min-width: 0;
+  margin: 0;
+}
+
+.sl-markdown-content .task_index :is(p, ul, li) {
+  margin: 0;
+}
+
+.sl-markdown-content .task_index ul {
+  padding: 0;
+  list-style: none;
+}
+
+.sl-markdown-content .task_index_label {
+  margin-bottom: var(--sp-xs);
+  color: var(--muted);
+  font-size: var(--text-small);
+  font-weight: 620;
+}
+
+.sl-markdown-content .task_index a {
+  display: flex;
+  align-items: center;
+  min-height: 2rem;
+  padding-block: var(--sp-2xs);
+  overflow-wrap: anywhere;
+}
+
+.sl-markdown-content .task_index a code {
+  background: transparent;
+  padding: 0;
+}
+
+@media (any-pointer: coarse), (width < 50rem) {
+  .sl-markdown-content .task_index a {
+    min-height: 2.75rem;
+  }
+}
+
 /* -- tables: the ledger convention ----------------------------- */
 
 .sl-markdown-content table {
@@ -291,7 +360,37 @@ h1[data-page-title] {
   color: var(--brass);
 }
 
-@media (width < 50rem) {
+.main-frame:has(.configuration_keys) {
+  --sl-content-width: 52rem;
+}
+
+.main-frame:has(.configuration_keys) .sl-markdown-content > :is(p, ul, ol, blockquote) {
+  max-width: min(38rem, var(--measure));
+}
+
+.configuration_keys {
+  container-type: inline-size;
+}
+
+.sl-markdown-content .configuration_keys table {
+  display: table;
+  width: 100%;
+  table-layout: fixed;
+}
+
+.sl-markdown-content .configuration_keys th:first-child {
+  width: 32%;
+}
+
+.sl-markdown-content .configuration_keys th:nth-child(2) {
+  width: 14%;
+}
+
+.sl-markdown-content .configuration_keys td:first-child code {
+  overflow-wrap: anywhere;
+}
+
+@container (width < 40rem) {
   .sl-markdown-content .configuration_keys :is(tbody, tr, td) {
     margin-top: 0;
   }
@@ -319,10 +418,6 @@ h1[data-page-title] {
   .sl-markdown-content .configuration_keys tr:last-child,
   .sl-markdown-content .configuration_keys td {
     border-bottom: none;
-  }
-
-  .sl-markdown-content .configuration_keys td:first-child code {
-    overflow-wrap: anywhere;
   }
 
   .sl-markdown-content .configuration_keys td:nth-child(2) {
@@ -357,6 +452,8 @@ h1[data-page-title] {
 /* -- link buttons (404 / splash actions) ------------------------ */
 
 .sl-link-button {
+  min-width: 2.75rem;
+  min-height: 2.75rem;
   border-radius: var(--radius-sm);
   font-weight: 620;
   transition: background 160ms var(--ease-out), color 160ms var(--ease-out),
