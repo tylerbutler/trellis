@@ -172,6 +172,17 @@ that you do not want to publish on Hex. Keep separate packages for development;
 trellis copies the selected dependency's source into the publishing package
 for release.
 
+<Callout type="caution">
+
+**Bundling copies source; it does not rewrite modules.** Trellis does not
+rename modules, add a package-name prefix, or rewrite imports. Module names
+must be unique across the publishing package, its bundled dependencies, and
+the other dependencies in a consumer's build. Use distinct module paths,
+such as `lib_a/parser` and `lib_b/parser`, rather than defining `parser` in
+both packages. Different package names alone do not prevent module collisions.
+
+</Callout>
+
 ```toml title="gleam.toml"
 [tools.trellis]
 members = ["packages/*"]
@@ -248,9 +259,10 @@ check whether the version already exists.
 | `trellis publish lib_a` | Preparation conflicts plus errors from building and testing the combined package with its resolved dependencies before upload. |
 
 Two independent publishers can each include the same module names without a
-conflict in either package alone. A consumer that installs both can still
-encounter a collision. Neither publisher's `doctor` check can predict that
-future dependency combination; the consumer's build must check it.
+conflict in either package alone. A consumer that installs both, or installs
+a bundled package alongside a separate release of its bundled dependency,
+can still encounter a collision. Neither publisher's `doctor` check can
+predict that future dependency combination; the consumer's build must check it.
 
 ### Compatibility and release notes
 
@@ -278,8 +290,7 @@ independent release or changelog; a `git_only` dependency keeps its own rules.
 Bundling publishes the dependency's source in the Hex archive. Check that you
 can redistribute it and that the publishing package declares the required
 licences. Trellis includes attributed licence notices in a standard licence
-file. Two packages that bundle the same module names can conflict when a
-consumer installs both; trellis does not rename modules to prevent that.
+file.
 
 </Callout>
 
