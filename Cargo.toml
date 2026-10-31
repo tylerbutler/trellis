@@ -1,6 +1,6 @@
 [package]
 name = "trellis-gleam"
-version = "1.0.0"
+version = "1.1.0"
 edition = "2024"
 # Declared so a `cargo install` on an older toolchain reports the version it
 # needs rather than failing mid-build.

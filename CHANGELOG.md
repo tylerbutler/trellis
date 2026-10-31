@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v1.1.0 - 2026-10-31
+
+
+### changelog
+
+#### Added
+
+- **`changelog check` requires publisher fragments for changes in bundled dependencies.** Changes in a direct or transitive source dependency count against each publishing package that includes it through `publish.bundle`. Add a fragment for each affected publisher. Workspace-only dependencies still have no independent changelog; git-only dependencies keep their existing fragment requirements. The configured strictness and JSON payload shape stay unchanged.
+
+### publish
+
+#### Added
+
+- **`publish.bundle` includes private workspace dependencies in a Hex package.** Configure each publisher's direct non-Hex runtime dependencies; trellis also includes transitive private dependencies and native Erlang or JavaScript sources. It validates and publishes a temporary combined package without changing checkout source or manifests. Conflicting module names, differing dependency requirements, OTP startup modules, and bundled `priv` directories stop publication.
+
+  Bundling makes the selected source public. Check redistribution rights and licence declarations before publishing.
+
+### doctor
+
+#### Added
+
+- **`trellis doctor` checks configured source bundles before publication.** A Hex package can depend on a non-Hex workspace package when `publish.bundle` selects it. Doctor checks bundle selections, transitive source conflicts, external dependency requirements, and module visibility without running Gleam. Unconfigured release boundaries still fail, and bundling does not change package lifecycles.
+
 ## v1.0.0 - 2026-09-18
 
 
