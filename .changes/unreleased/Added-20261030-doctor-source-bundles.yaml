@@ -1,5 +1,0 @@
-component: doctor
-kind: Added
-body: |-
-  **`trellis doctor` checks configured source bundles before publication.** A Hex package can depend on a non-Hex workspace package when `publish.bundle` selects it. Doctor checks bundle selections, transitive source conflicts, external dependency requirements, and module visibility without running Gleam. Unconfigured release boundaries still fail, and bundling does not change package lifecycles.
-time: 2026-10-30T21:15:58-07:00

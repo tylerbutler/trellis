@@ -1,5 +1,0 @@
-component: changelog
-kind: Added
-body: |-
-  **`changelog check` requires publisher fragments for changes in bundled dependencies.** Changes in a direct or transitive source dependency count against each publishing package that includes it through `publish.bundle`. Add a fragment for each affected publisher. Workspace-only dependencies still have no independent changelog; git-only dependencies keep their existing fragment requirements. The configured strictness and JSON payload shape stay unchanged.
-time: 2026-10-30T21:15:58-07:00
