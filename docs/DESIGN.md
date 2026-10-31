@@ -470,6 +470,36 @@ trellis lockfile refresh [--package <pkg>]
   encoding the "don't refresh the whole workspace or you'll get rate-limited"
   rule from publish.yml:124-133 as behavior instead of a comment.
 
+### Publish-time source bundling
+
+`publish.bundle` maps a Hex publishing package's exact name to its direct
+non-Hex runtime dependencies. The runtime workspace graph determines the
+transitive private closure. Hex dependencies remain external requirements.
+Bundling changes the distribution artifact, not package discovery, development
+builds, release lifecycles, or module names.
+
+Opted-in publishers validate and publish an owned temporary package rather
+than rewriting the checkout. The combined manifest removes bundled
+dependencies, merges identical external requirements, and preserves effective
+internal-module patterns and required Erlang applications. Differing
+requirements, source/module collisions, or visibility changes are errors;
+trellis neither solves requirement intersections nor rewrites source imports.
+Native Erlang and JavaScript sources retain their relative paths. OTP startup
+modules and private `priv` resources require a separate package identity and
+are rejected. Attributed licence notices use a standard `LICENCE` filename
+because Gleam's exporter excludes arbitrary per-package notice filenames.
+
+`doctor` applies the same preparation checks without producing an artifact.
+`changelog check` maps bundled-source changes to every containing publisher,
+whose fragments determine its release. This preserves the existing fragment
+and version contracts without adding releases for workspace-only packages.
+The ordinary, unconfigured publish path stays unchanged.
+
+Preserved names can conflict when a consumer installs independently bundled
+packages with overlapping modules. Real archive tests compile an extracted
+Hex package through a fresh consumer on Erlang and JavaScript; they do not
+claim to predict another consumer's dependency graph or dynamic OTP lookups.
+
 ### Dependency pinning
 
 ```

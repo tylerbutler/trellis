@@ -118,8 +118,9 @@ releases, so neither `publish --tag` nor `ci tag-package` resolves them.
 `publish` selects members whose [release
 lifecycle](/docs/configuration-reference/#release-lifecycle) is `hex`. A named package
 and `--tag <tag>` both refuse a `workspace` or `git_only` package, and
-`--all-untagged` only ever considers `hex` members. It runs, per package and
-in dependency order:
+`--all-untagged` only ever considers `hex` members. Without
+[source bundling](#bundling-private-dependencies), it runs these steps per
+package, in dependency order:
 
 1. **Idempotency check.** One Hex API query; versions already published are
    skipped.
@@ -129,8 +130,8 @@ in dependency order:
    workspace path dependency becomes the Hex requirement derived from that
    dep's current version, per `path_dep_requirement`. The version map only
    ever holds `hex` members, so a path dependency on a `git_only` or
-   `workspace` member fails the rewrite rather than publishing something Hex
-   could never resolve.
+   `workspace` member needs explicit source bundling; otherwise the rewrite
+   fails rather than publishing something Hex could never resolve.
 4. **Publish.** `gleam publish --yes`.
 5. **Restore.** The original `gleam.toml` comes back even when publishing
    fails; the repo never shows rewritten files.
@@ -156,10 +157,87 @@ release instead of one per tag.
 <Callout>
 
 Dev-only path deps to a non-`hex` package are left alone, because Hex doesn't
-ship dev dependencies. A regular `[dependencies]` path dep to a package whose
-lifecycle is less capable than its dependent's refuses to publish, and
+ship dev dependencies. Without explicit source bundling, a regular
+`[dependencies]` path dep to a package whose lifecycle is less capable than
+its dependent's refuses to publish, and
 `doctor` catches that boundary on every PR; see [Release
 lifecycle](/docs/configuration-reference/#release-lifecycle).
+
+</Callout>
+
+## Bundling private dependencies
+
+Use source bundling when a Hex package needs code from a workspace package
+that you do not want to publish on Hex. Keep separate packages for development;
+trellis copies the selected dependency's source into the publishing package
+for release.
+
+```toml title="gleam.toml"
+[tools.trellis]
+members = ["packages/*"]
+
+[tools.trellis.publish.bundle]
+lib_a = ["lib_b"]
+
+[tools.trellis.publish.lifecycle.packages]
+"packages/lib_b" = "workspace"
+```
+
+In `packages/lib_a/gleam.toml`, keep the normal path dependency:
+
+```toml
+[dependencies]
+lib_b = { path = "../lib_b" }
+```
+
+The `publish.bundle` keys are exact publishing package names, not paths or
+globs. List each direct non-Hex runtime dependency. A selected package must
+have lifecycle `workspace` or `git_only`; bundling does not change its lifecycle.
+Trellis also includes its transitive non-Hex runtime path dependencies once,
+but keeps Hex packages as external requirements. It does not include bundled
+packages' tests or dev dependencies.
+
+For `trellis publish lib_a`, trellis creates a temporary package, combines the
+source trees, removes bundled dependency entries, and adds their external
+runtime requirements. It runs `gleam format --check`,
+`gleam build --warnings-as-errors`, and `gleam test` in that directory before
+publishing from it. It keeps the checkout's source, manifests, and lockfiles
+unchanged and removes the temporary package after success or failure.
+Publisher tests can still use local dev-only path dependencies. Run the
+bundled packages' own tests through your normal workspace test task.
+
+`--dry-run` reports the bundled packages and external requirements without
+running Gleam. Both dry-run and `doctor` reject conflicting source files,
+module names, or dependency requirements before publication.
+
+### Compatibility and release notes
+
+Trellis preserves module names and imports, including native Erlang and
+JavaScript source files and their local source helpers. It preserves
+`internal_modules` rules, including each package's defaults, and rejects
+patterns that would make another package's public modules internal.
+It merges identical dependency requirements and promotes an identical
+publisher dev dependency to runtime when needed. Differing version requirements
+or compiler constraints require you to align the manifests first.
+
+Bundled OTP application startup modules, `priv` directories, and runtime git
+dependencies are not supported. Trellis merges `erlang.extra_applications`
+but rejects references to removed bundled applications. Native code must not
+rely on the bundled package's former OTP application identity; trellis cannot
+detect dynamic application-name references.
+
+Write a changelog fragment for each publishing package affected by a change
+in bundled code. `changelog check` includes direct and transitive bundled
+changes in those packages' checks. A `workspace` dependency still has no
+independent release or changelog; a `git_only` dependency keeps its own rules.
+
+<Callout type="caution">
+
+Bundling publishes the dependency's source in the Hex archive. Check that you
+can redistribute it and that the publishing package declares the required
+licences. Trellis includes attributed licence notices in a standard licence
+file. Two packages that bundle the same module names can conflict when a
+consumer installs both; trellis does not rename modules to prevent that.
 
 </Callout>
 
