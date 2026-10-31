@@ -1,0 +1,7 @@
+component: publish
+kind: Added
+body: |-
+  **`publish.bundle` includes private workspace dependencies in a Hex package.** Configure each publisher's direct non-Hex runtime dependencies; trellis also includes transitive private dependencies and native Erlang or JavaScript sources. It validates and publishes a temporary combined package without changing checkout source or manifests. Conflicting module names, differing dependency requirements, OTP startup modules, and bundled `priv` directories stop publication.
+
+    Bundling makes the selected source public. Check redistribution rights and licence declarations before publishing.
+time: 2026-10-30T21:15:58-07:00

@@ -488,6 +488,17 @@ fn check_tool_versions(workspace: &Workspace, report: &mut Report) {
 /// and no member's runtime distribution would depend on a package unavailable
 /// in it — see [`crate::config::ReleaseLifecycle::available_to`].
 fn check_exclusions(workspace: &Workspace, report: &mut Report) {
+    let bundles = crate::bundle::resolve(workspace).unwrap_or_default();
+    for (&publisher, bundled) in &bundles {
+        if let Err(error) = crate::bundle::prepare(workspace, publisher, bundled) {
+            let member = &workspace.members[publisher];
+            report.push(
+                Finding::error(Check::ReleaseBoundary, format!("{error:#}"))
+                    .at(member.rel_file("gleam.toml"))
+                    .in_package(&member.name),
+            );
+        }
+    }
     for (task, patterns) in &workspace.config.exclude {
         // `@members` is validated in `Workspace::load_with_diagnostics`,
         // against the pre-filter candidate set — by the time `workspace`
@@ -522,9 +533,12 @@ fn check_exclusions(workspace: &Workspace, report: &mut Report) {
     }
 
     for (idx, member) in workspace.members.iter().enumerate() {
-        for &dep in workspace.runtime_deps_of(idx) {
-            let dep = &workspace.members[dep];
-            if !dep.lifecycle.available_to(member.lifecycle) {
+        for &dep_idx in workspace.runtime_deps_of(idx) {
+            let dep = &workspace.members[dep_idx];
+            let bundled = bundles
+                .get(&idx)
+                .is_some_and(|bundled| bundled.contains(&dep_idx));
+            if !bundled && !dep.lifecycle.available_to(member.lifecycle) {
                 report.push(
                     Finding::error(
                         Check::ReleaseBoundary,

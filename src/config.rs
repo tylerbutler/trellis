@@ -123,6 +123,9 @@ pub struct TaskConfig {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct PublishConfig {
+    /// Publishing package name -> direct non-Hex runtime dependencies to bundle.
+    #[serde(default)]
+    pub bundle: BTreeMap<String, Vec<String>>,
     /// Naming scheme for the immutable per-version tag — the format
     /// [`TagLevel::Exact`] substitutes into. `{name}` and `{version}`.
     #[serde(default = "default_exact_tag_format")]
@@ -169,6 +172,7 @@ pub struct PublishConfig {
 impl Default for PublishConfig {
     fn default() -> Self {
         Self {
+            bundle: BTreeMap::new(),
             exact_tag_format: default_exact_tag_format(),
             series_tag_format: default_series_tag_format(),
             package_tags: default_package_tags(),

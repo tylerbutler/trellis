@@ -37,6 +37,10 @@ export default defineConfig({
           items: [
             { label: "Changelog & versioning", slug: "docs/changelog" },
             { label: "Publishing", slug: "docs/publishing" },
+            {
+              label: "Source bundling",
+              link: "/docs/publishing/#bundling-private-dependencies",
+            },
             { label: "CI recipes", slug: "docs/ci" },
           ],
         },

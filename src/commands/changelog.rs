@@ -150,7 +150,14 @@ pub fn check(workspace: &Workspace, options: &CheckOptions) -> Result<bool> {
     let strictness = options
         .strictness
         .unwrap_or(workspace.config.changelog.strictness);
-    let changed = crate::git::changed_members_between(workspace, &options.base, &options.head)?;
+    let mut changed = crate::git::changed_members_between(workspace, &options.base, &options.head)?;
+    let bundles = crate::bundle::resolve(workspace)?;
+    let publishers: Vec<_> = bundles
+        .iter()
+        .filter(|(_, bundled)| bundled.iter().any(|idx| changed.contains(idx)))
+        .map(|(&publisher, _)| publisher)
+        .collect();
+    changed.extend(publishers);
     let all = changelog::load_fragments(workspace)?;
     let fragments = fragments_changed_by(workspace, &all, options)?;
 

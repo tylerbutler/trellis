@@ -78,6 +78,11 @@ directory, so a README edit trips the same gate as a behavior change. That
 makes the gate stricter than some repositories want;
 [`strictness`](#strictness) turns it down.
 
+For [source bundles](/docs/publishing/#bundling-private-dependencies), changes
+in a direct or transitive bundled dependency also count as changes to each
+publishing package that includes it. Add a fragment for each publisher.
+The bundled package's lifecycle and independent fragment rules do not change.
+
 ### Scope
 
 `check` counts only the fragments the branch itself wrote: those whose contents

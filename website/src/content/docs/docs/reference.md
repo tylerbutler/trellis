@@ -80,7 +80,7 @@ A workspace CLI for Gleam monorepos: task fan-out, introspection, and release or
 * `init` — Bootstrap a workspace: write a [tools.trellis] table at the repo root
 * `release` — Release orchestration
 * `tag` — Compare package versions against git tags; create what's missing
-* `publish` — Publish packages to Hex, in dependency order, with path deps rewritten
+* `publish` — Publish packages to Hex, rewriting path deps or bundling private source
 * `lockfile` — Lockfile maintenance
 * `pin` — Pin git dependency refs to commit SHAs, recording the tracked ref
 * `doctor` — Validate workspace invariants; non-zero exit on any error
@@ -399,7 +399,7 @@ Create missing tags in topological order
 
 ## `trellis publish`
 
-Publish packages to Hex, in dependency order, with path deps rewritten
+Publish packages to Hex, rewriting path deps or bundling private source
 
 **Usage:** `trellis publish [OPTIONS] [PACKAGE]`
 
@@ -411,7 +411,7 @@ Publish packages to Hex, in dependency order, with path deps rewritten
 
 * `--tag <TAG>` — Resolve a pushed tag (e.g. lat_core-v1.2.0) to its package
 * `--all-untagged` — Every `hex`-lifecycle package whose version isn't on Hex yet
-* `--dry-run` — Show what would be published (and rewritten) without doing it
+* `--dry-run` — Show packages, dependency rewrites, and source bundles without publishing
 
 
 

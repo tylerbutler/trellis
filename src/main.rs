@@ -1,3 +1,4 @@
+mod bundle;
 mod changelog;
 mod commands;
 mod completion;
@@ -206,7 +207,7 @@ enum Command {
         #[command(subcommand)]
         command: TagCommand,
     },
-    /// Publish packages to Hex, in dependency order, with path deps rewritten
+    /// Publish packages to Hex, rewriting path deps or bundling private source
     Publish {
         /// A single package to publish
         #[arg(add = completion::hex_packages())]
@@ -217,7 +218,7 @@ enum Command {
         /// Every `hex`-lifecycle package whose version isn't on Hex yet
         #[arg(long, conflicts_with_all = ["package", "tag"])]
         all_untagged: bool,
-        /// Show what would be published (and rewritten) without doing it
+        /// Show packages, dependency rewrites, and source bundles without publishing
         #[arg(long)]
         dry_run: bool,
     },

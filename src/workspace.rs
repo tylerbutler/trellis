@@ -496,6 +496,9 @@ impl Workspace {
             dependents,
             runtime_deps,
         };
+        if let Err(error) = crate::bundle::resolve(&workspace) {
+            diagnostics.config_error(format!("{error:#}"));
+        }
         Ok((Some(workspace), diagnostics))
     }
 
