@@ -197,6 +197,26 @@ Trellis also includes its transitive non-Hex runtime path dependencies once,
 but keeps Hex packages as external requirements. It does not include bundled
 packages' tests or dev dependencies.
 
+For example, these workspace sources:
+
+```text title="Development packages"
+packages/lib_a/src/lib_a.gleam
+packages/lib_b/src/lib_b.gleam
+packages/lib_b/src/lib_b/parser.gleam
+```
+
+produce one package's source tree:
+
+```text title="Published lib_a source"
+src/lib_a.gleam
+src/lib_b.gleam
+src/lib_b/parser.gleam
+```
+
+Keep `import lib_b` and `import lib_b/parser` unchanged. The published package
+has `lib_a`'s name and version, with no runtime dependency entry for `lib_b`.
+Consumers install `lib_a` without a separate `lib_b` Hex release.
+
 For `trellis publish lib_a`, trellis creates a temporary package, combines the
 source trees, removes bundled dependency entries, and adds their external
 runtime requirements. It runs `gleam format --check`,
@@ -206,9 +226,31 @@ unchanged and removes the temporary package after success or failure.
 Publisher tests can still use local dev-only path dependencies. Run the
 bundled packages' own tests through your normal workspace test task.
 
-`--dry-run` reports the bundled packages and external requirements without
-running Gleam. Both dry-run and `doctor` reject conflicting source files,
-module names, or dependency requirements before publication.
+### Check before publishing
+
+Run the workspace tests and bundle checks before a release:
+
+```sh
+trellis run test
+trellis doctor
+trellis publish lib_a --dry-run
+```
+
+`doctor` checks the combined source inventory and manifest without building
+the package or creating a temporary package. Dry-run reports the bundled packages
+and external requirements without running Gleam; it still queries Hex to
+check whether the version already exists.
+
+| Check | Conflicts it can detect |
+| --- | --- |
+| `trellis doctor` | File and module-name collisions inside each configured bundle, incompatible internal-module rules, and differing dependency or compiler requirements. |
+| `trellis publish lib_a --dry-run` | The same preparation conflicts for the selected unpublished package. |
+| `trellis publish lib_a` | Preparation conflicts plus errors from building and testing the combined package with its resolved dependencies before upload. |
+
+Two independent publishers can each include the same module names without a
+conflict in either package alone. A consumer that installs both can still
+encounter a collision. Neither publisher's `doctor` check can predict that
+future dependency combination; the consumer's build must check it.
 
 ### Compatibility and release notes
 
