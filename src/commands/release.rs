@@ -20,6 +20,7 @@ pub struct PrOptions {
     pub base: String,
     /// Branch the release commit is (force-)pushed to.
     pub branch: String,
+    pub overrides: Overrides,
 }
 
 pub fn pr(workspace: &Workspace, options: &PrOptions) -> Result<bool> {
@@ -42,9 +43,7 @@ pub fn pr(workspace: &Workspace, options: &PrOptions) -> Result<bool> {
     let result = (|| {
         let workspace = Workspace::load(root)
             .with_context(|| format!("failed to load base branch `{}`", options.base))?;
-        // `release pr` cuts an ordinary release; an override belongs on the
-        // `version` commands, where it can be previewed by `plan` first.
-        let plan = version::compute_plan(&workspace, &Overrides::default())?;
+        let plan = version::compute_plan(&workspace, &options.overrides)?;
         if plan.is_empty() {
             crate::status!("no unreleased changes; nothing to release");
             return Ok(true);
@@ -61,7 +60,7 @@ fn build_release_commit_and_pr(
     plan: &[version::PlanEntry],
 ) -> Result<bool> {
     let root = &workspace.root;
-    if !version::apply(workspace, &Overrides::default(), false)? {
+    if !version::apply(workspace, &options.overrides, false)? {
         bail!("version apply failed");
     }
 

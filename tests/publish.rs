@@ -227,6 +227,112 @@ fn publish_all_untagged_goes_in_topological_order_and_is_idempotent() {
 }
 
 #[test]
+fn publish_then_tag_recovers_partial_hex_and_github_success_on_the_same_commit() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+    common::add_fragment(root, "lat_core", "Added", "release candidate");
+    trellis(root)
+        .args(["version", "apply", "--pre", "rc"])
+        .assert()
+        .success();
+    common::init_repo(root);
+    let remote = common::bare_origin(root);
+    let approved = common::commit_of(root, "HEAD");
+    let api = common::mock_github(root);
+    let gleam = root.join("fake-gleam.sh");
+    write(
+        &gleam,
+        &format!(
+            "#!/bin/sh\nset -eu\nroot='{}'\n\
+             echo \"$(basename \"$PWD\") gleam $*\" >> \"$root/.fake/gleam-log\"\n\
+             if [ \"$1\" = publish ]; then\n\
+               if [ -f \"$root/.fake/fail-publish\" ] && [ \"$(basename \"$PWD\")\" = lat_mid ]; then exit 1; fi\n\
+               cp gleam.toml \"$root/.fake/published-$(basename \"$PWD\").toml\"\n\
+             fi\n",
+            root.display()
+        ),
+    );
+    common::make_executable(&gleam);
+    write(&root.join(".fake/fail-publish"), "");
+    let run = |hex: &str| {
+        let mut command = std::process::Command::new("bash");
+        command
+            .current_dir(root)
+            .args(["-e", "-c", "\"$TRELLIS_BIN\" publish --all-untagged\n\"$TRELLIS_BIN\" tag create --push --github-release"])
+            .env("TRELLIS_BIN", assert_cmd::cargo::cargo_bin!("trellis"))
+            .env("TRELLIS_GLEAM_BIN", &gleam)
+            .env("TRELLIS_HEX_API_URL", hex)
+            .env("TRELLIS_GITHUB_API_URL", &api)
+            .env("TRELLIS_GITHUB_REPO", "example/repo")
+            .env("GITHUB_TOKEN", "test-token");
+        for var in [
+            "HTTP_PROXY",
+            "HTTPS_PROXY",
+            "http_proxy",
+            "https_proxy",
+            "ALL_PROXY",
+            "all_proxy",
+        ] {
+            command.env_remove(var);
+        }
+        command.output().unwrap()
+    };
+    let failed = run(&mock_hex(vec![]));
+    assert!(!failed.status.success());
+    assert!(root.join(".fake/published-lat_core.toml").exists());
+    assert!(!root.join(".fake/published-lat_mid.toml").exists());
+    assert_eq!(common::git_stdout(remote.path(), &["tag", "--list"]), "");
+    assert!(!root.join(".fake/github-log").exists());
+    assert_eq!(common::version_of(root, "lat_mid"), "0.5.1-rc.1");
+
+    fs::remove_file(root.join(".fake/fail-publish")).unwrap();
+    write(&root.join(".fake/fail-release-lat_mid-v0.5.1-rc.1"), "");
+    let failed_tagging = run(&mock_hex(vec![("lat_core", vec!["1.3.0-rc.1"])]));
+    assert!(!failed_tagging.status.success());
+    assert!(String::from_utf8_lossy(&failed_tagging.stderr).contains("release unavailable"));
+    assert!(root.join(".fake/published-lat_cli.toml").exists());
+    assert!(root.join(".fake/release-lat_core-v1.3.0-rc.1").exists());
+    assert_eq!(
+        common::commit_of(remote.path(), "lat_mid-v0.5.1-rc.1"),
+        approved
+    );
+    let log = fs::read_to_string(root.join(".fake/gleam-log")).unwrap();
+    assert_eq!(log.matches("lat_core gleam publish").count(), 1);
+    assert!(
+        log.rfind("lat_mid gleam publish").unwrap() < log.find("lat_cli gleam publish").unwrap()
+    );
+
+    fs::remove_file(root.join(".fake/fail-release-lat_mid-v0.5.1-rc.1")).unwrap();
+    let published = mock_hex(vec![
+        ("lat_core", vec!["1.3.0-rc.1"]),
+        ("lat_mid", vec!["0.5.1-rc.1"]),
+        ("lat_cli", vec!["0.3.2-rc.1"]),
+    ]);
+    for _ in 0..2 {
+        let retry = run(&published);
+        assert!(
+            retry.status.success(),
+            "{}",
+            String::from_utf8_lossy(&retry.stderr)
+        );
+    }
+    assert_eq!(
+        fs::read_to_string(root.join(".fake/gleam-log")).unwrap(),
+        log
+    );
+    for tag in [
+        "lat_core-v1.3.0-rc.1",
+        "lat_mid-v0.5.1-rc.1",
+        "lat_cli-v0.3.2-rc.1",
+    ] {
+        assert_eq!(common::commit_of(remote.path(), tag), approved);
+        assert!(root.join(format!(".fake/release-{tag}")).exists());
+    }
+    assert_eq!(common::commit_of(root, "HEAD"), approved);
+}
+
+#[test]
 fn publish_dry_run_reports_without_running_gleam() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();

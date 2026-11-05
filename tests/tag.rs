@@ -81,8 +81,52 @@ fn tag_create_github_release_uses_changelog_section() {
     assert!(log.contains("POST /repos/example/repo/releases\n"), "{log}");
     assert!(log.contains(r#""tag_name": "lat_core-v1.2.0""#), "{log}");
     assert!(log.contains(r#""name": "lat_core-v1.2.0""#), "{log}");
+    assert!(log.contains(r#""prerelease": false"#), "{log}");
     // The notes body is the CHANGELOG section for 1.2.0.
     assert!(log.contains("- initial"), "github log:\n{log}");
+}
+
+#[test]
+fn github_release_classifies_candidates_from_semver_and_retries_existing_tags() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let remote = series_repo(
+        root,
+        "package_tags = [\"exact\", \"minor\"]\nexact_tag_format = \"release-{version}-{name}\"",
+    );
+    set_version(root, "lat_core", "1.3.0-rc.1");
+    git(root, &["commit", "-qam", "candidate"]);
+    let api = common::mock_github(root);
+    // Publication may have succeeded and tag push failed before release creation.
+    trellis(root)
+        .args(["tag", "create", "--push"])
+        .assert()
+        .success();
+    let existing = commit_of(remote.path(), "release-1.3.0-rc.1-lat_core");
+    for _ in 0..2 {
+        trellis_github(root, &api)
+            .args(["tag", "create", "--push", "--github-release"])
+            .assert()
+            .success();
+    }
+    assert_eq!(
+        commit_of(remote.path(), "release-1.3.0-rc.1-lat_core"),
+        existing
+    );
+    let log = fs::read_to_string(root.join(".fake/github-log")).unwrap();
+    let candidate = log
+        .split("---")
+        .find(|request| {
+            request.contains("POST /repos/example/repo/releases\n")
+                && request.contains(r#""tag_name": "release-1.3.0-rc.1-lat_core""#)
+        })
+        .unwrap();
+    assert!(candidate.contains(r#""prerelease": true"#), "{candidate}");
+    assert_eq!(
+        log.matches("POST /repos/example/repo/releases\n").count(),
+        3
+    );
+    assert!(!git_stdout(root, &["tag", "--list"]).contains("lat_core-v1.3\n"));
 }
 
 /// With no token in the environment, the client falls back to `gh auth

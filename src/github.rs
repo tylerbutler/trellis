@@ -87,12 +87,19 @@ impl GitHubClient {
     }
 
     /// Create a GitHub Release on `tag`.
-    pub fn create_release(&self, tag: &str, title: &str, notes: &str) -> Result<()> {
+    pub fn create_release(
+        &self,
+        tag: &str,
+        title: &str,
+        notes: &str,
+        prerelease: bool,
+    ) -> Result<()> {
         let url = self.url("/releases");
         let payload = serde_json::json!({
             "tag_name": tag,
             "name": title,
             "body": notes,
+            "prerelease": prerelease,
         });
         expect_status("POST", &url, 201, self.send(Write::Post, &url, &payload)?)?;
         Ok(())

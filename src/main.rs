@@ -360,9 +360,7 @@ enum VersionCommand {
 
 /// Overrides for the version a plan would otherwise derive from fragment kinds.
 ///
-/// Flattened into both `plan` and `apply` so an override is visible in the
-/// dry-run before it is applied — the two must accept exactly the same flags or
-/// `plan` stops being a preview of `apply`.
+/// Shared by `version plan`, `version apply`, and `release pr`.
 #[derive(clap::Args)]
 struct VersionOverrideArgs {
     /// Override the derived bump level, workspace-wide (`--bump major`) or for
@@ -373,7 +371,7 @@ struct VersionOverrideArgs {
     /// Repeatable.
     #[arg(long, value_name = "PKG=VERSION")]
     set: Vec<String>,
-    /// Cut a prerelease: `--pre rc` gives 1.0.0-rc.1, and again 1.0.0-rc.2.
+    /// Cut or continue a prerelease cycle (`--pre rc`).
     /// Fragments stay unreleased until the final version. `--pre none` promotes
     /// the current prerelease to its final version and consumes them.
     #[arg(long, value_name = "LABEL")]
@@ -391,6 +389,8 @@ enum ReleaseCommand {
     /// Create or update the release PR: version apply on a branch, push,
     /// open or refresh the PR via the GitHub API
     Pr {
+        #[command(flatten)]
+        overrides: VersionOverrideArgs,
         /// Base branch the PR targets
         #[arg(long, default_value = "main")]
         base: String,
@@ -704,9 +704,18 @@ fn dispatch(cli: Cli) -> Result<bool> {
             }
         },
         Command::Release { command } => match command {
-            ReleaseCommand::Pr { base, branch } => {
-                commands::release::pr(&workspace, &commands::release::PrOptions { base, branch })
-            }
+            ReleaseCommand::Pr {
+                base,
+                branch,
+                overrides,
+            } => commands::release::pr(
+                &workspace,
+                &commands::release::PrOptions {
+                    base,
+                    branch,
+                    overrides: overrides.parse()?,
+                },
+            ),
             ReleaseCommand::Bootstrap { args } => {
                 commands::tag::create(&workspace, &args.options())?;
                 Ok(true)

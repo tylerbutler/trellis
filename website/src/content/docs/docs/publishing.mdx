@@ -12,7 +12,7 @@ dependencies rewritten to real Hex requirements. Trellis covers each step, and
 every step is idempotent, so re-running a partially failed release is safe.
 
 ```txt wrap
-trellis release pr [--base <branch>] [--branch <branch>]
+trellis release pr [--base <branch>] [--branch <branch>] [--pre <label|none>] [--set <pkg=version>] [--bump <pkg=level>]
 trellis tag plan [--json]
 trellis tag create [--push] [--github-release]
 trellis publish <pkg | --tag <tag> | --all-untagged> [--dry-run]
@@ -56,6 +56,39 @@ creates or updates the PR via the GitHub API. It needs a token: `GITHUB_TOKEN`
 fallback (`gh auth token`). The body carries the bump table
 and each package's new CHANGELOG section. It requires a clean working tree
 and is a no-op when there are no fragments.
+
+### Candidates and promotion
+
+`release pr` accepts the same repeatable `--set` and `--bump`, plus `--pre`,
+as [`version plan` and `version apply`](/docs/changelog/#overriding-the-derived-version). Use one release
+branch and one open PR for the whole cycle:
+
+```sh
+# Choose the stable target and candidate label.
+trellis release pr --set lat_core=1.3.0 --pre rc
+# After merging and publishing that PR, prepare the next candidate.
+trellis release pr --pre rc
+# After the last candidate merges and publishes, prepare stable promotion.
+trellis release pr --pre none
+```
+
+Each request regenerates from the selected base, not the old release branch.
+Retrying against an unchanged base produces the same candidate version; the
+next candidate follows a merge. This is version repeatability, not a promise
+of identical commit hashes or rendering dates. On a prerelease base, choose a
+label, `--pre none`, or an explicit version override instead of relying on the
+default stable bump.
+
+Candidate fragments stay unreleased, including fragments for dependent
+packages bumped by the release plan. Stable promotion consumes them and
+renders the final changelog. Review and merge each PR before publishing;
+never publish an unmerged candidate branch.
+
+The [Gleam/Hex workflow](/docs/ci/#the-release-pipeline) handles manual requests,
+pauses automatic preparation during this cycle, and publishes only the
+approved merge commit. It blocks new preparation until publication **and**
+tagging of the previous merged release succeed, then restores automatic stable
+preparation after a published promotion.
 
 ## Tags
 
@@ -104,6 +137,14 @@ force-pushed lat_cli-v0.4
 to a moving tag would silently retarget on the next release, so only immutable
 per-version tags carry one.
 </Callout>
+
+Prereleases use immutable exact tags such as `lat_core-v1.3.0-rc.1` when
+`package_tags` includes `exact`. Neither package nor repository moving series
+tags advance during a candidate release. New GitHub releases for prerelease
+manifest versions have `prerelease: true`; stable versions have it set to
+`false`, regardless of custom tag spelling. Retrying skips an existing GitHub
+release rather than rewriting it. If an older candidate release was
+misclassified, its owner must correct its prerelease setting on GitHub.
 
 With no `exact` entry a package has no per-version tags at all, so there is no
 tag to trigger a publish from: run `trellis publish --all-untagged` on
@@ -176,6 +217,7 @@ Both of these flows are supported; the difference is policy, not tooling:
 | Shape | Flow |
 | --- | --- |
 | Tags as trigger | Release PR merges → `tag create --push` → each pushed tag triggers a workflow running `publish --tag "$GITHUB_REF_NAME"`. |
-| Tags as record | Release PR merges → `publish --all-untagged` (one run, topologically ordered) → `tag create --github-release` records what shipped. |
+| Tags as record | Release PR merges → `publish --all-untagged` (one run, topologically ordered) → `tag create --push --github-release` records what shipped. |
 
-Ready-to-paste workflows for both are in the [CI recipes](/docs/ci/).
+The [CI recipes](/docs/ci/#the-release-pipeline) provide a copyable
+publish-then-tag workflow with candidate/promotion controls and recovery.
