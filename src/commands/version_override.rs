@@ -106,7 +106,7 @@ impl Overrides {
     ///
     /// A prerelease renders its changelog section but does not retire the
     /// fragments behind it: they are still unreleased as far as the final
-    /// version is concerned, and consuming them at `rc.1` would leave the
+    /// version is concerned, and consuming them at `rc.0` would leave the
     /// eventual `1.0.0` with nothing to say. The final release — including a
     /// `--pre none` promotion — consumes them normally.
     pub fn retains_fragments(&self) -> bool {
@@ -211,7 +211,7 @@ impl Overrides {
     ) -> Result<semver::Version> {
         let base = if self.names(package) {
             // An explicit --bump/--set retargets the cycle even mid-flight,
-            // measured from the base rather than from `rc.1` itself.
+            // measured from the base rather than from `rc.0` itself.
             self.base(package, &release_of(current), derived)
         } else if !current.pre.is_empty() {
             // Already in a cycle: the base was decided when it was cut, and
@@ -223,7 +223,7 @@ impl Overrides {
 
         let counter = match previous_counter(current, label) {
             Some(previous) if base == release_of(current) => previous + 1,
-            _ => 1,
+            _ => 0,
         };
         let mut next = base;
         next.pre = semver::Prerelease::new(&format!("{label}.{counter}"))
@@ -340,7 +340,7 @@ mod tests {
         let o = overrides(&[], &[], Some("rc"));
         assert_eq!(
             o.resolve("p", &v("0.9.3"), Bump::Minor).unwrap(),
-            v("0.10.0-rc.1")
+            v("0.10.0-rc.0")
         );
     }
 
@@ -349,7 +349,7 @@ mod tests {
         let o = overrides(&[], &["p=1.0.0"], Some("rc"));
         assert_eq!(
             o.resolve("p", &v("0.9.3"), Bump::Minor).unwrap(),
-            v("1.0.0-rc.1")
+            v("1.0.0-rc.0")
         );
     }
 
@@ -358,6 +358,10 @@ mod tests {
         // The whole point of the cycle: rc.1 -> rc.2 stays on 1.0.0 instead of
         // deriving a fresh bump from the same fragments every time.
         let o = overrides(&[], &[], Some("rc"));
+        assert_eq!(
+            o.resolve("p", &v("1.0.0-rc.0"), Bump::Minor).unwrap(),
+            v("1.0.0-rc.1")
+        );
         assert_eq!(
             o.resolve("p", &v("1.0.0-rc.1"), Bump::Minor).unwrap(),
             v("1.0.0-rc.2")
@@ -373,7 +377,7 @@ mod tests {
         let o = overrides(&[], &[], Some("rc"));
         assert_eq!(
             o.resolve("p", &v("1.0.0-beta.3"), Bump::Minor).unwrap(),
-            v("1.0.0-rc.1")
+            v("1.0.0-rc.0")
         );
     }
 
@@ -382,7 +386,7 @@ mod tests {
         let o = overrides(&["p=major"], &[], Some("rc"));
         assert_eq!(
             o.resolve("p", &v("1.0.0-rc.4"), Bump::Minor).unwrap(),
-            v("2.0.0-rc.1")
+            v("2.0.0-rc.0")
         );
     }
 

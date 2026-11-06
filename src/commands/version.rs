@@ -389,7 +389,7 @@ pub fn apply(workspace: &Workspace, overrides: &Overrides, json: bool) -> Result
     }
     // A prerelease renders its section but leaves the fragments in place: they
     // are still unreleased as far as the final version is concerned, and
-    // retiring them at rc.1 would leave the eventual 1.0.0 with nothing to say.
+    // retiring them at rc.0 would leave the eventual 1.0.0 with nothing to say.
     if !overrides.retains_fragments() {
         for prepared in &prepared_versions {
             let member_fragments: Vec<&changelog::Fragment> =

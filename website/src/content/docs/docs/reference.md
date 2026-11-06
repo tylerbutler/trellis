@@ -282,7 +282,7 @@ Dry-run: show what `version apply` would bump
 
 * `--bump <LEVEL|PKG=LEVEL>` — Override the derived bump level, workspace-wide (`--bump major`) or for one package (`--bump lat_core=major`). Repeatable
 * `--set <PKG=VERSION>` — Pin a package's next version exactly (`--set lat_core=1.0.0`). Repeatable
-* `--pre <LABEL>` — Cut or continue a prerelease cycle (`--pre rc`). Fragments stay unreleased until the final version. `--pre none` promotes the current prerelease to its final version and consumes them
+* `--pre <LABEL>` — Cut or continue a prerelease cycle (`--pre rc`). New cycles start at `<label>.0`; repeating the label increments the counter. Fragments stay unreleased until the final version. `--pre none` promotes the current prerelease to its final version and consumes them
 * `--json` — Emit JSON instead of text
 
 
@@ -297,7 +297,7 @@ Bump versions, render changelogs, patch manifest.toml locked versions
 
 * `--bump <LEVEL|PKG=LEVEL>` — Override the derived bump level, workspace-wide (`--bump major`) or for one package (`--bump lat_core=major`). Repeatable
 * `--set <PKG=VERSION>` — Pin a package's next version exactly (`--set lat_core=1.0.0`). Repeatable
-* `--pre <LABEL>` — Cut or continue a prerelease cycle (`--pre rc`). Fragments stay unreleased until the final version. `--pre none` promotes the current prerelease to its final version and consumes them
+* `--pre <LABEL>` — Cut or continue a prerelease cycle (`--pre rc`). New cycles start at `<label>.0`; repeating the label increments the counter. Fragments stay unreleased until the final version. `--pre none` promotes the current prerelease to its final version and consumes them
 * `--json` — Emit JSON listing every bump and patched lockfile
 
 
@@ -335,7 +335,7 @@ Create or update the release PR: version apply on a branch, push, open or refres
 
 * `--bump <LEVEL|PKG=LEVEL>` — Override the derived bump level, workspace-wide (`--bump major`) or for one package (`--bump lat_core=major`). Repeatable
 * `--set <PKG=VERSION>` — Pin a package's next version exactly (`--set lat_core=1.0.0`). Repeatable
-* `--pre <LABEL>` — Cut or continue a prerelease cycle (`--pre rc`). Fragments stay unreleased until the final version. `--pre none` promotes the current prerelease to its final version and consumes them
+* `--pre <LABEL>` — Cut or continue a prerelease cycle (`--pre rc`). New cycles start at `<label>.0`; repeating the label increments the counter. Fragments stay unreleased until the final version. `--pre none` promotes the current prerelease to its final version and consumes them
 * `--base <BASE>` — Base branch the PR targets
 
   Default value: `main`

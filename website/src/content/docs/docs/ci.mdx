@@ -305,6 +305,7 @@ PR, there is no adoption status to seed.
 
 Select **main** in the Actions **Run workflow** menu. For the first candidate,
 enter `rc` in `pre` and targets such as `lat_core=1.3.0` in `set`, one per line.
+This starts `lat_core` at `1.3.0-rc.0`.
 Use `bump` for repeatable `package=major|minor|patch` overrides instead.
 The inputs are passed as argument arrays; they are not shell commands.
 After that candidate merges and publication succeeds, dispatch `pre: rc`

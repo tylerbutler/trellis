@@ -284,17 +284,17 @@ fn publish_then_tag_recovers_partial_hex_and_github_success_on_the_same_commit()
     assert!(!root.join(".fake/published-lat_mid.toml").exists());
     assert_eq!(common::git_stdout(remote.path(), &["tag", "--list"]), "");
     assert!(!root.join(".fake/github-log").exists());
-    assert_eq!(common::version_of(root, "lat_mid"), "0.5.1-rc.1");
+    assert_eq!(common::version_of(root, "lat_mid"), "0.5.1-rc.0");
 
     fs::remove_file(root.join(".fake/fail-publish")).unwrap();
-    write(&root.join(".fake/fail-release-lat_mid-v0.5.1-rc.1"), "");
-    let failed_tagging = run(&mock_hex(vec![("lat_core", vec!["1.3.0-rc.1"])]));
+    write(&root.join(".fake/fail-release-lat_mid-v0.5.1-rc.0"), "");
+    let failed_tagging = run(&mock_hex(vec![("lat_core", vec!["1.3.0-rc.0"])]));
     assert!(!failed_tagging.status.success());
     assert!(String::from_utf8_lossy(&failed_tagging.stderr).contains("release unavailable"));
     assert!(root.join(".fake/published-lat_cli.toml").exists());
-    assert!(root.join(".fake/release-lat_core-v1.3.0-rc.1").exists());
+    assert!(root.join(".fake/release-lat_core-v1.3.0-rc.0").exists());
     assert_eq!(
-        common::commit_of(remote.path(), "lat_mid-v0.5.1-rc.1"),
+        common::commit_of(remote.path(), "lat_mid-v0.5.1-rc.0"),
         approved
     );
     let log = fs::read_to_string(root.join(".fake/gleam-log")).unwrap();
@@ -303,11 +303,11 @@ fn publish_then_tag_recovers_partial_hex_and_github_success_on_the_same_commit()
         log.rfind("lat_mid gleam publish").unwrap() < log.find("lat_cli gleam publish").unwrap()
     );
 
-    fs::remove_file(root.join(".fake/fail-release-lat_mid-v0.5.1-rc.1")).unwrap();
+    fs::remove_file(root.join(".fake/fail-release-lat_mid-v0.5.1-rc.0")).unwrap();
     let published = mock_hex(vec![
-        ("lat_core", vec!["1.3.0-rc.1"]),
-        ("lat_mid", vec!["0.5.1-rc.1"]),
-        ("lat_cli", vec!["0.3.2-rc.1"]),
+        ("lat_core", vec!["1.3.0-rc.0"]),
+        ("lat_mid", vec!["0.5.1-rc.0"]),
+        ("lat_cli", vec!["0.3.2-rc.0"]),
     ]);
     for _ in 0..2 {
         let retry = run(&published);
@@ -322,9 +322,9 @@ fn publish_then_tag_recovers_partial_hex_and_github_success_on_the_same_commit()
         log
     );
     for tag in [
-        "lat_core-v1.3.0-rc.1",
-        "lat_mid-v0.5.1-rc.1",
-        "lat_cli-v0.3.2-rc.1",
+        "lat_core-v1.3.0-rc.0",
+        "lat_mid-v0.5.1-rc.0",
+        "lat_cli-v0.3.2-rc.0",
     ] {
         assert_eq!(common::commit_of(remote.path(), tag), approved);
         assert!(root.join(format!(".fake/release-{tag}")).exists());
