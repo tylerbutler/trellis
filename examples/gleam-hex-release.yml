@@ -1,0 +1,264 @@
+# Copy to .github/workflows/gleam-hex-release.yml in a Gleam workspace.
+# Until these fixes ship, check in a reviewed source snapshot at .github/trellis
+# and leave TRELLIS_VERSION empty. Afterward, pin a release with these fixes.
+name: Gleam Hex release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      pre:
+        description: "Prerelease label (rc), promotion (none), or empty for stable"
+        type: string
+        default: ""
+      set:
+        description: "Exact targets, one package=version per line"
+        type: string
+        default: ""
+      bump:
+        description: "Bumps, one package=major|minor|patch per line"
+        type: string
+        default: ""
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+concurrency:
+  group: trellis-release
+  queue: max
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: read
+  statuses: write
+
+env:
+  TRELLIS_VERSION: ${{ vars.TRELLIS_VERSION }}
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Select trusted release
+        id: select
+        uses: actions/github-script@v8
+        with:
+          script: |
+            // script: select
+            const repo = context.repo;
+            const trusted = pr => pr.merged && pr.head.ref === "release/pending"
+              && pr.base.ref === "main"
+              && pr.head.repo?.full_name === `${repo.owner}/${repo.repo}`
+              && pr.base.repo?.full_name === `${repo.owner}/${repo.repo}`;
+            if (context.eventName === "pull_request") {
+              const event_pr = context.payload.pull_request;
+              const { data: pr } = await github.rest.pulls.get({
+                ...repo, pull_number: event_pr.number,
+              });
+              if (!trusted(pr) || !pr.merge_commit_sha
+                  || pr.merge_commit_sha !== event_pr.merge_commit_sha) return;
+              const statuses = await github.paginate(github.rest.repos.listCommitStatusesForRef, {
+                ...repo, ref: pr.merge_commit_sha,
+              });
+              if (statuses.find(s => s.context === "trellis/release")?.state === "success") {
+                core.info("Already published and tagged; retry only current-main preparation.");
+                core.setOutput("prepare", "true");
+                return;
+              }
+              core.setOutput("publish_sha", pr.merge_commit_sha);
+            } else {
+              if (context.ref !== "refs/heads/main") {
+                throw new Error("Dispatch release preparation on main.");
+              }
+              core.setOutput("prepare", "true");
+            }
+            // end-script
+
+      - name: Check out approved merge
+        if: steps.select.outputs.publish_sha != ''
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.select.outputs.publish_sha }}
+          fetch-depth: 0
+
+      - name: Check out preparation tools
+        if: steps.select.outputs.prepare == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Install Gleam and Erlang
+        if: steps.select.outputs.publish_sha != '' || steps.select.outputs.prepare == 'true'
+        uses: erlef/setup-beam@v1.24.1
+        with:
+          otp-version: "28.1"
+          gleam-version: "1.13.0"
+
+      - name: Install trellis
+        if: steps.select.outputs.publish_sha != '' || steps.select.outputs.prepare == 'true'
+        run: |
+          # script: install
+          set -euo pipefail
+          if [ -n "$TRELLIS_VERSION" ]; then
+            curl --proto '=https' --tlsv1.2 -LsSf \
+              "https://github.com/tylerbutler/trellis/releases/download/v${TRELLIS_VERSION}/trellis-gleam-installer.sh" | sh
+          else
+            test -f .github/trellis/Cargo.toml
+            rustup toolchain install 1.94.1 --profile minimal
+            export CARGO_TARGET_DIR="$RUNNER_TEMP/trellis-target"
+            cargo +1.94.1 install --locked --path .github/trellis --root "$RUNNER_TEMP/trellis"
+            echo "$RUNNER_TEMP/trellis/bin" >> "$GITHUB_PATH"
+          fi
+          # end-script
+
+      - name: Publish, then tag the approved commit
+        id: publish
+        if: steps.select.outputs.publish_sha != ''
+        uses: actions/github-script@v8
+        env:
+          RELEASE_SHA: ${{ steps.select.outputs.publish_sha }}
+          HEXPM_API_KEY: ${{ secrets.HEXPM_API_KEY }}
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          script: |
+            // script: publish
+            const sha = process.env.RELEASE_SHA;
+            const checkout = await exec.getExecOutput("git", ["rev-parse", "HEAD"]);
+            if (checkout.stdout.trim() !== sha) throw new Error("Release checkout changed.");
+            const status = state => github.rest.repos.createCommitStatus({
+              ...context.repo, sha, context: "trellis/release", state,
+              description: `Hex publication and GitHub tagging: ${state}`,
+              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            });
+            await status("pending");
+            try {
+              await exec.exec("trellis", ["publish", "--all-untagged"]);
+              await exec.exec("trellis", ["tag", "create", "--push", "--github-release"]);
+              await status("success");
+              core.setOutput("complete", "true");
+            } catch (error) {
+              await status("failure");
+              throw error;
+            }
+            // end-script
+
+      - name: Create preparation token
+        if: steps.select.outputs.prepare == 'true' || steps.publish.outputs.complete == 'true'
+        id: app
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
+      # A symbolic main checkout happens inside the concurrency guard, including
+      # after publication: never prepare from a stale push-event SHA.
+      - name: Check out current main
+        if: steps.select.outputs.prepare == 'true' || steps.publish.outputs.complete == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ steps.app.outputs.token }}
+
+      - name: Prepare or refresh the single release PR
+        if: steps.select.outputs.prepare == 'true' || steps.publish.outputs.complete == 'true'
+        uses: actions/github-script@v8
+        env:
+          GITHUB_TOKEN: ${{ steps.app.outputs.token }}
+          INPUT_PRE: ${{ inputs.pre }}
+          INPUT_SET: ${{ inputs.set }}
+          INPUT_BUMP: ${{ inputs.bump }}
+        with:
+          github-token: ${{ steps.app.outputs.token }}
+          script: |
+            // script: prepare
+            const repo = context.repo;
+            const same_repo = pr => pr.head.ref === "release/pending" && pr.base.ref === "main"
+              && pr.head.repo?.full_name === `${repo.owner}/${repo.repo}`
+              && pr.base.repo?.full_name === `${repo.owner}/${repo.repo}`;
+            const closed = await github.paginate(github.rest.pulls.list, {
+              ...repo, state: "closed", base: "main", sort: "updated", direction: "desc",
+            });
+            const latest = closed.filter(pr => pr.merged_at && same_repo(pr))
+              .sort((a, b) => Date.parse(b.merged_at) - Date.parse(a.merged_at))[0];
+            const statuses = async ref => github.paginate(github.rest.repos.listCommitStatusesForRef, {
+              ...repo, ref,
+            });
+            if (latest && (await statuses(latest.merge_commit_sha))
+                .find(s => s.context === "trellis/release")?.state !== "success") {
+              core.info("Previous release has not finished publication and tagging; rerun its merge workflow.");
+              return;
+            }
+            const open = (await github.paginate(github.rest.pulls.list, {
+              ...repo, state: "open", base: "main", head: `${repo.owner}:release/pending`,
+            })).filter(same_repo);
+            if (open.length > 1) throw new Error("Expected at most one release PR.");
+            const manual = context.eventName === "workflow_dispatch";
+            if (!manual) {
+              // Reservation statuses survive a failed command before PR creation
+              // or metadata updates, and unrelated later pushes to main.
+              for await (const page of github.paginate.iterator(github.rest.repos.listCommits, {
+                ...repo, sha: "main", per_page: 100,
+              })) {
+                let reached_release = false;
+                for (const commit of page.data) {
+                  if ((await statuses(commit.sha))
+                      .find(s => s.context === "trellis/release_request")?.state === "pending") {
+                    core.info("A manual release request owns preparation until its PR merges.");
+                    return;
+                  }
+                  if (commit.sha === latest?.merge_commit_sha) {
+                    reached_release = true;
+                    break;
+                  }
+                }
+                if (reached_release) break;
+              }
+            }
+            const versions = async () => JSON.parse((await exec.getExecOutput(
+              "trellis", ["list", "--releasable", "--json"],
+            )).stdout).packages;
+            if (!manual) {
+              if ((await versions()).some(pkg => pkg.version.split("+")[0].includes("-"))) {
+                core.info("Main contains prereleases; dispatch a candidate or promotion.");
+                return;
+              }
+              if (open[0]) {
+                await exec.exec("git", ["fetch", "origin", open[0].head.sha]);
+                await exec.exec("git", ["checkout", "--detach", open[0].head.sha]);
+                const candidate = (await versions()).some(pkg => pkg.version.split("+")[0].includes("-"));
+                await exec.exec("git", ["checkout", "main"]);
+                if (candidate) {
+                  core.info("The pending PR contains prereleases; leave it unchanged.");
+                  return;
+                }
+              }
+            }
+            const args = ["release", "pr", "--base", "main", "--branch", "release/pending"];
+            if (manual) {
+              const pre = process.env.INPUT_PRE?.trim();
+              if (pre) args.push("--pre", pre);
+              for (const flag of ["set", "bump"]) {
+                for (const value of (process.env[`INPUT_${flag.toUpperCase()}`] ?? "").split(/\r?\n/)) {
+                  if (value.trim()) args.push(`--${flag}`, value.trim());
+                }
+              }
+            }
+            const sha = (await exec.getExecOutput("git", ["rev-parse", "HEAD"])).stdout.trim();
+            const reservation = state => github.rest.repos.createCommitStatus({
+              ...repo, sha, context: "trellis/release_request", state,
+              description: "Manual release preparation owns release/pending",
+              target_url: `${context.serverUrl}/${repo.owner}/${repo.repo}/actions/runs/${context.runId}`,
+            });
+            if (manual) await reservation("pending");
+            await exec.exec("trellis", args);
+            if (manual) {
+              const pending = await github.paginate(github.rest.pulls.list, {
+                ...repo, state: "open", base: "main", head: `${repo.owner}:release/pending`,
+              });
+              if (!pending.some(same_repo)) await reservation("success"); // Successful no-op.
+            }
+            // end-script

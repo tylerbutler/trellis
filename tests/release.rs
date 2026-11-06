@@ -12,6 +12,211 @@ use std::fs;
 // ---- trellis release pr ----------------------------------------------------
 
 #[test]
+fn release_pr_candidates_retry_from_base_and_promote_after_merge() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+    let api = common::mock_github(root);
+    add_fragment(root, "lat_core", "Added", "candidate feature");
+    init_repo(root);
+    write(&root.join(".git/info/exclude"), ".fake/\n");
+    let _remote = bare_origin(root);
+
+    for (index, candidate) in ["1.3.0-rc.1", "1.3.0-rc.1", "1.3.0-rc.2"]
+        .into_iter()
+        .enumerate()
+    {
+        let preview = trellis(root)
+            .args(["version", "plan", "--pre", "rc", "--json"])
+            .output()
+            .unwrap();
+        assert!(preview.status.success());
+        trellis_github(root, &api)
+            .args(["release", "pr", "--pre", "rc"])
+            .assert()
+            .success();
+        let release_manifest = git_stdout(
+            root,
+            &[
+                "show",
+                "origin/release/pending:packages/lat_core/gleam.toml",
+            ],
+        );
+        assert!(release_manifest.contains(&format!("version = \"{candidate}\"")));
+        let log = fs::read_to_string(root.join(".fake/github-log")).unwrap();
+        assert!(
+            log.contains(&format!("release: lat_core v{candidate}")),
+            "{log}"
+        );
+        assert!(
+            log.contains(&format!(
+                "| lat_core | {} | {candidate} | 1 |",
+                version_of(root, "lat_core")
+            )),
+            "{log}"
+        );
+        assert!(
+            git_stdout(
+                root,
+                &["ls-tree", "-r", "--name-only", "origin/release/pending"]
+            )
+            .contains(".changes/unreleased/lat_core-1.toml")
+        );
+        let document: serde_json::Value = serde_json::from_slice(&preview.stdout).unwrap();
+        assert_eq!(document["fragments_retained"], true);
+        for bump in document["bumped"].as_array().unwrap() {
+            let package = bump["name"].as_str().unwrap();
+            let manifest = git_stdout(
+                root,
+                &[
+                    "show",
+                    &format!("origin/release/pending:packages/{package}/gleam.toml"),
+                ],
+            );
+            let manifest: toml::Value = toml::from_str(&manifest).unwrap();
+            assert_eq!(
+                manifest["version"].as_str().unwrap(),
+                bump["next"].as_str().unwrap()
+            );
+        }
+        // The second preparation is still against unchanged main.
+        if candidate == "1.3.0-rc.1" {
+            write(&root.join(".fake/pr-list"), "[{\"number\":7}]");
+        }
+        if index == 1 {
+            git(root, &["merge", "--ff-only", "origin/release/pending"]);
+        }
+    }
+    git(root, &["merge", "--ff-only", "origin/release/pending"]);
+    assert_eq!(version_of(root, "lat_core"), "1.3.0-rc.2");
+    assert_eq!(version_of(root, "lat_mid"), "0.5.1-rc.2");
+    assert_eq!(version_of(root, "lat_cli"), "0.3.2-rc.2");
+    let before = commit_of(root, "origin/release/pending");
+    trellis_github(root, &api)
+        .args(["release", "pr"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("--pre none"));
+    assert_eq!(commit_of(root, "origin/release/pending"), before);
+    trellis_github(root, &api)
+        .args(["release", "pr", "--pre", "none", "--set", "lat_core=2.0.0"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("promoting takes"));
+    assert_eq!(commit_of(root, "origin/release/pending"), before);
+
+    trellis_github(root, &api)
+        .args(["release", "pr", "--pre", "none"])
+        .assert()
+        .success();
+    git(root, &["merge", "--ff-only", "origin/release/pending"]);
+    assert_eq!(version_of(root, "lat_core"), "1.3.0");
+    assert_eq!(version_of(root, "lat_mid"), "0.5.1");
+    assert_eq!(version_of(root, "lat_cli"), "0.3.2");
+    assert!(!root.join(".changes/unreleased/lat_core-1.toml").exists());
+    let log = fs::read_to_string(root.join(".fake/github-log")).unwrap();
+    assert_eq!(log.matches("POST /repos/example/repo/pulls\n").count(), 1);
+    assert!(log.contains("| lat_core | 1.3.0-rc.2 | 1.3.0 | 1 |"));
+}
+
+#[test]
+fn release_pr_accepts_the_version_override_surface() {
+    for (flags, package, expected) in [
+        (
+            vec!["--set", "lat_mid=1.0.0", "--pre", "rc"],
+            "lat_mid",
+            "1.0.0-rc.1",
+        ),
+        (
+            vec!["--bump", "minor", "--bump", "lat_core=major"],
+            "lat_core",
+            "2.0.0",
+        ),
+        (
+            vec!["--set", "lat_core=3.1.4", "--set", "lat_mid=1.0.0"],
+            "lat_core",
+            "3.1.4",
+        ),
+    ] {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        copy_fixture_to(root);
+        let api = common::mock_github(root);
+        add_fragment(root, package, "Fixed", "override");
+        init_repo(root);
+        let _remote = bare_origin(root);
+        trellis_github(root, &api)
+            .args(["release", "pr"])
+            .args(flags)
+            .assert()
+            .success();
+        assert!(
+            git_stdout(
+                root,
+                &[
+                    "show",
+                    &format!("origin/release/pending:packages/{package}/gleam.toml")
+                ]
+            )
+            .contains(&format!("version = \"{expected}\""))
+        );
+        assert!(
+            fs::read_to_string(root.join(".fake/github-log"))
+                .unwrap()
+                .contains(&format!("{package} v{expected}"))
+        );
+    }
+}
+
+#[test]
+fn release_pr_rejects_invalid_overrides_before_writes_or_pushes() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+    let api = common::mock_github(root);
+    add_fragment(root, "lat_core", "Fixed", "pending");
+    init_repo(root);
+    let remote = bare_origin(root);
+    let initial = commit_of(root, "HEAD");
+    for (flags, message) in [
+        (
+            vec!["--bump", "lat_core=major", "--set", "lat_core=9.9.9"],
+            "both --bump and --set",
+        ),
+        (
+            vec!["--bump", "major", "--bump", "minor"],
+            "more than one workspace-wide",
+        ),
+        (vec!["--set", "nope=1.0.0"], "unknown package"),
+        (
+            vec!["--set", "lat_core=2.0.0", "--set", "lat_core=3.0.0"],
+            "more than once",
+        ),
+        (
+            vec!["--bump", "lat_core=major", "--bump", "lat_core=minor"],
+            "more than once",
+        ),
+        (vec!["--set", "lat_core=not-semver"], "is not semver"),
+        (vec!["--bump", "sideways"], "unknown bump level"),
+        (vec!["--bump", "package_a=major"], "release lifecycle"),
+        (vec!["--set", "lat_core=1.0.0"], "not forward"),
+        (vec!["--pre", "rc.1"], "prerelease label"),
+        (vec!["--pre", "none"], "no package in the plan is at one"),
+    ] {
+        trellis_github(root, &api)
+            .args(["release", "pr"])
+            .args(flags)
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains(message));
+        assert_eq!(commit_of(root, "HEAD"), initial);
+        assert_eq!(git_stdout(root, &["status", "--porcelain"]), "");
+        assert_eq!(git_stdout(remote.path(), &["for-each-ref"]), "");
+    }
+    assert!(!root.join(".fake/github-log").exists());
+}
+
+#[test]
 fn release_pr_creates_then_updates_the_pull_request() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();

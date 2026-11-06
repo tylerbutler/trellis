@@ -1,0 +1,5 @@
+component: release
+kind: Added
+body: |-
+  **`trellis release pr` supports candidate releases and stable promotion.** Use the same `--pre`, `--set`, and `--bump` options as `version plan` and `version apply`. Repeating a request against an unchanged base regenerates the same candidate version; merge that PR before preparing the next candidate. Candidate fragments remain unreleased until `--pre none` promotes the versions and consumes them.
+time: 2026-11-05T13:48:59-08:00

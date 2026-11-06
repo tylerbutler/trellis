@@ -646,6 +646,46 @@ artifact of publishing rather than its trigger, and the auto-tag "wait for the
 Publish workflow" coupling disappears. This is a policy change for lattice, not a
 requirement of the tool; both shapes are supported.
 
+### Candidate publication in Gleam workspaces
+
+`examples/gleam-hex-release.yml` implements the publish-then-tag shape for
+Gleam/Hex, separately from trellis's own Cargo pipeline. `release pr` shares
+the version override parser and uses the same overrides for planning and
+application. Each candidate is regenerated from its selected base; fragments
+remain pending until stable promotion, including rippled dependents.
+
+One concurrency group serializes automatic stable preparation, manual
+candidate/promotion requests, and merge publication without cancellation.
+Automatic preparation pauses for prerelease manifests on main, pending
+candidate heads, and manual ownership. A pending `trellis/release_request`
+status on the manual request's base commit is written before invoking the
+CLI: it survives failure before PR creation and protects stable promotion
+heads that cannot be identified by prerelease version alone. The automatic
+guard scans main's history only back through the latest merged release commit,
+so merging a new release supersedes earlier reservations. This uses existing
+commit statuses rather than another state service.
+
+Publication verifies same-repository release head/base identity and pins
+checkout to `merge_commit_sha`, including reruns. `trellis/release` succeeds
+only after dependency-ordered Hex publication and tagging both complete.
+Missing or unsuccessful status on the latest merged release blocks new
+preparation, including before the publishing run starts. Recovery repeats
+publication and tagging at that same commit; a completed old run is skipped
+for those two commands to prevent moving series tags backward, but still
+retries gated preparation on current main. Successful stable promotion
+rechecks current main in the serialized run and restores automatic preparation.
+
+Until a fixed binary release ships, the example builds a checked-in reviewed
+snapshot at `.github/trellis` with the committed lockfile and pinned Rust
+toolchain. Build output and installation stay outside the checkout under
+`RUNNER_TEMP`, preserving the release CLI's clean-tree requirement. Afterward,
+an explicit released-version pin selects the prebuilt installer instead.
+
+Exact candidate tags remain immutable; candidate versions do not move package
+or repository series tags. GitHub prerelease classification comes from the
+manifest's semantic version, not the configurable tag spelling. Existing
+GitHub releases are not rewritten on retry.
+
 ## 7. Interop decisions
 
 **Changie is subsumed, not wrapped.** The original decision was "wrap changie,

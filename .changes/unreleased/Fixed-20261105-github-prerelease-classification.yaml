@@ -1,0 +1,5 @@
+component: tag
+kind: Fixed
+body: |-
+  **`trellis tag create --github-release` marks candidate releases as GitHub prereleases.** The package's semantic version determines the classification, including with custom exact tag formats. Stable versions create ordinary releases. Existing GitHub releases remain unchanged on retry; correct any older candidate release's classification in GitHub. Prereleases still leave moving package and repository series tags unchanged.
+time: 2026-11-05T13:48:59-08:00

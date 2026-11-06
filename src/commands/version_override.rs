@@ -11,7 +11,7 @@
 //!
 //! All three are the same shape of problem — the fragment kinds don't determine
 //! the version I want — so they share one flag surface, parsed here once and
-//! used identically by `version plan` and `version apply`.
+//! used identically by `version plan`, `version apply`, and `release pr`.
 
 use crate::changelog;
 use crate::config::Bump;
