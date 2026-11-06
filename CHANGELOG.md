@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v1.2.1 - 2026-11-06
+
+
+### version
+
+#### Fixed
+
+- **`version plan` and `version apply` start prerelease counters at zero.** Use `--set PACKAGE=1.0.0 --pre rc` to prepare `1.0.0-rc.0`, then repeat `--pre rc` for `1.0.0-rc.1`. Fragments stay unreleased through each candidate; `--pre none` promotes to `1.0.0` and consumes them. Existing cycles continue from their current counter.
+
+### release
+
+#### Fixed
+
+- **`release pr --pre rc` starts new candidate cycles at `rc.0`.** Combine it with `--set PACKAGE=1.0.0` to prepare `1.0.0-rc.0`. Retrying against an unchanged base produces the same candidate; after merging, repeat `--pre rc` for `rc.1`. Candidate fragments remain unreleased until `--pre none` prepares stable promotion. Existing cycles continue from their current counter.
+
 ## v1.2.0 - 2026-11-06
 
 

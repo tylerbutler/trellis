@@ -1,5 +1,0 @@
-component: release
-kind: Fixed
-body: |-
-  **`release pr --pre rc` starts new candidate cycles at `rc.0`.** Combine it with `--set PACKAGE=1.0.0` to prepare `1.0.0-rc.0`. Retrying against an unchanged base produces the same candidate; after merging, repeat `--pre rc` for `rc.1`. Candidate fragments remain unreleased until `--pre none` prepares stable promotion. Existing cycles continue from their current counter.
-time: 2026-11-06T12:22:46-08:00
