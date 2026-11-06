@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v1.2.0 - 2026-11-06
+
+
+### release
+
+#### Added
+
+- **`trellis release pr` supports candidate releases and stable promotion.** Use the same `--pre`, `--set`, and `--bump` options as `version plan` and `version apply`. Repeating a request against an unchanged base regenerates the same candidate version; merge that PR before preparing the next candidate. Candidate fragments remain unreleased until `--pre none` promotes the versions and consumes them.
+
+### tag
+
+#### Fixed
+
+- **`trellis tag create --github-release` marks candidate releases as GitHub prereleases.** The package's semantic version determines the classification, including with custom exact tag formats. Stable versions create ordinary releases. Existing GitHub releases remain unchanged on retry; correct any older candidate release's classification in GitHub. Prereleases still leave moving package and repository series tags unchanged.
+
 ## v1.1.0 - 2026-10-31
 
 
