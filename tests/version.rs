@@ -727,12 +727,12 @@ fn pre_cuts_a_release_candidate_and_keeps_the_fragments() {
         .args(["version", "apply", "--pre", "rc"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("lat_core: 1.2.0 -> 1.3.0-rc.1"))
+        .stdout(predicate::str::contains("lat_core: 1.2.0 -> 1.3.0-rc.0"))
         .stdout(predicate::str::contains("kept fragments unreleased"));
-    assert_eq!(version_of(root, "lat_core"), "1.3.0-rc.1");
+    assert_eq!(version_of(root, "lat_core"), "1.3.0-rc.0");
     // The section rendered, but the fragments behind it are still pending.
     let changelog = fs::read_to_string(root.join("packages/lat_core/CHANGELOG.md")).unwrap();
-    assert!(changelog.contains("1.3.0-rc.1"), "{changelog}");
+    assert!(changelog.contains("1.3.0-rc.0"), "{changelog}");
     assert!(changelog.contains("the 1.0 feature"), "{changelog}");
     assert_eq!(unreleased_fragments(root), 1);
 }
@@ -740,24 +740,41 @@ fn pre_cuts_a_release_candidate_and_keeps_the_fragments() {
 #[test]
 fn pre_combines_with_an_exact_version() {
     // The motivating case for both flags at once: a package approaching its
-    // own 1.0 wants 1.0.0-rc.1, and neither flag alone reaches it.
+    // own 1.0 wants 1.0.0-rc.0, and neither flag alone reaches it.
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
     copy_fixture_to(root);
     add_fragment(root, "lat_mid", "Added", "the 1.0 feature");
 
     trellis(root)
+        .args(["version", "plan", "--set", "lat_mid=1.0.0", "--pre", "rc"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("lat_mid: 0.5.0 -> 1.0.0-rc.0"));
+    assert_eq!(version_of(root, "lat_mid"), "0.5.0");
+    assert_eq!(unreleased_fragments(root), 1);
+
+    trellis(root)
         .args(["version", "apply", "--set", "lat_mid=1.0.0", "--pre", "rc"])
         .assert()
         .success();
-    assert_eq!(version_of(root, "lat_mid"), "1.0.0-rc.1");
+    assert_eq!(version_of(root, "lat_mid"), "1.0.0-rc.0");
+    assert_eq!(unreleased_fragments(root), 1);
 
     // The base is settled now, so repeating only advances the counter.
     trellis(root)
         .args(["version", "apply", "--pre", "rc"])
         .assert()
         .success();
-    assert_eq!(version_of(root, "lat_mid"), "1.0.0-rc.2");
+    assert_eq!(version_of(root, "lat_mid"), "1.0.0-rc.1");
+    assert_eq!(unreleased_fragments(root), 1);
+
+    trellis(root)
+        .args(["version", "apply", "--pre", "none"])
+        .assert()
+        .success();
+    assert_eq!(version_of(root, "lat_mid"), "1.0.0");
+    assert_eq!(unreleased_fragments(root), 0);
 }
 
 #[test]
@@ -771,14 +788,14 @@ fn repeating_pre_increments_the_candidate_within_one_base() {
         .args(["version", "apply", "--pre", "rc"])
         .assert()
         .success();
-    assert_eq!(version_of(root, "lat_core"), "1.3.0-rc.1");
+    assert_eq!(version_of(root, "lat_core"), "1.3.0-rc.0");
 
     // Same fragments, second candidate: the base must not bump again.
     trellis(root)
         .args(["version", "apply", "--pre", "rc"])
         .assert()
         .success();
-    assert_eq!(version_of(root, "lat_core"), "1.3.0-rc.2");
+    assert_eq!(version_of(root, "lat_core"), "1.3.0-rc.1");
     assert_eq!(unreleased_fragments(root), 1);
 }
 
@@ -797,14 +814,14 @@ fn promote_finalizes_the_candidate_and_consumes_the_fragments() {
         .args(["version", "apply", "--pre", "rc"])
         .assert()
         .success();
-    assert_eq!(version_of(root, "lat_core"), "1.3.0-rc.2");
+    assert_eq!(version_of(root, "lat_core"), "1.3.0-rc.1");
     assert_eq!(unreleased_fragments(root), 1);
 
     trellis(root)
         .args(["version", "apply", "--pre", "none"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("lat_core: 1.3.0-rc.2 -> 1.3.0"));
+        .stdout(predicate::str::contains("lat_core: 1.3.0-rc.1 -> 1.3.0"));
     assert_eq!(version_of(root, "lat_core"), "1.3.0");
     // Only the final release retires them.
     assert_eq!(unreleased_fragments(root), 0);
@@ -825,9 +842,9 @@ fn a_prerelease_labels_the_whole_plan_including_ripples() {
         .args(["version", "apply", "--pre", "rc"])
         .assert()
         .success();
-    assert_eq!(version_of(root, "lat_core"), "1.3.0-rc.1");
-    assert_eq!(version_of(root, "lat_mid"), "0.5.1-rc.1");
-    assert_eq!(version_of(root, "lat_cli"), "0.3.2-rc.1");
+    assert_eq!(version_of(root, "lat_core"), "1.3.0-rc.0");
+    assert_eq!(version_of(root, "lat_mid"), "0.5.1-rc.0");
+    assert_eq!(version_of(root, "lat_cli"), "0.3.2-rc.0");
 
     trellis(root)
         .args(["version", "apply", "--pre", "none"])

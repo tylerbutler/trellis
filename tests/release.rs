@@ -22,7 +22,7 @@ fn release_pr_candidates_retry_from_base_and_promote_after_merge() {
     write(&root.join(".git/info/exclude"), ".fake/\n");
     let _remote = bare_origin(root);
 
-    for (index, candidate) in ["1.3.0-rc.1", "1.3.0-rc.1", "1.3.0-rc.2"]
+    for (index, candidate) in ["1.3.0-rc.0", "1.3.0-rc.0", "1.3.0-rc.1"]
         .into_iter()
         .enumerate()
     {
@@ -80,7 +80,7 @@ fn release_pr_candidates_retry_from_base_and_promote_after_merge() {
             );
         }
         // The second preparation is still against unchanged main.
-        if candidate == "1.3.0-rc.1" {
+        if candidate == "1.3.0-rc.0" {
             write(&root.join(".fake/pr-list"), "[{\"number\":7}]");
         }
         if index == 1 {
@@ -88,9 +88,9 @@ fn release_pr_candidates_retry_from_base_and_promote_after_merge() {
         }
     }
     git(root, &["merge", "--ff-only", "origin/release/pending"]);
-    assert_eq!(version_of(root, "lat_core"), "1.3.0-rc.2");
-    assert_eq!(version_of(root, "lat_mid"), "0.5.1-rc.2");
-    assert_eq!(version_of(root, "lat_cli"), "0.3.2-rc.2");
+    assert_eq!(version_of(root, "lat_core"), "1.3.0-rc.1");
+    assert_eq!(version_of(root, "lat_mid"), "0.5.1-rc.1");
+    assert_eq!(version_of(root, "lat_cli"), "0.3.2-rc.1");
     let before = commit_of(root, "origin/release/pending");
     trellis_github(root, &api)
         .args(["release", "pr"])
@@ -116,7 +116,7 @@ fn release_pr_candidates_retry_from_base_and_promote_after_merge() {
     assert!(!root.join(".changes/unreleased/lat_core-1.toml").exists());
     let log = fs::read_to_string(root.join(".fake/github-log")).unwrap();
     assert_eq!(log.matches("POST /repos/example/repo/pulls\n").count(), 1);
-    assert!(log.contains("| lat_core | 1.3.0-rc.2 | 1.3.0 | 1 |"));
+    assert!(log.contains("| lat_core | 1.3.0-rc.1 | 1.3.0 | 1 |"));
 }
 
 #[test]
@@ -125,7 +125,7 @@ fn release_pr_accepts_the_version_override_surface() {
         (
             vec!["--set", "lat_mid=1.0.0", "--pre", "rc"],
             "lat_mid",
-            "1.0.0-rc.1",
+            "1.0.0-rc.0",
         ),
         (
             vec!["--bump", "minor", "--bump", "lat_core=major"],

@@ -1,0 +1,5 @@
+component: version
+kind: Fixed
+body: |-
+  **`version plan` and `version apply` start prerelease counters at zero.** Use `--set PACKAGE=1.0.0 --pre rc` to prepare `1.0.0-rc.0`, then repeat `--pre rc` for `1.0.0-rc.1`. Fragments stay unreleased through each candidate; `--pre none` promotes to `1.0.0` and consumes them. Existing cycles continue from their current counter.
+time: 2026-11-06T12:22:46-08:00

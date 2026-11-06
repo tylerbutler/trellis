@@ -399,18 +399,18 @@ the current one are all errors before anything is written.
 
 #### Prereleases
 
-`--pre <label>` cuts a release candidate, and repeating it advances the
-counter within the same base version:
+`--pre <label>` starts a release candidate at `<label>.0`. Repeating it advances
+the counter within the same base version:
 
 ```sh
-trellis version apply --set lat_core=1.0.0 --pre rc   # 1.0.0-rc.1
-trellis version apply --pre rc                        # 1.0.0-rc.2
+trellis version apply --set lat_core=1.0.0 --pre rc   # 1.0.0-rc.0
+trellis version apply --pre rc                        # 1.0.0-rc.1
 trellis version apply --pre none                      # 1.0.0
 ```
 
 **Fragments survive a prerelease.** The candidate renders its changelog
 section, but the fragments behind it stay in `.changes/unreleased/`: they are
-still unreleased as far as `1.0.0` is concerned, and retiring them at `rc.1`
+still unreleased as far as `1.0.0` is concerned, and retiring them at `rc.0`
 would leave the final release with nothing to say. `--pre none` promotes the
 candidate to its final version and consumes them. This means an entry appears
 twice in `CHANGELOG.md`: once under the RC that shipped it, once under the
