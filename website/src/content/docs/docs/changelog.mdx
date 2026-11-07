@@ -361,15 +361,27 @@ trellis version apply --pre none                   # 1.0.0
 
 <Callout>
 
-**Fragments survive a prerelease.** The candidate renders its changelog section,
-but the fragments behind it stay in `.changes/unreleased/`: they are still
-unreleased as far as `1.0.0` is concerned, and retiring them at `rc.0` would
-leave the final release with nothing to say.
+**Each candidate includes only new changes.** Trellis removes its fragments
+from `.changes/unreleased/` and archives their source entries beside the
+candidate's Markdown section, in `.changes/<package>/v<prerelease>.toml`.
+Commit both files. If you configure a different changelog `dir`, trellis stores
+the archives there.
 
-The consequence is that an entry appears twice in `CHANGELOG.md`: once under
-the RC that shipped it, once under the final version. `version --json` reports
-[`fragments_retained`](/docs/json-output/) so a workflow can tell a cut RC
-from a completed release.
+`--pre none` combines those archived entries with any new unreleased fragments
+for the final version. For example, `1.0.0-rc.0` includes changes A and B,
+`1.0.0-rc.1` includes change C, and `1.0.0` includes A, B, and C plus any
+changes added after RC 1. Trellis keeps each candidate's section unchanged and
+uses the configured grouping and templates for the final rollup.
+
+The rollup includes only this package's candidates for the target version,
+including earlier labels such as `beta`. Retargeting with `--bump` or `--set`
+does not transfer archived entries from the old target. Dependency entries
+use the final dependency versions rather than earlier candidate versions.
+Archives stay alongside the release history after promotion; they do not
+become pending changes for the next release.
+
+[`fragments_retained`](/docs/json-output/) is true for a candidate because
+trellis retains its fragments in archives, not in `unreleased`.
 
 </Callout>
 
@@ -377,6 +389,10 @@ A prerelease labels the whole plan, [rippled dependents](#dependents-bump-too)
 included, so the workspace moves as one coherent candidate. A package that only
 gained fragments *after* the RC was cut still bumps normally under `--pre none`,
 so a late arrival never blocks the promotion.
+
+An explicit `version apply --pre <label>` advances packages already in the
+cycle even without new fragments. Such a candidate has no new source entries;
+`--pre none` can still promote it and collect its earlier candidates.
 
 Once a package sits at a prerelease, a plain `version apply` is an error
 rather than a silent bump to the next release; leaving a cycle has to be

@@ -728,13 +728,14 @@ fn pre_cuts_a_release_candidate_and_keeps_the_fragments() {
         .assert()
         .success()
         .stdout(predicate::str::contains("lat_core: 1.2.0 -> 1.3.0-rc.0"))
-        .stdout(predicate::str::contains("kept fragments unreleased"));
+        .stdout(predicate::str::contains("archived prerelease fragments"));
     assert_eq!(version_of(root, "lat_core"), "1.3.0-rc.0");
-    // The section rendered, but the fragments behind it are still pending.
+    // The fragments leave unreleased, but remain available for the final rollup.
     let changelog = fs::read_to_string(root.join("packages/lat_core/CHANGELOG.md")).unwrap();
     assert!(changelog.contains("1.3.0-rc.0"), "{changelog}");
     assert!(changelog.contains("the 1.0 feature"), "{changelog}");
-    assert_eq!(unreleased_fragments(root), 1);
+    assert_eq!(unreleased_fragments(root), 0);
+    assert!(root.join(".changes/lat_core/v1.3.0-rc.0.toml").exists());
 }
 
 #[test]
@@ -759,7 +760,7 @@ fn pre_combines_with_an_exact_version() {
         .assert()
         .success();
     assert_eq!(version_of(root, "lat_mid"), "1.0.0-rc.0");
-    assert_eq!(unreleased_fragments(root), 1);
+    assert_eq!(unreleased_fragments(root), 0);
 
     // The base is settled now, so repeating only advances the counter.
     trellis(root)
@@ -767,7 +768,7 @@ fn pre_combines_with_an_exact_version() {
         .assert()
         .success();
     assert_eq!(version_of(root, "lat_mid"), "1.0.0-rc.1");
-    assert_eq!(unreleased_fragments(root), 1);
+    assert_eq!(unreleased_fragments(root), 0);
 
     trellis(root)
         .args(["version", "apply", "--pre", "none"])
@@ -790,13 +791,15 @@ fn repeating_pre_increments_the_candidate_within_one_base() {
         .success();
     assert_eq!(version_of(root, "lat_core"), "1.3.0-rc.0");
 
-    // Same fragments, second candidate: the base must not bump again.
+    // No new fragments, second candidate: the base must not bump again.
     trellis(root)
         .args(["version", "apply", "--pre", "rc"])
         .assert()
         .success();
     assert_eq!(version_of(root, "lat_core"), "1.3.0-rc.1");
-    assert_eq!(unreleased_fragments(root), 1);
+    assert_eq!(unreleased_fragments(root), 0);
+    let section = fs::read_to_string(root.join(".changes/lat_core/v1.3.0-rc.1.md")).unwrap();
+    assert!(!section.contains("the 1.0 feature"), "{section}");
 }
 
 #[test]
@@ -815,7 +818,7 @@ fn promote_finalizes_the_candidate_and_consumes_the_fragments() {
         .assert()
         .success();
     assert_eq!(version_of(root, "lat_core"), "1.3.0-rc.1");
-    assert_eq!(unreleased_fragments(root), 1);
+    assert_eq!(unreleased_fragments(root), 0);
 
     trellis(root)
         .args(["version", "apply", "--pre", "none"])
@@ -823,10 +826,183 @@ fn promote_finalizes_the_candidate_and_consumes_the_fragments() {
         .success()
         .stdout(predicate::str::contains("lat_core: 1.3.0-rc.1 -> 1.3.0"));
     assert_eq!(version_of(root, "lat_core"), "1.3.0");
-    // Only the final release retires them.
     assert_eq!(unreleased_fragments(root), 0);
-    let changelog = fs::read_to_string(root.join("packages/lat_core/CHANGELOG.md")).unwrap();
-    assert!(changelog.contains("the 1.0 feature"), "{changelog}");
+    let section = fs::read_to_string(root.join(".changes/lat_core/v1.3.0.md")).unwrap();
+    assert_eq!(section.matches("the 1.0 feature").count(), 1, "{section}");
+}
+
+#[test]
+fn prerelease_notes_are_incremental_and_the_final_release_rolls_them_up() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+    add_fragment(root, "lat_core", "Added", "first candidate feature");
+    trellis(root)
+        .args(["version", "apply", "--pre", "beta"])
+        .assert()
+        .success();
+    let first = fs::read_to_string(root.join(".changes/lat_core/v1.3.0-beta.0.md")).unwrap();
+
+    add_fragment(root, "lat_core", "Fixed", "second candidate fix");
+    trellis(root)
+        .args(["version", "apply", "--pre", "rc"])
+        .assert()
+        .success();
+    let second = fs::read_to_string(root.join(".changes/lat_core/v1.3.0-rc.0.md")).unwrap();
+    assert!(second.contains("second candidate fix"), "{second}");
+    assert!(!second.contains("first candidate feature"), "{second}");
+    assert_eq!(unreleased_fragments(root), 0);
+
+    add_fragment(root, "lat_core", "Fixed", "final release fix");
+    // A new fragment can reuse a consumed filename without replacing its history.
+    trellis(root)
+        .args(["version", "plan", "--pre", "none", "--json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"fragments\": 3"));
+    trellis(root)
+        .args(["version", "apply", "--pre", "none"])
+        .assert()
+        .success();
+    let final_section = fs::read_to_string(root.join(".changes/lat_core/v1.3.0.md")).unwrap();
+    for body in [
+        "first candidate feature",
+        "second candidate fix",
+        "final release fix",
+    ] {
+        assert_eq!(final_section.matches(body).count(), 1, "{final_section}");
+    }
+    assert_eq!(
+        fs::read_to_string(root.join(".changes/lat_core/v1.3.0-beta.0.md")).unwrap(),
+        first
+    );
+    assert_eq!(
+        fs::read_to_string(root.join(".changes/lat_core/v1.3.0-rc.0.md")).unwrap(),
+        second
+    );
+    assert_eq!(unreleased_fragments(root), 0);
+    trellis(root)
+        .args(["version", "plan", "--json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"bumped\": []"));
+
+    add_fragment(root, "lat_core", "Fixed", "next release fix");
+    trellis(root).args(["version", "apply"]).assert().success();
+    let next = fs::read_to_string(root.join(".changes/lat_core/v1.3.1.md")).unwrap();
+    assert!(next.contains("next release fix"), "{next}");
+    assert!(!next.contains("candidate"), "{next}");
+}
+
+#[test]
+fn promotion_only_rolls_up_prereleases_for_its_target_version() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+    add_fragment(root, "lat_core", "Added", "old target feature");
+    trellis(root)
+        .args(["version", "apply", "--pre", "rc"])
+        .assert()
+        .success();
+    add_fragment(root, "lat_core", "Breaking", "new target feature");
+    trellis(root)
+        .args(["version", "apply", "--set", "lat_core=2.0.0", "--pre", "rc"])
+        .assert()
+        .success();
+    trellis(root)
+        .args(["version", "apply", "--pre", "none"])
+        .assert()
+        .success();
+    let section = fs::read_to_string(root.join(".changes/lat_core/v2.0.0.md")).unwrap();
+    assert!(section.contains("new target feature"), "{section}");
+    assert!(!section.contains("old target feature"), "{section}");
+}
+
+#[test]
+fn prerelease_rollup_preserves_categories_and_custom_templates() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+    let config = fs::read_to_string(root.join("gleam.toml")).unwrap();
+    write(
+        &root.join("gleam.toml"),
+        &format!(
+            "{config}\n[tools.trellis.changelog]\n\
+             dir = \"release_notes\"\n\
+             categories = [\"build\"]\n\
+             change_format = \"- {{{{ version }}}}: {{{{ body }}}}\"\n"
+        ),
+    );
+    write(
+        &root.join("release_notes/unreleased/feature.toml"),
+        "package = \"lat_core\"\nkind = \"Added\"\ncategory = \"build\"\n\
+         body = \"\"\"first line\nsecond line\"\"\"\n",
+    );
+    trellis(root)
+        .args(["version", "apply", "--pre", "rc"])
+        .assert()
+        .success();
+    let first = fs::read_to_string(root.join("release_notes/lat_core/v1.3.0-rc.0.md")).unwrap();
+    assert!(
+        first.contains("- 1.3.0-rc.0: first line\nsecond line"),
+        "{first}"
+    );
+    trellis(root)
+        .args(["version", "apply", "--pre", "none"])
+        .assert()
+        .success();
+    let section = fs::read_to_string(root.join("release_notes/lat_core/v1.3.0.md")).unwrap();
+    assert!(section.contains("### build"), "{section}");
+    assert!(
+        section.contains("- 1.3.0: first line\nsecond line"),
+        "{section}"
+    );
+    assert!(!section.contains("- 1.3.0-rc.0:"), "{section}");
+}
+
+#[test]
+fn exact_prerelease_versions_also_archive_their_fragments() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+    add_fragment(root, "lat_core", "Added", "candidate feature");
+    let output = trellis(root)
+        .args(["version", "apply", "--set", "lat_core=1.3.0-rc.1", "--json"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(document["fragments_retained"], true);
+    assert_eq!(unreleased_fragments(root), 0);
+    trellis(root)
+        .args(["version", "apply", "--pre", "none"])
+        .assert()
+        .success();
+    let section = fs::read_to_string(root.join(".changes/lat_core/v1.3.0.md")).unwrap();
+    assert_eq!(section.matches("candidate feature").count(), 1, "{section}");
+}
+
+#[test]
+fn malformed_prerelease_archive_fails_before_any_version_is_written() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+    add_fragment(root, "lat_core", "Added", "candidate feature");
+    trellis(root)
+        .args(["version", "apply", "--pre", "rc"])
+        .assert()
+        .success();
+    write(
+        &root.join(".changes/lat_core/v1.3.0-rc.0.toml"),
+        "fragments = invalid",
+    );
+    trellis(root)
+        .args(["version", "apply", "--pre", "none"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("v1.3.0-rc.0.toml"));
+    assert_eq!(version_of(root, "lat_core"), "1.3.0-rc.0");
+    assert_eq!(version_of(root, "lat_mid"), "0.5.1-rc.0");
 }
 
 #[test]
@@ -853,6 +1029,10 @@ fn a_prerelease_labels_the_whole_plan_including_ripples() {
     assert_eq!(version_of(root, "lat_core"), "1.3.0");
     assert_eq!(version_of(root, "lat_mid"), "0.5.1");
     assert_eq!(version_of(root, "lat_cli"), "0.3.2");
+    let section = fs::read_to_string(root.join(".changes/lat_mid/v0.5.1.md")).unwrap();
+    assert!(section.contains("lat_core"), "{section}");
+    assert!(section.contains("1.3.0"), "{section}");
+    assert!(!section.contains("-rc."), "{section}");
 }
 
 #[test]

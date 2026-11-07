@@ -633,6 +633,67 @@ fn prerelease_changelog_check_with_no_branch_fragments_has_no_release_preview() 
 }
 
 #[test]
+fn prerelease_changelog_preview_excludes_archived_candidate_changes() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+    add_fragment(root, "lat_core", "Added", "archived candidate feature");
+    trellis(root)
+        .args(["version", "apply", "--pre", "rc"])
+        .assert()
+        .success();
+    let archive_path = root.join(".changes/lat_core/v1.3.0-rc.0.toml");
+    let archive = fs::read_to_string(&archive_path).unwrap();
+    common::init_repo(root);
+    add_fragment(root, "lat_core", "Fixed", "new branch fix");
+    git(root, &["add", "."]);
+    git(root, &["commit", "-m", "new branch change"]);
+
+    let output = trellis(root)
+        .args([
+            "changelog",
+            "check",
+            "--base",
+            "HEAD^",
+            "--head",
+            "HEAD",
+            "--format",
+            "json",
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let payload: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let preview = payload["preview"].as_str().unwrap();
+    assert!(preview.contains("new branch fix"), "{preview}");
+    assert!(!preview.contains("archived candidate feature"), "{preview}");
+    assert_eq!(payload["packages"][0]["fragments"], 1);
+    assert_eq!(fs::read_to_string(&archive_path).unwrap(), archive);
+
+    let output = trellis(root)
+        .args([
+            "changelog",
+            "check",
+            "--base",
+            "HEAD",
+            "--head",
+            "HEAD",
+            "--format",
+            "json",
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let payload: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(
+        !payload["preview"]
+            .as_str()
+            .unwrap()
+            .contains("### Release preview")
+    );
+}
+
+#[test]
 fn prerelease_changelog_check_still_rejects_invalid_fragments() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();

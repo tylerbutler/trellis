@@ -20,7 +20,7 @@ pub struct PlanEntry {
     pub name: String,
     pub current: semver::Version,
     pub next: semver::Version,
-    /// How many fragments the package owns on disk.
+    /// Number of source fragments rendered, including archives on promotion.
     pub fragments: usize,
     /// Workspace dependencies that bumped in this same plan, sorted by name.
     /// Empty when nothing rippled into this package.
@@ -28,6 +28,8 @@ pub struct PlanEntry {
     /// The changelog entries `updated_deps` renders as. Held alongside rather
     /// than derived on demand so `apply` renders exactly what `plan` reported.
     pub generated: Vec<changelog::Fragment>,
+    /// Source fragments from earlier candidates of the current target.
+    archived: Vec<changelog::Fragment>,
     /// Whether `current` was itself a prerelease, so `--pre none` can tell a
     /// promotion from a package that merely joined the plan late.
     was_prerelease: bool,
@@ -126,15 +128,32 @@ pub fn compute_plan_from(
             .collect();
 
         let owned: Vec<&changelog::Fragment> = fragments.for_package(&member.name).collect();
-        if owned.is_empty() && generated.is_empty() {
-            continue;
-        }
-        let all: Vec<&changelog::Fragment> =
-            owned.iter().copied().chain(generated.iter()).collect();
-        let derived = changelog::derive_bump(&all, &config.kinds)
-            .with_context(|| format!("cannot compute next version for `{}`", member.name))?;
         let current = semver::Version::parse(member.version())
             .with_context(|| format!("`{}` has an invalid version", member.name))?;
+        if owned.is_empty()
+            && generated.is_empty()
+            && (current.pre.is_empty() || overrides.previewing())
+        {
+            continue;
+        }
+        let archived = if overrides.previewing() {
+            Vec::new()
+        } else {
+            changelog::load_prerelease_fragments(workspace, &member.name, &current)?
+        };
+        let all: Vec<&changelog::Fragment> = owned
+            .iter()
+            .copied()
+            .chain(generated.iter())
+            .chain(archived.iter())
+            .collect();
+        // A candidate with no new changes can still advance or be promoted.
+        let derived = if all.is_empty() {
+            crate::config::Bump::Patch
+        } else {
+            changelog::derive_bump(&all, &config.kinds)
+                .with_context(|| format!("cannot compute next version for `{}`", member.name))?
+        };
         let next = overrides.resolve(&member.name, &current, derived)?;
         bumped.insert(
             &member.name,
@@ -146,9 +165,15 @@ pub fn compute_plan_from(
         plan.push(PlanEntry {
             member: idx,
             name: member.name.clone(),
-            fragments: owned.len(),
+            fragments: owned.len()
+                + if next.pre.is_empty() {
+                    archived.len()
+                } else {
+                    0
+                },
             updated_deps,
             generated,
+            archived,
             was_prerelease: !current.pre.is_empty(),
             current,
             next,
@@ -181,11 +206,12 @@ fn validate_named_packages(workspace: &Workspace, overrides: &Overrides) -> Resu
 
 pub fn plan(workspace: &Workspace, overrides: &Overrides, json: bool) -> Result<()> {
     let plan = compute_plan(workspace, overrides)?;
+    let fragments_retained = plan.iter().any(|entry| !entry.next.pre.is_empty());
     if json {
         let document = VersionPlanDocument {
             schema: VersionPlanDocument::SCHEMA,
             bumped: bumps(&plan),
-            fragments_retained: overrides.retains_fragments(),
+            fragments_retained,
         };
         println!("{}", serde_json::to_string_pretty(&document)?);
     } else if plan.is_empty() {
@@ -201,10 +227,9 @@ pub fn plan(workspace: &Workspace, overrides: &Overrides, json: bool) -> Result<
                 crate::term::dim(&format!("({})", entry.why()))
             );
         }
-        if overrides.retains_fragments() {
+        if fragments_retained {
             crate::status!(
-                "{} prerelease — fragments stay unreleased and will be released again \
-                 by the final version",
+                "{} prerelease — fragments will be archived for the final version",
                 crate::term::note("note:")
             );
         }
@@ -226,6 +251,9 @@ impl PlanEntry {
                 .map(|dep| dep.name.as_str())
                 .collect();
             parts.push(format!("dependencies: {}", names.join(", ")));
+        }
+        if parts.is_empty() && self.was_prerelease {
+            parts.push("prerelease".to_string());
         }
         parts.join(", ")
     }
@@ -256,6 +284,7 @@ fn bumps(plan: &[PlanEntry]) -> Vec<Bump<'_>> {
 /// version bumps, then batch fragments and rebuild each CHANGELOG.md.
 pub fn apply(workspace: &Workspace, overrides: &Overrides, json: bool) -> Result<bool> {
     let plan = compute_plan(workspace, overrides)?;
+    let fragments_retained = plan.iter().any(|entry| !entry.next.pre.is_empty());
     if plan.is_empty() {
         if json {
             let document = VersionApplyDocument {
@@ -279,13 +308,20 @@ pub fn apply(workspace: &Workspace, overrides: &Overrides, json: bool) -> Result
         let member = &workspace.members[entry.member];
         let member_fragments: Vec<&changelog::Fragment> =
             fragments.for_package(&entry.name).collect();
-        // Generated ripple entries render alongside the real ones, but are
-        // absent from what `consume_fragments` is later given.
+        let archived = entry.archived.iter().filter(|_| entry.next.pre.is_empty());
+        // Dependency entries use the versions settled by this plan, not the
+        // earlier candidates' dependency versions.
         let rendered: Vec<&changelog::Fragment> = member_fragments
             .iter()
             .copied()
+            .chain(archived)
             .chain(entry.generated.iter())
             .collect();
+        let archive = if entry.next.pre.is_empty() {
+            None
+        } else {
+            Some(changelog::render_prerelease_archive(&member_fragments)?)
+        };
         let next = entry.next.clone();
         let next_text = next.to_string();
         let tag = workspace.config.exact_tag(&entry.name, &next_text);
@@ -322,6 +358,7 @@ pub fn apply(workspace: &Workspace, overrides: &Overrides, json: bool) -> Result
             manifest_path,
             manifest,
             adoption,
+            archive,
         });
     }
 
@@ -384,19 +421,16 @@ pub fn apply(workspace: &Workspace, overrides: &Overrides, json: bool) -> Result
             &prepared.next,
             &prepared.section,
             &prepared.changelog,
+            prepared.archive.as_deref(),
         )
         .with_context(|| format!("failed to write changelog for `{}`", prepared.name))?;
     }
-    // A prerelease renders its section but leaves the fragments in place: they
-    // are still unreleased as far as the final version is concerned, and
-    // retiring them at rc.0 would leave the eventual 1.0.0 with nothing to say.
-    if !overrides.retains_fragments() {
-        for prepared in &prepared_versions {
-            let member_fragments: Vec<&changelog::Fragment> =
-                fragments.for_package(&prepared.name).collect();
-            changelog::consume_fragments(&member_fragments)
-                .with_context(|| format!("failed to consume fragments for `{}`", prepared.name))?;
-        }
+    // Archives have been written before removing any unreleased source.
+    for prepared in &prepared_versions {
+        let member_fragments: Vec<&changelog::Fragment> =
+            fragments.for_package(&prepared.name).collect();
+        changelog::consume_fragments(&member_fragments)
+            .with_context(|| format!("failed to consume fragments for `{}`", prepared.name))?;
     }
 
     let patched_files: Vec<&str> = prepared_lockfiles
@@ -410,7 +444,7 @@ pub fn apply(workspace: &Workspace, overrides: &Overrides, json: bool) -> Result
             bumped: bumps(&plan),
             lockfiles: patched_files,
             adopted: adopted_files.iter().map(String::as_str).collect(),
-            fragments_retained: overrides.retains_fragments(),
+            fragments_retained,
         };
         println!("{}", serde_json::to_string_pretty(&document)?);
     } else {
@@ -433,8 +467,8 @@ pub fn apply(workspace: &Workspace, overrides: &Overrides, json: bool) -> Result
                 crate::term::ok("adopted")
             );
         }
-        if overrides.retains_fragments() {
-            crate::status!("kept fragments unreleased for the final version");
+        if fragments_retained {
+            crate::status!("archived prerelease fragments for the final version");
         }
     }
     Ok(true)
@@ -459,4 +493,5 @@ struct PreparedVersion {
     manifest: String,
     /// Pre-trellis changelog history to preserve, on a first release.
     adoption: Option<changelog::Adoption>,
+    archive: Option<String>,
 }
