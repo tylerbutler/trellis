@@ -11,6 +11,7 @@ pub mod lockfile;
 pub mod pin;
 pub mod publish;
 pub mod release;
+mod release_state;
 pub mod run;
 pub mod tag;
 pub mod version;

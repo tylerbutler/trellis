@@ -15,6 +15,13 @@ pub struct GitHubClient {
     repo: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReleasePr {
+    pub number: u64,
+    pub url: String,
+    pub head: String,
+}
+
 impl GitHubClient {
     /// A client for the repository `root` is a checkout of.
     ///
@@ -41,18 +48,105 @@ impl GitHubClient {
         })
     }
 
-    /// The number of the open PR whose head is `branch`, if one exists.
-    pub fn find_open_pr(&self, branch: &str) -> Result<Option<u64>> {
-        let url = self.url(&format!("/pulls?head={}:{branch}&state=open", self.owner));
+    /// Only same-repository PRs with the requested head and base can own a release.
+    pub fn find_open_pr(&self, branch: &str, base: &str) -> Result<Option<ReleasePr>> {
+        let mut found = None;
+        for page in 1.. {
+            let url = self.url(&format!(
+                "/pulls?head={}:{}&state=open&per_page=100&page={page}",
+                self.owner,
+                Self::query_value(branch),
+            ));
+            let body = expect_status("GET", &url, 200, self.get(&url)?)?;
+            let prs = body
+                .as_array()
+                .context("GitHub PR listing is not an array")?;
+            for pr in prs {
+                if let Some(pr) = self.match_release_pr(pr, branch, base)?
+                    && found.replace(pr).is_some()
+                {
+                    bail!(
+                        "multiple same-repository release PRs match `{branch}` -> `{base}`; close the conflicting PR"
+                    );
+                }
+            }
+            if prs.len() < 100 {
+                break;
+            }
+        }
+        Ok(found)
+    }
+
+    fn match_release_pr(
+        &self,
+        pr: &serde_json::Value,
+        branch: &str,
+        base: &str,
+    ) -> Result<Option<ReleasePr>> {
+        let repo = format!("{}/{}", self.owner, self.repo);
+        let text = |pointer| {
+            pr.pointer(pointer)
+                .and_then(serde_json::Value::as_str)
+                .with_context(|| format!("GitHub PR response is missing `{pointer}`"))
+        };
+        if pr
+            .pointer("/head/repo")
+            .is_some_and(serde_json::Value::is_null)
+        {
+            return Ok(None);
+        }
+        if !text("/head/repo/full_name")?.eq_ignore_ascii_case(&repo)
+            || !text("/base/repo/full_name")?.eq_ignore_ascii_case(&repo)
+        {
+            return Ok(None);
+        }
+        if text("/head/ref")? != branch || text("/state")? != "open" {
+            return Ok(None);
+        }
+        if text("/base/ref")? != base {
+            bail!(
+                "release branch `{branch}` already has a PR targeting `{}`; choose a different --branch or correct its base",
+                text("/base/ref")?
+            );
+        }
+        let head = text("/head/sha")?;
+        if !matches!(head.len(), 40 | 64) || !head.bytes().all(|b| b.is_ascii_hexdigit()) {
+            bail!("GitHub release PR has an invalid head SHA");
+        }
+        let url = text("/html_url")?;
+        if !url.starts_with("https://") || url.chars().any(char::is_control) {
+            bail!("GitHub release PR has an invalid html_url");
+        }
+        Ok(Some(ReleasePr {
+            number: pr["number"]
+                .as_u64()
+                .filter(|n| *n > 0)
+                .context("GitHub release PR has no number")?,
+            url: url.to_string(),
+            head: head.to_string(),
+        }))
+    }
+
+    pub fn check_open_pr(&self, expected: &ReleasePr, branch: &str, base: &str) -> Result<()> {
+        let url = self.url(&format!("/pulls/{}", expected.number));
         let body = expect_status("GET", &url, 200, self.get(&url)?)?;
-        Ok(body
-            .as_array()
-            .and_then(|prs| prs.first())
-            .and_then(|pr| pr["number"].as_u64()))
+        let live = self.match_release_pr(&body, branch, base)?.context(
+            "release PR was closed, merged, or retargeted; retry after checking its state",
+        )?;
+        if live != *expected {
+            bail!("release PR changed during preparation; retry against its current head");
+        }
+        Ok(())
     }
 
     /// Open a PR and return its URL.
-    pub fn create_pr(&self, base: &str, head: &str, title: &str, body: &str) -> Result<String> {
+    pub fn create_pr(
+        &self,
+        base: &str,
+        head: &str,
+        title: &str,
+        body: &str,
+    ) -> Result<(u64, String)> {
         let url = self.url("/pulls");
         let payload = serde_json::json!({
             "base": base,
@@ -61,10 +155,30 @@ impl GitHubClient {
             "body": body,
         });
         let response = expect_status("POST", &url, 201, self.send(Write::Post, &url, &payload)?)?;
-        response["html_url"]
+        let url = response["html_url"]
             .as_str()
             .map(str::to_string)
-            .ok_or_else(|| anyhow!("GitHub API POST {url}: response has no html_url"))
+            .ok_or_else(|| anyhow!("GitHub API POST {url}: response has no html_url"))?;
+        if !url.starts_with("https://") || url.chars().any(char::is_control) {
+            bail!("GitHub PR creation returned an invalid html_url");
+        }
+        let number = response["number"]
+            .as_u64()
+            .filter(|n| *n > 0)
+            .context("GitHub PR creation returned no number")?;
+        Ok((number, url))
+    }
+
+    fn query_value(text: &str) -> String {
+        text.bytes()
+            .map(|b| {
+                if b.is_ascii_alphanumeric() || b"-_./".contains(&b) {
+                    char::from(b).to_string()
+                } else {
+                    format!("%{b:02X}")
+                }
+            })
+            .collect()
     }
 
     /// Retitle and re-body an existing PR.

@@ -55,6 +55,7 @@ commands pretty-print, some emit one line for shell-variable capture).
 | `changelog check --format json` | `trellis.changelog_check/2`<br />`{schema, ok, strictness, has_entries, needs_entry, invalid_fragments[], packages[], preview}` |
 | `version plan --json` | `trellis.version_plan/1`<br />`{schema, bumped[], fragments_retained}` |
 | `version apply --json` | `trellis.version_apply/1`<br />`{schema, bumped[], lockfiles[], adopted[], fragments_retained}` |
+| `release pr --json` | `trellis.release_pr/1`<br />`{schema, outcome, base, branch, pr_number?, pr_url?, pr_action?, bumped[]}` |
 | `tag plan --json` | `trellis.tag_plan/2`<br />`{schema, tags[]}` |
 | `ci tag-package --json` | `trellis.ci_tag_package/1`<br />`{schema, name, path, version, tag_kind, tag_version \| tag_series}` |
 | `doctor --format json` | `trellis.doctor/1`<br />`{schema, ok, packages, configless, auto_members, findings[], fixes[], applied[], package_lifecycles[]}` |
@@ -73,6 +74,13 @@ Notes:
   a [prerelease](/docs/changelog/#prereleases): trellis archives its fragments
   for the final rollup and removes them from `unreleased`. This also applies
   to a prerelease version specified with `--set`.
+- `release pr` uses the same `bumped[]` shape. `outcome` is `prepared`,
+  `unchanged`, or `no_changes`. A prepared result includes `pr_action: created`
+  or `updated` and PR identity. An unchanged result has no `pr_action` and
+  reports the evaluated, unapplied plan; a no-change result has an empty
+  `bumped`. Optional identity fields are absent when unknown. Errors do not
+  emit success-shaped results. See [CI outcomes](/docs/publishing/#ci-outcomes)
+  for the equivalent `--github-output` keys.
 - `run`/`exec` share the `results[]` shape: `package`, `path`, `status`
   (`success` | `failed` | `skipped`), `duration_ms`. A failed entry also
   carries `exit_code` and `command`. `duration_ms`'s presence is stable, its

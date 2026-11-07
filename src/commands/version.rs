@@ -130,7 +130,10 @@ pub fn compute_plan_from(
         let owned: Vec<&changelog::Fragment> = fragments.for_package(&member.name).collect();
         let current = semver::Version::parse(member.version())
             .with_context(|| format!("`{}` has an invalid version", member.name))?;
-        if owned.is_empty() && generated.is_empty() && current.pre.is_empty() {
+        if owned.is_empty()
+            && generated.is_empty()
+            && (current.pre.is_empty() || overrides.previewing())
+        {
             continue;
         }
         let archived = changelog::load_prerelease_fragments(workspace, &member.name, &current)?;
@@ -254,7 +257,7 @@ impl PlanEntry {
 
 /// `version plan` and `version apply` report the same entry shape under the
 /// same `bumped` key, so they share one conversion.
-fn bumps(plan: &[PlanEntry]) -> Vec<Bump<'_>> {
+pub(crate) fn bumps(plan: &[PlanEntry]) -> Vec<Bump<'_>> {
     plan.iter()
         .map(|entry| Bump {
             name: &entry.name,

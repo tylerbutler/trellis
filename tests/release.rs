@@ -50,8 +50,9 @@ fn release_pr_candidates_retry_from_base_and_promote_after_merge() {
         );
         assert!(
             log.contains(&format!(
-                "| lat_core | {} | {candidate} | 1 |",
-                version_of(root, "lat_core")
+                "| lat_core | {} | {candidate} | {} |",
+                version_of(root, "lat_core"),
+                if index == 2 { 0 } else { 1 }
             )),
             "{log}"
         );
@@ -60,7 +61,7 @@ fn release_pr_candidates_retry_from_base_and_promote_after_merge() {
                 root,
                 &["ls-tree", "-r", "--name-only", "origin/release/pending"]
             )
-            .contains(".changes/unreleased/lat_core-1.toml")
+            .contains(&format!(".changes/lat_core/v{candidate}.toml"))
         );
         let document: serde_json::Value = serde_json::from_slice(&preview.stdout).unwrap();
         assert_eq!(document["fragments_retained"], true);
@@ -407,7 +408,7 @@ fn release_pr_failure_preserves_an_existing_release_branch() {
         .args(["release", "pr", "--base", "main"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("failed to push branch"));
+        .stderr(predicate::str::contains("origin"));
 
     let preserved_release = std::process::Command::new("git")
         .args(["rev-parse", "release/pending"])

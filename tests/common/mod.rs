@@ -221,6 +221,10 @@ pub fn mock_github(root: &Path) -> String {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
     std::fs::create_dir_all(root.join(".fake")).unwrap();
+    let exclude = root.join(".git/info/exclude");
+    let mut exclusions = std::fs::read_to_string(&exclude).unwrap_or_default();
+    exclusions.push_str("\n.fake/\n");
+    write(&exclude, &exclusions);
     let root: PathBuf = root.to_path_buf();
     std::thread::spawn(move || {
         for stream in listener.incoming() {
@@ -276,7 +280,7 @@ fn handle(stream: &mut TcpStream, root: &Path) {
         .unwrap();
     writeln!(log, "{method} {target}\n{body}\n---").unwrap();
 
-    let (status, response) = route(&method, &path, &body, root);
+    let (status, response) = route(&method, &path, &target, &body, root);
     let _ = stream.write_all(
         format!(
             "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{response}",
@@ -286,16 +290,86 @@ fn handle(stream: &mut TcpStream, root: &Path) {
     );
 }
 
-fn route(method: &str, path: &str, body: &str, root: &Path) -> (&'static str, String) {
+fn mock_pr(root: &Path, number: u64) -> serde_json::Value {
+    let output = std::process::Command::new("git")
+        .args(["rev-parse", "origin/release/pending"])
+        .current_dir(root)
+        .output()
+        .unwrap();
+    let head = if output.status.success() {
+        String::from_utf8(output.stdout).unwrap().trim().to_string()
+    } else {
+        "0000000000000000000000000000000000000000".to_string()
+    };
+    serde_json::json!({
+        "number": number, "state": "open",
+        "html_url": format!("https://github.com/example/repo/pull/{number}"),
+        "head": {"ref": "release/pending", "sha": head, "repo": {"full_name": "example/repo"}},
+        "base": {"ref": "main", "repo": {"full_name": "example/repo"}}
+    })
+}
+
+fn route(
+    method: &str,
+    path: &str,
+    target: &str,
+    body: &str,
+    root: &Path,
+) -> (&'static str, String) {
     // Paths are /repos/{owner}/{repo}/<resource...>.
     let parts: Vec<&str> = path.trim_start_matches('/').split('/').collect();
     let resource = (parts.first().copied(), parts.get(3).copied());
     match (method, resource, parts.get(4).copied()) {
         ("GET", (Some("repos"), Some("pulls")), None) => {
+            if root.join(".fake/fail-pr").exists() {
+                return (
+                    "500 Internal Server Error",
+                    r#"{"message":"PR API unavailable"}"#.to_string(),
+                );
+            }
+            let page = target.split("page=").last().unwrap_or("1");
+            let file = if page == "1" {
+                ".fake/pr-list".to_string()
+            } else {
+                format!(".fake/pr-list-{page}")
+            };
+            let list =
+                std::fs::read_to_string(root.join(file)).unwrap_or_else(|_| "[]".to_string());
+            let Ok(mut list) = serde_json::from_str::<serde_json::Value>(&list) else {
+                return ("200 OK", list);
+            };
+            if !list.is_array() {
+                return ("200 OK", list.to_string());
+            }
+            for pr in list.as_array_mut().unwrap() {
+                if pr.get("head").is_none() {
+                    *pr = mock_pr(root, pr["number"].as_u64().unwrap());
+                }
+            }
+            ("200 OK", list.to_string())
+        }
+        ("GET", (Some("repos"), Some("pulls")), Some(number)) => {
+            if let Ok(detail) = std::fs::read_to_string(root.join(".fake/pr-detail")) {
+                return ("200 OK", detail);
+            }
+            let number: u64 = number.parse().unwrap();
             let list = std::fs::read_to_string(root.join(".fake/pr-list"))
                 .unwrap_or_else(|_| "[]".to_string());
-            ("200 OK", list)
+            let list: serde_json::Value = serde_json::from_str(&list).unwrap();
+            let mut pr = list
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|p| p["number"] == number)
+                .cloned()
+                .unwrap_or_else(|| mock_pr(root, number));
+            if pr.get("head").is_none() {
+                pr = mock_pr(root, number);
+            }
+            pr["head"]["sha"] = mock_pr(root, number)["head"]["sha"].clone();
+            ("200 OK", pr.to_string())
         }
+
         ("POST", (Some("repos"), Some("pulls")), None) => (
             "201 Created",
             r#"{"number":7,"html_url":"https://github.com/example/repo/pull/7"}"#.to_string(),

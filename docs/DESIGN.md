@@ -662,8 +662,32 @@ requirement of the tool; both shapes are supported.
 `examples/gleam-hex-release.yml` implements the publish-then-tag shape for
 Gleam/Hex, separately from trellis's own Cargo pipeline. `release pr` shares
 the version override parser and uses the same overrides for planning and
-application. Each candidate is regenerated from its selected base; fragments
-remain pending until stable promotion, including rippled dependents.
+application. Each candidate is regenerated from its selected base. Source
+fragments move into immutable candidate archives; promotion rolls up the
+archives for the current stable target and any new unreleased fragments.
+
+Release preparation can opt into pending intent resumption, committed
+candidate-mode continuation, and unchanged-content skipping. Successful
+preparations commit `<changelog.dir>/release.toml` with schema
+`trellis.release_intent/1`. Semantic overrides are stored independently of
+generated versions and historical fragment archives. Explicit fields replace
+only matching inherited fields; promotion removes inherited pins/bumps for
+existing candidates while retaining targets for stable joining packages.
+Only same-repository open PRs can supply pending intent, and the selected
+immutable head and its source versions are validated before replacement.
+
+Automatic continuation never promotes and never advances from unchanged
+release inputs. Native state locates the candidate preparation commit;
+legacy candidates use verified parsed-manifest and release-section history,
+with a separate baseline per package. Comparisons use post-application trees
+so archive consumption and generated versions are not new release input.
+Relevant fragments, source/runtime files, and release configuration count;
+bundle ownership is resolved on both baseline and current trees. Missing
+history or inconsistent intent is an error, not an inferred mode or no-op.
+
+`release pr --json` and `--github-output` report `prepared`, `unchanged`, or
+`no_changes`, with the package plan and available PR identity. They do not
+authorize publication or replace workflow concurrency/publication gates.
 
 One concurrency group serializes automatic stable preparation, manual
 candidate/promotion requests, and merge publication without cancellation.
