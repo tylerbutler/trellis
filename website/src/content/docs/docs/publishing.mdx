@@ -208,10 +208,10 @@ lifecycle](/docs/configuration-reference/#release-lifecycle).
 
 ## Bundling private dependencies
 
-Use source bundling when a Hex package needs code from a workspace package
-that you do not want to publish on Hex. Keep separate packages for development;
-trellis copies the selected dependency's source into the publishing package
-for release.
+Use source bundling when a releasable package needs code from a workspace
+package that you do not want to publish on Hex. Hex bundles combine source
+into one publishing package. [Git-only bundles](#git-only-bundles) retain
+repository paths and package identities.
 
 <Callout type="caution">
 
@@ -242,12 +242,13 @@ In `packages/lib_a/gleam.toml`, keep the normal path dependency:
 lib_b = { path = "../lib_b" }
 ```
 
-The `publish.bundle` keys are exact publishing package names, not paths or
-globs. List each direct non-Hex runtime dependency. A selected package must
+The `publish.bundle` keys are exact releasable package names, not paths or
+globs; owners must have lifecycle `hex` or `git_only`. For a Hex owner, list
+each direct non-Hex runtime dependency. A selected package must
 have lifecycle `workspace` or `git_only`; bundling does not change its lifecycle.
 Trellis also includes its transitive non-Hex runtime path dependencies once,
 but keeps Hex packages as external requirements. It does not include bundled
-packages' tests or dev dependencies.
+packages' tests or dev dependencies in the combined Hex package.
 
 For example, these workspace sources:
 
@@ -307,7 +308,7 @@ predict that future dependency combination; the consumer's build must check it.
 
 ### Compatibility and release notes
 
-Trellis preserves module names and imports, including native Erlang and
+For Hex bundles, trellis preserves module names and imports, including native Erlang and
 JavaScript source files and their local source helpers. It preserves
 `internal_modules` rules, including each package's defaults, and rejects
 patterns that would make another package's public modules internal.
@@ -321,19 +322,55 @@ but rejects references to removed bundled applications. Native code must not
 rely on the bundled package's former OTP application identity; trellis cannot
 detect dynamic application-name references.
 
-Write a changelog fragment for each publishing package affected by a change
+Write a changelog fragment for each releasable bundle owner affected by a change
 in bundled code. `changelog check` includes direct and transitive bundled
 changes in those packages' checks. A `workspace` dependency still has no
 independent release or changelog; a `git_only` dependency keeps its own rules.
 
 <Callout type="caution">
 
-Bundling publishes the dependency's source in the Hex archive. Check that you
+Hex bundling publishes the dependency's source in the Hex archive. Check that you
 can redistribute it and that the publishing package declares the required
 licences. Trellis includes attributed licence notices in a standard licence
 file.
 
 </Callout>
+
+### Git-only bundles
+
+A `git_only` package can include a `workspace` dependency in its release
+without giving that dependency an independent version, tag, or changelog:
+
+```toml title="gleam.toml"
+[tools.trellis]
+members = ["packages/*"]
+
+[tools.trellis.publish.bundle]
+lib_a = ["lib_b"]
+
+[tools.trellis.publish.lifecycle]
+default = "git_only"
+packages = { "packages/lib_b" = "workspace" }
+```
+
+Keep `lib_b = { path = "../lib_b" }` in `packages/lib_a/gleam.toml`.
+List every direct `workspace` runtime dependency; independent `git_only`
+and `hex` dependencies do not need to be listed. Selected dependencies also
+include their transitive non-Hex runtime path dependencies.
+
+Trellis validates workspace paths and dependency coverage, and
+`changelog check` counts bundled changes against `lib_a`. It does not merge
+source, rewrite manifests, or create a Git release artifact. Your workflow
+must include the dependency directories at the paths the manifests require.
+Hex combined-package restrictions on module collisions, runtime Git
+dependencies, OTP startup modules, and `priv` directories do not apply to
+these separate package trees. Build and test them through your workspace
+tasks, and validate your release artifact separately.
+
+`trellis publish lib_a` and `trellis publish --tag lib_a-v1.0.0` reject a
+Git-only owner. `trellis publish --all-untagged` skips it, including
+prereleases. Bundling never changes a package's lifecycle or enables Hex
+publication.
 
 ## Lockfiles
 

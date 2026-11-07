@@ -1,4 +1,4 @@
-//! Prepare an isolated Hex package from explicitly bundled workspace source.
+//! Resolve private source bundles and prepare isolated Hex publishing packages.
 
 use crate::gleam::Requirement;
 use crate::rewrite;
@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use toml_edit::{Array, DocumentMut, Item, Table, value};
 
-/// Publisher index -> bundled member indices, in workspace topological order.
+/// Release owner index -> bundled member indices, in workspace topological order.
 pub fn resolve(workspace: &Workspace) -> Result<BTreeMap<usize, Vec<usize>>> {
     let mut bundles = BTreeMap::new();
     for (name, roots) in &workspace.config.publish.bundle {
@@ -16,8 +16,8 @@ pub fn resolve(workspace: &Workspace) -> Result<BTreeMap<usize, Vec<usize>>> {
             .member_index(name)
             .with_context(|| format!("publish.bundle: unknown publisher `{name}`"))?;
         ensure!(
-            workspace.members[publisher].publishes_to_hex(),
-            "publish.bundle: publisher `{name}` must have lifecycle `hex`"
+            workspace.members[publisher].releasable(),
+            "publish.bundle: publisher `{name}` must have lifecycle `git_only` or `hex`"
         );
         ensure!(!roots.is_empty(), "publish.bundle.{name} must not be empty");
         let mut selected = BTreeSet::new();
@@ -43,7 +43,9 @@ pub fn resolve(workspace: &Workspace) -> Result<BTreeMap<usize, Vec<usize>>> {
         for &idx in workspace.runtime_deps_of(publisher) {
             let dep = &workspace.members[idx];
             ensure!(
-                dep.publishes_to_hex() || selected.contains(&dep.name),
+                dep.lifecycle
+                    .available_to(workspace.members[publisher].lifecycle)
+                    || selected.contains(&dep.name),
                 "publish.bundle.{name}: direct non-Hex dependency `{}` must be listed",
                 dep.name
             );
