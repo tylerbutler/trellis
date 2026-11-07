@@ -1265,7 +1265,7 @@ checksum = "009dbb7700f11c55ef83aebbe4c0e9cf1f1ac0844bd8d6f00dc38f302026e13a"
 
 [[package]]
 name = "trellis-gleam"
-version = "1.2.1"
+version = "1.2.2"
 dependencies = [
  "anyhow",
  "assert_cmd",

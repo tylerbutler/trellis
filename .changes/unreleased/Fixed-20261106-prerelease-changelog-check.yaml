@@ -1,5 +1,0 @@
-component: changelog
-kind: Fixed
-body: |-
-  **`trellis changelog check` now accepts packages at prerelease versions.** The release preview shows the final version, such as `1.0.0-rc.0` to `1.0.0`, without another bump. JSON and GitHub outputs remain available, and missing or invalid fragments still fail the check under the same rules. `version plan` and `version apply` still require an explicit prerelease choice.
-time: 2026-11-06T17:38:16.791-08:00

@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v1.2.2 - 2026-11-07
+
+
+### changelog
+
+#### Fixed
+
+- **`trellis changelog check` now accepts packages at prerelease versions.** The release preview shows the final version, such as `1.0.0-rc.0` to `1.0.0`, without another bump. JSON and GitHub outputs remain available, and missing or invalid fragments still fail the check under the same rules. `version plan` and `version apply` still require an explicit prerelease choice.
+
 ## v1.2.1 - 2026-11-06
 
 
