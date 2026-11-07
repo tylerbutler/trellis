@@ -50,19 +50,30 @@ fn release_pr_candidates_retry_from_base_and_promote_after_merge() {
         );
         assert!(
             log.contains(&format!(
-                "| lat_core | {} | {candidate} | {} |",
-                version_of(root, "lat_core"),
-                if index == 2 { 0 } else { 1 }
+                "| lat_core | {} | {candidate} | 1 |",
+                version_of(root, "lat_core")
             )),
             "{log}"
         );
-        assert!(
-            git_stdout(
-                root,
-                &["ls-tree", "-r", "--name-only", "origin/release/pending"]
-            )
-            .contains(&format!(".changes/lat_core/v{candidate}.toml"))
+        let files = git_stdout(
+            root,
+            &["ls-tree", "-r", "--name-only", "origin/release/pending"],
         );
+        assert!(files.contains(&format!(".changes/lat_core/v{candidate}.toml")));
+        assert!(!files.contains(".changes/unreleased/lat_core-1.toml"));
+        let section = git_stdout(
+            root,
+            &[
+                "show",
+                &format!("origin/release/pending:.changes/lat_core/v{candidate}.md"),
+            ],
+        );
+        if index == 2 {
+            assert!(section.contains("next candidate fix"), "{section}");
+            assert!(!section.contains("candidate feature"), "{section}");
+        } else {
+            assert!(section.contains("candidate feature"), "{section}");
+        }
         let document: serde_json::Value = serde_json::from_slice(&preview.stdout).unwrap();
         assert_eq!(document["fragments_retained"], true);
         for bump in document["bumped"].as_array().unwrap() {
@@ -86,6 +97,9 @@ fn release_pr_candidates_retry_from_base_and_promote_after_merge() {
         }
         if index == 1 {
             git(root, &["merge", "--ff-only", "origin/release/pending"]);
+            add_fragment(root, "lat_core", "Fixed", "next candidate fix");
+            git(root, &["add", ".changes/unreleased"]);
+            git(root, &["commit", "-m", "next candidate"]);
         }
     }
     git(root, &["merge", "--ff-only", "origin/release/pending"]);
@@ -117,7 +131,14 @@ fn release_pr_candidates_retry_from_base_and_promote_after_merge() {
     assert!(!root.join(".changes/unreleased/lat_core-1.toml").exists());
     let log = fs::read_to_string(root.join(".fake/github-log")).unwrap();
     assert_eq!(log.matches("POST /repos/example/repo/pulls\n").count(), 1);
-    assert!(log.contains("| lat_core | 1.3.0-rc.1 | 1.3.0 | 1 |"));
+    assert!(log.contains("| lat_core | 1.3.0-rc.1 | 1.3.0 | 2 |"));
+    let section = fs::read_to_string(root.join(".changes/lat_core/v1.3.0.md")).unwrap();
+    assert_eq!(section.matches("candidate feature").count(), 1, "{section}");
+    assert_eq!(
+        section.matches("next candidate fix").count(),
+        1,
+        "{section}"
+    );
 }
 
 #[test]

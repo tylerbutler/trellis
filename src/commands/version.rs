@@ -136,7 +136,11 @@ pub fn compute_plan_from(
         {
             continue;
         }
-        let archived = changelog::load_prerelease_fragments(workspace, &member.name, &current)?;
+        let archived = if overrides.previewing() {
+            Vec::new()
+        } else {
+            changelog::load_prerelease_fragments(workspace, &member.name, &current)?
+        };
         let all: Vec<&changelog::Fragment> = owned
             .iter()
             .copied()
