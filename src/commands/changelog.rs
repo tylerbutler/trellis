@@ -383,7 +383,7 @@ fn plan_releases(
     workspace: &Workspace,
     fragments: &changelog::Fragments,
 ) -> Result<Vec<ReleasePreview>> {
-    let plan = version::compute_plan_from(workspace, &Overrides::default(), fragments)?;
+    let plan = version::compute_plan_from(workspace, &Overrides::changelog_preview(), fragments)?;
     let date = changelog::today();
     plan.iter()
         .map(|entry| {

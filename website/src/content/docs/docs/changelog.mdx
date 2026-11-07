@@ -101,6 +101,14 @@ Comparing contents rather than reading the diff means an uncommitted fragment
 counts too, so running `check` locally before committing gives the same answer
 CI gives afterwards.
 
+For a package already at a prerelease, the release preview shows its final
+version: `1.0.0-rc.0` becomes `1.0.0`, without another bump. Stable packages
+still use the fragment kinds to determine their next version. This also applies
+to dependent packages included in the preview. The check does not change
+versions or consume fragments; `version plan` and `version apply` still require
+an explicit `--pre <label>` or `--pre none` when a package in the plan is at a
+prerelease.
+
 <Callout>
 
 **Invalid fragments are not scoped.** A fragment that does not parse fails

@@ -18,13 +18,15 @@ use crate::config::Bump;
 use anyhow::{Result, bail};
 use std::collections::BTreeMap;
 
-/// What `--pre` asked for.
+/// The prerelease policy for a release plan or changelog preview.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PreChoice {
     /// `--pre rc` — cut (or continue) a prerelease cycle under this label.
     Label(String),
     /// `--pre none` — promote the current prerelease to its final version.
     Promote,
+    /// Read-only preview: promote existing prereleases, bump stable versions.
+    PreviewFinal,
 }
 
 /// The reserved `--pre` value meaning "promote". A label is a semver
@@ -44,6 +46,13 @@ pub struct Overrides {
 }
 
 impl Overrides {
+    pub fn changelog_preview() -> Self {
+        Self {
+            pre: Some(PreChoice::PreviewFinal),
+            ..Self::default()
+        }
+    }
+
     /// Parse the raw flag values. Everything checkable without a workspace is
     /// checked here; whether the named packages exist and are releasable is
     /// `version::validate_named_packages`, which has one.
@@ -138,7 +147,9 @@ impl Overrides {
         derived: Bump,
     ) -> Result<semver::Version> {
         let next = match &self.pre {
-            Some(PreChoice::Promote) => self.promote(package, current, derived)?,
+            Some(PreChoice::Promote | PreChoice::PreviewFinal) => {
+                self.promote(package, current, derived)?
+            }
             Some(PreChoice::Label(label)) => self.prerelease(package, current, derived, label)?,
             None => {
                 // Reachable only once prereleases exist, and silently bumping
@@ -291,6 +302,24 @@ mod tests {
         assert_eq!(
             o.resolve("p", &v("1.2.0"), Bump::Minor).unwrap(),
             v("1.3.0")
+        );
+    }
+
+    #[test]
+    fn changelog_preview_promotes_prereleases_and_bumps_stable_versions() {
+        let o = Overrides::changelog_preview();
+        for current in ["1.0.0-rc.0", "1.0.0-beta.2", "1.0.0-alpha.test+build"] {
+            for bump in [Bump::Patch, Bump::Minor, Bump::Major] {
+                assert_eq!(o.resolve("p", &v(current), bump).unwrap(), v("1.0.0"));
+            }
+        }
+        assert_eq!(
+            o.resolve("p", &v("1.2.0"), Bump::Minor).unwrap(),
+            v("1.3.0")
+        );
+        assert!(
+            !o.promoting(),
+            "a preview does not require a prerelease in the plan"
         );
     }
 
