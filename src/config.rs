@@ -123,7 +123,7 @@ pub struct TaskConfig {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct PublishConfig {
-    /// Publishing package name -> direct non-Hex runtime dependencies to bundle.
+    /// Releasable package name -> direct non-Hex runtime dependencies to bundle.
     #[serde(default)]
     pub bundle: BTreeMap<String, Vec<String>>,
     /// Naming scheme for the immutable per-version tag — the format

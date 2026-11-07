@@ -1,0 +1,5 @@
+component: publish
+kind: Fixed
+body: |-
+  **`trellis publish --all-untagged` accepts workspaces containing Git-only bundles.** It selects only `hex` packages, skipping Git-only owners and bundled workspace dependencies for stable versions and prereleases. Selecting a Git-only owner by package name or exact tag still fails before contacting Hex or running Gleam. Bundle configuration never enables Hex publication.
+time: 2026-11-07T14:05:53-08:00

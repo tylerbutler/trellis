@@ -104,6 +104,286 @@ fn publish(root: &Path, fake: &Path) -> assert_cmd::Command {
     cmd
 }
 
+fn git_only_workspace(root: &Path, version: &str) {
+    write(
+        &root.join("gleam.toml"),
+        r#"[tools.trellis]
+members = ["packages/*"]
+[tools.trellis.publish.bundle]
+beryl = ["beryl_protocol"]
+[tools.trellis.publish.lifecycle]
+default = "git_only"
+packages = { "packages/beryl_protocol" = "workspace", "packages/private_helper" = "workspace" }
+"#,
+    );
+    for (name, version, dependency) in [
+        ("beryl", version, Some("beryl_protocol")),
+        ("beryl_protocol", "0.1.0", Some("private_helper")),
+        ("private_helper", "0.1.0", None),
+    ] {
+        let package = root.join("packages").join(name);
+        let mut manifest = format!("name = \"{name}\"\nversion = \"{version}\"\n");
+        if let Some(dependency) = dependency {
+            manifest.push_str(&format!(
+                "[dependencies]\n{dependency} = {{ path = \"../{dependency}\" }}\n"
+            ));
+        }
+        write(&package.join("gleam.toml"), &manifest);
+        write(
+            &package.join(format!("src/{name}.gleam")),
+            "pub fn main() { Nil }\n",
+        );
+    }
+}
+
+#[test]
+fn git_only_bundle_preserves_private_lifecycles_in_release_plans() {
+    for version in ["0.5.0", "0.6.0-rc.1"] {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        git_only_workspace(root, version);
+        init_repo(root);
+        trellis(root).arg("doctor").assert().success();
+        let output = trellis(root)
+            .args(["list", "--releasable", "--json"])
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        let list: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(list["packages"].as_array().unwrap().len(), 1);
+        assert_eq!(list["packages"][0]["name"], "beryl");
+        assert_eq!(list["packages"][0]["lifecycle"], "git_only");
+        add_fragment(root, "beryl", "Fixed", "Include protocol changes.");
+        for pre in ["none", "rc"] {
+            let mut cmd = trellis(root);
+            cmd.args(["version", "plan", "--json"]);
+            if pre == "rc" || version.contains("-rc") {
+                cmd.args(["--pre", pre]);
+            }
+            let output = cmd.output().unwrap();
+            assert!(output.status.success(), "{output:?}");
+            let plan: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+            assert_eq!(plan["bumped"].as_array().unwrap().len(), 1);
+            assert_eq!(plan["bumped"][0]["name"], "beryl");
+            let next = match (version, pre) {
+                ("0.5.0", "none") => "0.5.1",
+                ("0.5.0", "rc") => "0.5.1-rc.0",
+                (_, "none") => "0.6.0",
+                _ => "0.6.0-rc.2",
+            };
+            assert_eq!(plan["bumped"][0]["next"], next);
+        }
+        trellis(root)
+            .args(["tag", "plan", "--json"])
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("beryl-v"))
+            .stdout(predicate::str::contains("beryl_protocol").not())
+            .stdout(predicate::str::contains("private_helper").not());
+        trellis(root)
+            .args(["ci", "outputs"])
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("releasable=[\"beryl\"]"));
+        assert_eq!(common::version_of(root, "beryl_protocol"), "0.1.0");
+        assert_eq!(common::version_of(root, "private_helper"), "0.1.0");
+    }
+}
+
+#[test]
+fn git_only_bundle_attributes_transitive_private_changes_to_owner() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    git_only_workspace(root, "0.5.0");
+    init_repo(root);
+    write(
+        &root.join("packages/private_helper/src/private_helper.gleam"),
+        "pub fn changed() { Nil }\n",
+    );
+    git(root, &["add", "."]);
+    git(root, &["commit", "-q", "-m", "change private source"]);
+    trellis(root)
+        .args([
+            "changelog",
+            "check",
+            "--base",
+            "main~1",
+            "--strictness",
+            "error",
+        ])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("beryl"))
+        .stdout(predicate::str::contains("beryl_protocol").not())
+        .stdout(predicate::str::contains("private_helper").not());
+    add_fragment(root, "beryl", "Fixed", "Include private source changes.");
+    trellis(root)
+        .args([
+            "changelog",
+            "check",
+            "--base",
+            "main~1",
+            "--strictness",
+            "error",
+        ])
+        .assert()
+        .success();
+}
+
+#[test]
+fn git_only_bundle_validates_repository_paths_not_a_flattened_hex_package() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    git_only_workspace(root, "0.5.0");
+    let protocol = root.join("packages/beryl_protocol");
+    let manifest = fs::read_to_string(protocol.join("gleam.toml")).unwrap();
+    write(
+        &protocol.join("gleam.toml"),
+        &format!(
+            "{manifest}external = {{ git = \"https://example.com/external.git\", ref = \"main\" }}\n\
+             [erlang]\napplication_start_module = \"protocol_app\"\n"
+        ),
+    );
+    write(&protocol.join("priv/resource.txt"), "private resource\n");
+    for name in ["beryl", "beryl_protocol"] {
+        write(
+            &root.join(format!("packages/{name}/src/shared.gleam")),
+            "pub fn main() { Nil }\n",
+        );
+    }
+    trellis(root).arg("doctor").assert().success();
+}
+
+#[test]
+fn git_only_bundle_requires_explicit_private_roots_but_not_released_dependencies() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    git_only_workspace(root, "0.5.0");
+    write(
+        &root.join("packages/other/gleam.toml"),
+        "name = \"other\"\nversion = \"1.0.0\"\n",
+    );
+    let path = root.join("packages/beryl/gleam.toml");
+    let manifest = fs::read_to_string(&path).unwrap();
+    write(
+        &path,
+        &format!("{manifest}other = {{ path = \"../other\" }}\n"),
+    );
+    trellis(root).arg("doctor").assert().success();
+    let config = root.join("gleam.toml");
+    let text = fs::read_to_string(&config).unwrap();
+    write(
+        &config,
+        &text.replace(
+            "\"packages/private_helper\" = \"workspace\"",
+            "\"packages/private_helper\" = \"workspace\", \"packages/other\" = \"workspace\"",
+        ),
+    );
+    trellis(root)
+        .arg("doctor")
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("`other` must be listed"));
+}
+
+#[test]
+fn workspace_bundle_owner_is_rejected() {
+    let tmp = tempfile::tempdir().unwrap();
+    git_only_workspace(tmp.path(), "0.5.0");
+    let config = tmp.path().join("gleam.toml");
+    let text = fs::read_to_string(&config).unwrap();
+    write(
+        &config,
+        &text.replace("default = \"git_only\"", "default = \"workspace\""),
+    );
+    trellis(tmp.path())
+        .arg("doctor")
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("must have lifecycle"));
+}
+
+#[test]
+fn git_only_bundle_publish_selectors_never_contact_hex_or_run_gleam() {
+    for version in ["0.5.0", "0.6.0-rc.1"] {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        git_only_workspace(root, version);
+        let fake = fake_gleam(root, "never");
+        let api = common::mock_github(root);
+        let tag = format!("beryl-v{version}");
+        for dry_run in [false, true] {
+            for selector in [vec!["beryl"], vec!["--tag", &tag], vec!["--all-untagged"]] {
+                let all = selector == ["--all-untagged"];
+                let mut cmd = trellis(root);
+                cmd.env("TRELLIS_HEX_API_URL", format!("{api}/api"))
+                    .env("TRELLIS_GLEAM_BIN", &fake)
+                    .arg("publish")
+                    .args(selector);
+                if dry_run {
+                    cmd.arg("--dry-run");
+                }
+                if all {
+                    cmd.assert().success();
+                } else {
+                    cmd.assert()
+                        .failure()
+                        .stderr(predicate::str::contains("lifecycle `git_only`, not `hex`"));
+                }
+                assert!(!root.join(".fake/github-log").exists());
+                assert!(!root.join("gleam-log").exists());
+            }
+        }
+    }
+}
+
+#[test]
+fn mixed_workspace_publishes_only_hex_packages_with_git_only_bundles() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    git_only_workspace(root, "0.6.0-rc.1");
+    let config = root.join("gleam.toml");
+    let text = fs::read_to_string(&config).unwrap();
+    write(
+        &config,
+        &text.replace(
+            "\"packages/private_helper\" = \"workspace\"",
+            "\"packages/private_helper\" = \"workspace\", \"packages/public_lib\" = \"hex\"",
+        ),
+    );
+    write(
+        &root.join("packages/public_lib/gleam.toml"),
+        "name = \"public_lib\"\nversion = \"1.0.0\"\n",
+    );
+    write(
+        &root.join("packages/public_lib/src/public_lib.gleam"),
+        "pub fn main() { Nil }\n",
+    );
+    let fake = fake_gleam(root, "never");
+    let api = common::mock_github(root);
+    trellis(root)
+        .env("TRELLIS_HEX_API_URL", format!("{api}/api"))
+        .env("TRELLIS_GLEAM_BIN", &fake)
+        .args(["publish", "--all-untagged"])
+        .assert()
+        .success();
+    let requests = fs::read_to_string(root.join(".fake/github-log")).unwrap();
+    assert!(requests.contains("/api/packages/public_lib"));
+    assert!(!requests.contains("beryl"));
+    assert!(!requests.contains("private_helper"));
+    let dirs = fs::read_to_string(root.join("cwd-log")).unwrap();
+    let published_path = fs::canonicalize(root.join("packages/public_lib")).unwrap();
+    assert!(
+        dirs.lines()
+            .all(|dir| fs::canonicalize(dir).unwrap() == published_path)
+    );
+    assert!(
+        fs::read_to_string(root.join("gleam-log"))
+            .unwrap()
+            .contains("publish --yes")
+    );
+}
+
 #[test]
 fn bundle_publishes_transitive_and_native_sources_without_changing_checkout() {
     let tmp = tempfile::tempdir().unwrap();

@@ -472,13 +472,13 @@ trellis lockfile refresh [--package <pkg>]
 
 ### Publish-time source bundling
 
-`publish.bundle` maps a Hex publishing package's exact name to its direct
-non-Hex runtime dependencies. The runtime workspace graph determines the
-transitive private closure. Hex dependencies remain external requirements.
-Bundling changes the distribution artifact, not package discovery, development
-builds, release lifecycles, or module names.
+`publish.bundle` maps a releasable package's exact name to its direct
+non-Hex runtime dependencies. Owners may be `hex` or `git_only`, never
+`workspace`. The runtime workspace graph determines the transitive private
+closure. Hex dependencies remain external requirements. Bundling does not
+change package discovery, development builds, release lifecycles, or module names.
 
-Opted-in publishers validate and publish an owned temporary package rather
+Opted-in Hex publishers validate and publish an owned temporary package rather
 than rewriting the checkout. The combined manifest removes bundled
 dependencies, merges identical external requirements, and preserves effective
 internal-module patterns and required Erlang applications. Differing
@@ -489,11 +489,22 @@ modules and private `priv` resources require a separate package identity and
 are rejected. Attributed licence notices use a standard `LICENCE` filename
 because Gleam's exporter excludes arbitrary per-package notice filenames.
 
-`doctor` applies the same preparation checks without producing an artifact.
+For Hex owners, `doctor` applies the same preparation checks without producing an artifact.
 `changelog check` maps bundled-source changes to every containing publisher,
 whose fragments determine its release. This preserves the existing fragment
 and version contracts without adding releases for workspace-only packages.
 The ordinary, unconfigured publish path stays unchanged.
+
+Git-only bundles retain repository paths and package identities. They require
+explicit selection of direct `workspace` runtime dependencies; independently
+released Git-only and Hex dependencies remain available without bundling.
+Doctor validates graph coverage, not a flattened Hex package, so Hex-only
+source-merging and application-identity restrictions do not apply. The
+containing Git-only owner receives changelog attribution for bundled changes,
+but workspace dependencies remain outside independent versioning and tagging.
+Artifact creation stays with the repository's release workflow, which must
+preserve every required dependency path. All publish selectors remain
+Hex-only; bundle membership never grants publication capability.
 
 Preserved names can conflict when a consumer installs independently bundled
 packages with overlapping modules. Real archive tests compile an extracted

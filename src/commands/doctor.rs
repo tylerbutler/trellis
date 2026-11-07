@@ -490,6 +490,10 @@ fn check_tool_versions(workspace: &Workspace, report: &mut Report) {
 fn check_exclusions(workspace: &Workspace, report: &mut Report) {
     let bundles = crate::bundle::resolve(workspace).unwrap_or_default();
     for (&publisher, bundled) in &bundles {
+        // Git-only distributions retain repository paths and package identities.
+        if !workspace.members[publisher].publishes_to_hex() {
+            continue;
+        }
         if let Err(error) = crate::bundle::prepare(workspace, publisher, bundled) {
             let member = &workspace.members[publisher];
             report.push(
