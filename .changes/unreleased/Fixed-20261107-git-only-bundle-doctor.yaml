@@ -1,5 +1,0 @@
-component: doctor
-kind: Fixed
-body: |-
-  **`trellis doctor` accepts Git-only bundles with workspace dependencies.** Set the owner to `git_only` and list its direct `workspace` runtime dependencies in `publish.bundle`. Dependencies keep their own lifecycle. Git-only bundles retain repository paths and package identities; your workflow must include those paths in its release artifact. Hex bundles still undergo combined-package preparation checks.
-time: 2026-11-07T14:05:53-08:00
