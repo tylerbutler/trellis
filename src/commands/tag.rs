@@ -477,7 +477,8 @@ fn create_exact_tag(
         } else {
             let notes = release_notes(member, member.version())
                 .unwrap_or_else(|| format!("{} {}", member.name, member.version()));
-            github.create_release(tag, tag, &notes)?;
+            let version = semver::Version::parse(&planned.version)?;
+            github.create_release(tag, tag, &notes, !version.pre.is_empty())?;
             crate::status!("{} GitHub release {tag}", crate::term::ok("created"));
         }
     }

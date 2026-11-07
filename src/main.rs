@@ -1,3 +1,4 @@
+mod bundle;
 mod changelog;
 mod commands;
 mod completion;
@@ -206,7 +207,7 @@ enum Command {
         #[command(subcommand)]
         command: TagCommand,
     },
-    /// Publish packages to Hex, in dependency order, with path deps rewritten
+    /// Publish packages to Hex, rewriting path deps or bundling private source
     Publish {
         /// A single package to publish
         #[arg(add = completion::hex_packages())]
@@ -217,7 +218,7 @@ enum Command {
         /// Every `hex`-lifecycle package whose version isn't on Hex yet
         #[arg(long, conflicts_with_all = ["package", "tag"])]
         all_untagged: bool,
-        /// Show what would be published (and rewritten) without doing it
+        /// Show packages, dependency rewrites, and source bundles without publishing
         #[arg(long)]
         dry_run: bool,
     },
@@ -360,9 +361,7 @@ enum VersionCommand {
 
 /// Overrides for the version a plan would otherwise derive from fragment kinds.
 ///
-/// Flattened into both `plan` and `apply` so an override is visible in the
-/// dry-run before it is applied — the two must accept exactly the same flags or
-/// `plan` stops being a preview of `apply`.
+/// Shared by `version plan`, `version apply`, and `release pr`.
 #[derive(clap::Args)]
 struct VersionOverrideArgs {
     /// Override the derived bump level, workspace-wide (`--bump major`) or for
@@ -373,7 +372,8 @@ struct VersionOverrideArgs {
     /// Repeatable.
     #[arg(long, value_name = "PKG=VERSION")]
     set: Vec<String>,
-    /// Cut a prerelease: `--pre rc` gives 1.0.0-rc.1, and again 1.0.0-rc.2.
+    /// Cut or continue a prerelease cycle (`--pre rc`).
+    /// New cycles start at `<label>.0`; repeating the label increments the counter.
     /// Each candidate includes only new changes and archives its fragments.
     /// `--pre none` promotes to the final version with a rollup of its candidates.
     #[arg(long, value_name = "LABEL")]
@@ -391,6 +391,8 @@ enum ReleaseCommand {
     /// Create or update the release PR: version apply on a branch, push,
     /// open or refresh the PR via the GitHub API
     Pr {
+        #[command(flatten)]
+        overrides: VersionOverrideArgs,
         /// Base branch the PR targets
         #[arg(long, default_value = "main")]
         base: String,
@@ -704,9 +706,18 @@ fn dispatch(cli: Cli) -> Result<bool> {
             }
         },
         Command::Release { command } => match command {
-            ReleaseCommand::Pr { base, branch } => {
-                commands::release::pr(&workspace, &commands::release::PrOptions { base, branch })
-            }
+            ReleaseCommand::Pr {
+                base,
+                branch,
+                overrides,
+            } => commands::release::pr(
+                &workspace,
+                &commands::release::PrOptions {
+                    base,
+                    branch,
+                    overrides: overrides.parse()?,
+                },
+            ),
             ReleaseCommand::Bootstrap { args } => {
                 commands::tag::create(&workspace, &args.options())?;
                 Ok(true)
@@ -785,6 +796,15 @@ fn dispatch(cli: Cli) -> Result<bool> {
 mod tests {
     use super::*;
     use clap::CommandFactory;
+
+    #[test]
+    fn homepage_config_uses_recognized_keys() {
+        let page = include_str!("../website/src/pages/index.astro");
+        let (_, sample) = page.split_once("const configSample = `").unwrap();
+        let (sample, _) = sample.split_once("`;").unwrap();
+        let config = config::ConfigFile::from_gleam_toml(sample).unwrap();
+        assert!(config.unknown_keys.is_empty(), "{:?}", config.unknown_keys);
+    }
 
     /// Every visible command must appear in a hand-written website docs page.
     /// reference.md is generated from the CLI itself, so it cannot count.

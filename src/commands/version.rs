@@ -130,10 +130,17 @@ pub fn compute_plan_from(
         let owned: Vec<&changelog::Fragment> = fragments.for_package(&member.name).collect();
         let current = semver::Version::parse(member.version())
             .with_context(|| format!("`{}` has an invalid version", member.name))?;
-        if owned.is_empty() && generated.is_empty() && current.pre.is_empty() {
+        if owned.is_empty()
+            && generated.is_empty()
+            && (current.pre.is_empty() || overrides.previewing())
+        {
             continue;
         }
-        let archived = changelog::load_prerelease_fragments(workspace, &member.name, &current)?;
+        let archived = if overrides.previewing() {
+            Vec::new()
+        } else {
+            changelog::load_prerelease_fragments(workspace, &member.name, &current)?
+        };
         let all: Vec<&changelog::Fragment> = owned
             .iter()
             .copied()

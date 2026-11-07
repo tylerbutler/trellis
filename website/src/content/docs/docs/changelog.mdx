@@ -53,7 +53,7 @@ unparseable TOML) are hard errors for `check`, `plan`, and `apply`, and
 </Callout>
 
 A fragment takes one more optional key, `category`, when the workspace
-configures [categories](/docs/configuration/#categories), a second grouping
+configures [categories](/docs/configuration-reference/#categories), a second grouping
 axis that carries no version bump and sections the changelog by which part of
 a package changed:
 
@@ -78,6 +78,11 @@ directory, so a README edit trips the same gate as a behavior change. That
 makes the gate stricter than some repositories want;
 [`strictness`](#strictness) turns it down.
 
+For [source bundles](/docs/publishing/#bundling-private-dependencies), changes
+in a direct or transitive bundled dependency also count as changes to each
+publishing package that includes it. Add a fragment for each publisher.
+The bundled package's lifecycle and independent fragment rules do not change.
+
 ### Scope
 
 `check` counts only the fragments the branch itself wrote: those whose contents
@@ -95,6 +100,14 @@ package whose only unreleased fragment came from the base branch shows `—`.
 Comparing contents rather than reading the diff means an uncommitted fragment
 counts too, so running `check` locally before committing gives the same answer
 CI gives afterwards.
+
+For a package already at a prerelease, the release preview shows its final
+version: `1.0.0-rc.0` becomes `1.0.0`, without another bump. Stable packages
+still use the fragment kinds to determine their next version. This also applies
+to dependent packages included in the preview. The check does not change
+versions or consume fragments; `version plan` and `version apply` still require
+an explicit `--pre <label>` or `--pre none` when a package in the plan is at a
+prerelease.
 
 <Callout>
 
@@ -239,7 +252,7 @@ release preview are omitted and the problem is reported instead.
 `version plan` is the dry run: each pending package's next version, computed
 from its fragments' kinds. The largest bump among a package's fragments wins;
 kinds and the bump each implies are configurable under
-[`[tools.trellis.changelog]`](/docs/configuration/#changelog-configuration).
+[`[tools.trellis.changelog]`](/docs/configuration-reference/#changelog-configuration).
 
 ```console
 $ trellis version plan
@@ -336,21 +349,14 @@ current one are all errors raised before anything is written.
 
 ## Prereleases
 
-`--pre <label>` cuts a release candidate. Repeating it advances the counter
+`--pre <label>` starts a release candidate at `<label>.0`. Repeating it advances the counter
 within the same base version rather than deriving a fresh bump from the same
 fragments:
 
-```console
-$ trellis version apply --set lat_cli=1.0.0 --pre rc
-bumped lat_cli: 0.4.3 -> 1.0.0-rc.1
-archived prerelease fragments for the final version
-
-$ trellis version apply --pre rc
-bumped lat_cli: 1.0.0-rc.1 -> 1.0.0-rc.2
-archived prerelease fragments for the final version
-
-$ trellis version apply --pre none
-bumped lat_cli: 1.0.0-rc.2 -> 1.0.0
+```sh
+trellis version apply --set lat_cli=1.0.0 --pre rc   # 1.0.0-rc.0
+trellis version apply --pre rc                     # 1.0.0-rc.1
+trellis version apply --pre none                   # 1.0.0
 ```
 
 <Callout>
@@ -362,9 +368,9 @@ Commit both files. If you configure a different changelog `dir`, trellis stores
 the archives there.
 
 `--pre none` combines those archived entries with any new unreleased fragments
-for the final version. For example, `1.0.0-rc.1` includes changes A and B,
-`1.0.0-rc.2` includes change C, and `1.0.0` includes A, B, and C plus any
-changes added after RC 2. Trellis keeps each candidate's section unchanged and
+for the final version. For example, `1.0.0-rc.0` includes changes A and B,
+`1.0.0-rc.1` includes change C, and `1.0.0` includes A, B, and C plus any
+changes added after RC 1. Trellis keeps each candidate's section unchanged and
 uses the configured grouping and templates for the final rollup.
 
 The rollup includes only this package's candidates for the target version,

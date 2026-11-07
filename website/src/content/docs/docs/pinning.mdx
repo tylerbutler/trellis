@@ -21,7 +21,7 @@ trellis pin --check [pkgs...]    # fail if a pinned SHA drifted from its tracked
 trellis pin --unpin [pkgs...]    # restore the symbolic refs
 ```
 
-This is the consumer half of [series tags](/docs/configuration/#tags): a
+This is the consumer half of [series tags](/docs/configuration-reference/#tags): a
 release force-moves `lat_cli-v0.4` so consumers can track the series, and
 `pin` is how a consumer follows that tag deliberately instead of silently.
 It works the same on any moving ref — a branch, or another tool's tags.

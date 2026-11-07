@@ -8,6 +8,24 @@ use predicates::prelude::*;
 // ---- graph -----------------------------------------------------------
 
 #[test]
+fn homepage_graph_matches_its_linked_fixture() {
+    let page = include_str!("../website/src/pages/index.astro");
+    assert!(page.contains("https://github.com/tylerbutler/trellis/tree/main/tests/fixtures/basic"));
+    let (_, output) = page.split_once("<pre class=\"term-out\"><code>").unwrap();
+    let (output, _) = output.split_once("</code></pre>").unwrap();
+    let displayed: String = output
+        .split('<')
+        .map(|part| part.split_once('>').map_or(part, |(_, text)| text))
+        .collect();
+    let actual = trellis(&fixture("basic"))
+        .args(["--color", "never", "graph"])
+        .output()
+        .unwrap();
+    assert!(actual.status.success());
+    assert_eq!(displayed + "\n", String::from_utf8(actual.stdout).unwrap());
+}
+
+#[test]
 fn graph_mermaid_shows_edges() {
     trellis(&fixture("basic"))
         .args(["graph", "--format", "mermaid"])

@@ -5,6 +5,89 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v1.2.3 - 2026-11-07
+
+
+### changelog
+
+#### Fixed
+
+- **`trellis changelog check` attributes private source changes to Git-only bundle owners.** Direct and transitive bundled changes require the owner's fragment under your configured strictness. Bundled `workspace` dependencies still have no independent changelog, version, or tag. Keep them as workspace packages rather than creating separate releases to satisfy bundle validation.
+
+### publish
+
+#### Fixed
+
+- **`trellis publish --all-untagged` accepts workspaces containing Git-only bundles.** It selects only `hex` packages, skipping Git-only owners and bundled workspace dependencies for stable versions and prereleases. Selecting a Git-only owner by package name or exact tag still fails before contacting Hex or running Gleam. Bundle configuration never enables Hex publication.
+
+### doctor
+
+#### Fixed
+
+- **`trellis doctor` accepts Git-only bundles with workspace dependencies.** Set the owner to `git_only` and list its direct `workspace` runtime dependencies in `publish.bundle`. Dependencies keep their own lifecycle. Git-only bundles retain repository paths and package identities; your workflow must include those paths in its release artifact. Hex bundles still undergo combined-package preparation checks.
+
+## v1.2.2 - 2026-11-07
+
+
+### changelog
+
+#### Fixed
+
+- **`trellis changelog check` now accepts packages at prerelease versions.** The release preview shows the final version, such as `1.0.0-rc.0` to `1.0.0`, without another bump. JSON and GitHub outputs remain available, and missing or invalid fragments still fail the check under the same rules. `version plan` and `version apply` still require an explicit prerelease choice.
+
+## v1.2.1 - 2026-11-06
+
+
+### version
+
+#### Fixed
+
+- **`version plan` and `version apply` start prerelease counters at zero.** Use `--set PACKAGE=1.0.0 --pre rc` to prepare `1.0.0-rc.0`, then repeat `--pre rc` for `1.0.0-rc.1`. Fragments stay unreleased through each candidate; `--pre none` promotes to `1.0.0` and consumes them. Existing cycles continue from their current counter.
+
+### release
+
+#### Fixed
+
+- **`release pr --pre rc` starts new candidate cycles at `rc.0`.** Combine it with `--set PACKAGE=1.0.0` to prepare `1.0.0-rc.0`. Retrying against an unchanged base produces the same candidate; after merging, repeat `--pre rc` for `rc.1`. Candidate fragments remain unreleased until `--pre none` prepares stable promotion. Existing cycles continue from their current counter.
+
+## v1.2.0 - 2026-11-06
+
+
+### release
+
+#### Added
+
+- **`trellis release pr` supports candidate releases and stable promotion.** Use the same `--pre`, `--set`, and `--bump` options as `version plan` and `version apply`. Repeating a request against an unchanged base regenerates the same candidate version; merge that PR before preparing the next candidate. Candidate fragments remain unreleased until `--pre none` promotes the versions and consumes them.
+
+### tag
+
+#### Fixed
+
+- **`trellis tag create --github-release` marks candidate releases as GitHub prereleases.** The package's semantic version determines the classification, including with custom exact tag formats. Stable versions create ordinary releases. Existing GitHub releases remain unchanged on retry; correct any older candidate release's classification in GitHub. Prereleases still leave moving package and repository series tags unchanged.
+
+## v1.1.0 - 2026-10-31
+
+
+### changelog
+
+#### Added
+
+- **`changelog check` requires publisher fragments for changes in bundled dependencies.** Changes in a direct or transitive source dependency count against each publishing package that includes it through `publish.bundle`. Add a fragment for each affected publisher. Workspace-only dependencies still have no independent changelog; git-only dependencies keep their existing fragment requirements. The configured strictness and JSON payload shape stay unchanged.
+
+### publish
+
+#### Added
+
+- **`publish.bundle` includes private workspace dependencies in a Hex package.** Configure each publisher's direct non-Hex runtime dependencies; trellis also includes transitive private dependencies and native Erlang or JavaScript sources. It validates and publishes a temporary combined package without changing checkout source or manifests. Conflicting module names, differing dependency requirements, OTP startup modules, and bundled `priv` directories stop publication.
+
+  Bundling makes the selected source public. Check redistribution rights and licence declarations before publishing.
+
+### doctor
+
+#### Added
+
+- **`trellis doctor` checks configured source bundles before publication.** A Hex package can depend on a non-Hex workspace package when `publish.bundle` selects it. Doctor checks bundle selections, transitive source conflicts, external dependency requirements, and module visibility without running Gleam. Unconfigured release boundaries still fail, and bundling does not change package lifecycles.
+
 ## v1.0.0 - 2026-09-18
 
 

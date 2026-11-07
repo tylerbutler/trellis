@@ -5,6 +5,7 @@ import "../styles/global.css";
 import { Script as Tinylytics } from "astro-tinylytics";
 import AnnouncementBar from "../components/AnnouncementBar.astro";
 import AnnounceDismissScript from "../components/AnnounceDismissScript.astro";
+import logo from "../assets/logo.svg";
 import { TINYLYTICS_EMBED_CODE } from "../lib/analytics";
 
 interface Props {
@@ -42,7 +43,7 @@ const github = "https://github.com/tylerbutler/trellis";
     <header class="site-header">
       <div class="shell">
         <a class="brand" href="/" aria-label="Trellis home">
-          <img src="/favicon.svg" width="22" height="22" alt="" aria-hidden="true" />
+          <img src={logo.src} width="32" height="32" alt="" aria-hidden="true" />
           trellis
         </a>
         <nav class="site-nav" aria-label="Site">

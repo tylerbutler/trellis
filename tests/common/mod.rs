@@ -312,6 +312,12 @@ fn route(method: &str, path: &str, body: &str, root: &Path) -> (&'static str, St
         ("POST", (Some("repos"), Some("releases")), None) => {
             let parsed: serde_json::Value = serde_json::from_str(body).unwrap_or_default();
             let tag = parsed["tag_name"].as_str().unwrap_or("unknown");
+            if root.join(format!(".fake/fail-release-{tag}")).exists() {
+                return (
+                    "500 Internal Server Error",
+                    r#"{"message":"release unavailable"}"#.to_string(),
+                );
+            }
             std::fs::write(root.join(format!(".fake/release-{tag}")), "").unwrap();
             ("201 Created", "{}".to_string())
         }

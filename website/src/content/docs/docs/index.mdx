@@ -8,6 +8,27 @@ is the workspace layer on top: it fans those commands across a whole
 repository and adds changelogs, versioning, and publishing, deriving its model
 of the workspace from the `gleam.toml` files already in it.
 
+For example, the [example workspace](https://github.com/tylerbutler/trellis/tree/main/tests/fixtures/basic)
+selects packages from two directories:
+
+```toml title="Workspace gleam.toml (excerpt)"
+[tools.trellis]
+members = ["packages/*", "examples/*"]
+```
+
+Their path dependencies form this graph:
+
+```text title="trellis graph" frame="terminal"
+lat_core (1.2.0)
+lat_mid (0.5.0)
+  └─ lat_core
+lat_cli (0.3.1)
+  ├─ lat_core
+  └─ lat_mid
+package_a (0.0.0)
+  └─ lat_cli
+```
+
 Throughout these docs, a **package** is one Gleam package, a directory with
 its own `gleam.toml`. A **member** is a package that belongs to the workspace;
 that word appears where membership itself is the point, as in the `members`
@@ -43,7 +64,9 @@ time:
   `version apply` manage bumps and changelogs without trellis owning your
   release workflow, or any CI at all.
 - **Add publishing.** `tag` and `publish` push to Hex in dependency order,
-  from your own scripts or workflows.
+  from your own scripts or workflows. Use
+  [source bundling](/docs/publishing/#bundling-private-dependencies) to include
+  private workspace dependencies without publishing them as separate Hex packages.
 - **The full pipeline.** `ci`, `changelog check`, and `release pr` turn
   GitHub Actions workflows into thin triggers around trellis commands.
 
@@ -69,7 +92,7 @@ so any single piece slots into whatever tooling already surrounds it, under a
 | [Configuration](/docs/configuration/) | The `[tools.trellis]` table: members, task-scoped exclusions, custom tasks, changelog and publish settings. |
 | [Task running](/docs/task-running/) | `run` and `exec`: built-in and custom tasks, graph-parallel scheduling, selecting packages with `--since`. |
 | [Changelog & versioning](/docs/changelog/) | TOML change fragments, PR enforcement, planning and applying version bumps. |
-| [Publishing](/docs/publishing/) | Release PRs, per-package tags, publishing to Hex in dependency order with path deps rewritten. |
+| [Publishing](/docs/publishing/) | Release PRs, per-package tags, Hex dependency rewriting, and source bundling for private dependencies. |
 | [Dependency pinning](/docs/pinning/) | `trellis pin`: git dependency refs rewritten to commit SHAs, updated as a reviewable diff, checked for force-moves. |
 | [CI recipes](/docs/ci/) | GitHub Actions shapes: affected-only matrices, PR gates, and the release pipeline. |
 | [JSON output](/docs/json-output/) | What the `--json` payloads guarantee: the `schema` field, what a stable shape permits, and where it stops. |

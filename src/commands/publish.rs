@@ -8,6 +8,9 @@
 //!   4. `gleam publish --yes` with retry,
 //!   5. restore the original gleam.toml (the repo never shows rewritten
 //!      files, even on failure).
+//!
+//! Packages with `publish.bundle` instead validate and publish a temporary
+//! combined package, leaving checkout manifests and sources untouched.
 
 use crate::hex::HexClient;
 use crate::rewrite;
@@ -34,6 +37,7 @@ pub struct PublishOptions {
 }
 
 pub fn run(workspace: &Workspace, options: &PublishOptions) -> Result<bool> {
+    let bundles = crate::bundle::resolve(workspace)?;
     let targets: Vec<usize> = match &options.selector {
         Selector::Package(name) => {
             let idx = workspace
@@ -123,6 +127,34 @@ pub fn run(workspace: &Workspace, options: &PublishOptions) -> Result<bool> {
                 crate::term::package(&name),
                 crate::term::dim(&format!("{version} is already on Hex; skipping"))
             );
+            continue;
+        }
+
+        if let Some(bundled) = bundles.get(&idx) {
+            let prepared = crate::bundle::prepare(workspace, idx, bundled)
+                .with_context(|| format!("cannot prepare bundle for `{name}`"))?;
+            for package in &prepared.packages {
+                crate::status!("[{name}] bundle {package}");
+            }
+            for (dependency, requirement) in &prepared.requirements {
+                crate::status!("[{name}] {dependency} -> \"{requirement}\"");
+            }
+            if options.dry_run {
+                crate::status!("[{name}] would publish {version}");
+                continue;
+            }
+            let staged = prepared.stage()?;
+            gleam_step_in(&staged.path, &name, &["format", "--check"])?;
+            for args in [
+                &["build", "--warnings-as-errors"][..],
+                &["test"][..],
+                &["publish", "--yes"][..],
+            ] {
+                tools::with_retry(retry, &format!("gleam {} for {name}", args[0]), || {
+                    gleam_step_in(&staged.path, &name, args)
+                })?;
+            }
+            crate::status!("[{name}] published {version}");
             continue;
         }
 
@@ -236,19 +268,23 @@ impl Drop for RestoreGuard {
 /// terminal. Non-zero exit is an error (which the retry wrapper may absorb).
 fn gleam_step(workspace: &Workspace, idx: usize, args: &[&str]) -> Result<()> {
     let member = &workspace.members[idx];
+    gleam_step_in(&member.path, &member.name, args)
+}
+
+fn gleam_step_in(path: &std::path::Path, name: &str, args: &[&str]) -> Result<()> {
     let gleam = tools::gleam_bin();
     crate::status!(
         "[{}] {}",
-        crate::term::package(&member.name),
+        crate::term::package(name),
         crate::term::dim(&format!("$ gleam {}", args.join(" ")))
     );
     let status = Command::new(&gleam)
         .args(args)
-        .current_dir(&member.path)
+        .current_dir(path)
         .status()
         .with_context(|| format!("failed to run `{gleam}` — is gleam installed?"))?;
     if !status.success() {
-        bail!("`gleam {}` failed for `{}`", args.join(" "), member.name);
+        bail!("`gleam {}` failed for `{name}`", args.join(" "));
     }
     Ok(())
 }

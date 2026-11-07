@@ -470,6 +470,47 @@ trellis lockfile refresh [--package <pkg>]
   encoding the "don't refresh the whole workspace or you'll get rate-limited"
   rule from publish.yml:124-133 as behavior instead of a comment.
 
+### Publish-time source bundling
+
+`publish.bundle` maps a releasable package's exact name to its direct
+non-Hex runtime dependencies. Owners may be `hex` or `git_only`, never
+`workspace`. The runtime workspace graph determines the transitive private
+closure. Hex dependencies remain external requirements. Bundling does not
+change package discovery, development builds, release lifecycles, or module names.
+
+Opted-in Hex publishers validate and publish an owned temporary package rather
+than rewriting the checkout. The combined manifest removes bundled
+dependencies, merges identical external requirements, and preserves effective
+internal-module patterns and required Erlang applications. Differing
+requirements, source/module collisions, or visibility changes are errors;
+trellis neither solves requirement intersections nor rewrites source imports.
+Native Erlang and JavaScript sources retain their relative paths. OTP startup
+modules and private `priv` resources require a separate package identity and
+are rejected. Attributed licence notices use a standard `LICENCE` filename
+because Gleam's exporter excludes arbitrary per-package notice filenames.
+
+For Hex owners, `doctor` applies the same preparation checks without producing an artifact.
+`changelog check` maps bundled-source changes to every containing publisher,
+whose fragments determine its release. This preserves the existing fragment
+and version contracts without adding releases for workspace-only packages.
+The ordinary, unconfigured publish path stays unchanged.
+
+Git-only bundles retain repository paths and package identities. They require
+explicit selection of direct `workspace` runtime dependencies; independently
+released Git-only and Hex dependencies remain available without bundling.
+Doctor validates graph coverage, not a flattened Hex package, so Hex-only
+source-merging and application-identity restrictions do not apply. The
+containing Git-only owner receives changelog attribution for bundled changes,
+but workspace dependencies remain outside independent versioning and tagging.
+Artifact creation stays with the repository's release workflow, which must
+preserve every required dependency path. All publish selectors remain
+Hex-only; bundle membership never grants publication capability.
+
+Preserved names can conflict when a consumer installs independently bundled
+packages with overlapping modules. Real archive tests compile an extracted
+Hex package through a fresh consumer on Erlang and JavaScript; they do not
+claim to predict another consumer's dependency graph or dynamic OTP lookups.
+
 ### Dependency pinning
 
 ```
@@ -615,6 +656,46 @@ then `trellis tag create --github-release` to record what shipped. Tags become a
 artifact of publishing rather than its trigger, and the auto-tag "wait for the
 Publish workflow" coupling disappears. This is a policy change for lattice, not a
 requirement of the tool; both shapes are supported.
+
+### Candidate publication in Gleam workspaces
+
+`examples/gleam-hex-release.yml` implements the publish-then-tag shape for
+Gleam/Hex, separately from trellis's own Cargo pipeline. `release pr` shares
+the version override parser and uses the same overrides for planning and
+application. Each candidate is regenerated from its selected base; fragments
+remain pending until stable promotion, including rippled dependents.
+
+One concurrency group serializes automatic stable preparation, manual
+candidate/promotion requests, and merge publication without cancellation.
+Automatic preparation pauses for prerelease manifests on main, pending
+candidate heads, and manual ownership. A pending `trellis/release_request`
+status on the manual request's base commit is written before invoking the
+CLI: it survives failure before PR creation and protects stable promotion
+heads that cannot be identified by prerelease version alone. The automatic
+guard scans main's history only back through the latest merged release commit,
+so merging a new release supersedes earlier reservations. This uses existing
+commit statuses rather than another state service.
+
+Publication verifies same-repository release head/base identity and pins
+checkout to `merge_commit_sha`, including reruns. `trellis/release` succeeds
+only after dependency-ordered Hex publication and tagging both complete.
+Missing or unsuccessful status on the latest merged release blocks new
+preparation, including before the publishing run starts. Recovery repeats
+publication and tagging at that same commit; a completed old run is skipped
+for those two commands to prevent moving series tags backward, but still
+retries gated preparation on current main. Successful stable promotion
+rechecks current main in the serialized run and restores automatic preparation.
+
+Until a fixed binary release ships, the example builds a checked-in reviewed
+snapshot at `.github/trellis` with the committed lockfile and pinned Rust
+toolchain. Build output and installation stay outside the checkout under
+`RUNNER_TEMP`, preserving the release CLI's clean-tree requirement. Afterward,
+an explicit released-version pin selects the prebuilt installer instead.
+
+Exact candidate tags remain immutable; candidate versions do not move package
+or repository series tags. GitHub prerelease classification comes from the
+manifest's semantic version, not the configurable tag spelling. Existing
+GitHub releases are not rewritten on retry.
 
 ## 7. Interop decisions
 
