@@ -374,8 +374,8 @@ struct VersionOverrideArgs {
     set: Vec<String>,
     /// Cut or continue a prerelease cycle (`--pre rc`).
     /// New cycles start at `<label>.0`; repeating the label increments the counter.
-    /// Fragments stay unreleased until the final version. `--pre none` promotes
-    /// the current prerelease to its final version and consumes them.
+    /// Each candidate includes only new changes and archives its fragments.
+    /// `--pre none` promotes to the final version with a rollup of its candidates.
     #[arg(long, value_name = "LABEL")]
     pre: Option<String>,
 }

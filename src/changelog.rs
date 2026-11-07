@@ -3,6 +3,7 @@
 //! Layout, under `[tools.trellis.changelog] dir` (default `.changes/`):
 //!   unreleased/*.toml        one fragment per change: package, kind, body
 //!   <package>/v<X.Y.Z>.md    batched version sections, rendered once
+//!   <package>/v<X.Y.Z-pre>.toml  prerelease fragments for the final rollup
 //! Each package's CHANGELOG.md is assembled from its header plus its version
 //! sections, newest first. All formats are minijinja templates, so the
 //! rendered shape is configurable without a second tool.
@@ -10,7 +11,7 @@
 use crate::config::{Bump, ChangelogConfig, KindConfig};
 use crate::workspace::{Member, Workspace};
 use anyhow::{Context, Result, bail};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 // ---- fragments -------------------------------------------------------------
@@ -38,7 +39,7 @@ pub struct Fragment {
     pub path: Option<PathBuf>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct RawFragment {
     package: String,
@@ -49,6 +50,12 @@ struct RawFragment {
     #[serde(default)]
     category: Option<String>,
     body: String,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct PrereleaseArchive {
+    fragments: Vec<RawFragment>,
 }
 
 /// A fragment that could not be used, and the file it came from. The path is
@@ -601,6 +608,96 @@ pub(crate) fn heading_version(heading: &str) -> Option<semver::Version> {
 
 // ---- batch + merge -----------------------------------------------------------
 
+/// Preserve source entries rather than parsing rendered Markdown, so the
+/// final rollup uses the configured grouping and templates.
+pub fn render_prerelease_archive(fragments: &[&Fragment]) -> Result<String> {
+    let archive = PrereleaseArchive {
+        fragments: fragments
+            .iter()
+            .map(|fragment| RawFragment {
+                package: fragment.package.clone(),
+                kind: fragment.kind.clone(),
+                category: fragment.category.clone(),
+                body: fragment.body.clone(),
+            })
+            .collect(),
+    };
+    toml::to_string_pretty(&archive).context("failed to serialize prerelease fragments")
+}
+
+/// Read only this package's published candidates for the current target.
+/// Archive entries have no source path: consuming new fragments must never
+/// delete the history needed to reproduce a final release.
+pub fn load_prerelease_fragments(
+    workspace: &Workspace,
+    package: &str,
+    current: &semver::Version,
+) -> Result<Vec<Fragment>> {
+    if current.pre.is_empty() {
+        return Ok(Vec::new());
+    }
+    let dir = versions_dir(workspace, package);
+    let entries = match std::fs::read_dir(&dir) {
+        Ok(entries) => entries,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(err) => return Err(err).with_context(|| format!("failed to read {}", dir.display())),
+    };
+    let mut archives = Vec::new();
+    for entry in entries {
+        let path = entry
+            .with_context(|| format!("failed to read {}", dir.display()))?
+            .path();
+        if path.extension().is_none_or(|ext| ext != "toml") {
+            continue;
+        }
+        let stem = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or_default();
+        let version = semver::Version::parse(stem.trim_start_matches('v'))
+            .with_context(|| format!("{} is not named v<semver>.toml", path.display()))?;
+        if !version.pre.is_empty()
+            && (version.major, version.minor, version.patch)
+                == (current.major, current.minor, current.patch)
+            && version <= *current
+        {
+            archives.push((version, path));
+        }
+    }
+    archives.sort_by(|a, b| a.0.cmp(&b.0));
+    let mut fragments = Vec::new();
+    let config = &workspace.config.changelog;
+    for (_, path) in archives {
+        let text = std::fs::read_to_string(&path)
+            .with_context(|| format!("failed to read {}", path.display()))?;
+        let archive: PrereleaseArchive = toml::from_str(&text)
+            .with_context(|| format!("invalid prerelease archive {}", path.display()))?;
+        for raw in archive.fragments {
+            if raw.package != package
+                || !config.kinds.iter().any(|kind| kind.label == raw.kind)
+                || raw
+                    .category
+                    .as_ref()
+                    .is_some_and(|category| !config.categories.contains(category))
+                || raw.body.trim().is_empty()
+            {
+                bail!(
+                    "invalid fragment in prerelease archive {}: check package, kind, category, and body",
+                    path.display()
+                );
+            }
+            fragments.push(Fragment {
+                package: raw.package,
+                kind: raw.kind,
+                category: raw.category,
+                body: raw.body,
+                path: None,
+            });
+        }
+    }
+    Ok(fragments)
+}
+
 /// Render a package's complete CHANGELOG.md with an optional pending section
 /// and an optional block of adopted pre-trellis history.
 pub fn render_merged_changelog(
@@ -672,9 +769,15 @@ pub fn write_batch(
     version: &semver::Version,
     section: &str,
     changelog: &str,
+    archive: Option<&str>,
 ) -> Result<()> {
     let dir = versions_dir(workspace, &member.name);
     std::fs::create_dir_all(&dir).with_context(|| format!("failed to create {}", dir.display()))?;
+    if let Some(archive) = archive {
+        let path = dir.join(format!("v{version}.toml"));
+        std::fs::write(&path, archive)
+            .with_context(|| format!("failed to write {}", path.display()))?;
+    }
     let section_path = dir.join(format!("v{version}.md"));
     std::fs::write(&section_path, section)
         .with_context(|| format!("failed to write {}", section_path.display()))?;

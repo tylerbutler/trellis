@@ -111,17 +111,6 @@ impl Overrides {
         Ok(overrides)
     }
 
-    /// Whether fragments survive this release.
-    ///
-    /// A prerelease renders its changelog section but does not retire the
-    /// fragments behind it: they are still unreleased as far as the final
-    /// version is concerned, and consuming them at `rc.0` would leave the
-    /// eventual `1.0.0` with nothing to say. The final release — including a
-    /// `--pre none` promotion — consumes them normally.
-    pub fn retains_fragments(&self) -> bool {
-        matches!(self.pre, Some(PreChoice::Label(_)))
-    }
-
     pub fn promoting(&self) -> bool {
         self.pre == Some(PreChoice::Promote)
     }
@@ -493,12 +482,5 @@ mod tests {
                 .to_string()
                 .contains("must not contain a dot")
         );
-    }
-
-    #[test]
-    fn fragments_survive_a_prerelease_but_not_a_promotion() {
-        assert!(overrides(&[], &[], Some("rc")).retains_fragments());
-        assert!(!overrides(&[], &[], Some("none")).retains_fragments());
-        assert!(!overrides(&[], &[], None).retains_fragments());
     }
 }
