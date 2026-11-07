@@ -1,5 +1,0 @@
-component: changelog
-kind: Fixed
-body: |-
-  **`trellis changelog check` attributes private source changes to Git-only bundle owners.** Direct and transitive bundled changes require the owner's fragment under your configured strictness. Bundled `workspace` dependencies still have no independent changelog, version, or tag. Keep them as workspace packages rather than creating separate releases to satisfy bundle validation.
-time: 2026-11-07T14:05:53-08:00
