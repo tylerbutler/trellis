@@ -374,8 +374,8 @@ struct VersionOverrideArgs {
     #[arg(long, value_name = "PKG=VERSION")]
     set: Vec<String>,
     /// Cut a prerelease: `--pre rc` gives 1.0.0-rc.1, and again 1.0.0-rc.2.
-    /// Fragments stay unreleased until the final version. `--pre none` promotes
-    /// the current prerelease to its final version and consumes them.
+    /// Each candidate includes only new changes and archives its fragments.
+    /// `--pre none` promotes to the final version with a rollup of its candidates.
     #[arg(long, value_name = "LABEL")]
     pre: Option<String>,
 }

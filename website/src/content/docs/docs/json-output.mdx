@@ -68,8 +68,11 @@ Notes:
   had. `graph` nodes also carry both.
 - `version plan`/`version apply` share the `bumped[]` shape (`name`,
   `current`, `next`, `fragments`, `updated_dependencies[]`).
-  `fragments_retained` is true only under
-  [`--pre <label>`](/docs/changelog/#prereleases).
+  `fragments` counts the source entries to render, including archived
+  candidates on promotion. `fragments_retained` is true when the plan includes
+  a [prerelease](/docs/changelog/#prereleases): trellis archives its fragments
+  for the final rollup and removes them from `unreleased`. This also applies
+  to a prerelease version specified with `--set`.
 - `run`/`exec` share the `results[]` shape: `package`, `path`, `status`
   (`success` | `failed` | `skipped`), `duration_ms`. A failed entry also
   carries `exit_code` and `command`. `duration_ms`'s presence is stable, its
