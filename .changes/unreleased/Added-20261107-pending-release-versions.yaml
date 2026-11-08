@@ -1,7 +1,0 @@
-component: release
-kind: Added
-body: |-
-  **`trellis release pr --resume` keeps the pending PR's proposed versions.** New fragments update release notes without recalculating existing targets from the original bump rules. Candidate targets cannot switch version series, even before the PR merges; same-series promotion remains supported. Candidate baselines and release inputs come from Git history.
-
-    Preparation no longer writes `<changelog.dir>/release.toml` and removes an existing file from the generated release commit. Use `--bump` or `--set` to change stable targets; continue or promote an existing candidate before starting another series.
-time: 2026-11-07T17:20:21.987-08:00
