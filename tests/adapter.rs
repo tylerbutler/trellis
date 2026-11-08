@@ -5,6 +5,8 @@
 //! monorepo (`apm.yml`, YAML at the member root) and a Claude Code plugin
 //! marketplace (`.claude-plugin/plugin.json`, JSON inside a hidden directory).
 
+mod common;
+
 use assert_cmd::Command;
 use predicates::prelude::*;
 use std::fs;
@@ -263,6 +265,191 @@ fn version_apply_bumps_the_manifest_surgically() {
 }
 
 #[test]
+fn an_unwritable_adapter_field_leaves_all_release_files_unchanged() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    scaffold(root);
+    let alpha = root.join("packages/alpha/apm.yml");
+    let beta = root.join("packages/beta/apm.yml");
+    let alpha_before = read(&alpha);
+    let beta_before = "name: beta\nversion: |-\n  0.3.1\n";
+    write(&beta, beta_before);
+    let alpha_changelog = "# Changelog\n\nExisting alpha notes.\n";
+    let beta_changelog = "# Changelog\n\nExisting beta notes.\n";
+    write(&root.join("packages/alpha/CHANGELOG.md"), alpha_changelog);
+    write(&root.join("packages/beta/CHANGELOG.md"), beta_changelog);
+    let fragments = [
+        (
+            "alpha",
+            "package = \"alpha\"\nkind = \"Fixed\"\nbody = \"Fix alpha\"\n",
+        ),
+        (
+            "beta",
+            "package = \"beta\"\nkind = \"Fixed\"\nbody = \"Fix beta\"\n",
+        ),
+    ];
+    for (package, contents) in fragments {
+        write(
+            &root.join(format!(".changes/unreleased/{package}.toml")),
+            contents,
+        );
+    }
+    trellis(root)
+        .args(["version", "apply"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("cannot rewrite a block scalar"));
+    assert_eq!(read(&alpha), alpha_before);
+    assert_eq!(read(&beta), beta_before);
+    assert_eq!(
+        read(&root.join("packages/alpha/CHANGELOG.md")),
+        alpha_changelog
+    );
+    assert_eq!(
+        read(&root.join("packages/beta/CHANGELOG.md")),
+        beta_changelog
+    );
+    for (package, contents) in fragments {
+        assert_eq!(
+            read(&root.join(format!(".changes/unreleased/{package}.toml"))),
+            contents
+        );
+    }
+    assert!(!root.join(".changes/alpha").exists());
+    assert!(!root.join(".changes/beta").exists());
+}
+
+#[test]
+fn ci_outputs_use_nested_adapter_manifests_and_release_lifecycles() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    scaffold(root);
+    write(
+        &root.join("trellis.toml"),
+        "[tools.trellis]\nmembers = [\"packages/*\"]\n\
+         [tools.trellis.adapter]\nmanifest = \"metadata/package.json\"\n\
+         name = \"package.name\"\nversion = \"package.version\"\n\
+         [tools.trellis.publish.lifecycle.packages]\n\"packages/beta\" = \"workspace\"\n",
+    );
+    for (name, version) in [("alpha", "1.2.0"), ("beta", "0.3.1")] {
+        write(
+            &root.join(format!("packages/{name}/metadata/package.json")),
+            &format!(r#"{{"package":{{"name":"{name}","version":"{version}"}}}}"#),
+        );
+    }
+    let output = trellis(root).args(["ci", "outputs"]).output().unwrap();
+    assert!(output.status.success());
+    let output = String::from_utf8(output.stdout).unwrap();
+    assert!(
+        output
+            .lines()
+            .any(|line| line == r#"version_files=["packages/alpha/metadata/package.json"]"#),
+        "{output}"
+    );
+    assert!(
+        output.lines().any(|line| line == r#"releasable=["alpha"]"#),
+        "{output}"
+    );
+    let output = trellis(root)
+        .args(["ci", "matrix", "--releasable"])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let matrix: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(matrix["include"].as_array().unwrap().len(), 1);
+    assert_eq!(matrix["include"][0]["name"], "alpha");
+    assert_eq!(matrix["include"][0]["version"], "1.2.0");
+}
+
+#[test]
+fn adapter_series_tags_only_move_when_their_manifest_version_changes() {
+    for (manifest, contents) in [
+        (
+            "metadata/plugin.json",
+            r#"{"name":"alpha","package":{"version":"1.2.0"}}"#,
+        ),
+        (
+            "metadata/apm.yml",
+            "name: alpha\npackage:\n  version: '1.2.0'\n",
+        ),
+    ] {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        write(
+            &root.join("trellis.toml"),
+            &format!(
+                "[tools.trellis]\nmembers = [\"plugins/*\"]\n\
+                 [tools.trellis.adapter]\nmanifest = \"{manifest}\"\nversion = \"package.version\"\n\
+                 [tools.trellis.publish]\npackage_tags = [\"exact\", \"major\"]\n\
+                 repository_tag_package = \"alpha\"\nrepository_tag_format = \"repo-v{{series}}\"\n\
+                 repository_tags = [\"major\"]\n"
+            ),
+        );
+        let path = root.join("plugins/alpha").join(manifest);
+        write(&path, contents);
+        common::init_repo(root);
+        for tag in ["alpha-v1.2.0", "alpha-v1", "repo-v1"] {
+            common::git(root, &["tag", tag]);
+        }
+        let original = common::commit_of(root, "alpha-v1");
+        write(&root.join("README.md"), "unrelated docs\n");
+        common::git(root, &["add", "."]);
+        common::git(root, &["commit", "-qm", "docs"]);
+        let output = trellis(root)
+            .args(["tag", "plan", "--json"])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let plan: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert!(plan["tags"].as_array().unwrap().is_empty(), "{plan}");
+        trellis(root).args(["tag", "create"]).assert().success();
+        assert_eq!(common::commit_of(root, "alpha-v1"), original);
+        assert_eq!(common::commit_of(root, "repo-v1"), original);
+        write(&path, &contents.replace("1.2.0", "1.3.0"));
+        common::git(root, &["add", "."]);
+        common::git(root, &["commit", "-qm", "release"]);
+        let output = trellis(root)
+            .args(["tag", "plan", "--json"])
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        let plan: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        for tag in ["alpha-v1", "repo-v1"] {
+            let entry = plan["tags"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|entry| entry["tag"] == tag)
+                .unwrap();
+            assert_eq!(entry["action"], "move");
+        }
+        trellis(root).args(["tag", "create"]).assert().success();
+        assert_ne!(common::commit_of(root, "alpha-v1"), original);
+        assert_eq!(
+            common::commit_of(root, "alpha-v1"),
+            common::commit_of(root, "HEAD")
+        );
+        assert_eq!(
+            common::commit_of(root, "repo-v1"),
+            common::commit_of(root, "HEAD")
+        );
+        trellis(root)
+            .args(["ci", "tag-package", "alpha-v1.3.0"])
+            .assert()
+            .success()
+            .stdout("alpha\n");
+    }
+}
+
+#[test]
 fn json_manifests_in_a_hidden_directory_work_the_same() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
@@ -385,6 +572,22 @@ fn a_declared_task_still_runs_under_an_adapter() {
         .stdout(predicate::str::contains("checked"));
 }
 
+#[test]
+fn custom_tasks_override_gleam_builtins_in_adapter_workspaces() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    scaffold(root);
+    write(
+        &root.join("trellis.toml"),
+        &format!("{TRELLIS_TOML}\n[tools.trellis.tasks.test]\ncommand = \"echo adapter-test\"\n"),
+    );
+    trellis(root)
+        .args(["run", "test"])
+        .env("TRELLIS_GLEAM_BIN", "missing-gleam-binary")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("adapter-test"));
+}
 #[test]
 fn a_hex_lifecycle_is_rejected_by_configuration() {
     let tmp = tempfile::tempdir().unwrap();

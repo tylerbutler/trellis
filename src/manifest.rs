@@ -667,6 +667,103 @@ nested:
     }
 
     #[test]
+    fn nested_fields_after_containers_keep_their_exact_source_layout() {
+        for (text, format) in [
+            (
+                "{\r\n\t\"metadata\": [{\"package\": {\"version\": \"9.0.0\"}}],\r\n\
+                 \t\"empty\": {}, \"package\": {\"version\": \"1.2.0\"},\r\n\
+                 \t\"description\": \"naïve — ümlaut\"\r\n}\r\n",
+                Format::Json,
+            ),
+            (
+                "metadata:\n  - package:\n      version: '9.0.0'\n\
+                 empty: {}\npackage:\n  version: '1.2.0' # preserve\n\
+                 description: naïve — ümlaut\n",
+                Format::Yaml,
+            ),
+            (
+                "[metadata]\nversion = '9.0.0'\n[package]\nversion = \"1.2.0\" # preserve\n",
+                Format::Toml,
+            ),
+        ] {
+            assert_eq!(
+                read_string(text, format, "package.version")
+                    .unwrap()
+                    .as_deref(),
+                Some("1.2.0")
+            );
+            let updated = write_string(text, format, "package.version", "1.2.1").unwrap();
+            assert_eq!(updated, text.replace("1.2.0", "1.2.1"));
+            assert_eq!(
+                read_string(&updated, format, "package.version")
+                    .unwrap()
+                    .as_deref(),
+                Some("1.2.1")
+            );
+        }
+    }
+
+    #[test]
+    fn duplicate_path_keys_remain_ambiguous_when_their_value_shapes_differ() {
+        for (text, format) in [
+            (
+                r#"{"package":{},"package":{"version":"1.2.0"}}"#,
+                Format::Json,
+            ),
+            (
+                r#"{"package":{"version":"1.2.0"},"package":[]}"#,
+                Format::Json,
+            ),
+            ("package: {}\npackage:\n  version: '1.2.0'\n", Format::Yaml),
+            ("package:\n  version: '1.2.0'\npackage: []\n", Format::Yaml),
+        ] {
+            for result in [
+                read_string(text, format, "package.version").map(|_| ()),
+                write_string(text, format, "package.version", "1.2.1").map(|_| ()),
+            ] {
+                assert!(result.unwrap_err().to_string().contains("duplicated"));
+            }
+        }
+    }
+
+    #[test]
+    fn escaped_json_keys_and_values_are_read_and_rewritten_in_place() {
+        let text =
+            r#"{"description":"naïve — ümlaut","pack\u0061ge":{"ver\u0073ion":"1.2.\u0030"}}"#;
+        assert_eq!(
+            read_string(text, Format::Json, "package.version")
+                .unwrap()
+                .as_deref(),
+            Some("1.2.0")
+        );
+        let updated = write_string(text, Format::Json, "package.version", "1.2.1").unwrap();
+        assert_eq!(updated, text.replace(r#"1.2.\u0030"#, "1.2.1"));
+        let parsed: serde_json::Value = serde_json::from_str(&updated).unwrap();
+        assert_eq!(parsed["package"]["version"], "1.2.1");
+    }
+
+    #[test]
+    fn yaml_aliases_and_block_versions_cannot_be_rewritten_in_place() {
+        let alias = "shared: &release '1.2.0'\nversion: *release\n";
+        assert!(read_string(alias, Format::Yaml, "version").is_err());
+        assert!(write_string(alias, Format::Yaml, "version", "1.2.1").is_err());
+        for text in ["version: |-\n  1.2.0\n", "version: >-\n  1.2.0\n"] {
+            assert_eq!(
+                read_string(text, Format::Yaml, "version")
+                    .unwrap()
+                    .as_deref(),
+                Some("1.2.0")
+            );
+            assert!(
+                write_string(text, Format::Yaml, "version", "1.2.1")
+                    .unwrap_err()
+                    .to_string()
+                    .contains("block scalar")
+            );
+        }
+    }
+
+    #[test]
     fn json_requires_valid_syntax_and_string_fields_on_read_and_write() {
         for text in [
             "version: \"1.2.0\"\n",

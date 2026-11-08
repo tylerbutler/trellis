@@ -106,6 +106,54 @@ fn adapter_committed_candidates_continue_from_their_manifest_baseline() {
     assert_eq!(result["bumped"][0]["next"], "1.3.0-rc.1");
 }
 
+#[test]
+fn yaml_and_toml_adapter_candidates_resume_and_continue_nested_versions() {
+    for (manifest, contents) in [
+        (
+            "apm.yml",
+            "name: alpha\npackage:\n  version: '1.2.0' # keep\n",
+        ),
+        (
+            "package.toml",
+            "name = \"alpha\"\n[package]\nversion = \"1.2.0\" # keep\n",
+        ),
+    ] {
+        let f = ReleaseFixture::adapter();
+        let config_path = f.path().join("trellis.toml");
+        write(
+            &config_path,
+            &fs::read_to_string(&config_path)
+                .unwrap()
+                .replace("plugin.json", manifest),
+        );
+        write(&f.path().join("plugins/alpha").join(manifest), contents);
+        f.commit();
+        let result = f.prepare(&["--pre", "rc"]);
+        assert_eq!(result["bumped"][0]["next"], "1.3.0-rc.0");
+        let pending = git_stdout(
+            f.path(),
+            &[
+                "show",
+                &format!("origin/release/pending:plugins/alpha/{manifest}"),
+            ],
+        );
+        assert_eq!(pending, contents.replace("1.2.0", "1.3.0-rc.0").trim_end());
+        f.pending();
+        assert_eq!(
+            f.prepare(&["--resume", "--skip-unchanged"])["outcome"],
+            "unchanged"
+        );
+        f.merge();
+        assert_eq!(f.prepare(&["--auto-pre"])["outcome"], "unchanged");
+        write(&f.path().join("plugins/alpha/skills/task.md"), "new task\n");
+        f.commit();
+        assert_eq!(
+            f.prepare(&["--auto-pre"])["bumped"][0]["next"],
+            "1.3.0-rc.1"
+        );
+    }
+}
+
 impl ReleaseFixture {
     fn path(&self) -> &Path {
         self.root.path()
