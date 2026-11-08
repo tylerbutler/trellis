@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v1.4.0 - 2026-11-08
+
+
+### version
+
+#### Added
+
+- **`trellis version` keeps candidates in their original version series.** `version plan` and `version apply` reject overrides that move a prerelease to a different major, minor, or patch target. `1.3.0-rc.n` can still advance within `1.3.0` and promote to `1.3.0`.
+
+  Replace cross-series candidate overrides with same-series continuation, or use `--pre none` to promote before starting the next series.
+
+### release
+
+#### Added
+
+- **`trellis release pr --resume` keeps the pending PR's proposed versions.** New fragments update release notes without recalculating existing targets from the original bump rules. Candidate targets cannot switch version series, even before the PR merges; same-series promotion remains supported. Candidate baselines and release inputs come from Git history.
+
+  Preparation no longer writes `<changelog.dir>/release.toml` and removes an existing file from the generated release commit. Use `--bump` or `--set` to change stable targets; continue or promote an existing candidate before starting another series.
+
 ## v1.3.0 - 2026-11-08
 
 
