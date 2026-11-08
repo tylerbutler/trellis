@@ -137,30 +137,18 @@ fn prepare(workspace: &Workspace, options: &PrOptions, base_commit: &str) -> Res
     let pending = github.find_open_pr(&options.branch, &options.base)?;
     let mut pending_state = None;
     if let Some(pr) = &pending {
+        git_stdout(&workspace.root, &["fetch", "--no-tags", "origin", &pr.head])
+            .context("failed to fetch the selected release PR head")?;
         if resume || skip {
-            git_stdout(&workspace.root, &["fetch", "--no-tags", "origin", &pr.head])
-                .context("failed to fetch the selected release PR head")?;
-            pending_state = release_state::read(workspace, &pr.head)?;
+            pending_state = Some(State::from_pr(workspace, base_commit, &pr.head)?);
         }
         if resume {
             let state = pending_state.as_ref().context(
-                "pending PR has no native release intent; use --no-resume with explicit --pre/--set/--bump to replace it")?;
-            overrides = state.resume(
-                workspace,
-                &options.base,
-                &options.branch,
-                base_commit,
-                &pr.head,
-                &options.overrides,
-            )?;
+                "pending PR has no proposed release versions; use --no-resume with explicit release options to replace it")?;
+            overrides = state.resume(workspace, &options.overrides)?;
         } else if auto_pre && !overrides.has_mode() {
             bail!(
-                "a pending release PR owns preparation; pass --resume to preserve its intent or --pre explicitly"
-            );
-        }
-        if skip && pending_state.is_none() {
-            bail!(
-                "pending PR has no native release baseline; use --no-skip-unchanged with an explicit request to replace it"
+                "a pending release PR owns preparation; pass --resume to preserve its proposed versions or --pre explicitly"
             );
         }
     }
@@ -173,6 +161,9 @@ fn prepare(workspace: &Workspace, options: &PrOptions, base_commit: &str) -> Res
         automatic = true;
     }
     let plan = version::compute_plan(workspace, &overrides)?;
+    if let Some(pr) = &pending {
+        State::validate_pending_series(workspace, &pr.head, &plan)?;
+    }
     if plan.is_empty() {
         if let Some(state) = &pending_state
             && state.inputs != release_state::inputs(workspace, base_commit)?
@@ -188,14 +179,7 @@ fn prepare(workspace: &Workspace, options: &PrOptions, base_commit: &str) -> Res
             action: None,
         });
     }
-    let state = State::new(
-        workspace,
-        &options.base,
-        &options.branch,
-        base_commit,
-        &overrides,
-        &plan,
-    )?;
+    let inputs = release_state::inputs(workspace, base_commit)?;
     let retargeted = plan.iter().any(|entry| {
         !entry.current.pre.is_empty()
             && ((
@@ -219,7 +203,7 @@ fn prepare(workspace: &Workspace, options: &PrOptions, base_commit: &str) -> Res
     let guard = (skip || automatic) && !options.continuation.force && !overrides.promoting();
     if guard {
         let unchanged = if let Some(previous) = &pending_state {
-            previous.inputs == state.inputs && previous.intent == state.intent
+            previous.inputs == inputs && previous.matches_plan(&plan)
         } else if pending.is_none() && plan.iter().any(|p| !p.current.pre.is_empty()) {
             !retargeted && !release_state::candidate_changed(workspace, base_commit, &plan)?
         } else {
@@ -234,12 +218,12 @@ fn prepare(workspace: &Workspace, options: &PrOptions, base_commit: &str) -> Res
             });
         }
     }
+    release_state::validate_location(workspace)?;
     let identity = build_release_commit_and_pr(
         workspace,
         options,
         &overrides,
         &plan,
-        &state,
         &github,
         pending.as_ref(),
     )?;
@@ -260,7 +244,6 @@ fn build_release_commit_and_pr(
     options: &PrOptions,
     overrides: &Overrides,
     plan: &[version::PlanEntry],
-    state: &State,
     github: &GitHubClient,
     pending: Option<&ReleasePr>,
 ) -> Result<(u64, String)> {
@@ -281,7 +264,7 @@ fn build_release_commit_and_pr(
     if !version::apply(workspace, overrides, false)? {
         bail!("version apply failed");
     }
-    state.write(workspace)?;
+    release_state::remove(workspace)?;
 
     let summary = plan
         .iter()

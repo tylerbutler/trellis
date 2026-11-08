@@ -342,11 +342,11 @@ Create or update the release PR: version apply on a branch, push, open or refres
 * `--branch <BRANCH>` — Branch the release commit is force-pushed to
 
   Default value: `release/pending`
-* `--resume` — Resume the pending PR's original release intent
-* `--no-resume` — Disable configured intent resumption
+* `--resume` — Keep the pending PR's proposed package versions
+* `--no-resume` — Disable configured pending-version resumption
 * `--auto-pre` — Continue committed candidate labels when no mode was supplied or resumed
 * `--no-auto-pre` — Disable configured automatic candidate continuation
-* `--skip-unchanged` — Skip preparation when release content and intent have not changed
+* `--skip-unchanged` — Skip preparation when release content and proposed versions have not changed
 * `--no-skip-unchanged` — Disable configured content skipping (automatic mode still guards unchanged candidates)
 * `--force` — Prepare even when content is unchanged; does not bypass validation
 * `--json` — Emit the preparation outcome and package plan as JSON

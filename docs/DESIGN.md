@@ -666,24 +666,26 @@ application. Each candidate is regenerated from its selected base. Source
 fragments move into immutable candidate archives; promotion rolls up the
 archives for the current stable target and any new unreleased fragments.
 
-Release preparation can opt into pending intent resumption, committed
+Release preparation can opt into pending-version resumption, committed
 candidate-mode continuation, and unchanged-content skipping. Successful
-preparations commit `<changelog.dir>/release.toml` with schema
-`trellis.release_intent/1`. Semantic overrides are stored independently of
-generated versions and historical fragment archives. Explicit fields replace
-only matching inherited fields; promotion removes inherited pins/bumps for
-existing candidates while retaining targets for stable joining packages.
-Only same-repository open PRs can supply pending intent, and the selected
-immutable head and its source versions are validated before replacement.
+preparations remove obsolete `<changelog.dir>/release.toml` metadata.
+The pending PR's manifests supply fixed package targets, not the original bump
+rules. Explicit package overrides replace matching targets; a workspace-wide
+bump recalculates them all. Promotion retains targets for stable joining
+packages. Candidate targets cannot change version series, whether pending
+or committed; same-series continuation and promotion remain supported.
+Only same-repository open PRs can supply pending versions.
+The selected immutable head, its common ancestor with the base, and source
+versions are validated before replacement. Release-input identities are
+computed from Git trees instead of stored in a generated file.
 
 Automatic continuation never promotes and never advances from unchanged
-release inputs. Native state locates the candidate preparation commit;
-legacy candidates use verified parsed-manifest and release-section history,
+release inputs. Candidates use verified parsed-manifest and release-section history,
 with a separate baseline per package. Comparisons use post-application trees
 so archive consumption and generated versions are not new release input.
 Relevant fragments, source/runtime files, and release configuration count;
 bundle ownership is resolved on both baseline and current trees. Missing
-history or inconsistent intent is an error, not an inferred mode or no-op.
+history or inconsistent versions is an error, not an inferred mode or no-op.
 
 `release pr --json` and `--github-output` report `prepared`, `unchanged`, or
 `no_changes`, with the package plan and available PR identity. They do not

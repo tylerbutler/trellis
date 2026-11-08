@@ -359,6 +359,10 @@ trellis version apply --pre rc                     # 1.0.0-rc.1
 trellis version apply --pre none                   # 1.0.0
 ```
 
+Once a package is a candidate, `--bump` and `--set` cannot move it to another
+version series. Continue `1.0.0-rc.n` within `1.0.0`, or promote it to `1.0.0`
+with `--pre none` before starting a different series.
+
 <Callout>
 
 **Each candidate includes only new changes.** Trellis removes its fragments
@@ -374,8 +378,8 @@ changes added after RC 1. Trellis keeps each candidate's section unchanged and
 uses the configured grouping and templates for the final rollup.
 
 The rollup includes only this package's candidates for the target version,
-including earlier labels such as `beta`. Retargeting with `--bump` or `--set`
-does not transfer archived entries from the old target. Dependency entries
+including earlier labels such as `beta`. Archives from other version series
+do not enter the rollup. Dependency entries
 use the final dependency versions rather than earlier candidate versions.
 Archives stay alongside the release history after promotion; they do not
 become pending changes for the next release.

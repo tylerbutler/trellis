@@ -54,10 +54,10 @@ Don\*(Aqt check whether a newer trellis release is available
 The check is also skipped in CI, when not attached to a terminal, and when `TRELLIS_NO_UPDATE_CHECK` or `DO_NOT_TRACK` is set.
 .TP
 \fB\-\-resume\fR
-Resume the pending PR\*(Aqs original release intent
+Keep the pending PR\*(Aqs proposed package versions
 .TP
 \fB\-\-no\-resume\fR
-Disable configured intent resumption
+Disable configured pending\-version resumption
 .TP
 \fB\-\-auto\-pre\fR
 Continue committed candidate labels when no mode was supplied or resumed
@@ -66,7 +66,7 @@ Continue committed candidate labels when no mode was supplied or resumed
 Disable configured automatic candidate continuation
 .TP
 \fB\-\-skip\-unchanged\fR
-Skip preparation when release content and intent have not changed
+Skip preparation when release content and proposed versions have not changed
 .TP
 \fB\-\-no\-skip\-unchanged\fR
 Disable configured content skipping (automatic mode still guards unchanged candidates)

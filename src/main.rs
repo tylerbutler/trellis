@@ -399,10 +399,10 @@ enum ReleaseCommand {
         /// Branch the release commit is force-pushed to
         #[arg(long, default_value = "release/pending")]
         branch: String,
-        /// Resume the pending PR's original release intent
+        /// Keep the pending PR's proposed package versions
         #[arg(long, conflicts_with = "no_resume")]
         resume: bool,
-        /// Disable configured intent resumption
+        /// Disable configured pending-version resumption
         #[arg(long)]
         no_resume: bool,
         /// Continue committed candidate labels when no mode was supplied or resumed
@@ -411,7 +411,7 @@ enum ReleaseCommand {
         /// Disable configured automatic candidate continuation
         #[arg(long)]
         no_auto_pre: bool,
-        /// Skip preparation when release content and intent have not changed
+        /// Skip preparation when release content and proposed versions have not changed
         #[arg(long, conflicts_with = "no_skip_unchanged")]
         skip_unchanged: bool,
         /// Disable configured content skipping (automatic mode still guards unchanged candidates)
