@@ -1,7 +1,7 @@
 component: version
 kind: Added
 body: |-
-  **`version apply` writes the bump into the field `[tools.trellis.adapter].version` names.** The edit is surgical for JSON and YAML as it already was for TOML: only that scalar changes, so a hand-maintained `plugin.json` or `apm.yml` keeps its comments, key order, indentation, and quote style byte for byte. A field path that resolves to nothing, or to a mapping, sequence, or non-string, is an error — the bump never inserts a key. Duplicate keys that make the field path ambiguous are rejected before any files change.
+  **`trellis version apply` updates the configured adapter version field.** JSON and YAML edits preserve comments, key order, whitespace, and quote style. Missing fields, mappings, sequences, and ambiguous duplicate keys are rejected before release files change. JSON and TOML version fields must be strings. YAML block scalars and aliases cannot be rewritten; use a plain or quoted version string.
 
-    The `manifest.toml` lockfile patch is skipped in an adapter workspace, which has no Gleam lock to keep in step.
+    Adapter version bumps leave Gleam `manifest.toml` lockfiles unchanged.
 time: 2026-08-19T09:01:00.000000-07:00
