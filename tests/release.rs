@@ -429,7 +429,7 @@ fn release_pr_failure_preserves_an_existing_release_branch() {
         .args(["release", "pr", "--base", "main"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("failed to push branch"));
+        .stderr(predicate::str::contains("origin"));
 
     let preserved_release = std::process::Command::new("git")
         .args(["rev-parse", "release/pending"])

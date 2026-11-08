@@ -1,0 +1,5 @@
+component: release
+kind: Added
+body: |-
+  **`trellis release pr` reports structured outcomes for CI.** `--json` emits `trellis.release_pr/1`; `--github-output` emits records suitable for `$GITHUB_OUTPUT`. Both distinguish `prepared`, `unchanged`, and `no_changes`, include the package plan and available PR identity, and identify preparation as `created` or `updated`. Errors remain nonzero. Condition follow-up generation on `outcome == 'prepared'` without a separate planning command.
+time: 2026-11-07T15:00:31.868-08:00

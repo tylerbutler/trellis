@@ -1,0 +1,49 @@
+---
+source: tests/release_continuation.rs
+expression: unchanged
+---
+{
+  "base": "main",
+  "branch": "release/pending",
+  "bumped": [
+    {
+      "current": "1.2.0",
+      "fragments": 1,
+      "name": "lat_core",
+      "next": "1.3.0-rc.0",
+      "updated_dependencies": []
+    },
+    {
+      "current": "0.5.0",
+      "fragments": 0,
+      "name": "lat_mid",
+      "next": "0.5.1-rc.0",
+      "updated_dependencies": [
+        {
+          "name": "lat_core",
+          "version": "1.3.0-rc.0"
+        }
+      ]
+    },
+    {
+      "current": "0.3.1",
+      "fragments": 0,
+      "name": "lat_cli",
+      "next": "0.3.2-rc.0",
+      "updated_dependencies": [
+        {
+          "name": "lat_core",
+          "version": "1.3.0-rc.0"
+        },
+        {
+          "name": "lat_mid",
+          "version": "0.5.1-rc.0"
+        }
+      ]
+    }
+  ],
+  "outcome": "unchanged",
+  "pr_number": 7,
+  "pr_url": "https://github.com/example/repo/pull/7",
+  "schema": "trellis.release_pr/1"
+}

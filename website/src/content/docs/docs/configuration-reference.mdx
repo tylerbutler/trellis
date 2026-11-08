@@ -24,6 +24,7 @@ For workspace setup, package discovery, and task exclusions, start with the
     <p class="task_index_label">Releases and changelogs</p>
     <ul>
       <li><a href="#release-lifecycle">Choose a release lifecycle</a></li>
+      <li><a href="#release-preparation">Continue release preparation</a></li>
       <li><a href="#tags">Configure package tags</a></li>
       <li><a href="#repository-tags">Configure repository tags</a></li>
       <li><a href="#changelog-configuration">Configure changelogs</a></li>
@@ -63,8 +64,30 @@ For workspace setup, package discovery, and task exclusions, start with the
 | `changelog.dependency_body` | no | Minijinja template for one such entry's body. Context: `dependency`, `dependency_version`, `package`. |
 | `changelog.strictness` | no | How `changelog check` treats a changed releasable package with no unreleased fragment: `error` (default, fails the run), `warn`, or `off`. An *invalid* fragment fails at every setting. |
 | `doctor.shared_dependencies` | no | How `doctor` treats packages disagreeing on a shared external dependency: `warn` (default), `error`, or `off`. |
+| `release.resume` | no | Resume native semantic intent from the pending same-repository release PR. Default: `false`. CLI: `--resume` / `--no-resume`. |
+| `release.auto_pre` | no | Continue the committed candidate label when no explicit or resumed mode applies. Always guards unchanged candidates; never implicitly promotes. Default: `false`. CLI: `--auto-pre` / `--no-auto-pre`. |
+| `release.skip_unchanged` | no | Skip release preparation when relevant content and intent are unchanged. Default: `false`. CLI: `--skip-unchanged` / `--no-skip-unchanged`. |
 
 </div>
+
+## Release preparation
+
+These settings apply only to `release pr`, not to `version plan` or
+`version apply`. All default to `false` and are read from the selected base's
+workspace configuration.
+
+```toml title="gleam.toml"
+[tools.trellis.release]
+resume = true
+auto_pre = true
+skip_unchanged = true
+```
+
+Explicit CLI flags override each configured value. A flag and its `--no-`
+form cannot be supplied together. `--force` bypasses content skipping, including
+the automatic candidate guard, but not state or version validation.
+See [release preparation](/docs/publishing/#resuming-a-pending-request) for mode
+precedence, baseline recovery, and the persisted state contract.
 
 ## Release lifecycle
 

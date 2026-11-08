@@ -34,7 +34,7 @@ pub enum PreChoice {
 /// sensibly uses rather than colliding with one.
 const PROMOTE: &str = "none";
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Overrides {
     /// `--bump <level>`, applying to every package in the plan.
     global_bump: Option<Bump>,
@@ -45,7 +45,82 @@ pub struct Overrides {
     pre: Option<PreChoice>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Intent {
+    pub bump: Vec<String>,
+    pub set: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pre: Option<String>,
+}
+
 impl Overrides {
+    pub fn intent(&self) -> Intent {
+        let level = |bump: &Bump| match bump {
+            Bump::Major => "major",
+            Bump::Minor => "minor",
+            Bump::Patch => "patch",
+        };
+        Intent {
+            bump: self
+                .global_bump
+                .iter()
+                .map(|b| level(b).to_string())
+                .chain(
+                    self.per_package_bump
+                        .iter()
+                        .map(|(p, b)| format!("{p}={}", level(b))),
+                )
+                .collect(),
+            set: self
+                .pinned
+                .iter()
+                .map(|(p, v)| format!("{p}={v}"))
+                .collect(),
+            pre: match &self.pre {
+                Some(PreChoice::Label(label)) => Some(label.clone()),
+                Some(PreChoice::Promote) => Some(PROMOTE.to_string()),
+                _ => None,
+            },
+        }
+    }
+
+    pub fn has_mode(&self) -> bool {
+        self.pre.is_some()
+    }
+
+    pub fn merged(&self, explicit: &Self, candidate_packages: &[&str]) -> Self {
+        let mut merged = self.clone();
+        if let Some(pre) = &explicit.pre {
+            merged.pre = Some(pre.clone());
+            if explicit.promoting() {
+                for package in candidate_packages {
+                    merged.pinned.remove(*package);
+                    merged.per_package_bump.remove(*package);
+                }
+            }
+        }
+        if explicit.global_bump.is_some() {
+            merged.global_bump = explicit.global_bump;
+        }
+        for (package, bump) in &explicit.per_package_bump {
+            merged.pinned.remove(package);
+            merged.per_package_bump.insert(package.clone(), *bump);
+        }
+        for (package, version) in &explicit.pinned {
+            merged.per_package_bump.remove(package);
+            merged.pinned.insert(package.clone(), version.clone());
+        }
+        merged
+    }
+
+    pub fn with_label(&self, label: &str) -> Result<Self> {
+        validate_label(label)?;
+        let mut overrides = self.clone();
+        overrides.pre = Some(PreChoice::Label(label.to_string()));
+        Ok(overrides)
+    }
+
     pub fn changelog_preview() -> Self {
         Self {
             pre: Some(PreChoice::PreviewFinal),
@@ -111,12 +186,12 @@ impl Overrides {
         Ok(overrides)
     }
 
-    pub fn previewing(&self) -> bool {
-        self.pre == Some(PreChoice::PreviewFinal)
-    }
-
     pub fn promoting(&self) -> bool {
         self.pre == Some(PreChoice::Promote)
+    }
+
+    pub fn previewing(&self) -> bool {
+        self.pre == Some(PreChoice::PreviewFinal)
     }
 
     /// Every package named by a `--bump pkg=` or `--set pkg=`, so the caller can

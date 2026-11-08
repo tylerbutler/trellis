@@ -12,7 +12,7 @@ dependencies rewritten to real Hex requirements. Trellis covers each step, and
 every step is idempotent, so re-running a partially failed release is safe.
 
 ```txt wrap
-trellis release pr [--base <branch>] [--branch <branch>] [--pre <label|none>] [--set <pkg=version>] [--bump <pkg=level>]
+trellis release pr [--base <branch>] [--branch <branch>] [--pre <label|none>] [--set <pkg=version>] [--bump <pkg=level>] [--resume] [--auto-pre] [--skip-unchanged] [--json | --github-output]
 trellis tag plan [--json]
 trellis tag create [--push] [--github-release]
 trellis publish <pkg | --tag <tag> | --all-untagged> [--dry-run]
@@ -50,12 +50,13 @@ repository_tags = ["major", "minor"]      # repo-v0 and repo-v0.4
 
 `trellis release pr` turns pending fragments into a release pull request: it
 runs `version apply` on a release branch (default `release/pending`), commits
-the bumps, force-pushes (so the branch is regenerated on each run), and
+the bumps and release intent, replaces the remote branch with a force-with-lease
+check, and
 creates or updates the PR via the GitHub API. It needs a token: `GITHUB_TOKEN`
 (ambient in GitHub Actions), `GH_TOKEN`, or a logged-in `gh` CLI as the
 fallback (`gh auth token`). The body carries the bump table
 and each package's new CHANGELOG section. It requires a clean working tree
-and is a no-op when there are no fragments.
+and is a no-op when there is no eligible release plan.
 
 ### Candidates and promotion
 
@@ -76,12 +77,13 @@ Each request regenerates from the selected base, not the old release branch.
 Retrying against an unchanged base produces the same candidate version; the
 next candidate follows a merge. This is version repeatability, not a promise
 of identical commit hashes or rendering dates. On a prerelease base, choose a
-label, `--pre none`, or an explicit version override instead of relying on the
-default stable bump.
+label or `--pre none` instead of relying on the
+default stable bump. The opt-ins below let automated callers retain that choice.
 
-Candidate fragments stay unreleased, including fragments for dependent
-packages bumped by the release plan. Stable promotion consumes them and
-renders the final changelog. Review and merge each PR before publishing;
+Candidate fragments move from `unreleased/` into source archives beside the
+candidate's Markdown section. Later candidates include only new fragments;
+stable promotion rolls up the target's archives and any new fragments.
+Review and merge each PR before publishing;
 never publish an unmerged candidate branch.
 
 The [Gleam/Hex workflow](/docs/ci/#the-release-pipeline) handles manual requests,
@@ -89,6 +91,118 @@ pauses automatic preparation during this cycle, and publishes only the
 approved merge commit. It blocks new preparation until publication **and**
 tagging of the previous merged release succeed, then restores automatic stable
 preparation after a published promotion.
+
+### Resuming a pending request
+
+Use `--resume` to preserve a pending PR's original label, promotion choice,
+workspace-wide bump, and per-package targets:
+
+```sh
+trellis release pr --pre rc --set lat_core=2.0.0 --set lat_mid=1.0.0
+# A later push keeps those targets and the pending rc.0 versions.
+trellis release pr --resume --skip-unchanged
+```
+
+Each preparation writes `<changelog.dir>/release.toml` with
+`schema = "trellis.release_intent/1"`. Commit this file with the release.
+It records `base`, `branch`, `base_commit`, semantic `intent` (`bump`, `set`,
+and optional `pre`), package `path`/`current`/`next` values, and input identities.
+It is separate from candidate archives. Do not edit it to change a request;
+use CLI overrides.
+
+Explicit options replace only the supplied part of the stored request.
+`--set lat_mid=1.1.0` keeps `lat_core`'s target; `--bump lat_mid=minor`
+replaces `lat_mid`'s stored pin. Package overrides take precedence over a
+workspace-wide bump. `--pre none` replaces the candidate mode, removes inherited
+overrides for packages already in a candidate cycle, and retains targets for
+stable packages joining the promotion. Explicit contradictory promotion
+overrides still fail.
+
+Trellis finds only open, same-repository PRs with the requested head and base.
+Fork PRs cannot supply intent. Multiple matches, a different pending base,
+edited versions or metadata, changed source versions, and already-merged
+pending heads produce errors before replacement. A PR made without native
+intent cannot be resumed: use `--no-resume` with explicit release options to
+replace it. If content skipping is configured, also use
+`--no-skip-unchanged` for that replacement.
+
+### Automatic candidate preparation
+
+Use `--auto-pre` after a candidate merges. Mode precedence is explicit
+`--pre`, then intent resumed with `--resume`, then the committed candidate
+label, then the existing stable default. No automatic path promotes to stable.
+A pending PR must be resumed or replaced with an explicit mode; automation
+does not infer its request from generated manifest versions.
+
+```sh
+trellis release pr --resume --auto-pre --skip-unchanged
+```
+
+Candidates keep their separate stable version bases. Stable packages joining
+the cycle use the normal fragment plan. Conflicting labels name the affected
+packages in an error; select `--pre <label>` explicitly to resolve them.
+
+`--auto-pre` always checks for new release content. `--skip-unchanged` enables
+the same check for explicit preparation and resumed requests. Unrelated docs,
+excluded examples/benchmarks, generated changelogs, and historical archives do
+not trigger another candidate. Added, edited, and deleted unreleased fragments,
+package `src/`, `priv/`, manifests, and release configuration do. Bundled
+workspace sources count for their release owners. A stable owner with changed
+sources but no release plan needs a fragment.
+
+Deleting all content from a pending release without leaving a valid replacement
+plan is an error, not a successful no-op. Promotion is never blocked merely
+because candidate content is unchanged. A new target or label is a changed
+request. To deliberately prepare another otherwise-unchanged candidate, use
+`--force`; validation still applies. Explicit `--pre` without content skipping
+keeps the existing behavior.
+
+Native state identifies the committed candidate baseline. For older candidates,
+trellis inspects parsed manifest history and verifies the candidate's release
+section, separately for each package. Missing or inconsistent history fails:
+fetch full history or make an explicit `--pre` preparation to establish native
+state. Retained legacy fragments alone cannot generate an endless candidate
+cycle.
+
+These options also have false-by-default
+[`release` configuration keys](/docs/configuration-reference/#release-preparation).
+`--no-resume`, `--no-auto-pre`, and `--no-skip-unchanged` override configured
+values. Disabling configured skipping does not disable the automatic mode's
+guard; use `--force` for that.
+
+### CI outcomes
+
+`--json` emits `trellis.release_pr/1`; `--github-output` emits single-line
+`key=value` records like `ci outputs`. They are mutually exclusive and keep
+stdout free of progress text and update notices.
+
+| `outcome` | Meaning |
+| --- | --- |
+| `prepared` | The release branch and PR were created or updated successfully. `pr_action` is `created` or `updated`. |
+| `unchanged` | The content check skipped apply, commit, push, and PR mutation. |
+| `no_changes` | No eligible release plan exists. |
+
+Both forms include `base`, `branch`, and `bumped` in the existing version-plan
+shape. PR identity (`pr_number`, `pr_url`) is present when known.
+`pr_action` is present only for preparation. Optional fields are absent in JSON
+and empty in GitHub output. An unchanged result's plan was evaluated, not
+applied. Errors remain nonzero and do not emit a successful result.
+
+```yaml
+- name: Prepare the release
+  id: release
+  run: trellis release pr --resume --auto-pre --skip-unchanged --github-output >> "$GITHUB_OUTPUT"
+- name: Regenerate version-stamped pages
+  if: steps.release.outputs.outcome == 'prepared'
+  run: |
+    git fetch origin "refs/heads/${{ steps.release.outputs.branch }}"
+    git checkout --detach FETCH_HEAD
+    trellis run docs
+```
+
+Custom workflows must still serialize preparation and wait for the prior
+merged release's required publication and tagging. These flags do not change
+Hex policy or authorize publication.
 
 ## Tags
 

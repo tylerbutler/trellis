@@ -4,7 +4,7 @@
 .SH NAME
 trellis\-release\-pr \- Create or update the release PR: version apply on a branch, push, open or refresh the PR via the GitHub API
 .SH SYNOPSIS
-\fBtrellis release pr\fR [\fB\-\-bump\fR] [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-\-color\fR] [\fB\-\-set\fR] [\fB\-\-pre\fR] [\fB\-q\fR|\fB\-\-quiet\fR] [\fB\-\-base\fR] [\fB\-v\fR|\fB\-\-verbose\fR] [\fB\-\-branch\fR] [\fB\-\-no\-update\-check\fR] [\fB\-h\fR|\fB\-\-help\fR] 
+\fBtrellis release pr\fR [\fB\-\-bump\fR] [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-\-color\fR] [\fB\-\-set\fR] [\fB\-\-pre\fR] [\fB\-q\fR|\fB\-\-quiet\fR] [\fB\-\-base\fR] [\fB\-v\fR|\fB\-\-verbose\fR] [\fB\-\-branch\fR] [\fB\-\-no\-update\-check\fR] [\fB\-\-resume\fR] [\fB\-\-no\-resume\fR] [\fB\-\-auto\-pre\fR] [\fB\-\-no\-auto\-pre\fR] [\fB\-\-skip\-unchanged\fR] [\fB\-\-no\-skip\-unchanged\fR] [\fB\-\-force\fR] [\fB\-\-json\fR] [\fB\-\-github\-output\fR] [\fB\-h\fR|\fB\-\-help\fR] 
 .SH DESCRIPTION
 Create or update the release PR: version apply on a branch, push, open or refresh the PR via the GitHub API
 .SH OPTIONS
@@ -52,6 +52,33 @@ Branch the release commit is force\-pushed to
 Don\*(Aqt check whether a newer trellis release is available
 
 The check is also skipped in CI, when not attached to a terminal, and when `TRELLIS_NO_UPDATE_CHECK` or `DO_NOT_TRACK` is set.
+.TP
+\fB\-\-resume\fR
+Resume the pending PR\*(Aqs original release intent
+.TP
+\fB\-\-no\-resume\fR
+Disable configured intent resumption
+.TP
+\fB\-\-auto\-pre\fR
+Continue committed candidate labels when no mode was supplied or resumed
+.TP
+\fB\-\-no\-auto\-pre\fR
+Disable configured automatic candidate continuation
+.TP
+\fB\-\-skip\-unchanged\fR
+Skip preparation when release content and intent have not changed
+.TP
+\fB\-\-no\-skip\-unchanged\fR
+Disable configured content skipping (automatic mode still guards unchanged candidates)
+.TP
+\fB\-\-force\fR
+Prepare even when content is unchanged; does not bypass validation
+.TP
+\fB\-\-json\fR
+Emit the preparation outcome and package plan as JSON
+.TP
+\fB\-\-github\-output\fR
+Emit key=value records suitable for $GITHUB_OUTPUT
 .TP
 \fB\-h\fR, \fB\-\-help\fR
 Print help (see a summary with \*(Aq\-h\*(Aq)

@@ -261,7 +261,7 @@ impl PlanEntry {
 
 /// `version plan` and `version apply` report the same entry shape under the
 /// same `bumped` key, so they share one conversion.
-fn bumps(plan: &[PlanEntry]) -> Vec<Bump<'_>> {
+pub(crate) fn bumps(plan: &[PlanEntry]) -> Vec<Bump<'_>> {
     plan.iter()
         .map(|entry| Bump {
             name: &entry.name,

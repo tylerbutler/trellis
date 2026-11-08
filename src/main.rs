@@ -399,6 +399,33 @@ enum ReleaseCommand {
         /// Branch the release commit is force-pushed to
         #[arg(long, default_value = "release/pending")]
         branch: String,
+        /// Resume the pending PR's original release intent
+        #[arg(long, conflicts_with = "no_resume")]
+        resume: bool,
+        /// Disable configured intent resumption
+        #[arg(long)]
+        no_resume: bool,
+        /// Continue committed candidate labels when no mode was supplied or resumed
+        #[arg(long, conflicts_with = "no_auto_pre")]
+        auto_pre: bool,
+        /// Disable configured automatic candidate continuation
+        #[arg(long)]
+        no_auto_pre: bool,
+        /// Skip preparation when release content and intent have not changed
+        #[arg(long, conflicts_with = "no_skip_unchanged")]
+        skip_unchanged: bool,
+        /// Disable configured content skipping (automatic mode still guards unchanged candidates)
+        #[arg(long)]
+        no_skip_unchanged: bool,
+        /// Prepare even when content is unchanged; does not bypass validation
+        #[arg(long)]
+        force: bool,
+        /// Emit the preparation outcome and package plan as JSON
+        #[arg(long, conflicts_with = "github_output")]
+        json: bool,
+        /// Emit key=value records suitable for $GITHUB_OUTPUT
+        #[arg(long)]
+        github_output: bool,
     },
     /// Reconcile tags against current manifest versions — no version bump,
     /// no unreleased changelog fragments required
@@ -498,10 +525,20 @@ fn main() -> ExitCode {
         .complete();
 
     let cli = Cli::parse();
+    let release_machine_output = matches!(
+        &cli.command,
+        Command::Release {
+            command: ReleaseCommand::Pr { json: true, .. }
+                | ReleaseCommand::Pr {
+                    github_output: true,
+                    ..
+                },
+        }
+    );
     // Before anything prints, so every writer sees the same resolved settings.
     term::init(
         cli.color,
-        match (cli.quiet, cli.verbose) {
+        match (cli.quiet || release_machine_output, cli.verbose) {
             (true, _) => Verbosity::Quiet,
             (_, true) => Verbosity::Verbose,
             _ => Verbosity::Normal,
@@ -511,6 +548,7 @@ fn main() -> ExitCode {
     // only prints when the command itself succeeded, so it never clutters error
     // output or corrupts structured stdout.
     let notify_update = !cli.no_update_check
+        && !release_machine_output
         && !matches!(
             cli.command,
             Command::MarkdownHelp
@@ -710,12 +748,41 @@ fn dispatch(cli: Cli) -> Result<bool> {
                 base,
                 branch,
                 overrides,
+                resume,
+                no_resume,
+                auto_pre,
+                no_auto_pre,
+                skip_unchanged,
+                no_skip_unchanged,
+                force,
+                json,
+                github_output,
             } => commands::release::pr(
                 &workspace,
                 &commands::release::PrOptions {
                     base,
                     branch,
                     overrides: overrides.parse()?,
+                    continuation: commands::release::ContinuationOptions {
+                        resume: if no_resume {
+                            Some(false)
+                        } else {
+                            resume.then_some(true)
+                        },
+                        auto_pre: if no_auto_pre {
+                            Some(false)
+                        } else {
+                            auto_pre.then_some(true)
+                        },
+                        skip_unchanged: if no_skip_unchanged {
+                            Some(false)
+                        } else {
+                            skip_unchanged.then_some(true)
+                        },
+                        force,
+                    },
+                    json,
+                    github_output,
                 },
             ),
             ReleaseCommand::Bootstrap { args } => {

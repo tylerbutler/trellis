@@ -1,0 +1,5 @@
+component: release
+kind: Added
+body: |-
+  **`trellis release pr --auto-pre` continues committed candidates without implicit stable promotion.** It uses the current label only when no explicit or resumed mode applies. Packages keep separate version bases, and stable packages join through the normal plan. Conflicting labels produce an error. Unchanged release content does not create another candidate; use `--pre none` explicitly to promote.
+time: 2026-11-07T15:00:31.868-08:00

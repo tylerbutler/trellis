@@ -569,6 +569,49 @@ pub struct Bump<'a> {
     pub updated_dependencies: Vec<UpdatedDependency<'a>>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReleaseOutcome {
+    Prepared,
+    Unchanged,
+    NoChanges,
+}
+
+#[derive(Serialize)]
+pub struct ReleasePrDocument<'a> {
+    pub schema: &'static str,
+    pub outcome: ReleaseOutcome,
+    pub base: &'a str,
+    pub branch: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pr_number: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pr_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pr_action: Option<&'static str>,
+    pub bumped: Vec<Bump<'a>>,
+}
+
+impl ReleasePrDocument<'_> {
+    pub const SCHEMA: &'static str = "trellis.release_pr/1";
+
+    pub fn github_output(&self) -> anyhow::Result<String> {
+        Ok(format!(
+            "schema={}\noutcome={}\nbase={}\nbranch={}\npr_number={}\npr_url={}\npr_action={}\nbumped={}\n",
+            self.schema,
+            serde_json::to_value(self.outcome)?
+                .as_str()
+                .expect("outcome is a string"),
+            self.base,
+            self.branch,
+            self.pr_number.map(|n| n.to_string()).unwrap_or_default(),
+            self.pr_url.as_deref().unwrap_or_default(),
+            self.pr_action.unwrap_or_default(),
+            serde_json::to_string(&self.bumped)?,
+        ))
+    }
+}
+
 /// `trellis version plan --json`.
 #[derive(Serialize)]
 #[serde(rename_all = "snake_case")]

@@ -47,10 +47,22 @@ pub struct ConfigFile {
     pub changelog: ChangelogConfig,
     #[serde(default)]
     pub doctor: DoctorConfig,
+    #[serde(default)]
+    pub release: ReleaseConfig,
     /// Keys under `[tools.trellis]` that no field claimed. Collected rather
     /// than deserialized — see [`ConfigFile::from_document`].
     #[serde(skip)]
     pub unknown_keys: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct ReleaseConfig {
+    #[serde(default)]
+    pub resume: bool,
+    #[serde(default)]
+    pub auto_pre: bool,
+    #[serde(default)]
+    pub skip_unchanged: bool,
 }
 
 /// What a check that is a judgment call does about what it finds: fail the
@@ -637,6 +649,7 @@ impl ConfigFile {
             publish: PublishConfig::default(),
             changelog: ChangelogConfig::default(),
             doctor: DoctorConfig::default(),
+            release: ReleaseConfig::default(),
             unknown_keys: Vec::new(),
         }
     }

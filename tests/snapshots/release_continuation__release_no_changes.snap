@@ -1,0 +1,11 @@
+---
+source: tests/release_continuation.rs
+expression: document
+---
+{
+  "base": "main",
+  "branch": "release/pending",
+  "bumped": [],
+  "outcome": "no_changes",
+  "schema": "trellis.release_pr/1"
+}
