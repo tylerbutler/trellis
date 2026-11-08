@@ -140,7 +140,7 @@ exact_tag_format = "{name}-v{version}"   # consumers pin a release
 series_tag_format = "{name}-v{series}"
 ```
 
-### `trellis.toml`, a second config home
+### `trellis.toml` for adapter workspaces
 
 An adapter workspace usually has no `gleam.toml` for the table to live in, so
 trellis also accepts a **`trellis.toml`** at the workspace root, carrying the
@@ -148,8 +148,15 @@ same `[tools.trellis]` table. Root discovery walks up to the first directory
 with either file carrying the table, preferring `trellis.toml`; carrying it in
 both at once is an error rather than a precedence puzzle.
 
-`trellis.toml` is not adapter-specific — a Gleam workspace may use it too — but
-there is rarely a reason to, since `gleam.toml` is already there.
+The native Gleam backend requires `[tools.trellis]` in `gleam.toml`.
+Configuration in `trellis.toml` without `[tools.trellis.adapter]` is an error
+in `doctor` and normal commands. Move the `[tools.trellis]` table and its
+subtables into `gleam.toml`; create a config-only `gleam.toml` if the workspace
+root is not a package. Configless Gleam workspaces still work.
+
+This rule follows the selected backend, not file presence. An adapter workspace
+may have an unrelated `gleam.toml` beside `trellis.toml`, provided only one
+root file carries `[tools.trellis]`.
 
 ### Version bumps are surgical
 

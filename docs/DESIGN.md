@@ -329,8 +329,11 @@ repository needs it yet.
 Two consequences follow from the seam rather than from configuration. A
 workspace whose members are not Gleam packages usually has no `gleam.toml` for
 the `[tools.trellis]` table to live in, so a root `trellis.toml` is a second
-config home, preferred over `gleam.toml` when both exist and an error when both
-carry the table. And the lifecycle ladder tops out one rung lower: `hex` under
+config home. The native Gleam backend requires its configuration in `gleam.toml`;
+`trellis.toml` without an adapter is a load error, including in `doctor`.
+The selected backend determines this rule, not the presence of an unrelated
+Gleam manifest. Both files carrying the table remains an error, and configless
+Gleam discovery is unchanged. And the lifecycle ladder tops out one rung lower: `hex` under
 an adapter is a configuration error, not a runtime refusal, so it is caught
 once at load rather than at each of `publish`'s four gates.
 

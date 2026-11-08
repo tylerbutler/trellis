@@ -195,9 +195,7 @@ manifest's path relative to the member directory, whose presence marks a member
 and whose extension (`.toml`, `.json`, `.yaml`, `.yml`) picks the format:
 
 ```toml
-# trellis.toml at the repo root — an adapter workspace usually has no
-# gleam.toml for the table to live in, so trellis accepts this file too.
-# Root discovery prefers it; carrying the table in both is an error.
+# trellis.toml at the repo root for an adapter workspace.
 [tools.trellis]
 members = ["plugins/*"]
 
@@ -220,6 +218,11 @@ error; `publish`, `lockfile refresh`, and `run`'s built-in Gleam verbs
 are refused. `doctor` drops the `manifest.toml`, shared-dependency, and
 toolchain checks, and adds that every member manifest declares a semver version
 and a name matching its directory.
+
+The native Gleam backend requires `[tools.trellis]` in `gleam.toml`, not
+`trellis.toml`. A Gleam workspace without configuration still works. An
+adapter workspace may contain unrelated `gleam.toml` files, but carrying
+`[tools.trellis]` in both root files is an error.
 
 ## Commands
 

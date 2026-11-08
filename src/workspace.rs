@@ -11,9 +11,8 @@ use std::path::{Component, Path, PathBuf};
 
 pub const GLEAM_TOML: &str = "gleam.toml";
 
-/// The alternative home for the `[tools.trellis]` table, for a workspace whose
-/// root is not itself a Gleam package — an adapter workspace has no
-/// `gleam.toml` for the configuration to live in.
+/// The home for the `[tools.trellis]` table in a manifest-adapter workspace.
+/// The native Gleam backend requires configuration in `gleam.toml`.
 pub const TRELLIS_TOML: &str = "trellis.toml";
 
 /// The files that may carry the `[tools.trellis]` table, in precedence order.
@@ -296,6 +295,14 @@ impl Workspace {
                 }
             }
         };
+        if config_rel == TRELLIS_TOML && config.adapter.is_none() {
+            diagnostics.config_error(
+                config_rel,
+                "the Gleam backend requires configuration in gleam.toml; \
+                 move [tools.trellis] from trellis.toml to gleam.toml",
+            );
+            return Ok((None, diagnostics));
+        }
         // `gleam.toml`, or whatever the adapter names — the file whose presence
         // marks a member directory and whose contents supply name and version.
         let manifest_rel = config

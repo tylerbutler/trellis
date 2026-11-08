@@ -361,3 +361,112 @@ fn two_config_homes_carrying_the_table_is_an_error() {
         .failure()
         .stderr(predicate::str::contains("keep exactly one"));
 }
+
+#[test]
+fn gleam_backend_rejects_configuration_in_trellis_toml() {
+    for root_is_package in [false, true] {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        git_init(root);
+        write(
+            &root.join("trellis.toml"),
+            "[tools.trellis]\nmembers = [\"packages/*\"]\n",
+        );
+        write(
+            &root.join("packages/alpha/gleam.toml"),
+            "name = \"alpha\"\nversion = \"1.0.0\"\n",
+        );
+        if root_is_package {
+            write(
+                &root.join("gleam.toml"),
+                "name = \"root\"\nversion = \"1.0.0\"\n",
+            );
+        }
+
+        for dir in [root.to_path_buf(), root.join("packages/alpha")] {
+            trellis(&dir)
+                .arg("list")
+                .assert()
+                .failure()
+                .stderr(predicate::str::contains(
+                    "move [tools.trellis] from trellis.toml to gleam.toml",
+                ));
+            trellis(&dir)
+                .args(["doctor", "--format", "json"])
+                .assert()
+                .failure()
+                .stdout(predicate::str::contains(
+                    "move [tools.trellis] from trellis.toml to gleam.toml",
+                ));
+        }
+    }
+}
+
+#[test]
+fn invalid_gleam_config_does_not_fall_back_to_an_ancestor_workspace() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write(
+        &root.join("gleam.toml"),
+        "[tools.trellis]\nmembers = [\"packages/*\"]\n",
+    );
+    write(
+        &root.join("nested/trellis.toml"),
+        "[tools.trellis]\nmembers = [\"packages/*\"]\n",
+    );
+
+    trellis(&root.join("nested"))
+        .arg("list")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "move [tools.trellis] from trellis.toml to gleam.toml",
+        ));
+}
+
+#[test]
+fn adapter_config_accepts_an_unrelated_gleam_manifest() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    scaffold(root);
+    write(
+        &root.join("gleam.toml"),
+        "name = \"unrelated\"\nversion = \"1.0.0\"\n",
+    );
+    write(&root.join("packages/alpha/CHANGELOG.md"), "# Changelog\n");
+    write(&root.join("packages/beta/CHANGELOG.md"), "# Changelog\n");
+
+    trellis(root)
+        .arg("list")
+        .assert()
+        .success()
+        .stdout("alpha  git_only\nbeta   git_only\n");
+    trellis(root)
+        .args(["doctor", "--format", "json"])
+        .assert()
+        .success();
+}
+
+#[test]
+fn gleam_backend_accepts_native_configuration_and_configless_discovery() {
+    for configured in [false, true] {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        git_init(root);
+        write(
+            &root.join("packages/alpha/gleam.toml"),
+            "name = \"alpha\"\nversion = \"1.0.0\"\n",
+        );
+        if configured {
+            write(
+                &root.join("gleam.toml"),
+                "[tools.trellis]\nmembers = [\"packages/*\"]\n",
+            );
+        }
+        trellis(&root.join("packages/alpha"))
+            .arg("list")
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("alpha"));
+    }
+}
