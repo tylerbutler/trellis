@@ -15,6 +15,7 @@ devDependencies:
     # - git: https://github.com/obra/superpowers
     - DietrichGebert/ponytail
     - pbakaus/impeccable/plugin#skill-v4.5.2
+    - addyosmani/agent-skills
   mcp: []
   lsp:
     - name: rust-analyzer
