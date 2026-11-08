@@ -1,7 +1,16 @@
 lockfile_version: '1'
-generated_at: '2026-10-09T20:45:48.339089+00:00'
-apm_version: 0.32.0
+generated_at: '2026-11-08T20:02:49.368654+00:00'
+apm_version: 0.35.0
 dependencies:
+- repo_url: addyosmani/agent-skills
+  name: agent-skills
+  host: github.com
+  resolved_commit: 301b02b12bff98e4688e6984af6556802322bbde
+  version: 0.6.15
+  package_type: agent_plugin
+  content_hash: sha256:2addaec0a3aec80a79df4b4a0e459a96a7ec649b5ca7146f85ea5b1456ad7d28
+  is_dev: true
+  declared_license: MIT
 - repo_url: dietrichgebert/ponytail
   materialization_repo_url: DietrichGebert/ponytail
   name: ponytail
@@ -412,6 +421,26 @@ dependencies:
     .github/prompts/create-pr.prompt.md: sha256:5fcb1b64247130aec3a0ebd114ae6d127de44f7e824087033c468d8debb593a2
     .github/prompts/merge-upstream.prompt.md: sha256:bf990755d11f1e73610d9cde3b656aa175c7f63cdd8d069158302c6496a5b77e
   content_hash: sha256:3953fba3e9f259e5282c2e287edbfefb223a5c124b0f57ee0183a34845adf91b
+  is_dev: true
+- repo_url: cursor/plugins
+  name: unslop
+  host: github.com
+  resolved_commit: 6b0300214a09fd6029cfb7077043125758cd1fd2
+  version: unknown
+  virtual_path: pstack/skills/unslop
+  is_virtual: true
+  depth: 2
+  resolved_by: tylerbutler/apm-base
+  package_type: claude_skill
+  deployed_files:
+  - .agents/skills/unslop
+  - .agents/skills/unslop/SKILL.md
+  - .claude/skills/unslop
+  - .claude/skills/unslop/SKILL.md
+  deployed_file_hashes:
+    .agents/skills/unslop/SKILL.md: sha256:ccab208e315ce05e2fab8eeee2f7879f1289b5c6844840b2d307adf31c79144f
+    .claude/skills/unslop/SKILL.md: sha256:ccab208e315ce05e2fab8eeee2f7879f1289b5c6844840b2d307adf31c79144f
+  content_hash: sha256:eca0ad9fa3a3867c83f3aaf3a058e247a569c8976a68ca423a569b93eb86de5d
   is_dev: true
 - repo_url: hardikpandya/stop-slop
   name: stop-slop
@@ -1420,6 +1449,24 @@ deployments:
   active_owner: .
   content_hash: sha256:3648aef6898b875af02a0279edbb81a85c5820cb76769637019e36269ae681d7
 - kind: project-relative
+  target: claude
+  value: .claude/skills/unslop
+  runtime: null
+  scope: project
+  owners:
+  - cursor/plugins/pstack/skills/unslop
+  active_owner: cursor/plugins/pstack/skills/unslop
+  content_hash: null
+- kind: project-relative
+  target: claude
+  value: .claude/skills/unslop/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - cursor/plugins/pstack/skills/unslop
+  active_owner: cursor/plugins/pstack/skills/unslop
+  content_hash: sha256:ccab208e315ce05e2fab8eeee2f7879f1289b5c6844840b2d307adf31c79144f
+- kind: project-relative
   target: copilot
   value: .agents/skills/caveman-commit
   runtime: null
@@ -2195,6 +2242,42 @@ deployments:
   content_hash: sha256:ffbf1316c7fb5aaf552de005609a64a9639b546ecd76bfb0e482864d5bbe6f58
 - kind: project-relative
   target: copilot
+  value: .agents/skills/trellis-onboarding
+  runtime: null
+  scope: project
+  owners:
+  - .
+  active_owner: .
+  content_hash: null
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/trellis-onboarding/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - .
+  active_owner: .
+  content_hash: sha256:3648aef6898b875af02a0279edbb81a85c5820cb76769637019e36269ae681d7
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/unslop
+  runtime: null
+  scope: project
+  owners:
+  - cursor/plugins/pstack/skills/unslop
+  active_owner: cursor/plugins/pstack/skills/unslop
+  content_hash: null
+- kind: project-relative
+  target: copilot
+  value: .agents/skills/unslop/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - cursor/plugins/pstack/skills/unslop
+  active_owner: cursor/plugins/pstack/skills/unslop
+  content_hash: sha256:ccab208e315ce05e2fab8eeee2f7879f1289b5c6844840b2d307adf31c79144f
+- kind: project-relative
+  target: copilot
   value: .github/agents/impeccable-asset-producer.agent.md
   runtime: null
   scope: project
@@ -2346,24 +2429,6 @@ deployments:
   - tylerbutler/apm-base
   active_owner: tylerbutler/apm-base
   content_hash: sha256:bf990755d11f1e73610d9cde3b656aa175c7f63cdd8d069158302c6496a5b77e
-- kind: project-relative
-  target: legacy
-  value: .agents/skills/trellis-onboarding
-  runtime: null
-  scope: project
-  owners:
-  - .
-  active_owner: .
-  content_hash: null
-- kind: project-relative
-  target: legacy
-  value: .agents/skills/trellis-onboarding/SKILL.md
-  runtime: null
-  scope: project
-  owners:
-  - .
-  active_owner: .
-  content_hash: sha256:3648aef6898b875af02a0279edbb81a85c5820cb76769637019e36269ae681d7
 local_deployed_files:
 - .agents/skills/trellis-onboarding
 - .agents/skills/trellis-onboarding/SKILL.md
