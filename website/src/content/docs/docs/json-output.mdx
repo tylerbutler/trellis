@@ -1,12 +1,12 @@
 ---
 title: JSON output
-description: What trellis's --json payloads guarantee — the schema field, what a stable shape permits, and where the guarantee stops.
+description: JSON schemas, stable fields, allowed changes, and GitHub Actions output formats.
 ---
 
 import Callout from "../../../components/Callout.astro";
 
-Every command that emits JSON carries a `schema` field naming the payload and
-its major version:
+JSON payloads include a `schema` field naming the payload and its major version,
+except for [`ci matrix`](#two-exceptions):
 
 ```json
 {
@@ -31,7 +31,7 @@ An unrecognized `schema` means an unsupported version, so assert on it.
 
 | Change | Allowed? |
 | --- | --- |
-| Adding a field | **Yes**, without a version bump — ignore fields you don't know. |
+| Adding a field | **Yes**, without a version bump. Ignore fields you don't know. |
 | Adding an array element | **Yes**, per the command's documented selection rules. |
 | Renaming, removing, or retyping a field; changing a documented enum's values (`kind`, `action`, `tag_kind`) | **No.** Bumps the major (`trellis.list/1` → `/2`). |
 
@@ -51,7 +51,7 @@ commands pretty-print, some emit one line for shell-variable capture).
 | `info <pkg> --json` | `trellis.info/1`<br />`{schema, name, version, path, lifecycle, releasable, dependencies[], dependents[]}` |
 | `graph --format json` | `trellis.graph/1`<br />`{schema, nodes[], edges[]}` |
 | `run <task> --json` | `trellis.run/1`<br />`{schema, ok, task, target?, results[]}` |
-| `exec -- <cmd> --json` | `trellis.exec/1`<br />`{schema, ok, command[], results[]}` |
+| `exec --json -- <cmd>` | `trellis.exec/1`<br />`{schema, ok, command[], results[]}` |
 | `changelog check --format json` | `trellis.changelog_check/2`<br />`{schema, ok, strictness, has_entries, needs_entry, invalid_fragments[], packages[], preview}` |
 | `version plan --json` | `trellis.version_plan/1`<br />`{schema, bumped[], fragments_retained}` |
 | `version apply --json` | `trellis.version_apply/1`<br />`{schema, bumped[], lockfiles[], adopted[], fragments_retained}` |
@@ -64,9 +64,8 @@ Notes:
 
 - `list`'s `packages[]` entries and `info`'s top level share a shape.
   `lifecycle` is the resolved release lifecycle (`workspace`, `git_only`, or
-  `hex`); `releasable` is a derived boolean (`lifecycle != workspace`), kept
-  for compatibility with the git_only+hex meaning `--releasable` has always
-  had. `graph` nodes also carry both.
+  `hex`); `releasable` is true for `git_only` and `hex` packages.
+  `graph` nodes also include both fields.
 - `version plan`/`version apply` share the `bumped[]` shape (`name`,
   `current`, `next`, `fragments`, `updated_dependencies[]`).
   `fragments` counts the source entries to render, including archived
@@ -83,10 +82,10 @@ Notes:
   for the equivalent `--github-output` keys.
 - `run`/`exec` share the `results[]` shape: `package`, `path`, `status`
   (`success` | `failed` | `skipped`), `duration_ms`. A failed entry also
-  carries `exit_code` and `command`. `duration_ms`'s presence is stable, its
+  includes `exit_code` and `command`. `duration_ms`'s presence is stable, its
   value isn't.
 - `ci tag-package` reports `tag_kind: exact` with `tag_version`, or
-  `tag_kind: series` with `tag_series` — the other key is absent, not null.
+  `tag_kind: series` with `tag_series`. The other key is absent, not null.
 - `tag plan` entries use `kind: repository_series` for an anchored repository
   tag. The entry retains the anchor package's `name` and `version`; this kind
   is never returned by package-oriented `ci tag-package`.
@@ -99,7 +98,7 @@ Notes:
 <Callout>
   **`--json` moves package output to stderr.** `run`/`exec` normally stream
   package output to stdout; under `--json` it moves to stderr so stdout
-  carries only the payload. `-q` suppresses the stream.
+  contains only the payload. `-q` suppresses the stream.
 </Callout>
 
 ## `doctor` findings
@@ -109,7 +108,7 @@ workspace order, alongside the numeric `packages` count. `doctor`'s text
 summary renders the same data as compact counts:
 `ok: 4 package(s) (1 workspace, 0 git_only, 3 hex), 0 warning(s)`.
 
-`findings[]` carries one entry per problem:
+`findings[]` contains one entry per problem:
 
 ```json
 {
@@ -129,7 +128,7 @@ summary renders the same data as compact counts:
 | `check` | Raised when |
 | --- | --- |
 | `member_glob` | a `members` glob is invalid, unreadable, or matches nothing |
-| `package_manifest` | a package's `gleam.toml` is missing, unparseable, carries a `[tools.trellis]` table, or repeats another package's name |
+| `package_manifest` | a package's manifest is missing, unparseable, contains a `[tools.trellis]` table, or repeats another package's name |
 | `path_dependency` | a path dependency escapes the workspace or names no package in it |
 | `dependency_cycle` | the graph is cyclic |
 | `workspace_config` | the root `[tools.trellis]` table is itself wrong |
@@ -137,7 +136,7 @@ summary renders the same data as compact counts:
 | `release_boundary` | a package's runtime path dependency is less capable than it is (a `hex` package depending on `git_only`/`workspace`, or `git_only` on `workspace`) |
 | `tag_collision` | two releasable packages produce the same tag |
 | `lockfile_drift` | a `manifest.toml` locks a workspace-internal dep at a stale version |
-| `pinned_ref` | a [pinned git dependency](/docs/pinning/) SHA is no longer reachable from its tracked ref, its pin comment disagrees with its ref, or the refs could not be verified — always a warning |
+| `pinned_ref` | a [pinned git dependency](/docs/pinning/) SHA is no longer reachable from its tracked ref, its pin comment disagrees with its ref, or the refs could not be verified (warning) |
 | `changelog_missing` | a releasable package has no `CHANGELOG.md` |
 | `changelog_unreadable` | a `CHANGELOG.md` exists but could not be read |
 | `changelog_behind` | a package's version is behind the newest one in its changelog |
@@ -157,8 +156,8 @@ New `check` values may appear without a bump, so handle unrecognized ones by rep
 
 ## Two exceptions
 
-`ci matrix` and `ci outputs` carry **no `schema`** — their shapes are
-dictated by GitHub Actions, not trellis.
+`ci matrix` and `ci outputs` omit `schema` because they use GitHub Actions
+matrix and output formats.
 
 `ci matrix` emits one key, fed straight to `strategy.matrix` via
 `fromJSON()`:
@@ -176,17 +175,16 @@ dictated by GitHub Actions, not trellis.
 array of strings:
 
 ```
-packages=["lat_core","lat_mid","lat_cli","lat_example"]
+packages=["lat_core","lat_mid","lat_cli","package_a"]
 releasable=["lat_core","lat_mid","lat_cli"]
 version_files=["packages/lat_core/gleam.toml","packages/lat_mid/gleam.toml","packages/lat_cli/gleam.toml"]
-tags=["lat_core-v1.2.0","lat_mid-v0.5.1","lat_cli-v0.4.3"]
+tags=["lat_core-v1.2.0","lat_mid-v0.5.0","lat_cli-v0.3.1"]
 series_tags=[]
 ```
 
-`changelog check --format github` emits the same style of lines — scalars
-plain, arrays as JSON, and the multi-line `preview` in GitHub's heredoc form.
-It is the `trellis.changelog_check/2` data in a shape the runner parses, not a
-payload of its own, so it carries no `schema` either.
+`changelog check --format github` emits plain scalars, JSON arrays, and the
+multi-line `preview` in GitHub's heredoc form. It reports the
+`trellis.changelog_check/2` data as output records and also omits `schema`.
 
 See [CI recipes](/docs/ci/) for how these are consumed.
 

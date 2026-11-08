@@ -9,7 +9,7 @@ const installCmd =
 const miseCmd = `mise use "github:tylerbutler/trellis@${TRELLIS_VERSION}"`;
 
 const configSample = `# The table's presence marks the workspace root.
-# Every key is optional — members auto-discover from git.
+# Every key is optional. Omit members to auto-discover from git.
 [tools.trellis]
 members = ["packages/*", "examples/*"]
 # Exclusions are scoped by task. \`@release\` covers changelog,
@@ -24,20 +24,20 @@ exact_tag_format = "{name}-v{version}"`;
 ---
 
 <Base
-  title="Trellis — a workspace CLI for Gleam monorepos"
-  description="Workspace tooling for multi-package Gleam repositories, derived from gleam.toml. Run tasks, inspect dependencies, and manage releases with one binary."
+  title="Trellis: a workspace CLI for Gleam monorepos"
+  description="Run builds and tests across Gleam packages. Manage changelogs, versions, and publishing using the dependencies in gleam.toml."
 >
   <!-- ============ HERO ============ -->
   <section class="hero">
     <div class="shell hero-grid">
       <div class="hero-copy">
         <h1>
-          Workspace tooling for Gleam monorepos.
-          <em>Derived from gleam.toml.</em>
+          Run Gleam across packages.
+          <em>In dependency order.</em>
         </h1>
         <p class="lead">
-          Run tasks across your Gleam packages, inspect their dependencies, and
-          manage changelogs, versions, and publishing from one binary.
+          Gleam builds, tests, and publishes one package at a time. Trellis runs
+          those commands across your packages and manages their changelogs and versions.
         </p>
         <div class="hero-actions">
           <a class="btn btn-primary" href="/docs/">Read the docs</a>
@@ -70,7 +70,7 @@ exact_tag_format = "{name}-v{version}"`;
   <section class="glue">
     <div class="shell">
       <div class="section-head">
-        <h2>The glue this replaces.</h2>
+        <h2>Replace package lists and shell loops.</h2>
         <p>
           The <a href="https://github.com/tylerbutler/trellis/blob/main/docs/DESIGN.md#inventory-of-manual-wiring-in-lattice">lattice inventory</a>{" "}
           records the bash loops, YAML blocks, and duplicated configuration
@@ -81,7 +81,7 @@ exact_tag_format = "{name}-v{version}"`;
         <table class="ledger">
           <thead>
             <tr>
-              <th scope="col">Where it lives</th>
+              <th scope="col">File</th>
               <th scope="col">What's maintained by hand</th>
               <th scope="col">What can drift</th>
             </tr>
@@ -104,13 +104,13 @@ exact_tag_format = "{name}-v{version}"`;
             </tr>
             <tr>
               <td><code>publish.yml</code></td>
-              <td>A hand-written mirror of the path_dependency graph</td>
+              <td>A hand-written copy of the path dependency graph</td>
               <td>Nothing verifies it when a package gains a dependency</td>
             </tr>
             <tr>
               <td><code>release.yml</code></td>
               <td>25 lines of inline <code>sed</code>/<code>grep</code> patching locked versions</td>
-              <td>Untestable regex logic living inside CI YAML</td>
+              <td>Version edits depend on regexes embedded in CI YAML</td>
             </tr>
           </tbody>
         </table>
@@ -127,8 +127,8 @@ exact_tag_format = "{name}-v{version}"`;
     <div class="shell">
       <blockquote class="doctrine">
         <p>
-          Configure nothing that can be derived.<br />
-          Verify anything that must be duplicated.
+          Trellis reads package names and dependencies from your manifests.<br />
+          Configure tasks and release settings in the root gleam.toml.
         </p>
       </blockquote>
       <div class="derived-grid">
@@ -139,14 +139,14 @@ exact_tag_format = "{name}-v{version}"`;
           <h3>From that, trellis computes:</h3>
           <ul>
             <li>
-              <strong>The member set and its topological order.</strong> New
-              packages join every command the moment their directory matches a
-              glob.
+              <strong>Package discovery and dependency order.</strong> Trellis
+              includes directories that match your member patterns and contain
+              a package manifest, subject to membership and task exclusions.
             </li>
             <li>
               <strong>Change impact.</strong> <code>--since origin/main</code>{" "}
-              maps a diff to owning packages, plus the reverse-dependency
-              closure. Only test what a PR touched.
+              selects packages with changed files. Add{" "}
+              <code>--with-dependents</code> to include packages that depend on them.
             </li>
             <li>
               <strong>Publish order and path-dep rewrites.</strong> Dependencies
@@ -154,8 +154,8 @@ exact_tag_format = "{name}-v{version}"`;
               automatically.
             </li>
             <li>
-              <strong>A tag per releasable package,</strong> plus a{" "}
-              <code>doctor</code> that fails loudly when anything drifts.
+              <strong>Package tags and configuration checks.</strong>{" "}
+              <code>trellis doctor</code> reports problems and exits non-zero on errors.
             </li>
           </ul>
         </div>
@@ -167,44 +167,41 @@ exact_tag_format = "{name}-v{version}"`;
   <section class="adopt">
     <div class="shell">
       <div class="section-head">
-        <h2>Opinionated, but modular.</h2>
+        <h2>Choose the commands you need.</h2>
         <p>
-          Trellis has one way of doing each job: TOML change fragments, a
-          tag per package, bumps derived from fragment kinds. But the jobs
-          are independent, and nothing requires the piece above it, so you
-          adopt a layer at a time and keep whatever already works.
+          Start with task running and keep your existing changelog tool and CI.
+          Add trellis's changelog, versioning, or publishing commands when you need them.
         </p>
       </div>
       <ol class="adopt-paths">
         <li>
-          <h3>Just the task runner</h3>
+          <h3>Run workspace tasks</h3>
           <p>
             <code>run</code>, <code>exec</code>, <code>list</code>, and{" "}
             <code>graph</code> need no configuration at all, because members
-            are auto-discovered from git. Your changelog tool and CI stay untouched.
+            are auto-discovered from git.
           </p>
         </li>
         <li>
           <h3>Add changelogs and versioning</h3>
           <p>
             Fragments, <code>version plan</code>, and <code>version apply</code>{" "}
-            manage bumps and changelogs without trellis owning your release
-            workflow, or any CI at all.
+            manage version bumps and changelogs locally or in your existing CI.
           </p>
         </li>
         <li>
           <h3>Add publishing</h3>
           <p>
-            <code>tag</code> and <code>publish</code> push to Hex in dependency
-            order, from your own scripts or workflows.
+            <code>tag</code> records releases; <code>publish</code> uploads packages
+            to Hex in dependency order.
           </p>
         </li>
         <li>
           <h3>The full pipeline</h3>
           <p>
             <code>ci</code>, <code>changelog check</code>, and{" "}
-            <code>release pr</code> turn GitHub Actions workflows into thin
-            triggers around trellis commands.
+            <code>release pr</code> generate matrices, check changelog coverage,
+            and prepare release pull requests for GitHub Actions.
           </p>
         </li>
       </ol>
@@ -215,7 +212,7 @@ exact_tag_format = "{name}-v{version}"`;
   <section class="exclusions">
     <div class="shell exclusions-grid">
       <div class="section-head">
-        <h2>One workspace. Different task sets.</h2>
+        <h2>Select packages for each task.</h2>
         <p>
           Examples, benchmarks, and internal tools can remain workspace members
           for builds, tests, and graphing without needing generated docs or a
@@ -234,7 +231,7 @@ exact_tag_format = "{name}-v{version}"`;
           <table class="exclusion-ledger">
             <thead>
               <tr>
-                <th scope="col">Member</th>
+                <th scope="col">Package path</th>
                 <th scope="col">build / test</th>
                 <th scope="col">docs</th>
                 <th scope="col">release</th>
@@ -263,7 +260,7 @@ exact_tag_format = "{name}-v{version}"`;
 <span class="name">lat_mid</span>   <span class="dim">hex</span>
 <span class="name">lat_cli</span>   <span class="dim">hex</span></code></pre>
           <figcaption class="term-note">
-            <code>package_a</code> — the <code>examples/</code> member — still
+            <code>package_a</code>, the package in <code>examples/</code>, still
             appears in <code>trellis list</code>, <code>graph</code>,{" "}
             <code>exec</code>, and tasks that do not exclude it. Only the
             configured task sets change.
@@ -277,11 +274,10 @@ exact_tag_format = "{name}-v{version}"`;
   <section class="lifecycle">
     <div class="shell">
       <div class="section-head">
-        <h2>One binary across the lifecycle.</h2>
+        <h2>Use the same commands locally and in CI.</h2>
         <p>
-          The same tool runs locally and in CI. Commands work from anywhere in
-          the workspace, since the root is found by walking up, like{" "}
-          <code>git</code> or <code>cargo</code>.
+          Run commands from any package directory. Trellis finds the workspace
+          root by walking up to its configuration or the git repository root.
         </p>
       </div>
       <ol class="phases">
@@ -319,25 +315,27 @@ exact_tag_format = "{name}-v{version}"`;
       <div class="section-head">
         <h2>Checks for drift.</h2>
         <p>
-          Some things can't be derived: locked versions, changelogs, tags,
-          toolchain pins. For those, <code>trellis doctor</code> checks the
-          invariants that remain explicit and exits non-zero when one breaks.
+          <code>trellis doctor</code> checks locked versions, changelogs, tags,
+          and toolchain pins against the workspace. It reports each problem
+          and exits non-zero on errors; warnings do not fail the command.
         </p>
       </div>
       <figure class="term">
         <figcaption class="term-bar"><span class="prompt">$</span>trellis doctor</figcaption>
         <pre class="term-out"><code><span class="dim">checked:</span> member globs resolve and every package has a parseable gleam.toml
 <span class="dim">checked:</span> path dependencies stay inside the workspace; graph is acyclic
-<span class="dim">checked:</span> task exclusion globs match members; no package depends on one unavailable at its release lifecycle
-<span class="dim">checked:</span> tag format produces a unique tag per releasable package
 <span class="dim">checked:</span> manifest.toml locked versions match workspace-internal gleam.toml versions
+<span class="dim">checked:</span> pinned git dependency SHAs remain reachable from their tracked refs (advisory)
 <span class="dim">checked:</span> each releasable package's version is not behind its CHANGELOG
-<span class="dim">checked:</span> unreleased changelog fragments parse and reference valid packages, kinds, and categories
-<span class="dim">checked:</span> [tools.trellis] has no unrecognized keys
-<span class="dim">checked:</span> packages agree on the external dependencies they share
-<span class="dim">checked:</span> gleam on PATH matches the .tool-versions pin (advisory)
+<span class="dim">...</span>
 
-<span class="ok">ok: 4 package(s) (1 workspace, 0 git_only, 3 hex), 0 warning(s)</span></code></pre>
+warning: package `lat_core` has changelog history that trellis has not batched yet; it will be adopted on the next release
+<span class="dim">...</span>
+<span class="ok">ok: 4 package(s) (1 workspace, 0 git_only, 3 hex), 3 warning(s)</span></code></pre>
+        <figcaption class="term-note">
+          Excerpt from the example workspace.{" "}
+          <code>trellis doctor --fix</code> imports its existing changelog history.
+        </figcaption>
       </figure>
     </div>
   </section>
@@ -348,9 +346,9 @@ exact_tag_format = "{name}-v{version}"`;
       <div class="section-head">
         <h2>Install a prebuilt binary.</h2>
         <p>
-          Trellis has no runtime dependencies and includes SLSA build
-          provenance. Its shell installer typically completes in about a second
-          in CI.
+          Install trellis without a Rust toolchain. Release archives include
+          SLSA build provenance attestations. Gleam tasks still need Gleam and
+          the tools required by your chosen target.
         </p>
       </div>
       <dl class="channels">
@@ -373,7 +371,7 @@ exact_tag_format = "{name}-v{version}"`;
           </dd>
         </div>
         <div class="channel">
-          <dt>mise / asdf <span class="dim-note">(pin it in .tool-versions)</span></dt>
+          <dt>mise <span class="dim-note">(pin it in mise.toml)</span></dt>
           <dd>
             <div class="cmdline">
               <code><span class="prompt">$</span>{miseCmd}</code>
@@ -394,8 +392,8 @@ exact_tag_format = "{name}-v{version}"`;
       <p class="install-coda">
         Windows installer and pinned-version URLs are on the
         <a href="https://github.com/tylerbutler/trellis/releases">releases page</a>.
-        From there, <code>trellis doctor</code> works immediately, with no setup.
-        Run <code>trellis init</code> only when you want to configure something;
+        Run <code>trellis doctor</code> inside your Gleam repository to check it.
+        Use <code>trellis init</code> when you want to configure workspace settings;
         the <a href="/docs/configuration/">configuration guide</a> covers what it
         writes.
       </p>

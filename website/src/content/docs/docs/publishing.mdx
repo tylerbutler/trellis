@@ -8,8 +8,9 @@ import Callout from "../../../components/Callout.astro";
 Publishing a workspace means turning pending [changelog
 fragments](/docs/changelog/) into version bumps, recording what shipped as git
 tags, and pushing packages to Hex in dependency order with workspace path
-dependencies rewritten to real Hex requirements. Trellis covers each step, and
-every step is idempotent, so re-running a partially failed release is safe.
+dependencies rewritten to Hex requirements. To retry publication, use the
+same approved release commit: `publish` skips versions already on Hex, and
+`tag create` reconciles existing tags and releases.
 
 ```txt wrap
 trellis release pr [--base <branch>] [--branch <branch>] [--pre <label|none>] [--set <pkg=version>] [--bump <pkg=level>] [--resume] [--auto-pre] [--skip-unchanged] [--json | --github-output]
@@ -54,7 +55,7 @@ the bumps, replaces the remote branch with a force-with-lease
 check, and
 creates or updates the PR via the GitHub API. It needs a token: `GITHUB_TOKEN`
 (ambient in GitHub Actions), `GH_TOKEN`, or a logged-in `gh` CLI as the
-fallback (`gh auth token`). The body carries the bump table
+fallback (`gh auth token`). The body includes the bump table
 and each package's new CHANGELOG section. It requires a clean working tree
 and is a no-op when there is no eligible release plan.
 
@@ -253,9 +254,8 @@ force-pushed lat_cli-v0.4
 ```
 
 <Callout>
-`--github-release` skips every moving tag. A release attached
-to a moving tag would silently retarget on the next release, so only immutable
-per-version tags carry one.
+`--github-release` creates releases only for immutable exact tags.
+Moving series tags do not get GitHub Releases.
 </Callout>
 
 Prereleases use immutable exact tags such as `lat_core-v1.3.0-rc.0` when
@@ -281,7 +281,7 @@ lifecycle](/docs/configuration-reference/#release-lifecycle) is `hex`. A named p
 and `--tag <tag>` both refuse a `workspace` or `git_only` package, and
 `--all-untagged` only ever considers `hex` members. In a
 [manifest adapter](/docs/configuration/#manifest-adapter) workspace, the command
-is refused outright: the lifecycle ladder tops out at `git_only`.
+is refused: adapter packages cannot use the `hex` lifecycle.
 Without
 [source bundling](#bundling-private-dependencies), it runs these steps per
 package, in dependency order:
@@ -297,8 +297,8 @@ package, in dependency order:
    `workspace` member needs explicit source bundling; otherwise the rewrite
    fails rather than publishing something Hex could never resolve.
 4. **Publish.** `gleam publish --yes`.
-5. **Restore.** The original `gleam.toml` comes back even when publishing
-   fails; the repo never shows rewritten files.
+5. **Restore.** Trellis restores the original `gleam.toml` when publishing
+   completes or returns an error.
 
 Every Hex-touching step runs under the configured `retry` backoff policy.
 
@@ -495,15 +495,19 @@ Git-only owner. `trellis publish --all-untagged` skips it, including
 prereleases. Bundling never changes a package's lifecycle or enables Hex
 publication.
 
-## Lockfiles
+<a id="lockfiles"></a>
 
-`lockfile refresh --package <pkg>` scopes `gleam deps download` to one package,
-with retry. Refreshing the whole workspace at once is what gets a runner
-rate-limited by Hex.
+## Refreshing lockfiles
 
-## Two release shapes
+`lockfile refresh --package <pkg>` runs `gleam deps download` for one package
+with retries. Omit `--package` to refresh the whole workspace. Refreshing fewer
+packages reduces requests to Hex.
 
-Both of these flows are supported; the difference is policy, not tooling:
+<a id="two-release-shapes"></a>
+
+## Choosing a release workflow
+
+Choose when your workflow publishes packages and records their tags:
 
 | Shape | Flow |
 | --- | --- |
