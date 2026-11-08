@@ -281,7 +281,8 @@ The changelog engine is native, so there is no second tool to install and no
 config file to keep in sync. Changes live as TOML fragments in
 `.changes/unreleased/`; rendering is controlled by small minijinja templates,
 each with a context drawn from `name`, `version`, `date`, `tag`, `series`,
-`category`, `kind`, and `body`:
+`category`, `kind`, and `body`. Entry templates also receive optional
+`commit` and `issues` source context:
 
 ```toml wrap
 [tools.trellis.changelog]
@@ -310,6 +311,29 @@ kinds = [
 dependency_kind = "Dependencies"                                          # default
 dependency_body = "Updated {{ dependency }} to {{ dependency_version }}"  # default
 ```
+
+The default `change_format` is exactly `- {{ body }}`: one Markdown bullet
+with the fragment body. To extend the default, keep that text and append your
+extra content. For example, this adds a link only when a source commit exists:
+
+```toml wrap
+[tools.trellis.changelog]
+change_format = '- {{ body }}{% if commit %} ([commit](https://github.com/example/project/commit/{{ commit }})){% endif %}'
+```
+
+Replace the example repository URL with yours. With no source commit, the
+entry still renders exactly as the default.
+
+`change_format` receives `body`, `kind`, `category`, `name`, `version`,
+`commit`, and `issues`. `commit` is the full object ID of the commit that added
+the fragment, or `null`. `issues` is an ordered array of objects with `number`,
+nullable `owner`, nullable `repo`, and nullable `kind` (`issue`,
+`pull_request`, or `null`); it is empty when unavailable.
+
+References come only from that commit's subject. Templates construct their own
+URLs, and the default entry format does not show links. Missing or ambiguous
+history does not block a release. See [source links](/docs/changelog/#linking-entries-to-their-source)
+for extraction rules, prerelease persistence, and a complete template.
 
 `dependency_kind` must name one of `kinds`; that kind's bump is what a package
 bumps by when a dependency bump is the only reason it is being released. If

@@ -12,7 +12,9 @@ use crate::config::{Bump, ChangelogConfig, KindConfig};
 use crate::workspace::{Member, Workspace};
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::LazyLock;
 
 // ---- fragments -------------------------------------------------------------
 
@@ -37,6 +39,150 @@ pub struct Fragment {
     /// `None` for a fragment trellis generated rather than read from disk, so
     /// `consume_fragments` can never mistake one for a file to delete.
     pub path: Option<PathBuf>,
+    pub source: Option<SourceMetadata>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReferenceKind {
+    Issue,
+    PullRequest,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct IssueReference {
+    pub number: u64,
+    pub owner: Option<String>,
+    pub repo: Option<String>,
+    pub kind: Option<ReferenceKind>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct SourceMetadata {
+    pub commit: String,
+    pub issues: Vec<IssueReference>,
+}
+
+fn subject_references(subject: &str) -> Vec<IssueReference> {
+    static TOKENS: LazyLock<regex::Regex> = LazyLock::new(|| {
+        regex::Regex::new(
+            r#"[A-Za-z][A-Za-z0-9+.-]*://[^\s<>()\[\]{}"']+|[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#[0-9]+|#[0-9]+"#,
+        )
+        .unwrap()
+    });
+    static REFERENCE: LazyLock<regex::Regex> = LazyLock::new(|| {
+        regex::Regex::new(
+        r"^(?:(?:(?i:https?://github\.com)/(?P<url_owner>[A-Za-z0-9][A-Za-z0-9-]*)/(?P<url_repo>[A-Za-z0-9_.-]+)/(?P<kind>issues|pull)/)|(?:(?P<owner>[A-Za-z0-9][A-Za-z0-9-]*)/(?P<repo>[A-Za-z0-9_.-]+))?#)(?P<number>[0-9]+)(?:[?#].*)?$"
+    ).unwrap()
+    });
+    let boundary = |c: char| c.is_alphanumeric() || "_/.#:@-".contains(c);
+    let mut references: Vec<IssueReference> = Vec::new();
+    for token in TOKENS.find_iter(subject) {
+        let mut suffix = subject[token.end()..].chars();
+        let after = suffix.next();
+        if subject[..token.start()]
+            .chars()
+            .next_back()
+            .is_some_and(boundary)
+            || after.is_some_and(|c| c.is_alphanumeric() || "_/#@-".contains(c))
+            || (after == Some('.') && suffix.next().is_some_and(char::is_alphanumeric))
+        {
+            continue;
+        }
+        let text = token.as_str().trim_end_matches(['.', ',', ';', '!', ':']);
+        let Some(captures) = REFERENCE.captures(text) else {
+            continue;
+        };
+        let Some(number) = captures["number"].parse::<u64>().ok().filter(|n| *n > 0) else {
+            continue;
+        };
+        let owner = captures
+            .name("url_owner")
+            .or_else(|| captures.name("owner"))
+            .map(|m| m.as_str().to_string());
+        let repo = captures
+            .name("url_repo")
+            .or_else(|| captures.name("repo"))
+            .map(|m| m.as_str().to_string());
+        if owner.as_ref().is_some_and(|s| s.ends_with('-'))
+            || repo.as_deref().is_some_and(|s| s == "." || s == "..")
+        {
+            continue;
+        }
+        let kind = captures.name("kind").map(|m| {
+            if m.as_str() == "pull" {
+                ReferenceKind::PullRequest
+            } else {
+                ReferenceKind::Issue
+            }
+        });
+        if let Some(existing) = references
+            .iter_mut()
+            .find(|r| r.number == number && r.owner == owner && r.repo == repo)
+        {
+            if existing.kind.is_none() {
+                existing.kind = kind;
+            }
+        } else {
+            references.push(IssueReference {
+                number,
+                owner,
+                repo,
+                kind,
+            });
+        }
+    }
+    references
+}
+
+fn source_warning(message: impl std::fmt::Display) {
+    eprintln!(
+        "{}",
+        crate::term::warn(&format!(
+            "optional changelog source metadata unavailable: {message}; releases do not require source metadata"
+        ))
+    );
+}
+
+/// Optional enrichment is shared by check and apply, never by rendering or
+/// strict fragment validation. Archives already carry their original source.
+pub fn enrich_fragments(workspace: &Workspace, fragments: &mut Fragments, reference: &str) {
+    if !fragments
+        .fragments
+        .iter()
+        .any(|fragment| fragment.path.is_some())
+    {
+        return;
+    }
+    let mut history = match crate::git::FragmentHistory::new(&workspace.root, reference) {
+        Ok(Some(history)) => history,
+        Ok(None) => return,
+        Err(err) => {
+            source_warning(format!("{err:#}"));
+            return;
+        }
+    };
+    let mut sources = HashMap::new();
+    for fragment in &mut fragments.fragments {
+        let Some(path) = &fragment.path else { continue };
+        match history.source(path) {
+            Ok(Some(found)) => {
+                fragment.source = Some(
+                    sources
+                        .entry(found.commit.clone())
+                        .or_insert_with(|| SourceMetadata {
+                            commit: found.commit,
+                            issues: subject_references(&found.subject),
+                        })
+                        .clone(),
+                );
+            }
+            Ok(None) => {}
+            Err(err) => source_warning(format!("{}: {err:#}", path.display())),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -55,7 +201,39 @@ struct RawFragment {
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct PrereleaseArchive {
-    fragments: Vec<RawFragment>,
+    fragments: Vec<ArchivedFragment>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct ArchivedFragment {
+    package: String,
+    kind: String,
+    #[serde(default)]
+    category: Option<String>,
+    body: String,
+    // Decode optional metadata separately so malformed metadata does not
+    // weaken validation of the archive's required fragment fields.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    source: Option<toml::Value>,
+}
+
+fn archive_source(value: Option<toml::Value>) -> Result<Option<SourceMetadata>> {
+    let Some(value) = value else { return Ok(None) };
+    let source: SourceMetadata = value.try_into().context("invalid archived source record")?;
+    if !matches!(source.commit.len(), 40 | 64)
+        || !source.commit.bytes().all(|b| b.is_ascii_hexdigit())
+        || source.issues.iter().any(|issue| {
+            issue.number == 0
+                || issue.owner.is_some() != issue.repo.is_some()
+                || issue.owner.as_ref().is_some_and(|s| s.is_empty())
+                || issue.repo.as_ref().is_some_and(|s| s.is_empty())
+                || (issue.owner.is_none() && issue.kind.is_some())
+        })
+    {
+        bail!("invalid archived commit or reference");
+    }
+    Ok(Some(source))
 }
 
 /// A fragment that could not be used, and the file it came from. The path is
@@ -205,6 +383,7 @@ pub fn load_fragments(workspace: &Workspace) -> Result<Fragments> {
             category: raw.category,
             body: raw.body.trim().to_string(),
             path: Some(path),
+            source: None,
         });
     }
     Ok(result)
@@ -248,6 +427,7 @@ pub fn dependency_fragment(
         category: None,
         body: body.trim().to_string(),
         path: None,
+        source: None,
     })
 }
 
@@ -513,6 +693,8 @@ fn render_kinds(
                     category,
                     name,
                     version,
+                    commit => fragment.source.as_ref().map(|source| source.commit.as_str()),
+                    issues => fragment.source.as_ref().map(|source| source.issues.as_slice()).unwrap_or_default(),
                 },
             )?);
             out.push('\n');
@@ -614,11 +796,27 @@ pub fn render_prerelease_archive(fragments: &[&Fragment]) -> Result<String> {
     let archive = PrereleaseArchive {
         fragments: fragments
             .iter()
-            .map(|fragment| RawFragment {
-                package: fragment.package.clone(),
-                kind: fragment.kind.clone(),
-                category: fragment.category.clone(),
-                body: fragment.body.clone(),
+            .map(|fragment| {
+                let source =
+                    fragment.source.as_ref().and_then(|source| {
+                        match toml::Value::try_from(source) {
+                            Ok(value) => Some(value),
+                            Err(err) => {
+                                source_warning(format!(
+                                    "cannot archive source for `{}`: {err}",
+                                    fragment.package
+                                ));
+                                None
+                            }
+                        }
+                    });
+                ArchivedFragment {
+                    package: fragment.package.clone(),
+                    kind: fragment.kind.clone(),
+                    category: fragment.category.clone(),
+                    body: fragment.body.clone(),
+                    source,
+                }
             })
             .collect(),
     };
@@ -686,12 +884,20 @@ pub fn load_prerelease_fragments(
                     path.display()
                 );
             }
+            let source = match archive_source(raw.source) {
+                Ok(source) => source,
+                Err(err) => {
+                    source_warning(format!("{}: {err:#}", path.display()));
+                    None
+                }
+            };
             fragments.push(Fragment {
                 package: raw.package,
                 kind: raw.kind,
                 category: raw.category,
                 body: raw.body,
                 path: None,
+                source,
             });
         }
     }
@@ -836,6 +1042,169 @@ mod tests {
     use super::*;
     use crate::config::ChangelogConfig;
 
+    #[test]
+    fn subject_references_have_structured_shapes_and_stable_enrichment() {
+        let references = subject_references(
+            "Fix #42 and other/lib#17 (https://github.com/other/lib/pull/17), #42 https://github.com/other/lib/issues/17 https://github.com/a/b/issues/9",
+        );
+        assert_eq!(
+            serde_json::to_value(references).unwrap(),
+            serde_json::json!([
+                {"number":42,"owner":null,"repo":null,"kind":null},
+                {"number":17,"owner":"other","repo":"lib","kind":"pull_request"},
+                {"number":9,"owner":"a","repo":"b","kind":"issue"}
+            ])
+        );
+        assert_eq!(subject_references("#17 other/lib#17 #18").len(), 3);
+        assert_eq!(
+            subject_references("https://github.com/a/b/issues/1 https://github.com/a/b/pull/1")[0]
+                .kind,
+            Some(ReferenceKind::Issue)
+        );
+    }
+
+    #[test]
+    fn subject_references_reject_false_matches_and_preserve_punctuation() {
+        for text in [
+            "#0 #000 #18446744073709551616",
+            "word#42 #42word",
+            "a/b/c#42",
+            "https://example.com/a/b/issues/42#99",
+            "ftp://example.com/?ref=#42",
+            "https://github.com/a/b/discussions/42#99",
+            "https://github.com/a/b/issues/42extra",
+            "prefixhttps://github.com/a/b/issues/42",
+            "a_/b#42",
+            "##42",
+            "#-42",
+            "a/b#42/extra",
+            "#42.5",
+            "é#42",
+        ] {
+            assert!(subject_references(text).is_empty(), "{text}");
+        }
+        assert_eq!(
+            subject_references("(#42), [owner/repo.name#43]; https://github.com/a/b/pull/44.")
+                .iter()
+                .map(|r| r.number)
+                .collect::<Vec<_>>(),
+            vec![42, 43, 44]
+        );
+        assert_eq!(
+            subject_references("#42. #43: done! http://GitHub.com/a/b/issues/44?x=1#comment")
+                .iter()
+                .map(|r| r.number)
+                .collect::<Vec<_>>(),
+            vec![42, 43, 44]
+        );
+    }
+
+    #[test]
+    fn documented_link_template_handles_available_and_missing_sources() {
+        let config = ChangelogConfig {
+            change_format: concat!(
+                "{% set repository_url = \"https://github.com/example/project\" %}",
+                "- {{ body }}{% if commit %} ([commit]({{ repository_url }}/commit/{{ commit }})){% endif %}",
+                "{% for issue in issues %}",
+                "{% set issue_repository_url = \"https://github.com/\" ~ issue.owner ~ \"/\" ~ issue.repo if issue.owner else repository_url %}",
+                " ([{% if issue.owner %}{{ issue.owner }}/{{ issue.repo }}{% endif %}#{{ issue.number }}]({{ issue_repository_url }}/{% if issue.kind == \"pull_request\" %}pull{% else %}issues{% endif %}/{{ issue.number }}))",
+                "{% endfor %}",
+            ).to_string(),
+            ..ChangelogConfig::default()
+        };
+        let mut change = fragment("p", "Added", "a change");
+        let default = render_section(
+            &ChangelogConfig::default(),
+            "p",
+            "1.0.0",
+            "v1.0.0",
+            "today",
+            &[&change],
+        )
+        .unwrap();
+        let missing = render_section(&config, "p", "1.0.0", "v1.0.0", "today", &[&change]).unwrap();
+        assert_eq!(missing, default);
+        let commit = "0123456789012345678901234567890123456789";
+        change.source = Some(SourceMetadata {
+            commit: commit.to_string(),
+            issues: subject_references("Fix #42 other/lib#17 https://github.com/other/lib/pull/17"),
+        });
+        let section = render_section(&config, "p", "1.0.0", "v1.0.0", "today", &[&change]).unwrap();
+        assert!(section.contains(&format!("- a change ([commit](https://github.com/example/project/commit/{commit})) ([#42](https://github.com/example/project/issues/42)) ([other/lib#17](https://github.com/other/lib/pull/17))\n")), "{section}");
+        assert_eq!(
+            render_section(
+                &ChangelogConfig::default(),
+                "p",
+                "1.0.0",
+                "v1.0.0",
+                "today",
+                &[&change]
+            )
+            .unwrap(),
+            default
+        );
+        let archive = render_prerelease_archive(&[&change]).unwrap();
+        let archive: PrereleaseArchive = toml::from_str(&archive).unwrap();
+        let restored = archive_source(archive.fragments.into_iter().next().unwrap().source)
+            .unwrap()
+            .unwrap();
+        assert_eq!(restored.commit, commit);
+        assert_eq!(restored.issues, change.source.unwrap().issues);
+    }
+
+    #[test]
+    fn documented_default_plus_templates_preserve_default_without_metadata() {
+        let change = fragment("p", "Added", "a change");
+        let default = render_section(
+            &ChangelogConfig::default(),
+            "p",
+            "1.0.0",
+            "v1.0.0",
+            "today",
+            &[&change],
+        )
+        .unwrap();
+        for page in [
+            include_str!("../website/src/content/docs/docs/changelog.mdx"),
+            include_str!("../website/src/content/docs/docs/configuration-reference.mdx"),
+        ] {
+            let mut examples = 0;
+            for block in page.split("```toml").skip(1) {
+                let (_, block) = block.split_once('\n').unwrap();
+                let (block, _) = block.split_once("```").unwrap();
+                if !block.contains("change_format =") {
+                    continue;
+                }
+                let value: toml::Value = toml::from_str(block).unwrap();
+                let template = value["tools"]["trellis"]["changelog"]["change_format"]
+                    .as_str()
+                    .unwrap();
+                let config = ChangelogConfig {
+                    change_format: template.to_string(),
+                    ..ChangelogConfig::default()
+                };
+                assert_eq!(
+                    render_section(&config, "p", "1.0.0", "v1.0.0", "today", &[&change]).unwrap(),
+                    default
+                );
+                examples += 1;
+            }
+            assert!(examples >= 2);
+        }
+    }
+
+    #[test]
+    fn optional_archive_serialization_failure_does_not_block_release() {
+        let mut change = fragment("p", "Added", "a change");
+        change.source = Some(SourceMetadata {
+            commit: "0123456789012345678901234567890123456789".to_string(),
+            issues: subject_references("#18446744073709551615"),
+        });
+        let archive = render_prerelease_archive(&[&change]).unwrap();
+        let archive: PrereleaseArchive = toml::from_str(&archive).unwrap();
+        assert_eq!(archive.fragments[0].body, "a change");
+    }
+
     fn fragment(package: &str, kind: &str, body: &str) -> Fragment {
         Fragment {
             package: package.to_string(),
@@ -843,6 +1212,7 @@ mod tests {
             category: None,
             body: body.to_string(),
             path: Some(PathBuf::from("unused")),
+            source: None,
         }
     }
 

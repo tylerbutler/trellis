@@ -159,7 +159,8 @@ pub fn check(workspace: &Workspace, options: &CheckOptions) -> Result<bool> {
         .collect();
     changed.extend(publishers);
     let all = changelog::load_fragments(workspace)?;
-    let fragments = fragments_changed_by(workspace, &all, options)?;
+    let mut fragments = fragments_changed_by(workspace, &all, options)?;
+    changelog::enrich_fragments(workspace, &mut fragments, &options.head);
 
     // Rowed for either reason: the diff touched the package, or the branch
     // wrote it a fragment. A fragment without a code change is a real release —

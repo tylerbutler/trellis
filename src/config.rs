@@ -525,7 +525,7 @@ pub struct ChangelogConfig {
     #[serde(default, rename = "kind_format")]
     pub kind_format_override: Option<String>,
     /// Template for one change entry. Context: `body`, `kind`, `category`,
-    /// `name`, `version`.
+    /// `name`, `version`, `commit`, `issues`.
     #[serde(default = "default_change_format")]
     pub change_format: String,
     /// Kind used for the entries generated when a workspace dependency bumps.

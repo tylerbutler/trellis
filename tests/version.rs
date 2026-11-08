@@ -13,6 +13,117 @@ use std::path::Path;
 // ---- version plan / apply ------------------------------------------------
 
 #[test]
+fn promotion_accepts_old_archives_and_ignores_invalid_optional_sources() {
+    for source in [
+        "",
+        "source = \"invalid\"\n",
+        "source = { commit = \"not-an-object-id\", issues = [] }\n",
+        "source = { commit = \"0123456789012345678901234567890123456789\", issues = [{ number = 0 }] }\n",
+        "source = { commit = \"0123456789012345678901234567890123456789\", issues = [{ number = 1, owner = \"a\" }] }\n",
+        "source = { commit = \"0123456789012345678901234567890123456789\", issues = [{ number = 1, kind = \"other\" }] }\n",
+    ] {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        copy_fixture_to(root);
+        common::set_version(root, "lat_core", "1.3.0-rc.0");
+        let config = root.join("gleam.toml");
+        let original = fs::read_to_string(&config).unwrap();
+        write(
+            &config,
+            &format!(
+                "{original}\n[tools.trellis.changelog]\nchange_format = '- {{{{ body }}}} [{{{{ commit or \"none\" }}}}:{{{{ issues | length }}}}]'\n"
+            ),
+        );
+        write(
+            &root.join(".changes/lat_core/v1.3.0-rc.0.toml"),
+            &format!(
+                "[[fragments]]\npackage = \"lat_core\"\nkind = \"Added\"\nbody = \"old candidate\"\n{source}"
+            ),
+        );
+        let output = trellis(root)
+            .args(["version", "apply", "--pre", "none", "--json"])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let payload: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(payload["schema"], "trellis.version_apply/1");
+        assert!(
+            fs::read_to_string(root.join(".changes/lat_core/v1.3.0.md"))
+                .unwrap()
+                .contains("- old candidate [none:0]")
+        );
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        assert_eq!(
+            stderr.contains("optional changelog source metadata unavailable"),
+            !source.is_empty(),
+            "{stderr}"
+        );
+    }
+}
+
+#[test]
+fn optional_git_lookup_failure_does_not_block_preview_or_apply() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+    init_repo(root);
+    common::git(root, &["checkout", "-q", "-b", "feature"]);
+    add_fragment(root, "lat_core", "Added", "new change");
+    common::git(root, &["add", "."]);
+    common::git(root, &["commit", "-q", "-m", "Add #42"]);
+    let real_git = std::process::Command::new("sh")
+        .args(["-c", "command -v git"])
+        .output()
+        .unwrap();
+    let real_git = String::from_utf8(real_git.stdout).unwrap();
+    let bin = root.join("fake-bin");
+    let git = bin.join("git");
+    write(
+        &git,
+        &format!(
+            "#!/bin/sh\nif [ \"$1\" = show ]; then echo 'metadata lookup failed' >&2; exit 1; fi\nexec '{}' \"$@\"\n",
+            real_git.trim()
+        ),
+    );
+    common::make_executable(&git);
+    let path = std::env::join_paths(
+        std::iter::once(bin).chain(std::env::split_paths(&std::env::var_os("PATH").unwrap())),
+    )
+    .unwrap();
+    for args in [
+        vec!["changelog", "check", "--base", "main", "--format", "json"],
+        vec!["version", "apply", "--json"],
+    ] {
+        let output = trellis(root)
+            .env("PATH", &path)
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        serde_json::from_slice::<serde_json::Value>(&output.stdout).unwrap();
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        assert!(stderr.contains("metadata lookup failed"), "{stderr}");
+        assert!(
+            stderr.contains("releases do not require source metadata"),
+            "{stderr}"
+        );
+    }
+    assert!(
+        fs::read_to_string(root.join(".changes/lat_core/v1.3.0.md"))
+            .unwrap()
+            .contains("- new change\n")
+    );
+}
+
+#[test]
 fn version_plan_bumps_by_the_largest_kind() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
