@@ -73,6 +73,18 @@ fn file_at(root: &Path, revision: &str, path: &str) -> Result<Option<String>> {
     )?))
 }
 
+fn manifest_version(workspace: &Workspace, text: &str) -> Result<String> {
+    let field = workspace
+        .adapter()
+        .map_or("version", |adapter| adapter.version.as_str());
+    crate::manifest::read_string(
+        text,
+        crate::manifest::Format::from_path(workspace.manifest_rel())?,
+        field,
+    )?
+    .context("package manifest has no version")
+}
+
 impl State {
     pub fn from_pr(workspace: &Workspace, base_commit: &str, head: &str) -> Result<Self> {
         ensure!(
@@ -118,8 +130,10 @@ impl State {
             ensure!(
                 pending.releasable()
                     && selected.releasable()
-                    && pending.rel_file("gleam.toml") == member.rel_file("gleam.toml")
-                    && selected.rel_file("gleam.toml") == member.rel_file("gleam.toml"),
+                    && pending.rel_file(proposed.manifest_rel())
+                        == member.rel_file(source.manifest_rel())
+                    && selected.rel_file(workspace.manifest_rel())
+                        == member.rel_file(source.manifest_rel()),
                 "stale pending release: package `{name}` moved or is no longer releasable"
             );
             ensure!(
@@ -146,18 +160,14 @@ impl State {
         plan: &[PlanEntry],
     ) -> Result<()> {
         for entry in plan {
-            let path = workspace.members[entry.member].rel_file("gleam.toml");
+            let path = workspace.members[entry.member].rel_file(workspace.manifest_rel());
             let Some(text) = file_at(&workspace.root, head, &path)? else {
                 continue;
             };
-            let manifest: toml::Value =
-                toml::from_str(&text).context("invalid pending package manifest")?;
-            let version = manifest
-                .get("version")
-                .and_then(toml::Value::as_str)
-                .context("pending package manifest has no version")?;
             let version =
-                semver::Version::parse(version).context("invalid pending package version")?;
+                manifest_version(workspace, &text).context("invalid pending package manifest")?;
+            let version =
+                semver::Version::parse(&version).context("invalid pending package version")?;
             super::version_override::validate_series(&entry.name, &version, &entry.next)?;
         }
         Ok(())
@@ -261,7 +271,7 @@ pub(super) fn baselines(
         if current.pre.is_empty() {
             continue;
         }
-        let manifest_path = member.rel_file("gleam.toml");
+        let manifest_path = member.rel_file(workspace.manifest_rel());
         let log = git_stdout(
             &workspace.root,
             &[
@@ -278,8 +288,7 @@ pub(super) fn baselines(
             let Some(manifest) = file_at(&workspace.root, commit, &manifest_path)? else {
                 break;
             };
-            let manifest: toml::Value = toml::from_str(&manifest)?;
-            if manifest.get("version").and_then(toml::Value::as_str) != Some(member.version()) {
+            if manifest_version(workspace, &manifest)? != member.version() {
                 break;
             }
             baseline = Some(commit.to_string());
@@ -413,7 +422,8 @@ fn owned_inputs(workspace: &Workspace, revision: &str) -> Result<(OwnedInputs, O
                 if sources.iter().any(|&idx| {
                     let member = &workspace.members[idx];
                     if member.rel_path == "." {
-                        file == "gleam.toml"
+                        workspace.adapter().is_some()
+                            || file == workspace.manifest_rel()
                             || file.starts_with("src/")
                             || file.starts_with("priv/")
                     } else {
@@ -489,7 +499,12 @@ pub(super) fn inputs(workspace: &Workspace, revision: &str) -> Result<BTreeMap<S
                 file.strip_prefix(&format!("{}/", member.rel_path))
             };
             relative.is_some_and(|p| {
-                p == "gleam.toml" || p.starts_with("src/") || p.starts_with("priv/")
+                if workspace.adapter().is_some() {
+                    p != "CHANGELOG.md"
+                        && !file.starts_with(&format!("{}/", workspace.config.changelog.dir))
+                } else {
+                    p == workspace.manifest_rel() || p.starts_with("src/") || p.starts_with("priv/")
+                }
             })
         });
         if fragment || source {
@@ -497,7 +512,7 @@ pub(super) fn inputs(workspace: &Workspace, revision: &str) -> Result<BTreeMap<S
         }
     }
     // Release configuration can change ownership and version planning, unlike unrelated root docs.
-    if let Some(manifest) = file_at(&workspace.root, revision, "gleam.toml")? {
+    if let Some(manifest) = file_at(&workspace.root, revision, workspace.config_rel)? {
         let document: toml::Value = toml::from_str(&manifest)?;
         if let Some(config) = document
             .get("tools")
@@ -505,7 +520,9 @@ pub(super) fn inputs(workspace: &Workspace, revision: &str) -> Result<BTreeMap<S
             .and_then(toml::Value::as_table)
         {
             let mut config = config.clone();
-            config.retain(|key, _| ["members", "exclude", "publish", "changelog"].contains(&key));
+            config.retain(|key, _| {
+                ["members", "exclude", "adapter", "publish", "changelog"].contains(&key)
+            });
             for (table, keys) in [
                 ("exclude", &["@release", "@members"][..]),
                 (

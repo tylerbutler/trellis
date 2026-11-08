@@ -1,0 +1,7 @@
+component: doctor
+kind: Added
+body: |-
+  **`doctor` checks adapter manifests instead of Gleam manifests.** Every member manifest must declare a version that parses as semver. Package names do not need to match their directory names.
+
+    The checks with nothing to read are dropped: `manifest.toml` lock drift, shared external dependency agreement, and the `gleam`-on-PATH toolchain pin. The `checked:` preamble now names the checks that actually ran rather than a fixed list.
+time: 2026-08-19T09:02:00.000000-07:00

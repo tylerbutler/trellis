@@ -16,6 +16,7 @@ marks a member. You can start with a Gleam monorepo or a single-package reposito
     <ul>
       <li><a href="#workspace-setup">Configure the workspace</a></li>
       <li><a href="#bootstrapping-with-trellis-init">Initialize the workspace</a></li>
+      <li><a href="#manifest-adapter">Configure a non-Gleam workspace</a></li>
     </ul>
   </div>
   <div>
@@ -113,6 +114,91 @@ would change root discovery. Trellis walks up from the current directory to the
 first manifest with that table, as `git` and `cargo` do for their roots.
 
 </Callout>
+
+## Manifest adapter
+
+Trellis is a Gleam tool: `gleam.toml` is where members, names, versions, and the
+dependency graph come from. `[tools.trellis.adapter]` is the escape hatch for a
+repository whose packages are not Gleam packages — an AI skill or Claude Code
+plugin marketplace, an [APM](https://microsoft.github.io/apm/) monorepo,
+anything distributed by git ref rather than by a registry.
+
+The adapter redefines three things: which file marks a member, and where its
+name and version live inside that file. Everything downstream — the changelog
+engine, `version plan`/`apply`, tags, GitHub Releases, `release pr`, `ci
+matrix`/`outputs` — is the same code, unchanged.
+
+```toml title="trellis.toml"
+[tools.trellis]
+members = ["plugins/*"]
+
+[tools.trellis.adapter]
+# Relative to each member directory. Its presence is what marks a member.
+# The extension picks the format — .toml, .json, .yaml, or .yml.
+manifest = ".claude-plugin/plugin.json"
+# Dotted field paths. Both default to what is shown, so a manifest spelling
+# them `name` and `version` needs neither key.
+name = "name"
+version = "version"
+
+[tools.trellis.publish]
+package_tags = ["exact", "major"]   # moving `v1` tags are how git-ref
+exact_tag_format = "{name}-v{version}"   # consumers pin a release
+series_tag_format = "{name}-v{series}"
+```
+
+### `trellis.toml` for adapter workspaces
+
+An adapter workspace usually has no `gleam.toml` for the table to live in, so
+trellis also accepts a **`trellis.toml`** at the workspace root, carrying the
+same `[tools.trellis]` table. Root discovery walks up to the first directory
+with either file carrying the table, preferring `trellis.toml`; carrying it in
+both at once is an error rather than a precedence puzzle.
+
+The native Gleam backend requires `[tools.trellis]` in `gleam.toml`.
+Configuration in `trellis.toml` without `[tools.trellis.adapter]` is an error
+in `doctor` and normal commands. Move the `[tools.trellis]` table and its
+subtables into `gleam.toml`; create a config-only `gleam.toml` if the workspace
+root is not a package. Configless Gleam workspaces still work.
+
+This rule follows the selected backend, not file presence. An adapter workspace
+may have an unrelated `gleam.toml` beside `trellis.toml`, provided only one
+root file carries `[tools.trellis]`.
+
+Omit `members` to auto-discover packages, including a package at the workspace
+root. A package's name does not need to match its directory name.
+
+JSON manifests must be valid JSON, with strings at the configured name and
+version paths. Duplicate keys that make either path ambiguous are errors.
+
+### Version bumps are surgical
+
+`version apply` rewrites the single field `adapter.version` names and nothing
+else. Comments, key order, indentation, and quote style all survive byte for
+byte, because these manifests are hand-maintained files their owners read. A
+field the path does not resolve to is an error, never an insertion.
+
+### What changes under an adapter
+
+| Area | Behavior |
+| --- | --- |
+| Discovery, `list`, `info`, `graph`, `ci matrix` | Unchanged — globs plus manifest presence. `members` may still be omitted to auto-discover. |
+| Changelog, `version`, `tag`, `release pr`, GitHub Releases | Unchanged, except that the bump is written to the adapter's version field. |
+| Dependency graph | Flat. An adapter declares no dependency edges, so topological order is member order and a workspace dependency never ripple-bumps. |
+| `publish.lifecycle` | Defaults to `git_only`; `hex` anywhere is a configuration error. There is no registry to publish to. |
+| `run` | Built-in verbs (`build`, `test`, …) are refused — they shell out to `gleam`. Declare what you need under `[tools.trellis.tasks]`; `trellis exec` is unaffected. |
+| `publish`, `lockfile refresh`, `pin` | Refused. |
+| `doctor` | Drops the `manifest.toml`, shared-dependency, and toolchain checks; adds that every member manifest declares a semver version. |
+
+<Callout>
+
+Keeping a root index file (a `marketplace.json`, say) in step with its members
+is not yet automated — that is the `adapter.sync` work tracked separately.
+
+</Callout>
+
+See the [configuration reference](/docs/configuration-reference/#keys) for all
+adapter keys and release settings.
 
 ## Package exclusions
 

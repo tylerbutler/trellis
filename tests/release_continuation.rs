@@ -13,6 +13,33 @@ struct ReleaseFixture {
 }
 
 impl ReleaseFixture {
+    fn adapter() -> Self {
+        let root = tempfile::tempdir().unwrap();
+        write(&root.path().join(".gitignore"), ".fake/\n");
+        write(
+            &root.path().join("trellis.toml"),
+            "[tools.trellis]\nmembers = [\"plugins/*\"]\n\
+             [tools.trellis.adapter]\nmanifest = \"plugin.json\"\nversion = \"package.version\"\n",
+        );
+        write(
+            &root.path().join("plugins/alpha/plugin.json"),
+            "{\"name\":\"alpha\",\"package\":{\"version\":\"1.2.0\"}}\n",
+        );
+        write(
+            &root.path().join("plugins/alpha/skills/task.md"),
+            "first task\n",
+        );
+        let api = mock_github(root.path());
+        add_fragment(root.path(), "alpha", "Added", "first feature");
+        init_repo(root.path());
+        let origin = bare_origin(root.path());
+        Self {
+            root,
+            _origin: origin,
+            api,
+        }
+    }
+
     fn new() -> Self {
         let root = tempfile::tempdir().unwrap();
         copy_fixture_to(root.path());
@@ -27,7 +54,107 @@ impl ReleaseFixture {
             api,
         }
     }
+}
 
+#[test]
+fn adapter_pending_release_tracks_manifest_fields_content_and_configuration() {
+    let f = ReleaseFixture::adapter();
+    assert_eq!(f.prepare(&["--pre", "rc"])["outcome"], "prepared");
+    f.pending();
+    assert_eq!(
+        f.prepare(&["--resume", "--skip-unchanged"])["outcome"],
+        "unchanged"
+    );
+
+    write(
+        &f.path().join("plugins/alpha/skills/task.md"),
+        "changed task\n",
+    );
+    f.commit();
+    assert_eq!(
+        f.prepare(&["--resume", "--skip-unchanged"])["outcome"],
+        "prepared"
+    );
+    f.pending();
+
+    let config = f.path().join("trellis.toml");
+    let text = fs::read_to_string(&config).unwrap();
+    write(
+        &config,
+        &format!("{text}\n[tools.trellis.publish]\nexact_tag_format = \"{{name}}@{{version}}\"\n"),
+    );
+    f.commit();
+    assert_eq!(
+        f.prepare(&["--resume", "--skip-unchanged"])["outcome"],
+        "prepared"
+    );
+}
+
+#[test]
+fn adapter_committed_candidates_continue_from_their_manifest_baseline() {
+    let f = ReleaseFixture::adapter();
+    f.prepare(&["--pre", "rc"]);
+    f.merge();
+    assert_eq!(f.prepare(&["--auto-pre"])["outcome"], "unchanged");
+    write(
+        &f.path().join("plugins/alpha/skills/task.md"),
+        "changed task\n",
+    );
+    f.commit();
+    let result = f.prepare(&["--auto-pre"]);
+    assert_eq!(result["outcome"], "prepared");
+    assert_eq!(result["bumped"][0]["next"], "1.3.0-rc.1");
+}
+
+#[test]
+fn yaml_and_toml_adapter_candidates_resume_and_continue_nested_versions() {
+    for (manifest, contents) in [
+        (
+            "apm.yml",
+            "name: alpha\npackage:\n  version: '1.2.0' # keep\n",
+        ),
+        (
+            "package.toml",
+            "name = \"alpha\"\n[package]\nversion = \"1.2.0\" # keep\n",
+        ),
+    ] {
+        let f = ReleaseFixture::adapter();
+        let config_path = f.path().join("trellis.toml");
+        write(
+            &config_path,
+            &fs::read_to_string(&config_path)
+                .unwrap()
+                .replace("plugin.json", manifest),
+        );
+        write(&f.path().join("plugins/alpha").join(manifest), contents);
+        f.commit();
+        let result = f.prepare(&["--pre", "rc"]);
+        assert_eq!(result["bumped"][0]["next"], "1.3.0-rc.0");
+        let pending = git_stdout(
+            f.path(),
+            &[
+                "show",
+                &format!("origin/release/pending:plugins/alpha/{manifest}"),
+            ],
+        );
+        assert_eq!(pending, contents.replace("1.2.0", "1.3.0-rc.0").trim_end());
+        f.pending();
+        assert_eq!(
+            f.prepare(&["--resume", "--skip-unchanged"])["outcome"],
+            "unchanged"
+        );
+        f.merge();
+        assert_eq!(f.prepare(&["--auto-pre"])["outcome"], "unchanged");
+        write(&f.path().join("plugins/alpha/skills/task.md"), "new task\n");
+        f.commit();
+        assert_eq!(
+            f.prepare(&["--auto-pre"])["bumped"][0]["next"],
+            "1.3.0-rc.1"
+        );
+    }
+}
+
+impl ReleaseFixture {
     fn path(&self) -> &Path {
         self.root.path()
     }

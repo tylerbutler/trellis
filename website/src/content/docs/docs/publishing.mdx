@@ -279,7 +279,10 @@ releases, so neither `publish --tag` nor `ci tag-package` resolves them.
 `publish` selects members whose [release
 lifecycle](/docs/configuration-reference/#release-lifecycle) is `hex`. A named package
 and `--tag <tag>` both refuse a `workspace` or `git_only` package, and
-`--all-untagged` only ever considers `hex` members. Without
+`--all-untagged` only ever considers `hex` members. In a
+[manifest adapter](/docs/configuration/#manifest-adapter) workspace, the command
+is refused outright: the lifecycle ladder tops out at `git_only`.
+Without
 [source bundling](#bundling-private-dependencies), it runs these steps per
 package, in dependency order:
 

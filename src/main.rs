@@ -9,6 +9,7 @@ mod gleam;
 mod hex;
 mod json;
 mod lockfile;
+mod manifest;
 mod rewrite;
 mod runner;
 mod term;
@@ -869,7 +870,7 @@ mod tests {
         let page = include_str!("../website/src/pages/index.astro");
         let (_, sample) = page.split_once("const configSample = `").unwrap();
         let (sample, _) = sample.split_once("`;").unwrap();
-        let config = config::ConfigFile::from_gleam_toml(sample).unwrap();
+        let config = config::ConfigFile::from_toml(sample).unwrap();
         assert!(config.unknown_keys.is_empty(), "{:?}", config.unknown_keys);
     }
 
