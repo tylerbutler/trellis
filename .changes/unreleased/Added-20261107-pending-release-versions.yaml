@@ -1,5 +1,5 @@
 component: release
-kind: Major
+kind: Added
 body: |-
   **`trellis release pr --resume` keeps the pending PR's proposed versions.** New fragments update release notes without recalculating existing targets from the original bump rules. Candidate targets cannot switch version series, even before the PR merges; same-series promotion remains supported. Candidate baselines and release inputs come from Git history.
 
