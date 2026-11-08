@@ -904,6 +904,10 @@ fn promotion_only_rolls_up_prereleases_for_its_target_version() {
         .args(["version", "apply", "--pre", "rc"])
         .assert()
         .success();
+    trellis(root)
+        .args(["version", "apply", "--pre", "none"])
+        .assert()
+        .success();
     add_fragment(root, "lat_core", "Breaking", "new target feature");
     trellis(root)
         .args(["version", "apply", "--set", "lat_core=2.0.0", "--pre", "rc"])

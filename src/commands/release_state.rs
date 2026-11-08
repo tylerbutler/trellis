@@ -1,35 +1,18 @@
 use super::version::PlanEntry;
-use super::version_override::{Intent, Overrides};
+use super::version_override::Overrides;
 use crate::git::{git_output, git_stdout, slash_path};
 use crate::workspace::Workspace;
 use anyhow::{Context, Result, bail, ensure};
-use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-const SCHEMA: &str = "trellis.release_intent/1";
-
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Debug)]
 pub(super) struct State {
-    schema: String,
-    pub base: String,
-    pub branch: String,
-    pub base_commit: String,
-    pub intent: Intent,
-    pub packages: BTreeMap<String, Package>,
+    pub packages: BTreeMap<String, semver::Version>,
     pub inputs: BTreeMap<String, String>,
 }
 
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(super) struct Package {
-    pub path: String,
-    pub current: String,
-    pub next: String,
-}
-
-pub(super) fn path(workspace: &Workspace) -> String {
+fn path(workspace: &Workspace) -> String {
     slash_path(&Path::new(&workspace.config.changelog.dir).join("release.toml"))
 }
 
@@ -40,7 +23,7 @@ pub(super) fn validate_location(workspace: &Workspace) -> Result<()> {
             && !dir
                 .components()
                 .any(|c| matches!(c, std::path::Component::ParentDir)),
-        "release state requires a repository-relative changelog directory"
+        "release metadata cleanup requires a repository-relative changelog directory"
     );
     let mut location = workspace.root.clone();
     for component in Path::new(&path(workspace)).components() {
@@ -48,37 +31,23 @@ pub(super) fn validate_location(workspace: &Workspace) -> Result<()> {
         match std::fs::symlink_metadata(&location) {
             Ok(metadata) => ensure!(
                 !metadata.file_type().is_symlink(),
-                "release state path contains a symlink: {}",
+                "release metadata path contains a symlink: {}",
                 location.display()
             ),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => return Err(error).context("cannot inspect release state location"),
+            Err(error) => return Err(error).context("cannot inspect release metadata location"),
         }
-    }
-    let ignored = git_output(
-        &workspace.root,
-        &["check-ignore", "--quiet", "--", &path(workspace)],
-    )?;
-    match ignored.status.code() {
-        Some(0) => bail!(
-            "release intent file `{}` is ignored by git; remove its ignore rule before preparation",
-            path(workspace)
-        ),
-        Some(1) => {}
-        _ => bail!(
-            "cannot check release intent ignore rules: {}",
-            String::from_utf8_lossy(&ignored.stderr)
-        ),
     }
     Ok(())
 }
 
-fn validate_oid(oid: &str) -> Result<()> {
-    ensure!(
-        matches!(oid.len(), 40 | 64) && oid.bytes().all(|b| b.is_ascii_hexdigit()),
-        "invalid release-state commit `{oid}`"
-    );
-    Ok(())
+pub(super) fn remove(workspace: &Workspace) -> Result<()> {
+    validate_location(workspace)?;
+    match std::fs::remove_file(workspace.root.join(path(workspace))) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error).context("cannot remove obsolete release metadata"),
+    }
 }
 
 pub(super) fn ancestor(root: &Path, ancestor: &str, head: &str) -> Result<bool> {
@@ -104,123 +73,97 @@ fn file_at(root: &Path, revision: &str, path: &str) -> Result<Option<String>> {
     )?))
 }
 
-pub(super) fn read(workspace: &Workspace, revision: &str) -> Result<Option<State>> {
-    let Some(text) = file_at(&workspace.root, revision, &path(workspace))? else {
-        return Ok(None);
-    };
-    let state: State = toml::from_str(&text).context(
-        "invalid release intent; use --no-resume with an explicit request to replace it",
-    )?;
-    ensure!(
-        state.schema == SCHEMA,
-        "unsupported release intent schema `{}`",
-        state.schema
-    );
-    validate_oid(&state.base_commit)?;
-    Overrides::parse(
-        &state.intent.bump,
-        &state.intent.set,
-        state.intent.pre.as_deref(),
-    )
-    .context("invalid stored semantic release options")?;
-    for package in state.packages.values() {
-        semver::Version::parse(&package.current)
-            .context("invalid source version in release state")?;
-        semver::Version::parse(&package.next)
-            .context("invalid prepared version in release state")?;
-    }
-    ensure!(!state.packages.is_empty(), "release state has no packages");
-    Ok(Some(state))
-}
-
 impl State {
-    pub fn new(
-        workspace: &Workspace,
-        base: &str,
-        branch: &str,
-        base_commit: &str,
-        overrides: &Overrides,
-        plan: &[PlanEntry],
-    ) -> Result<Self> {
-        validate_location(workspace)?;
+    pub fn from_pr(workspace: &Workspace, base_commit: &str, head: &str) -> Result<Self> {
+        ensure!(
+            !ancestor(&workspace.root, head, base_commit)?,
+            "stale pending release: head is already merged; close its PR before continuing"
+        );
+        let bases = git_stdout(&workspace.root, &["merge-base", "--all", base_commit, head])
+            .context("cannot find pending release source; fetch full history")?;
+        ensure!(
+            bases.lines().count() == 1,
+            "pending release has no unambiguous source baseline; fetch full history"
+        );
+        let source_commit = bases.trim();
+        let source = workspace_at(&workspace.root, source_commit, base_commit)?;
+        let proposed = workspace_at(&workspace.root, head, base_commit)?;
+        for member in proposed.members.iter().filter(|m| m.releasable()) {
+            ensure!(
+                source.member_index(&member.name).is_some(),
+                "pending release package `{}` has no source baseline; use --no-resume with an explicit request",
+                member.name
+            );
+        }
+        let mut packages = BTreeMap::new();
+        for member in source.members.iter().filter(|m| m.releasable()) {
+            let name = &member.name;
+            let pending_idx = proposed
+                .member_index(name)
+                .with_context(|| format!("pending release package `{name}` disappeared"))?;
+            let pending = &proposed.members[pending_idx];
+            let current = semver::Version::parse(member.version())?;
+            let next = semver::Version::parse(pending.version())?;
+            if next == current {
+                continue;
+            }
+            let idx = workspace
+                .member_index(name)
+                .with_context(|| format!("stale pending release: package `{name}` disappeared"))?;
+            let selected = &workspace.members[idx];
+            ensure!(
+                next > current,
+                "pending release version for `{name}` is not forward"
+            );
+            ensure!(
+                pending.releasable()
+                    && selected.releasable()
+                    && pending.rel_file("gleam.toml") == member.rel_file("gleam.toml")
+                    && selected.rel_file("gleam.toml") == member.rel_file("gleam.toml"),
+                "stale pending release: package `{name}` moved or is no longer releasable"
+            );
+            ensure!(
+                selected.version() == member.version(),
+                "stale pending release: `{name}` is now {}, expected {}; use --no-resume with an explicit request",
+                selected.version(),
+                member.version()
+            );
+            packages.insert(name.clone(), next);
+        }
+        ensure!(
+            !packages.is_empty(),
+            "pending PR has no proposed release versions"
+        );
         Ok(Self {
-            schema: SCHEMA.to_string(),
-            base: base.to_string(),
-            branch: branch.to_string(),
-            base_commit: base_commit.to_string(),
-            intent: overrides.intent(),
-            packages: plan
-                .iter()
-                .map(|entry| {
-                    (
-                        entry.name.clone(),
-                        Package {
-                            path: workspace.members[entry.member].rel_file("gleam.toml"),
-                            current: entry.current.to_string(),
-                            next: entry.next.to_string(),
-                        },
-                    )
-                })
-                .collect(),
-            inputs: inputs(workspace, base_commit)?,
+            packages,
+            inputs: inputs(&source, source_commit)?,
         })
     }
 
-    pub fn resume(
-        &self,
+    pub(super) fn validate_pending_series(
         workspace: &Workspace,
-        base: &str,
-        branch: &str,
-        base_commit: &str,
         head: &str,
-        explicit: &Overrides,
-    ) -> Result<Overrides> {
-        ensure!(
-            self.base == base && self.branch == branch,
-            "pending release intent targets a different base or branch; use --no-resume with an explicit request"
-        );
-        ensure!(
-            ancestor(&workspace.root, &self.base_commit, base_commit)?,
-            "stale release intent: original base is not an ancestor of the selected base"
-        );
-        ensure!(
-            ancestor(&workspace.root, &self.base_commit, head)?,
-            "stale release intent: pending head does not descend from its recorded base"
-        );
-        ensure!(
-            !ancestor(&workspace.root, head, base_commit)?,
-            "stale release intent: pending head is already merged; close its PR before continuing"
-        );
-        self.validate_source(workspace, base_commit)?;
-        for (name, package) in &self.packages {
-            let idx = workspace
-                .member_index(name)
-                .with_context(|| format!("stale release intent: package `{name}` disappeared"))?;
-            let member = &workspace.members[idx];
-            ensure!(
-                member.releasable() && member.rel_file("gleam.toml") == package.path,
-                "stale release intent: package `{name}` moved or is no longer releasable"
-            );
-            ensure!(
-                member.version() == package.current,
-                "stale release intent: `{name}` is now {}, expected {}; use --no-resume with an explicit request",
-                member.version(),
-                package.current
-            );
-            let manifest = file_at(&workspace.root, head, &package.path)?
-                .with_context(|| format!("pending release head has no `{}`", package.path))?;
-            let document: toml::Value = toml::from_str(&manifest)?;
-            ensure!(
-                document.get("version").and_then(toml::Value::as_str)
-                    == Some(package.next.as_str()),
-                "stale release intent: pending version for `{name}` was edited"
-            );
+        plan: &[PlanEntry],
+    ) -> Result<()> {
+        for entry in plan {
+            let path = workspace.members[entry.member].rel_file("gleam.toml");
+            let Some(text) = file_at(&workspace.root, head, &path)? else {
+                continue;
+            };
+            let manifest: toml::Value =
+                toml::from_str(&text).context("invalid pending package manifest")?;
+            let version = manifest
+                .get("version")
+                .and_then(toml::Value::as_str)
+                .context("pending package manifest has no version")?;
+            let version =
+                semver::Version::parse(version).context("invalid pending package version")?;
+            super::version_override::validate_series(&entry.name, &version, &entry.next)?;
         }
-        let stored = Overrides::parse(
-            &self.intent.bump,
-            &self.intent.set,
-            self.intent.pre.as_deref(),
-        )?;
+        Ok(())
+    }
+
+    pub fn resume(&self, workspace: &Workspace, explicit: &Overrides) -> Result<Overrides> {
         let candidates: Vec<&str> = workspace
             .members
             .iter()
@@ -228,59 +171,46 @@ impl State {
             .filter(|m| semver::Version::parse(m.version()).is_ok_and(|v| !v.pre.is_empty()))
             .map(|m| m.name.as_str())
             .collect();
-        Ok(stored.merged(explicit, &candidates))
-    }
-
-    fn validate_source(&self, workspace: &Workspace, restore: &str) -> Result<()> {
-        let original = Overrides::parse(
-            &self.intent.bump,
-            &self.intent.set,
-            self.intent.pre.as_deref(),
-        )?;
-        let (source, original_plan, original_inputs) =
-            with_workspace_at(&workspace.root, &self.base_commit, restore, |source| {
-                let plan = super::version::compute_plan(&source, &original)?;
-                let inputs = inputs(&source, &self.base_commit)?;
-                Ok((source, plan, inputs))
+        let labels: BTreeSet<&str> = self
+            .packages
+            .values()
+            .filter(|p| !p.pre.is_empty())
+            .map(|p| {
+                let (label, counter) = p
+                    .pre
+                    .as_str()
+                    .rsplit_once('.')
+                    .context("pending candidate has no counter")?;
+                ensure!(
+                    !label.contains('.') && counter.parse::<u64>().is_ok(),
+                    "unsupported pending candidate `{p}`; use --no-resume with an explicit request"
+                );
+                Ok(label)
             })
-            .context("release intent base is unavailable or invalid; fetch full history")?;
+            .collect::<Result<_>>()?;
         ensure!(
-            original_plan.len() == self.packages.len()
-                && original_plan
-                    .iter()
-                    .all(|entry| self
-                        .packages
-                        .get(&entry.name)
-                        .is_some_and(|p| p.current == entry.current.to_string()
-                            && p.next == entry.next.to_string()
-                            && p.path == source.members[entry.member].rel_file("gleam.toml"))),
-            "stale release intent: semantic options do not match the recorded plan"
+            labels.len() <= 1,
+            "conflicting candidate labels in pending release; use --no-resume with an explicit request"
         );
-        ensure!(
-            original_inputs == self.inputs,
-            "stale release intent: recorded inputs do not match its original base"
-        );
-        Ok(())
+        let pre = labels.first().copied().or_else(|| {
+            self.packages
+                .keys()
+                .any(|name| candidates.contains(&name.as_str()))
+                .then_some("none")
+        });
+        Ok(
+            Overrides::from_proposed(self.packages.clone(), pre, &candidates)?
+                .merged(explicit, &candidates),
+        )
     }
 
-    pub fn write(&self, workspace: &Workspace) -> Result<()> {
-        validate_location(workspace)?;
-        let file = workspace.root.join(path(workspace));
-        let repo = crate::git::repo_root(&workspace.root)
-            .context("release state requires a git repository")?;
-        ensure!(
-            file.starts_with(&repo)
-                && !Path::new(&workspace.config.changelog.dir)
-                    .components()
-                    .any(|c| matches!(
-                        c,
-                        std::path::Component::ParentDir | std::path::Component::RootDir
-                    )),
-            "release state must be stored in a repository-relative changelog directory"
-        );
-        std::fs::create_dir_all(file.parent().context("release state has no directory")?)?;
-        std::fs::write(file, toml::to_string_pretty(self)?)
-            .context("failed to persist release intent")
+    pub fn matches_plan(&self, plan: &[PlanEntry]) -> bool {
+        self.packages.len() == plan.len()
+            && plan.iter().all(|p| {
+                self.packages
+                    .get(&p.name)
+                    .is_some_and(|stored| *stored == p.next)
+            })
     }
 }
 
@@ -325,50 +255,6 @@ pub(super) fn baselines(
     workspace: &Workspace,
     base_commit: &str,
 ) -> Result<BTreeMap<String, String>> {
-    if let Some(state) = read(workspace, base_commit)? {
-        state.validate_source(workspace, base_commit)?;
-        for (name, package) in &state.packages {
-            let idx = workspace
-                .member_index(name)
-                .with_context(|| format!("stale candidate baseline: `{name}` disappeared"))?;
-            ensure!(
-                workspace.members[idx].version() == package.next,
-                "stale candidate baseline: `{name}` no longer matches prepared version {}; pass --pre explicitly",
-                package.next
-            );
-        }
-        let range = format!("{}..{base_commit}", state.base_commit);
-        let log = git_stdout(
-            &workspace.root,
-            &[
-                "log",
-                "--first-parent",
-                "--format=%H",
-                &range,
-                "--",
-                &path(workspace),
-            ],
-        )?;
-        let mut commit = None;
-        for revision in log.lines() {
-            if read(workspace, revision)?.as_ref() != Some(&state) {
-                break;
-            }
-            commit = Some(revision);
-        }
-        let commit = commit.context("release state has no committed baseline")?;
-        ensure!(
-            ancestor(&workspace.root, &state.base_commit, commit)?,
-            "candidate baseline has inconsistent recorded ancestry"
-        );
-        return Ok(workspace
-            .members
-            .iter()
-            .filter(|m| m.releasable())
-            .filter(|m| semver::Version::parse(m.version()).is_ok_and(|v| !v.pre.is_empty()))
-            .map(|m| (m.name.clone(), commit.to_string()))
-            .collect());
-    }
     let mut baselines = BTreeMap::new();
     for member in workspace.members.iter().filter(|m| m.releasable()) {
         let current = semver::Version::parse(member.version())?;

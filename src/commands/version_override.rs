@@ -42,47 +42,26 @@ pub struct Overrides {
     per_package_bump: BTreeMap<String, Bump>,
     /// `--set <pkg>=<version>`.
     pinned: BTreeMap<String, semver::Version>,
+    proposed: BTreeMap<String, semver::Version>,
     pre: Option<PreChoice>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Intent {
-    pub bump: Vec<String>,
-    pub set: Vec<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub pre: Option<String>,
-}
-
 impl Overrides {
-    pub fn intent(&self) -> Intent {
-        let level = |bump: &Bump| match bump {
-            Bump::Major => "major",
-            Bump::Minor => "minor",
-            Bump::Patch => "patch",
-        };
-        Intent {
-            bump: self
-                .global_bump
-                .iter()
-                .map(|b| level(b).to_string())
-                .chain(
-                    self.per_package_bump
-                        .iter()
-                        .map(|(p, b)| format!("{p}={}", level(b))),
-                )
-                .collect(),
-            set: self
-                .pinned
-                .iter()
-                .map(|(p, v)| format!("{p}={v}"))
-                .collect(),
-            pre: match &self.pre {
-                Some(PreChoice::Label(label)) => Some(label.clone()),
-                Some(PreChoice::Promote) => Some(PROMOTE.to_string()),
-                _ => None,
-            },
-        }
+    pub fn from_proposed(
+        proposed: BTreeMap<String, semver::Version>,
+        pre: Option<&str>,
+        candidate_packages: &[&str],
+    ) -> Result<Self> {
+        let set = proposed
+            .iter()
+            .filter(|(name, _)| {
+                pre != Some(PROMOTE) || !candidate_packages.contains(&name.as_str())
+            })
+            .map(|(name, version)| format!("{name}={}", release_of(version)))
+            .collect::<Vec<_>>();
+        let mut overrides = Self::parse(&[], &set, pre)?;
+        overrides.proposed = proposed;
+        Ok(overrides)
     }
 
     pub fn has_mode(&self) -> bool {
@@ -93,7 +72,11 @@ impl Overrides {
         let mut merged = self.clone();
         if let Some(pre) = &explicit.pre {
             merged.pre = Some(pre.clone());
+            merged.proposed.clear();
             if explicit.promoting() {
+                if candidate_packages.is_empty() && matches!(self.pre, Some(PreChoice::Label(_))) {
+                    merged.pre = None;
+                }
                 for package in candidate_packages {
                     merged.pinned.remove(*package);
                     merged.per_package_bump.remove(*package);
@@ -102,12 +85,16 @@ impl Overrides {
         }
         if explicit.global_bump.is_some() {
             merged.global_bump = explicit.global_bump;
+            merged.proposed.clear();
+            merged.pinned.clear();
         }
         for (package, bump) in &explicit.per_package_bump {
+            merged.proposed.remove(package);
             merged.pinned.remove(package);
             merged.per_package_bump.insert(package.clone(), *bump);
         }
         for (package, version) in &explicit.pinned {
+            merged.proposed.remove(package);
             merged.per_package_bump.remove(package);
             merged.pinned.insert(package.clone(), version.clone());
         }
@@ -214,23 +201,30 @@ impl Overrides {
         current: &semver::Version,
         derived: Bump,
     ) -> Result<semver::Version> {
-        let next = match &self.pre {
-            Some(PreChoice::Promote | PreChoice::PreviewFinal) => {
-                self.promote(package, current, derived)?
-            }
-            Some(PreChoice::Label(label)) => self.prerelease(package, current, derived, label)?,
-            None => {
-                // Reachable only once prereleases exist, and silently bumping
-                // from the base would drop the cycle on the floor.
-                if !current.pre.is_empty() {
-                    bail!(
-                        "`{package}` is at prerelease {current}; pass --pre <label> for another \
-                         prerelease or --pre none to promote it"
-                    );
+        let next = if let Some(next) = self.proposed.get(package) {
+            next.clone()
+        } else {
+            match &self.pre {
+                Some(PreChoice::Promote | PreChoice::PreviewFinal) => {
+                    self.promote(package, current, derived)?
                 }
-                self.base(package, current, derived)
+                Some(PreChoice::Label(label)) => {
+                    self.prerelease(package, current, derived, label)?
+                }
+                None => {
+                    // Reachable only once prereleases exist, and silently bumping
+                    // from the base would drop the cycle on the floor.
+                    if !current.pre.is_empty() {
+                        bail!(
+                            "`{package}` is at prerelease {current}; pass --pre <label> for another \
+                         prerelease or --pre none to promote it"
+                        );
+                    }
+                    self.base(package, current, derived)
+                }
             }
         };
+        validate_series(package, current, &next)?;
         // Catches an override that would move a version backwards — `--set` to
         // an older number, or a label whose cycle has already passed.
         if next <= *current {
@@ -289,8 +283,7 @@ impl Overrides {
         label: &str,
     ) -> Result<semver::Version> {
         let base = if self.names(package) {
-            // An explicit --bump/--set retargets the cycle even mid-flight,
-            // measured from the base rather than from `rc.0` itself.
+            // Measure overrides from the stable version, not the candidate.
             self.base(package, &release_of(current), derived)
         } else if !current.pre.is_empty() {
             // Already in a cycle: the base was decided when it was cut, and
@@ -309,6 +302,20 @@ impl Overrides {
             .map_err(|err| anyhow::anyhow!("`{label}` is not a usable prerelease label: {err}"))?;
         Ok(next)
     }
+}
+
+pub(super) fn validate_series(
+    package: &str,
+    current: &semver::Version,
+    next: &semver::Version,
+) -> Result<()> {
+    if !current.pre.is_empty() && release_of(current) != release_of(next) {
+        bail!(
+            "`{package}` cannot change candidate series from {current} to {next}; continue or promote {} first",
+            release_of(current)
+        );
+    }
+    Ok(())
 }
 
 /// The release version `current` is a prerelease of — or itself, if it is one.
@@ -479,12 +486,19 @@ mod tests {
     }
 
     #[test]
-    fn retargeting_mid_cycle_restarts_the_counter() {
-        let o = overrides(&["p=major"], &[], Some("rc"));
-        assert_eq!(
-            o.resolve("p", &v("1.0.0-rc.4"), Bump::Minor).unwrap(),
-            v("2.0.0-rc.0")
-        );
+    fn retargeting_mid_cycle_is_rejected() {
+        for o in [
+            overrides(&["p=major"], &[], Some("rc")),
+            overrides(&[], &["p=1.1.0"], Some("rc")),
+            overrides(&[], &["p=1.0.1"], Some("rc")),
+        ] {
+            assert!(
+                o.resolve("p", &v("1.0.0-rc.4"), Bump::Minor)
+                    .unwrap_err()
+                    .to_string()
+                    .contains("candidate series")
+            );
+        }
     }
 
     #[test]

@@ -71,7 +71,7 @@ impl ReleaseFixture {
 }
 
 #[test]
-fn pending_semantic_targets_survive_updates_and_field_overrides() {
+fn pending_proposed_targets_survive_updates_and_field_overrides() {
     let f = ReleaseFixture::new();
     let first = f.prepare(&[
         "--pre",
@@ -88,7 +88,7 @@ fn pending_semantic_targets_survive_updates_and_field_overrides() {
     assert_eq!(unchanged["outcome"], "unchanged");
     add_fragment(f.path(), "lat_cli", "Fixed", "joining change");
     f.commit();
-    let updated = f.prepare(&["--resume", "--set", "lat_mid=1.1.0"]);
+    let updated = f.prepare(&["--resume", "--set", "lat_mid=1.0.0"]);
     assert_eq!(updated["pr_action"], "updated");
     let tree = git_stdout(
         f.path(),
@@ -103,8 +103,131 @@ fn pending_semantic_targets_survive_updates_and_field_overrides() {
             f.path(),
             &["show", "origin/release/pending:packages/lat_mid/gleam.toml"]
         )
-        .contains("1.1.0-rc.0")
+        .contains("1.0.0-rc.0")
     );
+}
+
+#[test]
+fn derived_pending_versions_become_fixed_targets_without_a_state_file() {
+    let f = ReleaseFixture::new();
+    f.prepare(&["--pre", "rc"]);
+    assert!(
+        git_stdout(
+            f.path(),
+            &[
+                "ls-tree",
+                "origin/release/pending",
+                "--",
+                ".changes/release.toml"
+            ]
+        )
+        .is_empty()
+    );
+    f.pending();
+    add_fragment(f.path(), "lat_core", "Breaking", "breaking change");
+    f.commit();
+    assert_eq!(f.prepare(&["--resume"])["bumped"][0]["next"], "1.3.0-rc.0");
+}
+
+#[test]
+fn workspace_bump_cannot_replace_pending_candidate_series() {
+    let f = ReleaseFixture::new();
+    f.prepare(&[
+        "--pre",
+        "rc",
+        "--set",
+        "lat_core=2.0.0",
+        "--set",
+        "lat_mid=1.0.0",
+    ]);
+    f.pending();
+    let before = commit_of(f.path(), "origin/release/pending");
+    for args in [
+        vec!["--resume", "--bump", "patch"],
+        vec!["--no-resume", "--pre", "rc", "--set", "lat_core=3.0.0"],
+    ] {
+        trellis_github(f.path(), &f.api)
+            .args(["release", "pr"])
+            .args(args)
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("candidate series"));
+        assert_eq!(commit_of(f.path(), "origin/release/pending"), before);
+        assert_eq!(git_stdout(f.path(), &["status", "--porcelain"]), "");
+    }
+}
+
+#[test]
+fn changed_source_versions_reject_resumption_without_push() {
+    let f = ReleaseFixture::new();
+    f.prepare(&["--pre", "rc"]);
+    f.pending();
+    let manifest = f.path().join("packages/lat_core/gleam.toml");
+    let text = fs::read_to_string(&manifest)
+        .unwrap()
+        .replace("1.2.0", "1.2.1");
+    write(&manifest, &text);
+    f.commit();
+    let before = commit_of(f.path(), "origin/release/pending");
+    trellis_github(f.path(), &f.api)
+        .args(["release", "pr", "--resume"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("expected 1.2.0"));
+    assert_eq!(commit_of(f.path(), "origin/release/pending"), before);
+    assert_eq!(git_stdout(f.path(), &["status", "--porcelain"]), "");
+}
+
+#[test]
+fn preparation_removes_old_release_metadata() {
+    let f = ReleaseFixture::new();
+    write(&f.path().join(".changes/release.toml"), "old metadata\n");
+    f.commit();
+    f.prepare(&["--pre", "rc"]);
+    assert!(
+        git_stdout(
+            f.path(),
+            &[
+                "ls-tree",
+                "origin/release/pending",
+                "--",
+                ".changes/release.toml"
+            ]
+        )
+        .is_empty()
+    );
+}
+
+#[test]
+fn pending_candidate_can_be_promoted_within_its_series() {
+    let f = ReleaseFixture::new();
+    f.prepare(&["--pre", "rc"]);
+    f.pending();
+    assert_eq!(
+        f.prepare(&["--resume", "--pre", "none"])["bumped"][0]["next"],
+        "1.3.0"
+    );
+}
+
+#[test]
+#[cfg(unix)]
+fn metadata_cleanup_rejects_symlinks_before_preparation() {
+    let f = ReleaseFixture::new();
+    write(&f.path().join("important.toml"), "keep this\n");
+    std::os::unix::fs::symlink("../important.toml", f.path().join(".changes/release.toml"))
+        .unwrap();
+    f.commit();
+    trellis_github(f.path(), &f.api)
+        .args(["release", "pr", "--pre", "rc"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("contains a symlink"));
+    assert_eq!(version_of(f.path(), "lat_core"), "1.2.0");
+    assert_eq!(
+        fs::read_to_string(f.path().join("important.toml")).unwrap(),
+        "keep this\n"
+    );
+    assert_eq!(git_stdout(f.path(), &["status", "--porcelain"]), "");
 }
 
 #[test]
@@ -263,7 +386,7 @@ fn pending_stable_targets_do_not_revert_to_fragment_bumps() {
 }
 
 #[test]
-fn package_bump_replaces_inherited_pin_without_losing_other_targets() {
+fn package_bump_cannot_replace_pending_candidate_series() {
     let f = ReleaseFixture::new();
     f.prepare(&[
         "--pre",
@@ -274,15 +397,13 @@ fn package_bump_replaces_inherited_pin_without_losing_other_targets() {
         "lat_mid=1.0.0",
     ]);
     f.pending();
-    let result = f.prepare(&["--resume", "--bump", "lat_core=patch"]);
-    assert_eq!(result["bumped"][0]["next"], "1.2.1-rc.0");
-    assert!(
-        result["bumped"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|p| p["name"] == "lat_mid" && p["next"] == "1.0.0-rc.0")
-    );
+    let before = commit_of(f.path(), "origin/release/pending");
+    trellis_github(f.path(), &f.api)
+        .args(["release", "pr", "--resume", "--bump", "lat_core=patch"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("candidate series"));
+    assert_eq!(commit_of(f.path(), "origin/release/pending"), before);
 }
 
 #[test]
@@ -581,23 +702,21 @@ fn api_failure_and_closed_pr_do_not_emit_success_or_push() {
 }
 
 #[test]
-fn explicit_retargeting_is_not_misreported_as_unchanged() {
+fn merged_candidates_cannot_change_series() {
     let f = ReleaseFixture::new();
     f.prepare(&["--pre", "rc"]);
     f.merge();
-    assert_eq!(
-        f.prepare(&["--auto-pre", "--set", "lat_core=2.0.0"])["bumped"][0]["next"],
-        "2.0.0-rc.0"
-    );
-    f.merge();
-    assert_eq!(
-        f.prepare(&["--auto-pre", "--set", "lat_core=2.0.0"])["outcome"],
-        "unchanged"
-    );
+    let before = commit_of(f.path(), "origin/release/pending");
+    trellis_github(f.path(), &f.api)
+        .args(["release", "pr", "--auto-pre", "--set", "lat_core=2.0.0"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("candidate series"));
+    assert_eq!(commit_of(f.path(), "origin/release/pending"), before);
 }
 
 #[test]
-fn malformed_or_edited_pending_state_requires_explicit_replacement() {
+fn edited_pending_versions_are_the_resumed_targets() {
     let f = ReleaseFixture::new();
     f.prepare(&["--pre", "rc"]);
     f.pending();
@@ -605,10 +724,10 @@ fn malformed_or_edited_pending_state_requires_explicit_replacement() {
         f.path(),
         &["checkout", "--detach", "origin/release/pending"],
     );
-    let path = f.path().join(".changes/release.toml");
+    let path = f.path().join("packages/lat_core/gleam.toml");
     let text = fs::read_to_string(&path)
         .unwrap()
-        .replace("pre = \"rc\"", "pre = \"beta\"");
+        .replace("1.3.0-rc.0", "1.3.0-rc.7");
     write(&path, &text);
     f.commit();
     git(
@@ -617,15 +736,37 @@ fn malformed_or_edited_pending_state_requires_explicit_replacement() {
     );
     git(f.path(), &["checkout", "main"]);
     f.pending();
+    assert_eq!(f.prepare(&["--resume"])["bumped"][0]["next"], "1.3.0-rc.7");
+}
+
+#[test]
+fn backward_pending_versions_fail_without_push() {
+    let f = ReleaseFixture::new();
+    f.prepare(&["--pre", "rc"]);
+    git(
+        f.path(),
+        &["checkout", "--detach", "origin/release/pending"],
+    );
+    let manifest = f.path().join("packages/lat_core/gleam.toml");
+    let text = fs::read_to_string(&manifest)
+        .unwrap()
+        .replace("1.3.0-rc.0", "1.1.0");
+    write(&manifest, &text);
+    f.commit();
+    git(
+        f.path(),
+        &["push", "origin", "HEAD:refs/heads/release/pending"],
+    );
+    git(f.path(), &["checkout", "main"]);
+    f.pending();
+    let before = commit_of(f.path(), "origin/release/pending");
     trellis_github(f.path(), &f.api)
         .args(["release", "pr", "--resume"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("semantic options do not match"));
-    assert_eq!(
-        f.prepare(&["--no-resume", "--pre", "rc"])["outcome"],
-        "prepared"
-    );
+        .stderr(predicate::str::contains("not forward"));
+    assert_eq!(commit_of(f.path(), "origin/release/pending"), before);
+    assert_eq!(git_stdout(f.path(), &["status", "--porcelain"]), "");
 }
 
 #[test]
@@ -694,7 +835,7 @@ fn independently_committed_legacy_candidates_have_separate_baselines() {
 }
 
 #[test]
-fn native_baseline_works_after_a_squash_merge_and_from_detached_callers() {
+fn history_baseline_works_after_a_squash_merge_and_from_detached_callers() {
     let f = ReleaseFixture::new();
     f.prepare(&["--pre", "rc"]);
     git(f.path(), &["merge", "--squash", "origin/release/pending"]);
@@ -707,6 +848,23 @@ fn native_baseline_works_after_a_squash_merge_and_from_detached_callers() {
         git_stdout(f.path(), &["branch", "--show-current"]).trim(),
         ""
     );
+}
+
+#[test]
+fn history_baseline_works_after_a_merge_commit() {
+    let f = ReleaseFixture::new();
+    f.prepare(&["--pre", "rc"]);
+    git(
+        f.path(),
+        &[
+            "merge",
+            "--no-ff",
+            "-m",
+            "merge candidate",
+            "origin/release/pending",
+        ],
+    );
+    assert_eq!(f.prepare(&["--auto-pre"])["outcome"], "unchanged");
 }
 
 #[test]
@@ -741,13 +899,12 @@ fn nested_workspace_baselines_compare_workspace_relative_inputs() {
 }
 
 #[test]
-fn reformatting_state_does_not_move_the_candidate_content_baseline() {
+fn old_metadata_does_not_move_the_candidate_content_baseline() {
     let f = ReleaseFixture::new();
     f.prepare(&["--pre", "rc"]);
     f.merge();
     let state = f.path().join(".changes/release.toml");
-    let text = fs::read_to_string(&state).unwrap();
-    write(&state, &format!("{text}\n"));
+    write(&state, "obsolete metadata\n");
     write(
         &f.path().join("packages/lat_core/src/feature.gleam"),
         "pub fn main() { 1 }\n",
@@ -757,18 +914,14 @@ fn reformatting_state_does_not_move_the_candidate_content_baseline() {
 }
 
 #[test]
-fn ignored_state_is_rejected_before_versions_or_remote_refs_change() {
+fn ignored_metadata_does_not_block_preparation() {
     let f = ReleaseFixture::new();
     write(
         &f.path().join(".gitignore"),
         ".fake/\n.changes/release.toml\n",
     );
     f.commit();
-    trellis_github(f.path(), &f.api)
-        .args(["release", "pr", "--pre", "rc"])
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains("ignored by git"));
+    assert_eq!(f.prepare(&["--pre", "rc"])["outcome"], "prepared");
     assert_eq!(version_of(f.path(), "lat_core"), "1.2.0");
     assert_eq!(git_stdout(f.path(), &["status", "--porcelain"]), "");
 }

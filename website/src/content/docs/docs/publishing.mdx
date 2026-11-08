@@ -50,7 +50,7 @@ repository_tags = ["major", "minor"]      # repo-v0 and repo-v0.4
 
 `trellis release pr` turns pending fragments into a release pull request: it
 runs `version apply` on a release branch (default `release/pending`), commits
-the bumps and release intent, replaces the remote branch with a force-with-lease
+the bumps, replaces the remote branch with a force-with-lease
 check, and
 creates or updates the PR via the GitHub API. It needs a token: `GITHUB_TOKEN`
 (ambient in GitHub Actions), `GH_TOKEN`, or a logged-in `gh` CLI as the
@@ -94,8 +94,8 @@ preparation after a published promotion.
 
 ### Resuming a pending request
 
-Use `--resume` to preserve a pending PR's original label, promotion choice,
-workspace-wide bump, and per-package targets:
+Use `--resume` to keep the package versions proposed by a pending PR, including
+candidate versions and stable promotion targets:
 
 ```sh
 trellis release pr --pre rc --set lat_core=2.0.0 --set lat_mid=1.0.0
@@ -103,36 +103,43 @@ trellis release pr --pre rc --set lat_core=2.0.0 --set lat_mid=1.0.0
 trellis release pr --resume --skip-unchanged
 ```
 
-Each preparation writes `<changelog.dir>/release.toml` with
-`schema = "trellis.release_intent/1"`. Commit this file with the release.
-It records `base`, `branch`, `base_commit`, semantic `intent` (`bump`, `set`,
-and optional `pre`), package `path`/`current`/`next` values, and input identities.
-It is separate from candidate archives. Do not edit it to change a request;
-use CLI overrides.
+The pending PR's manifests supply the targets. New fragments update its release
+notes without changing those targets, even when the versions were originally
+derived from fragment kinds rather than explicit `--set` options. Review the
+targets when new breaking changes arrive. Packages joining the release use the
+normal plan and the pending candidate label or promotion mode.
 
-Explicit options replace only the supplied part of the stored request.
-`--set lat_mid=1.1.0` keeps `lat_core`'s target; `--bump lat_mid=minor`
-replaces `lat_mid`'s stored pin. Package overrides take precedence over a
-workspace-wide bump. `--pre none` replaces the candidate mode, removes inherited
+No release-intent file is needed. Preparation removes an existing
+`<changelog.dir>/release.toml` from the generated release commit. Candidate
+fragment archives remain unchanged.
+
+Explicit package options replace matching stable targets. Package overrides
+take precedence over a workspace-wide bump. An explicit workspace-wide
+`--bump` recalculates inherited targets, subject to the candidate-series guard.
+Once a candidate is proposed, its package stays in that version series, even
+before the PR merges. `1.3.0-rc.0` can advance to `1.3.0-rc.1` or promote to
+`1.3.0`, but cannot switch to `1.4.0-rc.0` or `2.0.0-rc.0`.
+`--pre none` replaces the candidate mode, removes inherited
 overrides for packages already in a candidate cycle, and retains targets for
 stable packages joining the promotion. Explicit contradictory promotion
 overrides still fail.
 
 Trellis finds only open, same-repository PRs with the requested head and base.
-Fork PRs cannot supply intent. Multiple matches, a different pending base,
-edited versions or metadata, changed source versions, and already-merged
-pending heads produce errors before replacement. A PR made without native
-intent cannot be resumed: use `--no-resume` with explicit release options to
-replace it. If content skipping is configured, also use
-`--no-skip-unchanged` for that replacement.
+Fork PRs cannot supply targets. Multiple matches, a different pending base,
+invalid or backward proposed versions, moved packages, changed source versions,
+and already-merged pending heads produce errors before replacement. Trellis uses
+the PR's common ancestor with the selected base to check source versions and
+release inputs; fetch full history if that ancestor is unavailable.
+Use `--no-resume` with explicit release options to replace the proposed targets.
+If the pending PR cannot be validated, also use `--no-skip-unchanged`.
 
 ### Automatic candidate preparation
 
 Use `--auto-pre` after a candidate merges. Mode precedence is explicit
-`--pre`, then intent resumed with `--resume`, then the committed candidate
+`--pre`, then the mode read from pending versions with `--resume`, then the committed candidate
 label, then the existing stable default. No automatic path promotes to stable.
 A pending PR must be resumed or replaced with an explicit mode; automation
-does not infer its request from generated manifest versions.
+does not replace its proposed versions with a new automatic request.
 
 ```sh
 trellis release pr --resume --auto-pre --skip-unchanged
@@ -152,16 +159,15 @@ sources but no release plan needs a fragment.
 
 Deleting all content from a pending release without leaving a valid replacement
 plan is an error, not a successful no-op. Promotion is never blocked merely
-because candidate content is unchanged. A new target or label is a changed
+because candidate content is unchanged. A new stable target or candidate label is a changed
 request. To deliberately prepare another otherwise-unchanged candidate, use
 `--force`; validation still applies. Explicit `--pre` without content skipping
 keeps the existing behavior.
 
-Native state identifies the committed candidate baseline. For older candidates,
-trellis inspects parsed manifest history and verifies the candidate's release
+Trellis inspects parsed manifest history and verifies the candidate's release
 section, separately for each package. Missing or inconsistent history fails:
-fetch full history or make an explicit `--pre` preparation to establish native
-state. Retained legacy fragments alone cannot generate an endless candidate
+fetch full history or make an explicit `--pre` preparation to establish a new
+baseline. Retained legacy fragments alone cannot generate an endless candidate
 cycle.
 
 These options also have false-by-default

@@ -64,9 +64,9 @@ For workspace setup, package discovery, and task exclusions, start with the
 | `changelog.dependency_body` | no | Minijinja template for one such entry's body. Context: `dependency`, `dependency_version`, `package`. |
 | `changelog.strictness` | no | How `changelog check` treats a changed releasable package with no unreleased fragment: `error` (default, fails the run), `warn`, or `off`. An *invalid* fragment fails at every setting. |
 | `doctor.shared_dependencies` | no | How `doctor` treats packages disagreeing on a shared external dependency: `warn` (default), `error`, or `off`. |
-| `release.resume` | no | Resume native semantic intent from the pending same-repository release PR. Default: `false`. CLI: `--resume` / `--no-resume`. |
+| `release.resume` | no | Keep the proposed package versions from the pending same-repository release PR. Default: `false`. CLI: `--resume` / `--no-resume`. |
 | `release.auto_pre` | no | Continue the committed candidate label when no explicit or resumed mode applies. Always guards unchanged candidates; never implicitly promotes. Default: `false`. CLI: `--auto-pre` / `--no-auto-pre`. |
-| `release.skip_unchanged` | no | Skip release preparation when relevant content and intent are unchanged. Default: `false`. CLI: `--skip-unchanged` / `--no-skip-unchanged`. |
+| `release.skip_unchanged` | no | Skip release preparation when relevant content and proposed versions are unchanged. Default: `false`. CLI: `--skip-unchanged` / `--no-skip-unchanged`. |
 
 </div>
 

@@ -1,0 +1,7 @@
+component: version
+kind: Major
+body: |-
+  **`trellis version` keeps candidates in their original version series.** `version plan` and `version apply` reject overrides that move a prerelease to a different major, minor, or patch target. `1.3.0-rc.n` can still advance within `1.3.0` and promote to `1.3.0`.
+
+    Replace cross-series candidate overrides with same-series continuation, or use `--pre none` to promote before starting the next series.
+time: 2026-11-07T17:28:32.094-08:00
