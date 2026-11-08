@@ -186,6 +186,7 @@ fn resolve(
 }
 
 pub fn run(workspace: &Workspace, options: &PinOptions) -> Result<bool> {
+    workspace.refuse_under_adapter("pin")?;
     let indices = workspace.select(&SelectionFilter {
         names: options.packages.clone(),
         ..SelectionFilter::default()

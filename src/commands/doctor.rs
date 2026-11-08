@@ -209,29 +209,6 @@ fn check_adapter(workspace: &Workspace, report: &mut Report) {
                 .in_package(member.name.clone()),
             );
         }
-        // Members are found by globbing directories, so a name that disagrees
-        // with its directory makes `--package` and the tag namespace read
-        // wrong. A warning, not an error: nothing downstream requires them to
-        // match, and repositories in the wild do drift here.
-        let dir_name = member
-            .rel_path
-            .rsplit('/')
-            .next()
-            .unwrap_or(&member.rel_path);
-        if !member.rel_path.is_empty() && dir_name != member.name {
-            report.push(
-                Finding::warning(
-                    Check::PackageManifest,
-                    format!(
-                        "package `{}` lives in `{}`; the manifest name and the directory \
-                         disagree",
-                        member.name, member.rel_path
-                    ),
-                )
-                .at(&at)
-                .in_package(member.name.clone()),
-            );
-        }
     }
 }
 
@@ -270,9 +247,7 @@ pub fn run(root: &Path, options: &DoctorOptions) -> Result<bool> {
             checked.push("packages agree on the external dependencies they share".to_string());
             checked.push("gleam on PATH matches the .tool-versions pin (advisory)".to_string());
         } else {
-            checked.push(format!(
-                "every {manifest} declares a semver version, and a name matching its directory"
-            ));
+            checked.push(format!("every {manifest} declares a semver version"));
         }
         for check in &checked {
             crate::status!("{}", crate::term::dim(&format!("checked: {check}")));

@@ -68,7 +68,7 @@ impl Format {
 pub fn read_string(text: &str, format: Format, path: &str) -> Result<Option<String>> {
     match format {
         Format::Toml => toml_read(text, path),
-        Format::Json | Format::Yaml => Ok(locate(text, path)?.map(|hit| hit.value)),
+        Format::Json | Format::Yaml => Ok(locate(text, format, path)?.map(|hit| hit.value)),
     }
 }
 
@@ -82,7 +82,7 @@ pub fn write_string(text: &str, format: Format, path: &str, value: &str) -> Resu
     match format {
         Format::Toml => toml_write(text, path, value),
         Format::Json | Format::Yaml => {
-            let Some(hit) = locate(text, path)? else {
+            let Some(hit) = locate(text, format, path)? else {
                 bail!("no `{path}` field");
             };
             let range = scalar_extent(text, &hit)?;
@@ -160,7 +160,10 @@ struct Hit {
 /// What a container in the event stream is, and — for a mapping — whether the
 /// next scalar is a key or a value.
 enum Container {
-    Mapping { expecting_key: bool },
+    Mapping {
+        expecting_key: bool,
+        target_key_seen: bool,
+    },
     Sequence,
 }
 
@@ -175,6 +178,7 @@ struct Locator<'a> {
     hit: Option<Hit>,
     /// A value at the target path that is not a string scalar.
     wrong_shape: bool,
+    duplicate: bool,
 }
 
 impl<'a> Locator<'a> {
@@ -187,6 +191,7 @@ impl<'a> Locator<'a> {
             pending_key: None,
             hit: None,
             wrong_shape: false,
+            duplicate: false,
         }
     }
 
@@ -206,7 +211,7 @@ impl<'a> Locator<'a> {
 
     /// A mapping's next scalar is a key again, once its current value is done.
     fn value_done(&mut self) {
-        if let Some(Container::Mapping { expecting_key }) = self.stack.last_mut() {
+        if let Some(Container::Mapping { expecting_key, .. }) = self.stack.last_mut() {
             *expecting_key = true;
         }
     }
@@ -214,14 +219,19 @@ impl<'a> Locator<'a> {
 
 impl<'i> SpannedEventReceiver<'i> for Locator<'_> {
     fn on_event(&mut self, event: Event<'i>, span: Span) {
-        if self.hit.is_some() || self.wrong_shape {
-            return;
-        }
         match event {
             Event::Scalar(value, style, _, _) => {
-                if let Some(Container::Mapping { expecting_key }) = self.stack.last_mut()
+                let target_key = self.path.len() < self.target.len()
+                    && self.path.iter().zip(&self.target).all(|(a, b)| a == b)
+                    && value == self.target[self.path.len()];
+                if let Some(Container::Mapping {
+                    expecting_key,
+                    target_key_seen,
+                }) = self.stack.last_mut()
                     && *expecting_key
                 {
+                    self.duplicate |= target_key && *target_key_seen;
+                    *target_key_seen |= target_key;
                     *expecting_key = false;
                     self.pending_key = Some(value.into_owned());
                     return;
@@ -253,6 +263,7 @@ impl<'i> SpannedEventReceiver<'i> for Locator<'_> {
                 self.stack.push(match event {
                     Event::MappingStart(..) => Container::Mapping {
                         expecting_key: true,
+                        target_key_seen: false,
                     },
                     _ => Container::Sequence,
                 });
@@ -280,14 +291,28 @@ impl<'i> SpannedEventReceiver<'i> for Locator<'_> {
     }
 }
 
-fn locate(text: &str, path: &str) -> Result<Option<Hit>> {
+fn locate(text: &str, format: Format, path: &str) -> Result<Option<Hit>> {
     if path.is_empty() {
         bail!("empty field path");
+    }
+    if format == Format::Json {
+        let document: serde_json::Value =
+            serde_json::from_str(text).context("failed to parse JSON")?;
+        let mut field = Some(&document);
+        for key in path.split('.') {
+            field = field.and_then(|value| value.get(key));
+        }
+        if field.is_some_and(|value| !value.is_string()) {
+            bail!("`{path}` is not a string");
+        }
     }
     let mut locator = Locator::new(path);
     Parser::new_from_str(text)
         .load(&mut locator, false)
         .map_err(|err| anyhow::anyhow!("{err}"))?;
+    if locator.duplicate {
+        bail!("`{path}` is ambiguous because a field path key is duplicated");
+    }
     if locator.wrong_shape {
         bail!("`{path}` is not a string");
     }
@@ -582,6 +607,92 @@ nested:
         assert!(read_string("{ unterminated", Format::Json, "a").is_err());
         assert!(read_string("a:\n- b\n c: d\n", Format::Yaml, "a").is_err());
         assert!(read_string("nope = ", Format::Toml, "a").is_err());
+    }
+
+    #[test]
+    fn duplicate_field_paths_are_rejected_on_read_and_write() {
+        for (text, format, path) in [
+            (
+                r#"{"version":"1.2.0","version":"9.0.0"}"#,
+                Format::Json,
+                "version",
+            ),
+            (
+                r#"{"package":{"version":"1.2.0"},"package":{"version":"9.0.0"}}"#,
+                Format::Json,
+                "package.version",
+            ),
+            (
+                r#"{"package":{"version":"1.2.0"},"package":{}}"#,
+                Format::Json,
+                "package.version",
+            ),
+            (
+                r#"{"name":"alpha","\u006eame":"beta"}"#,
+                Format::Json,
+                "name",
+            ),
+            (
+                "version: \"1.2.0\"\nversion: \"9.0.0\"\n",
+                Format::Yaml,
+                "version",
+            ),
+            (
+                "package:\n  version: \"1.2.0\"\npackage:\n  version: \"9.0.0\"\n",
+                Format::Yaml,
+                "package.version",
+            ),
+        ] {
+            for result in [
+                read_string(text, format, path).map(|_| ()),
+                write_string(text, format, path, "1.2.1").map(|_| ()),
+            ] {
+                let error = result.unwrap_err().to_string();
+                assert!(error.contains("duplicate"), "{format:?}: {error}");
+            }
+        }
+    }
+
+    #[test]
+    fn repeated_keys_in_separate_objects_do_not_make_a_field_ambiguous() {
+        let text = r#"{"package":{"version":"1.2.0"},"other":{"version":"9.0.0"}}"#;
+        assert_eq!(
+            read_string(text, Format::Json, "package.version").unwrap(),
+            Some("1.2.0".to_string())
+        );
+        assert_eq!(
+            write_string(text, Format::Json, "package.version", "1.2.1").unwrap(),
+            text.replace("1.2.0", "1.2.1")
+        );
+    }
+
+    #[test]
+    fn json_requires_valid_syntax_and_string_fields_on_read_and_write() {
+        for text in [
+            "version: \"1.2.0\"\n",
+            r#"{version: "1.2.0"}"#,
+            r#"{"version":"1.2.0",}"#,
+            r#"{"version":"1.2.0"} trailing"#,
+            r#"{"version":42}"#,
+            r#"{"version":true}"#,
+            r#"{"version":null}"#,
+            r#"{"package":{"version":42}}"#,
+        ] {
+            let path = if text.contains("package") {
+                "package.version"
+            } else {
+                "version"
+            };
+            assert!(read_string(text, Format::Json, path).is_err(), "{text}");
+            assert!(
+                write_string(text, Format::Json, path, "1.2.1").is_err(),
+                "{text}"
+            );
+        }
+        assert_eq!(
+            read_string(r#"{"version":"42"}"#, Format::Json, "version").unwrap(),
+            Some("42".to_string())
+        );
     }
 
     // --- TOML ---------------------------------------------------------------

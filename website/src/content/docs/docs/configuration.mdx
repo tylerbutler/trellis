@@ -165,6 +165,12 @@ This rule follows the selected backend, not file presence. An adapter workspace
 may have an unrelated `gleam.toml` beside `trellis.toml`, provided only one
 root file carries `[tools.trellis]`.
 
+Omit `members` to auto-discover packages, including a package at the workspace
+root. A package's name does not need to match its directory name.
+
+JSON manifests must be valid JSON, with strings at the configured name and
+version paths. Duplicate keys that make either path ambiguous are errors.
+
 ### Version bumps are surgical
 
 `version apply` rewrites the single field `adapter.version` names and nothing
@@ -181,8 +187,8 @@ field the path does not resolve to is an error, never an insertion.
 | Dependency graph | Flat. An adapter declares no dependency edges, so topological order is member order and a workspace dependency never ripple-bumps. |
 | `publish.lifecycle` | Defaults to `git_only`; `hex` anywhere is a configuration error. There is no registry to publish to. |
 | `run` | Built-in verbs (`build`, `test`, …) are refused — they shell out to `gleam`. Declare what you need under `[tools.trellis.tasks]`; `trellis exec` is unaffected. |
-| `publish`, `lockfile refresh` | Refused. |
-| `doctor` | Drops the `manifest.toml`, shared-dependency, and toolchain checks; adds that every member manifest declares a semver version and a name matching its directory. |
+| `publish`, `lockfile refresh`, `pin` | Refused. |
+| `doctor` | Drops the `manifest.toml`, shared-dependency, and toolchain checks; adds that every member manifest declares a semver version. |
 
 <Callout>
 

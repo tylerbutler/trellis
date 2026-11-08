@@ -1,7 +1,7 @@
 component: trellis
 kind: Added
 body: |-
-  **`[tools.trellis.adapter]` lets a workspace's members be something other than Gleam packages.** One key is required — `manifest`, the member manifest's path relative to the member directory, whose presence marks a member the way a `gleam.toml` does otherwise, and whose extension picks the format (`.toml`, `.json`, `.yaml`, `.yml`). `name` and `version` are dotted field paths into that manifest, defaulting to `name` and `version`. Built for repositories distributed by git ref rather than a registry: Claude Code plugin marketplaces, APM monorepos, AI skill collections.
+  **`[tools.trellis.adapter]` supports packages with non-Gleam manifests.** The required `manifest` key names the manifest relative to each package directory. Its extension selects TOML, JSON, or YAML parsing. The optional `name` and `version` keys are dotted field paths, defaulting to `name` and `version`. Omit `members` to auto-discover packages, including a package at the workspace root. JSON manifests must be valid JSON with string name and version fields.
 
     Adapter workspaces can keep `[tools.trellis]` in **`trellis.toml`** at the workspace root. The native Gleam backend requires configuration in `gleam.toml`; `doctor` and normal commands reject a `trellis.toml` configuration without an adapter. Move the table and its subtables into `gleam.toml`, creating a config-only file if needed. Configless Gleam workspaces still work, and unrelated Gleam manifests do not prevent adapter use. Carrying the table in both root files is an error.
 

@@ -311,7 +311,7 @@ impl Workspace {
         };
         // A config-only root manifest ([tools.trellis] without a `name`) is
         // configuration, not a package — discovery must not sweep it in.
-        if config.members.is_none() && !root_is_package {
+        if config.members.is_none() && config.adapter.is_none() && !root_is_package {
             member_dirs.retain(|dir| dir != root);
         }
 

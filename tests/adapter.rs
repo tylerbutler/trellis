@@ -112,6 +112,103 @@ fn members_auto_discover_when_no_members_glob_is_configured() {
 }
 
 #[test]
+fn auto_discovery_includes_adapter_packages_at_the_root() {
+    for (manifest, contents) in [
+        ("plugin.json", r#"{"name":"root_pkg","version":"1.2.0"}"#),
+        (
+            ".claude-plugin/plugin.json",
+            r#"{"name":"root_pkg","version":"1.2.0"}"#,
+        ),
+        ("apm.yml", "name: root_pkg\nversion: \"1.2.0\"\n"),
+        ("package.toml", "name = \"root_pkg\"\nversion = \"1.2.0\"\n"),
+    ] {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        git_init(root);
+        write(
+            &root.join("trellis.toml"),
+            &format!("[tools.trellis.adapter]\nmanifest = \"{manifest}\"\n"),
+        );
+        write(&root.join(manifest), contents);
+        trellis(root)
+            .arg("list")
+            .assert()
+            .success()
+            .stdout("root_pkg  git_only\n");
+        trellis(root).args(["doctor", "--fix"]).assert().success();
+        write(
+            &root.join("packages/child").join(manifest),
+            &contents.replace("root_pkg", "child"),
+        );
+        trellis(root)
+            .arg("list")
+            .assert()
+            .success()
+            .stdout("child     git_only\nroot_pkg  git_only\n");
+        trellis(root)
+            .args([
+                "changelog",
+                "new",
+                "--package",
+                "root_pkg",
+                "--kind",
+                "Fixed",
+                "--body",
+                "Fix the root package",
+            ])
+            .assert()
+            .success();
+        trellis(root)
+            .args(["version", "apply", "--bump", "patch"])
+            .assert()
+            .success();
+        assert_eq!(
+            read(&root.join(manifest)),
+            contents.replace("1.2.0", "1.2.1")
+        );
+        assert_eq!(
+            read(&root.join("packages/child").join(manifest)),
+            contents.replace("root_pkg", "child")
+        );
+    }
+}
+
+#[test]
+fn invalid_json_manifests_fail_loading_and_doctor_without_writes() {
+    for contents in [
+        "name: alpha\nversion: \"1.2.0\"\n",
+        r#"{"name":42,"version":"1.2.0"}"#,
+        r#"{"name":"alpha","version":"1.2.0","version":"9.0.0"}"#,
+        r#"{"name":"alpha","name":"beta","version":"1.2.0"}"#,
+    ] {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        git_init(root);
+        write(
+            &root.join("trellis.toml"),
+            "[tools.trellis]\nmembers = [\"plugins/*\"]\n\
+             [tools.trellis.adapter]\nmanifest = \"plugin.json\"\n",
+        );
+        let manifest = root.join("plugins/alpha/plugin.json");
+        write(&manifest, contents);
+        write(
+            &root.join(".changes/unreleased/alpha-fix.toml"),
+            "package = \"alpha\"\nkind = \"Fixed\"\nbody = \"Fix thing\"\n",
+        );
+        for args in [
+            vec!["list"],
+            vec!["doctor", "--format", "json"],
+            vec!["version", "apply"],
+        ] {
+            trellis(root).args(args).assert().failure();
+        }
+        assert_eq!(read(&manifest), contents);
+        assert!(!root.join("plugins/alpha/CHANGELOG.md").exists());
+        assert!(root.join(".changes/unreleased/alpha-fix.toml").exists());
+    }
+}
+
+#[test]
 fn commands_work_from_inside_a_member() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
@@ -216,6 +313,10 @@ fn gleam_only_commands_are_refused() {
         vec!["publish", "alpha"],
         vec!["lockfile", "refresh"],
         vec!["run", "test"],
+        vec!["pin"],
+        vec!["pin", "--check"],
+        vec!["pin", "--update"],
+        vec!["pin", "--unpin"],
     ] {
         trellis(root)
             .args(&args)
@@ -223,6 +324,48 @@ fn gleam_only_commands_are_refused() {
             .failure()
             .stderr(predicate::str::contains("apm.yml"));
     }
+}
+
+#[test]
+fn pin_refuses_adapter_workspaces_without_changing_unrelated_gleam_manifests() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    scaffold(root);
+    let manifest = root.join("packages/alpha/gleam.toml");
+    let contents = "name = \"unrelated\"\nversion = \"1.0.0\"\n\
+        [dependencies]\ndep = { git = \"https://invalid.example/repo\", \
+        ref = \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\" } # trellis:pin main\n";
+    write(&manifest, contents);
+    for args in [
+        vec!["pin"],
+        vec!["pin", "--check"],
+        vec!["pin", "--update"],
+        vec!["pin", "--unpin"],
+    ] {
+        trellis(root)
+            .args(args)
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("is a Gleam command"));
+        assert_eq!(read(&manifest), contents);
+    }
+}
+
+#[test]
+fn doctor_accepts_package_names_that_differ_from_the_directory() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    scaffold(root);
+    write(
+        &root.join("packages/alpha/apm.yml"),
+        "name: \"@scope/alpha\"\nversion: \"1.2.0\"\n",
+    );
+    trellis(root)
+        .args(["doctor", "--fix"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("0 warning(s)"))
+        .stdout(predicate::str::contains("directory disagree").not());
 }
 
 #[test]
@@ -295,9 +438,7 @@ fn doctor_reports_adapter_specific_problems() {
         .assert()
         .failure()
         .stdout(predicate::str::contains("is not valid semver"))
-        .stdout(predicate::str::contains(
-            "the manifest name and the directory disagree",
-        ));
+        .stdout(predicate::str::contains("directory disagree").not());
 
     // A manifest missing the field the adapter points at fails to load at all.
     write(&root.join("packages/alpha/apm.yml"), "name: alpha\n");

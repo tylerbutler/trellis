@@ -208,16 +208,20 @@ manifest = ".claude-plugin/plugin.json"
 package_tags = ["exact", "major"]
 ```
 
+Omit `members` to auto-discover packages, including a package at the workspace
+root. JSON manifests must be valid JSON, with string name and version fields.
+Duplicate keys that make either configured field path ambiguous are errors.
+
 The bump is surgical: only the field `version` names is rewritten, so comments,
 key order, and formatting survive byte for byte. The changelog engine,
 `version`, `tag`, GitHub Releases, `release pr`, and `ci` are unchanged.
 
 The graph is flat — an adapter declares no dependency edges, so nothing ripple-
 bumps. `publish.lifecycle` defaults to `git_only` and `hex` is a configuration
-error; `publish`, `lockfile refresh`, and `run`'s built-in Gleam verbs
+error; `publish`, `lockfile refresh`, `pin`, and `run`'s built-in Gleam verbs
 are refused. `doctor` drops the `manifest.toml`, shared-dependency, and
-toolchain checks, and adds that every member manifest declares a semver version
-and a name matching its directory.
+toolchain checks, and adds that every member manifest declares a semver version.
+Package names do not need to match their directory names.
 
 The native Gleam backend requires `[tools.trellis]` in `gleam.toml`, not
 `trellis.toml`. A Gleam workspace without configuration still works. An
