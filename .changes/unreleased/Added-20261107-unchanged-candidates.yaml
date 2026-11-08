@@ -1,5 +1,0 @@
-component: release
-kind: Added
-body: |-
-  **`trellis release pr --skip-unchanged` skips unchanged release preparation.** Added, edited, and deleted fragments or release-owned source changes permit preparation; unrelated docs and excluded examples do not. Bundled sources count for their release owners. Native state and verified legacy candidate history provide baselines. Deleting all pending content without a valid replacement plan fails. `--force` bypasses skipping, not validation; stable promotion still rolls up candidate fragments.
-time: 2026-11-07T15:00:31.868-08:00

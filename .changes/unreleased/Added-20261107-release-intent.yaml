@@ -1,5 +1,0 @@
-component: release
-kind: Added
-body: |-
-  **`trellis release pr --resume` preserves a pending release's original request.** Later updates retain its candidate label, promotion choice, and per-package targets. Explicit options replace only the supplied fields; stable packages joining promotion keep their targets. Each preparation commits native intent in `<changelog.dir>/release.toml`. Fork PRs cannot supply intent, and stale or conflicting state fails before replacement.
-time: 2026-11-07T15:00:31.868-08:00

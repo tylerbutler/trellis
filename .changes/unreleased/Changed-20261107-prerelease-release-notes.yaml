@@ -1,7 +1,0 @@
-component: version
-kind: Changed
-body: |-
-  **`trellis version apply --pre` now writes incremental notes for each candidate.** Trellis archives candidate fragments and removes them from `unreleased`, so later candidates include only new changes. `--pre none` combines the target version's archived changes with any remaining fragments for the final rollup. Earlier candidate notes stay unchanged.
-
-    `fragments_retained: true` now means archived for the final release, not left in `unreleased`. Commit the new `.changes/<package>/v<prerelease>.toml` archives alongside the Markdown sections.
-time: 2026-11-07T14:52:37.620-08:00
