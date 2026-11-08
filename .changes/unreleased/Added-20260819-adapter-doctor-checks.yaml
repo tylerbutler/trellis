@@ -1,7 +1,7 @@
 component: doctor
 kind: Added
 body: |-
-  **`doctor` checks adapter manifests instead of Gleam manifests.** Every member manifest must declare a version that parses as semver. Package names do not need to match their directory names.
+  **`trellis doctor` validates adapter manifests and requires semantic versions.** Package names do not need to match their directory names. Changelog, fragment, exclusion, and tag-collision checks still run.
 
-    The checks with nothing to read are dropped: `manifest.toml` lock drift, shared external dependency agreement, and the `gleam`-on-PATH toolchain pin. The `checked:` preamble now names the checks that actually ran rather than a fixed list.
+    Adapter workspaces skip Gleam lockfile, pinned-dependency, shared-dependency, and toolchain checks. The `checked:` preamble names the adapter manifest and omits Gleam-only checks.
 time: 2026-08-19T09:02:00.000000-07:00

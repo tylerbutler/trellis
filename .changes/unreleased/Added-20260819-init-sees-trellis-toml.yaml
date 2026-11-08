@@ -1,0 +1,5 @@
+component: init
+kind: Added
+body: |-
+  **`trellis init` detects existing workspace configuration in `trellis.toml`.** It refuses initialization when `[tools.trellis]` already exists at the repository root or an ancestor, without creating a second configuration in `gleam.toml`. It also rejects `[tools.trellis]` in a discovered Gleam package's `trellis.toml`; keep workspace configuration at the root.
+time: 2026-08-19T09:04:00.000000-07:00
