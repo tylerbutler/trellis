@@ -12,7 +12,7 @@ dependencies rewritten to real Hex requirements. Trellis covers each step, and
 every step is idempotent, so re-running a partially failed release is safe.
 
 ```txt wrap
-trellis release pr [--base <branch>] [--branch <branch>]
+trellis release pr [--base <branch>] [--branch <branch>] [--pre <label|none>] [--set <pkg=version>] [--bump <pkg=level>] [--resume] [--auto-pre] [--skip-unchanged] [--json | --github-output]
 trellis tag plan [--json]
 trellis tag create [--push] [--github-release]
 trellis publish <pkg | --tag <tag> | --all-untagged> [--dry-run]
@@ -50,12 +50,165 @@ repository_tags = ["major", "minor"]      # repo-v0 and repo-v0.4
 
 `trellis release pr` turns pending fragments into a release pull request: it
 runs `version apply` on a release branch (default `release/pending`), commits
-the bumps, force-pushes (so the branch is regenerated on each run), and
+the bumps, replaces the remote branch with a force-with-lease
+check, and
 creates or updates the PR via the GitHub API. It needs a token: `GITHUB_TOKEN`
 (ambient in GitHub Actions), `GH_TOKEN`, or a logged-in `gh` CLI as the
 fallback (`gh auth token`). The body carries the bump table
 and each package's new CHANGELOG section. It requires a clean working tree
-and is a no-op when there are no fragments.
+and is a no-op when there is no eligible release plan.
+
+### Candidates and promotion
+
+`release pr` accepts the same repeatable `--set` and `--bump`, plus `--pre`,
+as [`version plan` and `version apply`](/docs/changelog/#overriding-the-derived-version). Use one release
+branch and one open PR for the whole cycle:
+
+```sh
+# Choose the stable target and candidate label: 1.3.0-rc.0.
+trellis release pr --set lat_core=1.3.0 --pre rc
+# After merging and publishing that PR, prepare 1.3.0-rc.1.
+trellis release pr --pre rc
+# After the last candidate merges and publishes, prepare stable promotion.
+trellis release pr --pre none
+```
+
+Each request regenerates from the selected base, not the old release branch.
+Retrying against an unchanged base produces the same candidate version; the
+next candidate follows a merge. This is version repeatability, not a promise
+of identical commit hashes or rendering dates. On a prerelease base, choose a
+label or `--pre none` instead of relying on the
+default stable bump. The opt-ins below let automated callers retain that choice.
+
+Candidate fragments move from `unreleased/` into source archives beside the
+candidate's Markdown section. Later candidates include only new fragments;
+stable promotion rolls up the target's archives and any new fragments.
+Review and merge each PR before publishing;
+never publish an unmerged candidate branch.
+
+The [Gleam/Hex workflow](/docs/ci/#the-release-pipeline) handles manual requests,
+pauses automatic preparation during this cycle, and publishes only the
+approved merge commit. It blocks new preparation until publication **and**
+tagging of the previous merged release succeed, then restores automatic stable
+preparation after a published promotion.
+
+### Resuming a pending request
+
+Use `--resume` to keep the package versions proposed by a pending PR, including
+candidate versions and stable promotion targets:
+
+```sh
+trellis release pr --pre rc --set lat_core=2.0.0 --set lat_mid=1.0.0
+# A later push keeps those targets and the pending rc.0 versions.
+trellis release pr --resume --skip-unchanged
+```
+
+The pending PR's manifests supply the targets. New fragments update its release
+notes without changing those targets, even when the versions were originally
+derived from fragment kinds rather than explicit `--set` options. Review the
+targets when new breaking changes arrive. Packages joining the release use the
+normal plan and the pending candidate label or promotion mode.
+
+No release-intent file is needed. Preparation removes an existing
+`<changelog.dir>/release.toml` from the generated release commit. Candidate
+fragment archives remain unchanged.
+
+Explicit package options replace matching stable targets. Package overrides
+take precedence over a workspace-wide bump. An explicit workspace-wide
+`--bump` recalculates inherited targets, subject to the candidate-series guard.
+Once a candidate is proposed, its package stays in that version series, even
+before the PR merges. `1.3.0-rc.0` can advance to `1.3.0-rc.1` or promote to
+`1.3.0`, but cannot switch to `1.4.0-rc.0` or `2.0.0-rc.0`.
+`--pre none` replaces the candidate mode, removes inherited
+overrides for packages already in a candidate cycle, and retains targets for
+stable packages joining the promotion. Explicit contradictory promotion
+overrides still fail.
+
+Trellis finds only open, same-repository PRs with the requested head and base.
+Fork PRs cannot supply targets. Multiple matches, a different pending base,
+invalid or backward proposed versions, moved packages, changed source versions,
+and already-merged pending heads produce errors before replacement. Trellis uses
+the PR's common ancestor with the selected base to check source versions and
+release inputs; fetch full history if that ancestor is unavailable.
+Use `--no-resume` with explicit release options to replace the proposed targets.
+If the pending PR cannot be validated, also use `--no-skip-unchanged`.
+
+### Automatic candidate preparation
+
+Use `--auto-pre` after a candidate merges. Mode precedence is explicit
+`--pre`, then the mode read from pending versions with `--resume`, then the committed candidate
+label, then the existing stable default. No automatic path promotes to stable.
+A pending PR must be resumed or replaced with an explicit mode; automation
+does not replace its proposed versions with a new automatic request.
+
+```sh
+trellis release pr --resume --auto-pre --skip-unchanged
+```
+
+Candidates keep their separate stable version bases. Stable packages joining
+the cycle use the normal fragment plan. Conflicting labels name the affected
+packages in an error; select `--pre <label>` explicitly to resolve them.
+
+`--auto-pre` always checks for new release content. `--skip-unchanged` enables
+the same check for explicit preparation and resumed requests. Unrelated docs,
+excluded examples/benchmarks, generated changelogs, and historical archives do
+not trigger another candidate. Added, edited, and deleted unreleased fragments,
+package `src/`, `priv/`, manifests, and release configuration do. Bundled
+workspace sources count for their release owners. A stable owner with changed
+sources but no release plan needs a fragment.
+
+Deleting all content from a pending release without leaving a valid replacement
+plan is an error, not a successful no-op. Promotion is never blocked merely
+because candidate content is unchanged. A new stable target or candidate label is a changed
+request. To deliberately prepare another otherwise-unchanged candidate, use
+`--force`; validation still applies. Explicit `--pre` without content skipping
+keeps the existing behavior.
+
+Trellis inspects parsed manifest history and verifies the candidate's release
+section, separately for each package. Missing or inconsistent history fails:
+fetch full history or make an explicit `--pre` preparation to establish a new
+baseline. Retained legacy fragments alone cannot generate an endless candidate
+cycle.
+
+These options also have false-by-default
+[`release` configuration keys](/docs/configuration-reference/#release-preparation).
+`--no-resume`, `--no-auto-pre`, and `--no-skip-unchanged` override configured
+values. Disabling configured skipping does not disable the automatic mode's
+guard; use `--force` for that.
+
+### CI outcomes
+
+`--json` emits `trellis.release_pr/1`; `--github-output` emits single-line
+`key=value` records like `ci outputs`. They are mutually exclusive and keep
+stdout free of progress text and update notices.
+
+| `outcome` | Meaning |
+| --- | --- |
+| `prepared` | The release branch and PR were created or updated successfully. `pr_action` is `created` or `updated`. |
+| `unchanged` | The content check skipped apply, commit, push, and PR mutation. |
+| `no_changes` | No eligible release plan exists. |
+
+Both forms include `base`, `branch`, and `bumped` in the existing version-plan
+shape. PR identity (`pr_number`, `pr_url`) is present when known.
+`pr_action` is present only for preparation. Optional fields are absent in JSON
+and empty in GitHub output. An unchanged result's plan was evaluated, not
+applied. Errors remain nonzero and do not emit a successful result.
+
+```yaml
+- name: Prepare the release
+  id: release
+  run: trellis release pr --resume --auto-pre --skip-unchanged --github-output >> "$GITHUB_OUTPUT"
+- name: Regenerate version-stamped pages
+  if: steps.release.outputs.outcome == 'prepared'
+  run: |
+    git fetch origin "refs/heads/${{ steps.release.outputs.branch }}"
+    git checkout --detach FETCH_HEAD
+    trellis run docs
+```
+
+Custom workflows must still serialize preparation and wait for the prior
+merged release's required publication and tagging. These flags do not change
+Hex policy or authorize publication.
 
 ## Tags
 
@@ -78,7 +231,7 @@ Each entry in a package's `package_tags` falls into one of two lifecycles:
   a reviewable way to do exactly that. The signal is the package's manifest version stored at the tag,
   so a commit that does not release the package, such as another package's
   release or a docs change, leaves its series tags alone. The series is
-  derived from the version; see [series tags](/docs/configuration/#tags).
+  derived from the version; see [series tags](/docs/configuration-reference/#tags).
 - **Repository tags** are independent of any package's list. Trellis moves the
   configured tag only when the anchor package's manifest version differs from
   the version at that tag. A series change creates a new tag and leaves the
@@ -105,6 +258,14 @@ to a moving tag would silently retarget on the next release, so only immutable
 per-version tags carry one.
 </Callout>
 
+Prereleases use immutable exact tags such as `lat_core-v1.3.0-rc.0` when
+`package_tags` includes `exact`. Neither package nor repository moving series
+tags advance during a candidate release. New GitHub releases for prerelease
+manifest versions have `prerelease: true`; stable versions have it set to
+`false`, regardless of custom tag spelling. Retrying skips an existing GitHub
+release rather than rewriting it. If an older candidate release was
+misclassified, its owner must correct its prerelease setting on GitHub.
+
 With no `exact` entry a package has no per-version tags at all, so there is no
 tag to trigger a publish from: run `trellis publish --all-untagged` on
 release-PR merge instead. Passing a series tag to `publish --tag` is an error,
@@ -115,13 +276,15 @@ releases, so neither `publish --tag` nor `ci tag-package` resolves them.
 
 ## Publishing to Hex
 
-`publish` selects members whose [release lifecycle](/docs/configuration/#release-lifecycle)
-is `hex` — `--package <name>` and `--tag <tag>` refuse a `workspace` or
-`git_only` package by name, and `--all-untagged` only ever considers `hex`
-members. In a [manifest adapter](/docs/configuration/#manifest-adapter)
-workspace the command is refused outright: the lifecycle ladder tops out at
-`git_only`, so there is nothing to publish. It runs, per package and in
-dependency order:
+`publish` selects members whose [release
+lifecycle](/docs/configuration-reference/#release-lifecycle) is `hex`. A named package
+and `--tag <tag>` both refuse a `workspace` or `git_only` package, and
+`--all-untagged` only ever considers `hex` members. In a
+[manifest adapter](/docs/configuration/#manifest-adapter) workspace, the command
+is refused outright: the lifecycle ladder tops out at `git_only`.
+Without
+[source bundling](#bundling-private-dependencies), it runs these steps per
+package, in dependency order:
 
 1. **Idempotency check.** One Hex API query; versions already published are
    skipped.
@@ -131,8 +294,8 @@ dependency order:
    workspace path dependency becomes the Hex requirement derived from that
    dep's current version, per `path_dep_requirement`. The version map only
    ever holds `hex` members, so a path dependency on a `git_only` or
-   `workspace` member fails the rewrite rather than publishing something Hex
-   could never resolve.
+   `workspace` member needs explicit source bundling; otherwise the rewrite
+   fails rather than publishing something Hex could never resolve.
 4. **Publish.** `gleam publish --yes`.
 5. **Restore.** The original `gleam.toml` comes back even when publishing
    fails; the repo never shows rewritten files.
@@ -158,12 +321,179 @@ release instead of one per tag.
 <Callout>
 
 Dev-only path deps to a non-`hex` package are left alone, because Hex doesn't
-ship dev dependencies. A regular `[dependencies]` path dep to a package whose
-lifecycle is less capable than its dependent's refuses to publish, and
+ship dev dependencies. Without explicit source bundling, a regular
+`[dependencies]` path dep to a package whose lifecycle is less capable than
+its dependent's refuses to publish, and
 `doctor` catches that boundary on every PR; see [Release
-lifecycle](/docs/configuration/#release-lifecycle).
+lifecycle](/docs/configuration-reference/#release-lifecycle).
 
 </Callout>
+
+## Bundling private dependencies
+
+Use source bundling when a releasable package needs code from a workspace
+package that you do not want to publish on Hex. Hex bundles combine source
+into one publishing package. [Git-only bundles](#git-only-bundles) retain
+repository paths and package identities.
+
+<Callout type="caution">
+
+**Bundling copies source; it does not rewrite modules.** Trellis does not
+rename modules, add a package-name prefix, or rewrite imports. Module names
+must be unique across the publishing package, its bundled dependencies, and
+the other dependencies in a consumer's build. Use distinct module paths,
+such as `lib_a/parser` and `lib_b/parser`, rather than defining `parser` in
+both packages. Different package names alone do not prevent module collisions.
+
+</Callout>
+
+```toml title="gleam.toml"
+[tools.trellis]
+members = ["packages/*"]
+
+[tools.trellis.publish.bundle]
+lib_a = ["lib_b"]
+
+[tools.trellis.publish.lifecycle.packages]
+"packages/lib_b" = "workspace"
+```
+
+In `packages/lib_a/gleam.toml`, keep the normal path dependency:
+
+```toml
+[dependencies]
+lib_b = { path = "../lib_b" }
+```
+
+The `publish.bundle` keys are exact releasable package names, not paths or
+globs; owners must have lifecycle `hex` or `git_only`. For a Hex owner, list
+each direct non-Hex runtime dependency. A selected package must
+have lifecycle `workspace` or `git_only`; bundling does not change its lifecycle.
+Trellis also includes its transitive non-Hex runtime path dependencies once,
+but keeps Hex packages as external requirements. It does not include bundled
+packages' tests or dev dependencies in the combined Hex package.
+
+For example, these workspace sources:
+
+```text title="Development packages"
+packages/lib_a/src/lib_a.gleam
+packages/lib_b/src/lib_b.gleam
+packages/lib_b/src/lib_b/parser.gleam
+```
+
+produce one package's source tree:
+
+```text title="Published lib_a source"
+src/lib_a.gleam
+src/lib_b.gleam
+src/lib_b/parser.gleam
+```
+
+Keep `import lib_b` and `import lib_b/parser` unchanged. The published package
+has `lib_a`'s name and version, with no runtime dependency entry for `lib_b`.
+Consumers install `lib_a` without a separate `lib_b` Hex release.
+
+For `trellis publish lib_a`, trellis creates a temporary package, combines the
+source trees, removes bundled dependency entries, and adds their external
+runtime requirements. It runs `gleam format --check`,
+`gleam build --warnings-as-errors`, and `gleam test` in that directory before
+publishing from it. It keeps the checkout's source, manifests, and lockfiles
+unchanged and removes the temporary package after success or failure.
+Publisher tests can still use local dev-only path dependencies. Run the
+bundled packages' own tests through your normal workspace test task.
+
+### Check before publishing
+
+Run the workspace tests and bundle checks before a release:
+
+```sh
+trellis run test
+trellis doctor
+trellis publish lib_a --dry-run
+```
+
+`doctor` checks the combined source inventory and manifest without building
+the package or creating a temporary package. Dry-run reports the bundled packages
+and external requirements without running Gleam; it still queries Hex to
+check whether the version already exists.
+
+| Check | Conflicts it can detect |
+| --- | --- |
+| `trellis doctor` | File and module-name collisions inside each configured bundle, incompatible internal-module rules, and differing dependency or compiler requirements. |
+| `trellis publish lib_a --dry-run` | The same preparation conflicts for the selected unpublished package. |
+| `trellis publish lib_a` | Preparation conflicts plus errors from building and testing the combined package with its resolved dependencies before upload. |
+
+Two independent publishers can each include the same module names without a
+conflict in either package alone. A consumer that installs both, or installs
+a bundled package alongside a separate release of its bundled dependency,
+can still encounter a collision. Neither publisher's `doctor` check can
+predict that future dependency combination; the consumer's build must check it.
+
+### Compatibility and release notes
+
+For Hex bundles, trellis preserves module names and imports, including native Erlang and
+JavaScript source files and their local source helpers. It preserves
+`internal_modules` rules, including each package's defaults, and rejects
+patterns that would make another package's public modules internal.
+It merges identical dependency requirements and promotes an identical
+publisher dev dependency to runtime when needed. Differing version requirements
+or compiler constraints require you to align the manifests first.
+
+Bundled OTP application startup modules, `priv` directories, and runtime git
+dependencies are not supported. Trellis merges `erlang.extra_applications`
+but rejects references to removed bundled applications. Native code must not
+rely on the bundled package's former OTP application identity; trellis cannot
+detect dynamic application-name references.
+
+Write a changelog fragment for each releasable bundle owner affected by a change
+in bundled code. `changelog check` includes direct and transitive bundled
+changes in those packages' checks. A `workspace` dependency still has no
+independent release or changelog; a `git_only` dependency keeps its own rules.
+
+<Callout type="caution">
+
+Hex bundling publishes the dependency's source in the Hex archive. Check that you
+can redistribute it and that the publishing package declares the required
+licences. Trellis includes attributed licence notices in a standard licence
+file.
+
+</Callout>
+
+### Git-only bundles
+
+A `git_only` package can include a `workspace` dependency in its release
+without giving that dependency an independent version, tag, or changelog:
+
+```toml title="gleam.toml"
+[tools.trellis]
+members = ["packages/*"]
+
+[tools.trellis.publish.bundle]
+lib_a = ["lib_b"]
+
+[tools.trellis.publish.lifecycle]
+default = "git_only"
+packages = { "packages/lib_b" = "workspace" }
+```
+
+Keep `lib_b = { path = "../lib_b" }` in `packages/lib_a/gleam.toml`.
+List every direct `workspace` runtime dependency; independent `git_only`
+and `hex` dependencies do not need to be listed. Selected dependencies also
+include their transitive non-Hex runtime path dependencies.
+
+Trellis validates workspace paths and dependency coverage, and
+`changelog check` counts bundled changes against `lib_a`. It does not merge
+source, rewrite manifests, or create a Git release artifact. Your workflow
+must include the dependency directories at the paths the manifests require.
+Hex combined-package restrictions on module collisions, runtime Git
+dependencies, OTP startup modules, and `priv` directories do not apply to
+these separate package trees. Build and test them through your workspace
+tasks, and validate your release artifact separately.
+
+`trellis publish lib_a` and `trellis publish --tag lib_a-v1.0.0` reject a
+Git-only owner. `trellis publish --all-untagged` skips it, including
+prereleases. Bundling never changes a package's lifecycle or enables Hex
+publication.
 
 ## Lockfiles
 
@@ -178,6 +508,7 @@ Both of these flows are supported; the difference is policy, not tooling:
 | Shape | Flow |
 | --- | --- |
 | Tags as trigger | Release PR merges → `tag create --push` → each pushed tag triggers a workflow running `publish --tag "$GITHUB_REF_NAME"`. |
-| Tags as record | Release PR merges → `publish --all-untagged` (one run, topologically ordered) → `tag create --github-release` records what shipped. |
+| Tags as record | Release PR merges → `publish --all-untagged` (one run, topologically ordered) → `tag create --push --github-release` records what shipped. |
 
-Ready-to-paste workflows for both are in the [CI recipes](/docs/ci/).
+The [CI recipes](/docs/ci/#the-release-pipeline) provide a copyable
+publish-then-tag workflow with candidate/promotion controls and recovery.

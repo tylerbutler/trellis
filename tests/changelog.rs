@@ -2,7 +2,9 @@
 
 mod common;
 
-use common::{add_fragment, copy_fixture_to, git, trellis_with_stable_date as trellis, write};
+use common::{
+    add_fragment, copy_fixture_to, git, set_version, trellis_with_stable_date as trellis, write,
+};
 use predicates::prelude::*;
 use std::fs;
 use std::path::Path;
@@ -53,13 +55,8 @@ fn parse_github_output(text: &str) -> std::collections::BTreeMap<String, String>
 
 // ---- changelog new ---------------------------------------------------------
 
-/// `project` was the pre-1.0 spelling of a fragment's `package` key, inherited
-/// from changie. Fragments written by an older trellis sit in `.changes/` of
-/// real workspaces, so both spellings must parse until 1.0 removes the alias.
-/// (`add_fragment` above still writes `project`, which exercises the alias
-/// across the rest of this suite.)
 #[test]
-fn fragments_parse_under_either_package_spelling() {
+fn fragment_project_key_is_rejected() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
     copy_fixture_to(root);
@@ -70,17 +67,13 @@ fn fragments_parse_under_either_package_spelling() {
         &dir.join("old-spelling.toml"),
         "project = \"lat_core\"\nkind = \"Added\"\nbody = \"written by an older trellis\"\n",
     );
-    write(
-        &dir.join("new-spelling.toml"),
-        "package = \"lat_core\"\nkind = \"Added\"\nbody = \"written by this one\"\n",
-    );
 
     trellis(root)
         .args(["version", "plan"])
         .assert()
-        .success()
-        .stdout(predicate::str::contains("lat_core"))
-        .stdout(predicate::str::contains("2 fragment(s)"));
+        .failure()
+        .stderr(predicate::str::contains("old-spelling.toml"))
+        .stderr(predicate::str::contains("project"));
 }
 
 #[test]
@@ -385,7 +378,7 @@ fn changelog_check_maps_diff_to_missing_fragments() {
     git(root, &["commit", "-q", "-m", "change"]);
 
     let output = trellis(root)
-        .args(["changelog", "check", "--base", "main", "--json"])
+        .args(["changelog", "check", "--base", "main", "--format", "json"])
         .output()
         .unwrap();
     assert!(!output.status.success(), "lat_mid lacks a fragment");
@@ -455,6 +448,298 @@ fn changelog_check_rows_a_package_the_branch_wrote_a_fragment_for() {
         .assert()
         .success()
         .stdout(predicate::str::contains("lat_mid: 1 fragment(s)"));
+}
+
+// ---- changelog check: prereleases -----------------------------------------
+
+fn workspace_with_prereleases(root: &Path) {
+    copy_fixture_to(root);
+    set_version(root, "lat_core", "1.0.0-rc.0");
+    set_version(root, "lat_cli", "0.3.2-beta.1");
+    git(root, &["init", "-q", "-b", "main"]);
+    git(root, &["add", "."]);
+    git(root, &["commit", "-q", "-m", "init"]);
+    write(&root.join("packages/lat_core/src/new.gleam"), "// x\n");
+    write(&root.join("packages/lat_mid/src/new.gleam"), "// x\n");
+    add_fragment(root, "lat_core", "Breaking", "the final feature");
+    git(root, &["add", "."]);
+    git(root, &["commit", "-q", "-m", "change"]);
+}
+
+#[test]
+fn prerelease_changelog_check_preserves_machine_outputs_and_validation() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    workspace_with_prereleases(root);
+
+    for (strictness, code, needs_entry) in
+        [("error", 1, true), ("warn", 0, true), ("off", 0, false)]
+    {
+        let json = trellis(root)
+            .args([
+                "changelog",
+                "check",
+                "--base",
+                "HEAD^",
+                "--head",
+                "HEAD",
+                "--strictness",
+                strictness,
+                "--format",
+                "json",
+            ])
+            .output()
+            .unwrap();
+        assert_eq!(
+            json.status.code(),
+            Some(code),
+            "{}",
+            String::from_utf8_lossy(&json.stderr)
+        );
+        let payload: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();
+        assert_eq!(payload["schema"], "trellis.changelog_check/2");
+        assert_eq!(payload["ok"], code == 0);
+        assert_eq!(payload["strictness"], strictness);
+        assert_eq!(payload["has_entries"], true);
+        assert_eq!(payload["needs_entry"], needs_entry);
+        assert_eq!(payload["invalid_fragments"], serde_json::json!([]));
+        assert_eq!(
+            payload["packages"],
+            serde_json::json!([
+                {"name": "lat_core", "changed": true, "has_entry": true, "fragments": 1},
+                {"name": "lat_mid", "changed": true, "has_entry": false, "fragments": 0}
+            ])
+        );
+        let preview = payload["preview"].as_str().unwrap();
+        assert!(preview.contains("1.0.0-rc.0 → 1.0.0"), "{preview}");
+        assert!(preview.contains("- the final feature"), "{preview}");
+        assert!(preview.contains("Updated lat_core to 1.0.0"), "{preview}");
+        assert!(preview.contains("Updated lat_mid to 0.5.1"), "{preview}");
+        assert!(
+            preview.contains("<code>lat_cli</code> 0.3.2-beta.1 → 0.3.2"),
+            "{preview}"
+        );
+
+        let github = trellis(root)
+            .args([
+                "changelog",
+                "check",
+                "--base",
+                "HEAD^",
+                "--head",
+                "HEAD",
+                "--strictness",
+                strictness,
+                "--format",
+                "github",
+            ])
+            .output()
+            .unwrap();
+        assert_eq!(github.status.code(), Some(code));
+        let outputs = parse_github_output(&String::from_utf8(github.stdout).unwrap());
+        assert_eq!(outputs.len(), 7);
+        assert_eq!(outputs["ok"], (code == 0).to_string());
+        assert_eq!(outputs["strictness"], strictness);
+        assert_eq!(outputs["has_entries"], "true");
+        assert_eq!(outputs["needs_entry"], needs_entry.to_string());
+        assert_eq!(
+            outputs["needs_entry_packages"],
+            if needs_entry { "[\"lat_mid\"]" } else { "[]" }
+        );
+        assert_eq!(outputs["invalid_fragments"], "[]");
+        assert_eq!(outputs["preview"], preview);
+    }
+
+    add_fragment(root, "lat_mid", "Fixed", "more");
+    trellis(root)
+        .args(["changelog", "check", "--base", "HEAD^", "--head", "HEAD"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("lat_core: 1 fragment(s)"));
+    for format in ["json", "github"] {
+        let output = trellis(root)
+            .args([
+                "changelog",
+                "check",
+                "--base",
+                "HEAD^",
+                "--head",
+                "HEAD",
+                "--format",
+                format,
+            ])
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(0));
+        if format == "json" {
+            let payload: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+            assert_eq!(payload["ok"], true);
+            assert_eq!(payload["needs_entry"], false);
+        } else {
+            let outputs = parse_github_output(&String::from_utf8(output.stdout).unwrap());
+            assert_eq!(outputs["ok"], "true");
+            assert_eq!(outputs["needs_entry"], "false");
+        }
+    }
+    trellis(root)
+        .args(["version", "plan"])
+        .assert()
+        .code(3)
+        .stderr(predicate::str::contains("--pre none"));
+    trellis(root)
+        .args(["version", "apply"])
+        .assert()
+        .code(3)
+        .stderr(predicate::str::contains("--pre none"));
+    assert_eq!(common::version_of(root, "lat_core"), "1.0.0-rc.0");
+    assert_eq!(common::version_of(root, "lat_cli"), "0.3.2-beta.1");
+    assert!(root.join(".changes/unreleased/lat_core-1.toml").exists());
+}
+
+#[test]
+fn prerelease_changelog_check_with_no_branch_fragments_has_no_release_preview() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    workspace_with_prereleases(root);
+    let output = trellis(root)
+        .args([
+            "changelog",
+            "check",
+            "--base",
+            "HEAD",
+            "--head",
+            "HEAD",
+            "--format",
+            "json",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let payload: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["ok"], true);
+    assert_eq!(payload["has_entries"], false);
+    assert_eq!(payload["needs_entry"], false);
+    assert_eq!(payload["packages"], serde_json::json!([]));
+    assert!(
+        !payload["preview"]
+            .as_str()
+            .unwrap()
+            .contains("### Release preview")
+    );
+}
+
+#[test]
+fn prerelease_changelog_preview_excludes_archived_candidate_changes() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+    add_fragment(root, "lat_core", "Added", "archived candidate feature");
+    trellis(root)
+        .args(["version", "apply", "--pre", "rc"])
+        .assert()
+        .success();
+    let archive_path = root.join(".changes/lat_core/v1.3.0-rc.0.toml");
+    let archive = fs::read_to_string(&archive_path).unwrap();
+    common::init_repo(root);
+    add_fragment(root, "lat_core", "Fixed", "new branch fix");
+    git(root, &["add", "."]);
+    git(root, &["commit", "-m", "new branch change"]);
+
+    let output = trellis(root)
+        .args([
+            "changelog",
+            "check",
+            "--base",
+            "HEAD^",
+            "--head",
+            "HEAD",
+            "--format",
+            "json",
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let payload: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let preview = payload["preview"].as_str().unwrap();
+    assert!(preview.contains("new branch fix"), "{preview}");
+    assert!(!preview.contains("archived candidate feature"), "{preview}");
+    assert_eq!(payload["packages"][0]["fragments"], 1);
+    assert_eq!(fs::read_to_string(&archive_path).unwrap(), archive);
+
+    let output = trellis(root)
+        .args([
+            "changelog",
+            "check",
+            "--base",
+            "HEAD",
+            "--head",
+            "HEAD",
+            "--format",
+            "json",
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let payload: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(
+        !payload["preview"]
+            .as_str()
+            .unwrap()
+            .contains("### Release preview")
+    );
+}
+
+#[test]
+fn prerelease_changelog_check_still_rejects_invalid_fragments() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    workspace_with_prereleases(root);
+    write(
+        &root.join(".changes/unreleased/broken.toml"),
+        "not toml at all {{{\n",
+    );
+
+    for strictness in ["error", "warn", "off"] {
+        for format in ["json", "github"] {
+            let output = trellis(root)
+                .args([
+                    "changelog",
+                    "check",
+                    "--base",
+                    "HEAD^",
+                    "--head",
+                    "HEAD",
+                    "--strictness",
+                    strictness,
+                    "--format",
+                    format,
+                ])
+                .output()
+                .unwrap();
+            assert_eq!(output.status.code(), Some(1));
+            let (invalid, preview) = if format == "json" {
+                let payload: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+                assert_eq!(payload["ok"], false);
+                (
+                    payload["invalid_fragments"].to_string(),
+                    payload["preview"].as_str().unwrap().to_string(),
+                )
+            } else {
+                let outputs = parse_github_output(&String::from_utf8(output.stdout).unwrap());
+                assert_eq!(outputs["ok"], "false");
+                (
+                    outputs["invalid_fragments"].clone(),
+                    outputs["preview"].clone(),
+                )
+            };
+            assert!(invalid.contains("broken.toml"), "{invalid}");
+            assert!(!preview.contains("### Release preview"), "{preview}");
+        }
+    }
 }
 
 // ---- changelog check: strictness ------------------------------------------
@@ -761,7 +1046,7 @@ fn editing_a_base_branch_fragment_counts_as_this_prs_entry() {
     // it for a second fragment would be a false alarm.
     write(
         &root.join(".changes/unreleased/lat_core-1.toml"),
-        "project = \"lat_core\"\nkind = \"Added\"\nbody = \"reworded by this pr\"\n",
+        "package = \"lat_core\"\nkind = \"Added\"\nbody = \"reworded by this pr\"\n",
     );
     git(root, &["add", "."]);
     git(root, &["commit", "-q", "-m", "reword"]);
@@ -866,7 +1151,7 @@ fn json_stays_an_alias_for_format_json() {
 
     // Deprecated, but workflows in the wild pass it — it must keep working.
     let output = trellis(root)
-        .args(["changelog", "check", "--base", "main", "--json"])
+        .args(["changelog", "check", "--base", "main", "--format", "json"])
         .output()
         .unwrap();
     let payload: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
@@ -878,7 +1163,7 @@ fn invalid_fragments_fail_check_and_doctor() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
     copy_fixture_to(root);
-    add_fragment(root, "lat_typo", "Added", "x"); // unknown project
+    add_fragment(root, "lat_typo", "Added", "x"); // unknown package
     add_fragment(root, "lat_core", "Invented", "x"); // unknown kind
     write(
         &root.join(".changes/unreleased/broken-1.toml"),

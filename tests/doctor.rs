@@ -537,12 +537,9 @@ fn workspace_with(root: &Path, config: &str, a_deps: &str, b_deps: &str) {
 }
 
 #[test]
-fn a_pre_0_8_kebab_case_key_still_works_and_says_it_is_deprecated() {
+fn a_pre_0_8_kebab_case_key_is_rejected_with_its_replacement() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
-    // The spelling every release through v0.7.0 documented. `package_tags` is
-    // snake-case-only: it postdates the rename, so it has no kebab spelling to
-    // be deprecated for.
     workspace_with(
         root,
         "[tools.trellis.publish]\nseries-tag-format = \"{name}@{series}\"\n\
@@ -554,22 +551,11 @@ fn a_pre_0_8_kebab_case_key_still_works_and_says_it_is_deprecated() {
     trellis(root)
         .arg("doctor")
         .assert()
-        // A warning, not an error: the key still configures what it always did,
-        // so failing would break working repositories over a spelling.
-        .success()
+        .failure()
         .stdout(predicate::str::contains(
-            "key `publish.series-tag-format` is deprecated; rename it to \
+            "`publish.series-tag-format` was removed; use \
              `publish.series_tag_format`",
         ));
-
-    // And it is still in effect — the old name is an alias, not a no-op. This
-    // is the half that a silently-ignored key would fail: the tags would come
-    // out in the default `{name}-v{series}` scheme instead.
-    trellis(root)
-        .args(["ci", "outputs"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains(r#"series_tags=["a@1.0","b@1.0"]"#));
 }
 
 #[test]
@@ -709,8 +695,7 @@ fn the_new_doctor_table_is_itself_a_recognized_key() {
         .arg("doctor")
         .assert()
         .success()
-        .stdout(predicate::str::contains("not recognized").not())
-        .stdout(predicate::str::contains("is deprecated").not());
+        .stdout(predicate::str::contains("not recognized").not());
 
     // ...and its own keys are checked like any other. This table arrived after
     // the kebab-case era, so the hyphenated spelling gets no alias.

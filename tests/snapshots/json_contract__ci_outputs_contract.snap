@@ -9,12 +9,6 @@ expression: "serde_json::Value::Object(pairs.into_iter().map(|(key, value)|\n(ke
     "lat_cli",
     "package_a"
   ],
-  "projects": [
-    "lat_core",
-    "lat_mid",
-    "lat_cli",
-    "package_a"
-  ],
   "releasable": [
     "lat_core",
     "lat_mid",

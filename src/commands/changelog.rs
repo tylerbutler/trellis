@@ -27,7 +27,7 @@ pub fn new_fragment(
         .filter(|m| m.releasable())
         .map(|m| m.name.as_str())
         .collect();
-    let project = match package {
+    let package = match package {
         Some(name) => {
             let idx = workspace
                 .member_index(name)
@@ -77,7 +77,7 @@ pub fn new_fragment(
         bail!("--body must not be empty");
     }
 
-    let path = changelog::write_fragment(workspace, project, kind, category, body.trim())?;
+    let path = changelog::write_fragment(workspace, package, kind, category, body.trim())?;
     crate::status!(
         "{} {}",
         crate::term::ok("created"),
@@ -150,7 +150,14 @@ pub fn check(workspace: &Workspace, options: &CheckOptions) -> Result<bool> {
     let strictness = options
         .strictness
         .unwrap_or(workspace.config.changelog.strictness);
-    let changed = crate::git::changed_members_between(workspace, &options.base, &options.head)?;
+    let mut changed = crate::git::changed_members_between(workspace, &options.base, &options.head)?;
+    let bundles = crate::bundle::resolve(workspace)?;
+    let publishers: Vec<_> = bundles
+        .iter()
+        .filter(|(_, bundled)| bundled.iter().any(|idx| changed.contains(idx)))
+        .map(|(&publisher, _)| publisher)
+        .collect();
+    changed.extend(publishers);
     let all = changelog::load_fragments(workspace)?;
     let fragments = fragments_changed_by(workspace, &all, options)?;
 
@@ -376,7 +383,7 @@ fn plan_releases(
     workspace: &Workspace,
     fragments: &changelog::Fragments,
 ) -> Result<Vec<ReleasePreview>> {
-    let plan = version::compute_plan_from(workspace, &Overrides::default(), fragments)?;
+    let plan = version::compute_plan_from(workspace, &Overrides::changelog_preview(), fragments)?;
     let date = changelog::today();
     plan.iter()
         .map(|entry| {

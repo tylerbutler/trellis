@@ -483,7 +483,8 @@ fn create_exact_tag(
         } else {
             let notes = release_notes(member, member.version())
                 .unwrap_or_else(|| format!("{} {}", member.name, member.version()));
-            github.create_release(tag, tag, &notes)?;
+            let version = semver::Version::parse(&planned.version)?;
+            github.create_release(tag, tag, &notes, !version.pre.is_empty())?;
             crate::status!("{} GitHub release {tag}", crate::term::ok("created"));
         }
     }
@@ -677,16 +678,6 @@ pub fn resolve_tag(workspace: &Workspace, tag: &str) -> Result<ResolvedTag> {
         "{series}",
         is_series,
     )?;
-    if series.len() > 1 && workspace.config.series_tag_is_repo_wide() {
-        bail!(
-            "tag `{tag}` is a repository-wide series tag shared by {}; it names no single package",
-            series
-                .iter()
-                .map(|(member, _)| format!("`{}`", workspace.members[*member].name))
-                .collect::<Vec<_>>()
-                .join(", ")
-        );
-    }
     if let Some((member, series)) = series.into_iter().next() {
         return Ok(ResolvedTag::Series { member, series });
     }
@@ -791,13 +782,6 @@ mod tests {
         assert_eq!(series("lat_core-v0.3"), vec![(0, "0.3".to_string())]);
         assert!(series("lat_core-v1.2.0").is_empty());
         assert_eq!(series("lat_core-v2"), vec![(0, "2".to_string())]);
-    }
-
-    #[test]
-    fn a_repo_wide_series_tag_matches_every_candidate() {
-        let matches =
-            match_tag_template(&packages(), "v0.0", "v{series}", "{series}", is_series).unwrap();
-        assert_eq!(matches.len(), 2, "ambiguous by construction: {matches:?}");
     }
 
     #[test]

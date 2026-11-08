@@ -4,19 +4,16 @@
 .SH NAME
 trellis\-release\-pr \- Create or update the release PR: version apply on a branch, push, open or refresh the PR via the GitHub API
 .SH SYNOPSIS
-\fBtrellis release pr\fR [\fB\-\-base\fR] [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-\-branch\fR] [\fB\-\-color\fR] [\fB\-q\fR|\fB\-\-quiet\fR] [\fB\-v\fR|\fB\-\-verbose\fR] [\fB\-\-no\-update\-check\fR] [\fB\-h\fR|\fB\-\-help\fR] 
+\fBtrellis release pr\fR [\fB\-\-bump\fR] [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-\-color\fR] [\fB\-\-set\fR] [\fB\-\-pre\fR] [\fB\-q\fR|\fB\-\-quiet\fR] [\fB\-\-base\fR] [\fB\-v\fR|\fB\-\-verbose\fR] [\fB\-\-branch\fR] [\fB\-\-no\-update\-check\fR] [\fB\-\-resume\fR] [\fB\-\-no\-resume\fR] [\fB\-\-auto\-pre\fR] [\fB\-\-no\-auto\-pre\fR] [\fB\-\-skip\-unchanged\fR] [\fB\-\-no\-skip\-unchanged\fR] [\fB\-\-force\fR] [\fB\-\-json\fR] [\fB\-\-github\-output\fR] [\fB\-h\fR|\fB\-\-help\fR] 
 .SH DESCRIPTION
 Create or update the release PR: version apply on a branch, push, open or refresh the PR via the GitHub API
 .SH OPTIONS
 .TP
-\fB\-\-base\fR \fI<BASE>\fR [default: main]
-Base branch the PR targets
+\fB\-\-bump\fR \fI<LEVEL|PKG=LEVEL>\fR
+Override the derived bump level, workspace\-wide (`\-\-bump major`) or for one package (`\-\-bump lat_core=major`). Repeatable
 .TP
 \fB\-C\fR, \fB\-\-directory\fR \fI<DIR>\fR
 Run as if started in this directory
-.TP
-\fB\-\-branch\fR \fI<BRANCH>\fR [default: release/pending]
-Branch the release commit is force\-pushed to
 .TP
 \fB\-\-color\fR \fI<WHEN>\fR [default: auto]
 When to color output. `auto` follows the terminal, `NO_COLOR`, and `CLICOLOR=0`; the other two override that detection
@@ -33,16 +30,55 @@ always
 never
 .RE
 .TP
+\fB\-\-set\fR \fI<PKG=VERSION>\fR
+Pin a package\*(Aqs next version exactly (`\-\-set lat_core=1.0.0`). Repeatable
+.TP
+\fB\-\-pre\fR \fI<LABEL>\fR
+Cut or continue a prerelease cycle (`\-\-pre rc`). New cycles start at `<label>.0`; repeating the label increments the counter. Each candidate includes only new changes and archives its fragments. `\-\-pre none` promotes to the final version with a rollup of its candidates
+.TP
 \fB\-q\fR, \fB\-\-quiet\fR
 Suppress normal\-path output; JSON/report payloads and errors still print
 .TP
+\fB\-\-base\fR \fI<BASE>\fR [default: main]
+Base branch the PR targets
+.TP
 \fB\-v\fR, \fB\-\-verbose\fR
 Trace every command trellis shells out to, on stderr
+.TP
+\fB\-\-branch\fR \fI<BRANCH>\fR [default: release/pending]
+Branch the release commit is force\-pushed to
 .TP
 \fB\-\-no\-update\-check\fR
 Don\*(Aqt check whether a newer trellis release is available
 
 The check is also skipped in CI, when not attached to a terminal, and when `TRELLIS_NO_UPDATE_CHECK` or `DO_NOT_TRACK` is set.
+.TP
+\fB\-\-resume\fR
+Keep the pending PR\*(Aqs proposed package versions
+.TP
+\fB\-\-no\-resume\fR
+Disable configured pending\-version resumption
+.TP
+\fB\-\-auto\-pre\fR
+Continue committed candidate labels when no mode was supplied or resumed
+.TP
+\fB\-\-no\-auto\-pre\fR
+Disable configured automatic candidate continuation
+.TP
+\fB\-\-skip\-unchanged\fR
+Skip preparation when release content and proposed versions have not changed
+.TP
+\fB\-\-no\-skip\-unchanged\fR
+Disable configured content skipping (automatic mode still guards unchanged candidates)
+.TP
+\fB\-\-force\fR
+Prepare even when content is unchanged; does not bypass validation
+.TP
+\fB\-\-json\fR
+Emit the preparation outcome and package plan as JSON
+.TP
+\fB\-\-github\-output\fR
+Emit key=value records suitable for $GITHUB_OUTPUT
 .TP
 \fB\-h\fR, \fB\-\-help\fR
 Print help (see a summary with \*(Aq\-h\*(Aq)

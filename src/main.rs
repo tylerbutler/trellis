@@ -1,3 +1,4 @@
+mod bundle;
 mod changelog;
 mod commands;
 mod completion;
@@ -34,14 +35,11 @@ use workspace::Workspace;
 const EXIT_INTERNAL_ERROR: u8 = 3;
 
 /// Crate version, with `git describe` output appended for builds that aren't
-/// a clean release tag. "VERGEN_IDEMPOTENT_OUTPUT" is the placeholder build.rs
-/// emits when git metadata is unavailable (e.g. a crates.io tarball).
+/// a clean release tag.
 fn version() -> String {
     let base = env!("CARGO_PKG_VERSION");
     match option_env!("VERGEN_GIT_DESCRIBE") {
-        Some(describe)
-            if describe != "VERGEN_IDEMPOTENT_OUTPUT" && describe != format!("v{base}") =>
-        {
+        Some(describe) if describe != format!("v{base}") => {
             format!("{base} ({describe})")
         }
         _ => base.to_string(),
@@ -210,7 +208,7 @@ enum Command {
         #[command(subcommand)]
         command: TagCommand,
     },
-    /// Publish packages to Hex, in dependency order, with path deps rewritten
+    /// Publish packages to Hex, rewriting path deps or bundling private source
     Publish {
         /// A single package to publish
         #[arg(add = completion::hex_packages())]
@@ -221,7 +219,7 @@ enum Command {
         /// Every `hex`-lifecycle package whose version isn't on Hex yet
         #[arg(long, conflicts_with_all = ["package", "tag"])]
         all_untagged: bool,
-        /// Show what would be published (and rewritten) without doing it
+        /// Show packages, dependency rewrites, and source bundles without publishing
         #[arg(long)]
         dry_run: bool,
     },
@@ -339,9 +337,6 @@ enum ChangelogCommand {
         /// a missing entry, report it advisorily, or don't check
         #[arg(long, value_enum)]
         strictness: Option<Strictness>,
-        /// Deprecated alias for `--format json`
-        #[arg(long, conflicts_with = "format")]
-        json: bool,
     },
 }
 
@@ -367,9 +362,7 @@ enum VersionCommand {
 
 /// Overrides for the version a plan would otherwise derive from fragment kinds.
 ///
-/// Flattened into both `plan` and `apply` so an override is visible in the
-/// dry-run before it is applied — the two must accept exactly the same flags or
-/// `plan` stops being a preview of `apply`.
+/// Shared by `version plan`, `version apply`, and `release pr`.
 #[derive(clap::Args)]
 struct VersionOverrideArgs {
     /// Override the derived bump level, workspace-wide (`--bump major`) or for
@@ -380,9 +373,10 @@ struct VersionOverrideArgs {
     /// Repeatable.
     #[arg(long, value_name = "PKG=VERSION")]
     set: Vec<String>,
-    /// Cut a prerelease: `--pre rc` gives 1.0.0-rc.1, and again 1.0.0-rc.2.
-    /// Fragments stay unreleased until the final version. `--pre none` promotes
-    /// the current prerelease to its final version and consumes them.
+    /// Cut or continue a prerelease cycle (`--pre rc`).
+    /// New cycles start at `<label>.0`; repeating the label increments the counter.
+    /// Each candidate includes only new changes and archives its fragments.
+    /// `--pre none` promotes to the final version with a rollup of its candidates.
     #[arg(long, value_name = "LABEL")]
     pre: Option<String>,
 }
@@ -398,12 +392,41 @@ enum ReleaseCommand {
     /// Create or update the release PR: version apply on a branch, push,
     /// open or refresh the PR via the GitHub API
     Pr {
+        #[command(flatten)]
+        overrides: VersionOverrideArgs,
         /// Base branch the PR targets
         #[arg(long, default_value = "main")]
         base: String,
         /// Branch the release commit is force-pushed to
         #[arg(long, default_value = "release/pending")]
         branch: String,
+        /// Keep the pending PR's proposed package versions
+        #[arg(long, conflicts_with = "no_resume")]
+        resume: bool,
+        /// Disable configured pending-version resumption
+        #[arg(long)]
+        no_resume: bool,
+        /// Continue committed candidate labels when no mode was supplied or resumed
+        #[arg(long, conflicts_with = "no_auto_pre")]
+        auto_pre: bool,
+        /// Disable configured automatic candidate continuation
+        #[arg(long)]
+        no_auto_pre: bool,
+        /// Skip preparation when release content and proposed versions have not changed
+        #[arg(long, conflicts_with = "no_skip_unchanged")]
+        skip_unchanged: bool,
+        /// Disable configured content skipping (automatic mode still guards unchanged candidates)
+        #[arg(long)]
+        no_skip_unchanged: bool,
+        /// Prepare even when content is unchanged; does not bypass validation
+        #[arg(long)]
+        force: bool,
+        /// Emit the preparation outcome and package plan as JSON
+        #[arg(long, conflicts_with = "github_output")]
+        json: bool,
+        /// Emit key=value records suitable for $GITHUB_OUTPUT
+        #[arg(long)]
+        github_output: bool,
     },
     /// Reconcile tags against current manifest versions — no version bump,
     /// no unreleased changelog fragments required
@@ -503,10 +526,20 @@ fn main() -> ExitCode {
         .complete();
 
     let cli = Cli::parse();
+    let release_machine_output = matches!(
+        &cli.command,
+        Command::Release {
+            command: ReleaseCommand::Pr { json: true, .. }
+                | ReleaseCommand::Pr {
+                    github_output: true,
+                    ..
+                },
+        }
+    );
     // Before anything prints, so every writer sees the same resolved settings.
     term::init(
         cli.color,
-        match (cli.quiet, cli.verbose) {
+        match (cli.quiet || release_machine_output, cli.verbose) {
             (true, _) => Verbosity::Quiet,
             (_, true) => Verbosity::Verbose,
             _ => Verbosity::Normal,
@@ -516,6 +549,7 @@ fn main() -> ExitCode {
     // only prints when the command itself succeeded, so it never clutters error
     // output or corrupts structured stdout.
     let notify_update = !cli.no_update_check
+        && !release_machine_output
         && !matches!(
             cli.command,
             Command::MarkdownHelp
@@ -532,7 +566,7 @@ fn main() -> ExitCode {
                     command: ChangelogCommand::Check {
                         format: CheckFormat::Json | CheckFormat::Github,
                         ..
-                    } | ChangelogCommand::Check { json: true, .. },
+                    },
                 }
         );
     let result = dispatch(cli);
@@ -691,21 +725,15 @@ fn dispatch(cli: Cli) -> Result<bool> {
                 head,
                 format,
                 strictness,
-                json,
-            } => {
-                // `--json` predates `--format` and clap rejects the two
-                // together, so this only ever upgrades the default.
-                let format = if json { CheckFormat::Json } else { format };
-                commands::changelog::check(
-                    &workspace,
-                    &commands::changelog::CheckOptions {
-                        base,
-                        head,
-                        format,
-                        strictness,
-                    },
-                )
-            }
+            } => commands::changelog::check(
+                &workspace,
+                &commands::changelog::CheckOptions {
+                    base,
+                    head,
+                    format,
+                    strictness,
+                },
+            ),
         },
         Command::Version { command } => match command {
             VersionCommand::Plan { overrides, json } => {
@@ -717,9 +745,47 @@ fn dispatch(cli: Cli) -> Result<bool> {
             }
         },
         Command::Release { command } => match command {
-            ReleaseCommand::Pr { base, branch } => {
-                commands::release::pr(&workspace, &commands::release::PrOptions { base, branch })
-            }
+            ReleaseCommand::Pr {
+                base,
+                branch,
+                overrides,
+                resume,
+                no_resume,
+                auto_pre,
+                no_auto_pre,
+                skip_unchanged,
+                no_skip_unchanged,
+                force,
+                json,
+                github_output,
+            } => commands::release::pr(
+                &workspace,
+                &commands::release::PrOptions {
+                    base,
+                    branch,
+                    overrides: overrides.parse()?,
+                    continuation: commands::release::ContinuationOptions {
+                        resume: if no_resume {
+                            Some(false)
+                        } else {
+                            resume.then_some(true)
+                        },
+                        auto_pre: if no_auto_pre {
+                            Some(false)
+                        } else {
+                            auto_pre.then_some(true)
+                        },
+                        skip_unchanged: if no_skip_unchanged {
+                            Some(false)
+                        } else {
+                            skip_unchanged.then_some(true)
+                        },
+                        force,
+                    },
+                    json,
+                    github_output,
+                },
+            ),
             ReleaseCommand::Bootstrap { args } => {
                 commands::tag::create(&workspace, &args.options())?;
                 Ok(true)
@@ -798,6 +864,15 @@ fn dispatch(cli: Cli) -> Result<bool> {
 mod tests {
     use super::*;
     use clap::CommandFactory;
+
+    #[test]
+    fn homepage_config_uses_recognized_keys() {
+        let page = include_str!("../website/src/pages/index.astro");
+        let (_, sample) = page.split_once("const configSample = `").unwrap();
+        let (sample, _) = sample.split_once("`;").unwrap();
+        let config = config::ConfigFile::from_toml(sample).unwrap();
+        assert!(config.unknown_keys.is_empty(), "{:?}", config.unknown_keys);
+    }
 
     /// Every visible command must appear in a hand-written website docs page.
     /// reference.md is generated from the CLI itself, so it cannot count.

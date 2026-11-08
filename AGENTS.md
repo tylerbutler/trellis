@@ -121,10 +121,10 @@ every later one at **4** — that lands as the 2-space markdown indent. A line a
 - Cut the design rationale — why this shape, what was rejected, how it is
   implemented. That belongs in [docs/DESIGN.md](docs/DESIGN.md) or the website
   docs. At most one "previously…" clause, where the fix makes no sense without it.
-- End a `Breaking` entry with the concrete migration: old spelling → new, or the
+- End a `Major` entry with the concrete migration: old spelling → new, or the
   `jq` change.
 - Use current spellings in prose: snake_case keys, "package" not "project".
-- 40–90 words for most entries. A `Breaking` entry may run to ~160, because the
+- 40–90 words for most entries. A `Major` entry may run to ~160, because the
   migration is load-bearing and does not compress — but the extra budget buys
   old→new spellings and reachable edge cases, never rationale.
 

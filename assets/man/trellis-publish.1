@@ -2,11 +2,11 @@
 .el .ds Aq '
 .TH trellis-publish 1 "" trellis "Trellis Manual"
 .SH NAME
-trellis\-publish \- Publish packages to Hex, in dependency order, with path deps rewritten
+trellis\-publish \- Publish packages to Hex, rewriting path deps or bundling private source
 .SH SYNOPSIS
 \fBtrellis publish\fR [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-\-tag\fR] [\fB\-\-all\-untagged\fR] [\fB\-\-color\fR] [\fB\-\-dry\-run\fR] [\fB\-q\fR|\fB\-\-quiet\fR] [\fB\-v\fR|\fB\-\-verbose\fR] [\fB\-\-no\-update\-check\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fIPACKAGE\fR] 
 .SH DESCRIPTION
-Publish packages to Hex, in dependency order, with path deps rewritten
+Publish packages to Hex, rewriting path deps or bundling private source
 .SH OPTIONS
 .TP
 \fB\-C\fR, \fB\-\-directory\fR \fI<DIR>\fR
@@ -34,7 +34,7 @@ never
 .RE
 .TP
 \fB\-\-dry\-run\fR
-Show what would be published (and rewritten) without doing it
+Show packages, dependency rewrites, and source bundles without publishing
 .TP
 \fB\-q\fR, \fB\-\-quiet\fR
 Suppress normal\-path output; JSON/report payloads and errors still print

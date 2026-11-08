@@ -6,6 +6,7 @@ description: Trellis is CI-native — structured JSON for GitHub Actions matrice
 import { Code } from "@astrojs/starlight/components";
 import Callout from "../../../components/Callout.astro";
 import { TRELLIS_VERSION } from "../../../lib/version";
+import release_workflow from "../../../../../examples/gleam-hex-release.yml?raw";
 
 Trellis runs identically locally and in CI, and emits the exact structures
 GitHub Actions consumes, so workspace workflows shrink to thin triggers around
@@ -73,19 +74,15 @@ affected-only CI writes `--since origin/main` into its workflow explicitly.
 ```console
 $ trellis ci outputs
 packages=["lat_core","lat_mid","lat_cli","lat_example"]
-projects=["lat_core","lat_mid","lat_cli","lat_example"]
 releasable=["lat_core","lat_mid","lat_cli"]
 version_files=["packages/lat_core/gleam.toml","packages/lat_mid/gleam.toml","packages/lat_cli/gleam.toml"]
 tags=["lat_core-v1.2.0","lat_mid-v0.5.1","lat_cli-v0.4.3"]
 series_tags=["lat_cli-v0.4"]
 ```
 
-`projects` is a deprecated alias of `packages` carrying an identical value.
-Read `packages`; the alias goes away at 1.0.
-
 `tags` lists the immutable per-version tags and `series_tags` the moving ones,
 each covering only the packages whose
-[`package_tags`](/docs/configuration/#tags) includes that level — so a
+[`package_tags`](/docs/configuration-reference/#tags) includes that level — so a
 workspace with no `exact` entry reports an empty `tags`. Repository tags are
 deliberately absent from both outputs because they do not identify packages.
 
@@ -181,7 +178,7 @@ at all, which fails the job either way.
 ```
 
 A workspace that wants the comment without the gate sets
-[`changelog.strictness`](/docs/configuration/#keys) to `warn`, which makes
+[`changelog.strictness`](/docs/configuration-reference/#keys) to `warn`, which makes
 `ok` true even when `needs_entry` is — then drop both the
 `continue-on-error` line and the final step.
 
@@ -213,35 +210,166 @@ The [payload is stable](/docs/json-output/); the `message` prose is not.
 
 ## The release pipeline
 
-On every push to `main`, regenerate the release PR from pending fragments:
+Use the [Gleam/Hex release workflow](https://github.com/tylerbutler/trellis/blob/main/examples/gleam-hex-release.yml)
+for automatic stable releases, manual candidates, and stable promotion.
+Copy it to `.github/workflows/gleam-hex-release.yml` in your Gleam workspace.
+It is an example for packages on Hex, not trellis's own Cargo release pipeline.
 
-```yaml title=".github/workflows/release.yml"
-# on push to main: batch fragments into a release PR
-- run: trellis release pr
+<details>
+<summary>Copyable Gleam/Hex workflow</summary>
+
+<Code lang="yaml" code={release_workflow} />
+
+</details>
+
+### Setup
+
+- Install trellis using the [reviewed source snapshot](#installing-the-fixed-trellis)
+  below. No currently published release, including v1.1.0, supports these
+  release PR options. After the fixes ship, you can instead set the repository
+  variable `TRELLIS_VERSION` to that release's exact version; do not use
+  `latest`. The example also pins Gleam and Erlang/OTP; change those pins to
+  versions supported by your packages.
+- Install a GitHub App on the workspace repository with **Contents**,
+  **Pull requests**, and **Commit statuses** read/write permissions. Store its
+  ID and private key as `RELEASE_APP_ID` and `RELEASE_APP_PRIVATE_KEY`.
+  Preparation uses the App token so its branch push and PR creation trigger
+  ordinary validation workflows; the default Actions token does not.
+- Store a Hex API key that can publish the workspace's packages as
+  `HEXPM_API_KEY`. The workflow exposes it only to the merge publication step.
+  The workflow token needs `contents: write`, `pull-requests: read`, and
+  `statuses: write` for tags, releases, merge checks, and publication status.
+- Protect `main` with your normal required checks and reviews, including for
+  `release/pending`. Restrict who can push that release branch and dispatch
+  releases. Treat a merge from that same-repository branch as permission to
+  publish; a matching branch name on a fork is not trusted.
+- Keep `main` and `release/pending` as shown, or change **all** branch checks,
+  triggers, and command arguments together. Do not add a separate tag-triggered
+  publishing workflow for this flow.
+
+### Installing the fixed trellis
+
+The example works before a fixed binary release is published. Leave
+`TRELLIS_VERSION` unset and check a **reviewed fixed source snapshot** into
+your Gleam repository at `.github/trellis`. From the consuming repository's
+root, copy from the checkout containing these fixes:
+
+```sh
+TRELLIS_SOURCE=/path/to/reviewed/fixed/trellis-checkout
+mkdir -p .github/trellis
+cp "$TRELLIS_SOURCE/Cargo.toml" "$TRELLIS_SOURCE/Cargo.lock" \
+  "$TRELLIS_SOURCE/build.rs" "$TRELLIS_SOURCE/LICENSE" .github/trellis/
+cp -R "$TRELLIS_SOURCE/src" .github/trellis/
 ```
 
-When the release PR merges, pick one of the [two release shapes](/docs/publishing/#two-release-shapes). With tags as trigger, a tag-push workflow publishes each package:
+Record the reviewed source revision with your adoption change, and keep the
+snapshot and lockfile together. The install target embeds no external assets:
+the website file embedded in `src/main.rs` is inside `#[cfg(test)]` and is not
+compiled by `cargo install`. There is no need to copy the website, generated
+man pages, tests, or build output. If you update the snapshot, check its
+`include_str!`/`include_bytes!` paths and copy any newly required build assets
+at the same relative paths.
 
-```yaml title=".github/workflows/publish.yml"
-# on tag push '*-v*': publish the tagged package
-- run: trellis publish --tag "$GITHUB_REF_NAME"
-- run: trellis lockfile refresh --package "$(trellis ci tag-package "$GITHUB_REF_NAME")"
+The workflow checks out the approved merge for publication, or current `main`
+for preparation, before installing. It builds the checked-in snapshot with
+Rust 1.94.1 and `cargo install --locked`. Both `CARGO_TARGET_DIR` and the
+installation root are under `RUNNER_TEMP`, not the source tree, so build
+artifacts cannot break `release pr`'s clean-tree check. Source installation
+fails if the snapshot is absent or cannot compile; it never silently falls
+back to an older binary.
+
+Once a release containing these fixes is published, set `TRELLIS_VERSION` to
+that exact version to use its prebuilt installer instead. Until then, setting
+it to v1.1.0 or an older published release does not supply the required CLI.
+
+### Adopting existing releases
+
+If the repository already has merged release PRs from `release/pending`, the
+latest one must have a successful `trellis/release` commit status before the
+example prepares another release. During adoption, verify that **every**
+package at that PR's merge commit is published as required, and that its tags
+and GitHub releases are complete. Only then record success on that exact commit:
+
+```sh
+# Set RELEASE_SHA to the verified historical release PR's merge commit.
+gh api --method POST "repos/OWNER/REPO/statuses/$RELEASE_SHA" \
+  -f context=trellis/release -f state=success \
+  -f description='Historical publication and tagging verified'
 ```
 
-This shape needs per-version tags. A moving [series
-tag](/docs/configuration/#tags) matches `*-v*` too, but names no particular
-version, so `publish --tag` rejects it by design. `ci tag-package` still
-resolves it, so the workflow can route on it. Packages tagged `series`-only
-belong in the publish-then-tag shape below.
+Never mark an unknown or partial release successful. Recover it at its approved
+merge commit first, not at current `main`. With no historical matching release
+PR, there is no adoption status to seed.
 
-Or publish-then-tag: one idempotent run publishes everything not yet on Hex, in topological order, then records what shipped.
+### Dispatch and ownership
 
-```yaml
-# on release-PR merge: publish everything, then record tags
-- run: trellis publish --all-untagged
-- run: trellis tag create --github-release
+Select **main** in the Actions **Run workflow** menu. For the first candidate,
+enter `rc` in `pre` and targets such as `lat_core=1.3.0` in `set`, one per line.
+This starts `lat_core` at `1.3.0-rc.0`.
+Use `bump` for repeatable `package=major|minor|patch` overrides instead.
+The inputs are passed as argument arrays; they are not shell commands.
+After that candidate merges and publication succeeds, dispatch `pre: rc`
+again for the next candidate, or `pre: none` for stable promotion. See the
+[candidate lifecycle](/docs/publishing/#candidates-and-promotion).
+
+All preparation and publication runs share `trellis-release` concurrency with
+`queue: max` and no in-progress cancellation. GitHub permits up to 100 pending
+runs; further runs are canceled. Queue order follows when runs begin waiting,
+not dispatch order. Dispatch the next candidate only after the previous one
+has merged and published; a queue is not a sequence of version requests.
+External callers of `release pr` must follow the same ownership policy.
+
+Automatic pushes refresh ordinary stable release PRs. They pause when a pending
+PR contains a prerelease, when releasable manifests on `main` contain
+prereleases, or when a manual request owns preparation. Manual requests write a
+durable `trellis/release_request` pending status on their base commit **before**
+running `release pr`. That reservation protects even a stable promotion PR and
+the failure window before a PR exists; later unrelated pushes do not erase it.
+It stays in force until a subsequent release PR merges, or a successful manual
+no-op clears it. Fix a failed manual request and rerun or dispatch it again.
+To abandon it, close its pending PR and explicitly clear its reservation status
+on the recorded base commit; do not silently hand an unfinished request to
+automatic preparation.
+
+The ownership check scans commit statuses back through the latest merged
+release. Before the first matching release PR, it scans main's full history;
+large repositories can hit GitHub's API rate limit. Such an API failure stops
+preparation rather than bypassing ownership. In a large repository with no
+matching release PR, dispatch the first stable release manually with empty
+inputs. Once that PR merges and publishes, later automatic scans stop at its
+merge commit.
+
+### Publication and recovery
+
+Only a merged `release/pending` PR targeting `main` from the same repository
+publishes. The workflow checks out its immutable `merge_commit_sha`, writes
+`trellis/release: pending`, and runs:
+
+```sh
+trellis publish --all-untagged
+trellis tag create --push --github-release
 ```
 
-Because `publish` checks Hex before doing anything, re-running either
-workflow after a partial failure is safe: already-published versions are
-skipped.
+Success means **both** commands completed. Failure leaves a failed or pending
+status, never a successful fallback. Before preparing another release, the
+workflow finds the most recently merged release PR and requires that commit's
+`trellis/release` status to be `success`. Missing status also blocks, including
+the window before the merge-triggered run starts.
+
+Recover by rerunning the failed **merge-event** workflow, not by dispatching a
+new version. Its checkout remains the same approved merge commit even if
+`main` has advanced. Hex checks skip already-published versions; tagging
+reconciles existing remote tags and skips existing GitHub releases. Completed
+old publication runs skip publication and tagging, so they cannot move series
+tags backward. They still retry gated preparation from **current** `main`;
+rerunning also recovers an App-token, checkout, or preparation failure that
+happened after publication succeeded.
+
+After successful publication, the same serialized run checks out **current**
+`main` and rechecks the preparation gates. A candidate keeps automatic
+preparation paused. A published stable promotion restores it immediately,
+without needing an unrelated push.
+
+The [tags-as-trigger alternative](/docs/publishing/#two-release-shapes) remains
+supported for stable-only pipelines. It needs immutable exact package tags;
+`publish --tag` rejects moving series tags.

@@ -506,7 +506,7 @@ impl<'a> GraphDocument<'a> {
     }
 }
 
-/// One package `trellis changelog check --json` has something to say about:
+/// One package `trellis changelog check --format json` has something to say about:
 /// the diff touched it, the branch wrote it a fragment, or both.
 #[derive(Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -520,7 +520,7 @@ pub struct ChangelogPackage<'a> {
     pub fragments: usize,
 }
 
-/// `trellis changelog check --json`.
+/// `trellis changelog check --format json`.
 #[derive(Serialize)]
 #[serde(rename_all = "snake_case")]
 pub struct ChangelogCheckDocument<'a> {
@@ -569,15 +569,57 @@ pub struct Bump<'a> {
     pub updated_dependencies: Vec<UpdatedDependency<'a>>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReleaseOutcome {
+    Prepared,
+    Unchanged,
+    NoChanges,
+}
+
+#[derive(Serialize)]
+pub struct ReleasePrDocument<'a> {
+    pub schema: &'static str,
+    pub outcome: ReleaseOutcome,
+    pub base: &'a str,
+    pub branch: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pr_number: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pr_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pr_action: Option<&'static str>,
+    pub bumped: Vec<Bump<'a>>,
+}
+
+impl ReleasePrDocument<'_> {
+    pub const SCHEMA: &'static str = "trellis.release_pr/1";
+
+    pub fn github_output(&self) -> anyhow::Result<String> {
+        Ok(format!(
+            "schema={}\noutcome={}\nbase={}\nbranch={}\npr_number={}\npr_url={}\npr_action={}\nbumped={}\n",
+            self.schema,
+            serde_json::to_value(self.outcome)?
+                .as_str()
+                .expect("outcome is a string"),
+            self.base,
+            self.branch,
+            self.pr_number.map(|n| n.to_string()).unwrap_or_default(),
+            self.pr_url.as_deref().unwrap_or_default(),
+            self.pr_action.unwrap_or_default(),
+            serde_json::to_string(&self.bumped)?,
+        ))
+    }
+}
+
 /// `trellis version plan --json`.
 #[derive(Serialize)]
 #[serde(rename_all = "snake_case")]
 pub struct VersionPlanDocument<'a> {
     pub schema: &'static str,
     pub bumped: Vec<Bump<'a>>,
-    /// True under `--pre <label>`: the fragments behind this release stay
-    /// unreleased, and the final version will render them again. False for
-    /// every ordinary release and for a `--pre none` promotion.
+    /// True when the plan includes a prerelease: its source fragments will be
+    /// archived for the final rollup rather than left unreleased.
     pub fragments_retained: bool,
 }
 
@@ -595,10 +637,8 @@ pub struct VersionApplyDocument<'a> {
     pub bumped: Vec<Bump<'a>>,
     pub lockfiles: Vec<&'a str>,
     pub adopted: Vec<&'a str>,
-    /// True under `--pre <label>`: the fragments behind this release were left
-    /// in place, so a follow-up release will render them again. A workflow that
-    /// gates on "are there unreleased changes" needs this to tell a cut RC from
-    /// an incomplete release.
+    /// True when the release includes a prerelease: its source fragments were
+    /// archived for the final rollup. They are no longer unreleased changes.
     pub fragments_retained: bool,
 }
 

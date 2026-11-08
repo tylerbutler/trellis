@@ -11,20 +11,22 @@
 //!
 //! All three are the same shape of problem — the fragment kinds don't determine
 //! the version I want — so they share one flag surface, parsed here once and
-//! used identically by `version plan` and `version apply`.
+//! used identically by `version plan`, `version apply`, and `release pr`.
 
 use crate::changelog;
 use crate::config::Bump;
 use anyhow::{Result, bail};
 use std::collections::BTreeMap;
 
-/// What `--pre` asked for.
+/// The prerelease policy for a release plan or changelog preview.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PreChoice {
     /// `--pre rc` — cut (or continue) a prerelease cycle under this label.
     Label(String),
     /// `--pre none` — promote the current prerelease to its final version.
     Promote,
+    /// Read-only preview: promote existing prereleases, bump stable versions.
+    PreviewFinal,
 }
 
 /// The reserved `--pre` value meaning "promote". A label is a semver
@@ -32,7 +34,7 @@ pub enum PreChoice {
 /// sensibly uses rather than colliding with one.
 const PROMOTE: &str = "none";
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Overrides {
     /// `--bump <level>`, applying to every package in the plan.
     global_bump: Option<Bump>,
@@ -40,10 +42,79 @@ pub struct Overrides {
     per_package_bump: BTreeMap<String, Bump>,
     /// `--set <pkg>=<version>`.
     pinned: BTreeMap<String, semver::Version>,
+    proposed: BTreeMap<String, semver::Version>,
     pre: Option<PreChoice>,
 }
 
 impl Overrides {
+    pub fn from_proposed(
+        proposed: BTreeMap<String, semver::Version>,
+        pre: Option<&str>,
+        candidate_packages: &[&str],
+    ) -> Result<Self> {
+        let set = proposed
+            .iter()
+            .filter(|(name, _)| {
+                pre != Some(PROMOTE) || !candidate_packages.contains(&name.as_str())
+            })
+            .map(|(name, version)| format!("{name}={}", release_of(version)))
+            .collect::<Vec<_>>();
+        let mut overrides = Self::parse(&[], &set, pre)?;
+        overrides.proposed = proposed;
+        Ok(overrides)
+    }
+
+    pub fn has_mode(&self) -> bool {
+        self.pre.is_some()
+    }
+
+    pub fn merged(&self, explicit: &Self, candidate_packages: &[&str]) -> Self {
+        let mut merged = self.clone();
+        if let Some(pre) = &explicit.pre {
+            merged.pre = Some(pre.clone());
+            merged.proposed.clear();
+            if explicit.promoting() {
+                if candidate_packages.is_empty() && matches!(self.pre, Some(PreChoice::Label(_))) {
+                    merged.pre = None;
+                }
+                for package in candidate_packages {
+                    merged.pinned.remove(*package);
+                    merged.per_package_bump.remove(*package);
+                }
+            }
+        }
+        if explicit.global_bump.is_some() {
+            merged.global_bump = explicit.global_bump;
+            merged.proposed.clear();
+            merged.pinned.clear();
+        }
+        for (package, bump) in &explicit.per_package_bump {
+            merged.proposed.remove(package);
+            merged.pinned.remove(package);
+            merged.per_package_bump.insert(package.clone(), *bump);
+        }
+        for (package, version) in &explicit.pinned {
+            merged.proposed.remove(package);
+            merged.per_package_bump.remove(package);
+            merged.pinned.insert(package.clone(), version.clone());
+        }
+        merged
+    }
+
+    pub fn with_label(&self, label: &str) -> Result<Self> {
+        validate_label(label)?;
+        let mut overrides = self.clone();
+        overrides.pre = Some(PreChoice::Label(label.to_string()));
+        Ok(overrides)
+    }
+
+    pub fn changelog_preview() -> Self {
+        Self {
+            pre: Some(PreChoice::PreviewFinal),
+            ..Self::default()
+        }
+    }
+
     /// Parse the raw flag values. Everything checkable without a workspace is
     /// checked here; whether the named packages exist and are releasable is
     /// `version::validate_named_packages`, which has one.
@@ -102,19 +173,12 @@ impl Overrides {
         Ok(overrides)
     }
 
-    /// Whether fragments survive this release.
-    ///
-    /// A prerelease renders its changelog section but does not retire the
-    /// fragments behind it: they are still unreleased as far as the final
-    /// version is concerned, and consuming them at `rc.1` would leave the
-    /// eventual `1.0.0` with nothing to say. The final release — including a
-    /// `--pre none` promotion — consumes them normally.
-    pub fn retains_fragments(&self) -> bool {
-        matches!(self.pre, Some(PreChoice::Label(_)))
-    }
-
     pub fn promoting(&self) -> bool {
         self.pre == Some(PreChoice::Promote)
+    }
+
+    pub fn previewing(&self) -> bool {
+        self.pre == Some(PreChoice::PreviewFinal)
     }
 
     /// Every package named by a `--bump pkg=` or `--set pkg=`, so the caller can
@@ -137,21 +201,30 @@ impl Overrides {
         current: &semver::Version,
         derived: Bump,
     ) -> Result<semver::Version> {
-        let next = match &self.pre {
-            Some(PreChoice::Promote) => self.promote(package, current, derived)?,
-            Some(PreChoice::Label(label)) => self.prerelease(package, current, derived, label)?,
-            None => {
-                // Reachable only once prereleases exist, and silently bumping
-                // from the base would drop the cycle on the floor.
-                if !current.pre.is_empty() {
-                    bail!(
-                        "`{package}` is at prerelease {current}; pass --pre <label> for another \
-                         prerelease or --pre none to promote it"
-                    );
+        let next = if let Some(next) = self.proposed.get(package) {
+            next.clone()
+        } else {
+            match &self.pre {
+                Some(PreChoice::Promote | PreChoice::PreviewFinal) => {
+                    self.promote(package, current, derived)?
                 }
-                self.base(package, current, derived)
+                Some(PreChoice::Label(label)) => {
+                    self.prerelease(package, current, derived, label)?
+                }
+                None => {
+                    // Reachable only once prereleases exist, and silently bumping
+                    // from the base would drop the cycle on the floor.
+                    if !current.pre.is_empty() {
+                        bail!(
+                            "`{package}` is at prerelease {current}; pass --pre <label> for another \
+                         prerelease or --pre none to promote it"
+                        );
+                    }
+                    self.base(package, current, derived)
+                }
             }
         };
+        validate_series(package, current, &next)?;
         // Catches an override that would move a version backwards — `--set` to
         // an older number, or a label whose cycle has already passed.
         if next <= *current {
@@ -210,8 +283,7 @@ impl Overrides {
         label: &str,
     ) -> Result<semver::Version> {
         let base = if self.names(package) {
-            // An explicit --bump/--set retargets the cycle even mid-flight,
-            // measured from the base rather than from `rc.1` itself.
+            // Measure overrides from the stable version, not the candidate.
             self.base(package, &release_of(current), derived)
         } else if !current.pre.is_empty() {
             // Already in a cycle: the base was decided when it was cut, and
@@ -223,13 +295,27 @@ impl Overrides {
 
         let counter = match previous_counter(current, label) {
             Some(previous) if base == release_of(current) => previous + 1,
-            _ => 1,
+            _ => 0,
         };
         let mut next = base;
         next.pre = semver::Prerelease::new(&format!("{label}.{counter}"))
             .map_err(|err| anyhow::anyhow!("`{label}` is not a usable prerelease label: {err}"))?;
         Ok(next)
     }
+}
+
+pub(super) fn validate_series(
+    package: &str,
+    current: &semver::Version,
+    next: &semver::Version,
+) -> Result<()> {
+    if !current.pre.is_empty() && release_of(current) != release_of(next) {
+        bail!(
+            "`{package}` cannot change candidate series from {current} to {next}; continue or promote {} first",
+            release_of(current)
+        );
+    }
+    Ok(())
 }
 
 /// The release version `current` is a prerelease of — or itself, if it is one.
@@ -295,6 +381,24 @@ mod tests {
     }
 
     #[test]
+    fn changelog_preview_promotes_prereleases_and_bumps_stable_versions() {
+        let o = Overrides::changelog_preview();
+        for current in ["1.0.0-rc.0", "1.0.0-beta.2", "1.0.0-alpha.test+build"] {
+            for bump in [Bump::Patch, Bump::Minor, Bump::Major] {
+                assert_eq!(o.resolve("p", &v(current), bump).unwrap(), v("1.0.0"));
+            }
+        }
+        assert_eq!(
+            o.resolve("p", &v("1.2.0"), Bump::Minor).unwrap(),
+            v("1.3.0")
+        );
+        assert!(
+            !o.promoting(),
+            "a preview does not require a prerelease in the plan"
+        );
+    }
+
+    #[test]
     fn global_bump_overrides_the_derived_level() {
         // The motivating case: a breaking change filed as `Fixed`.
         let o = overrides(&["major"], &[], None);
@@ -340,7 +444,7 @@ mod tests {
         let o = overrides(&[], &[], Some("rc"));
         assert_eq!(
             o.resolve("p", &v("0.9.3"), Bump::Minor).unwrap(),
-            v("0.10.0-rc.1")
+            v("0.10.0-rc.0")
         );
     }
 
@@ -349,7 +453,7 @@ mod tests {
         let o = overrides(&[], &["p=1.0.0"], Some("rc"));
         assert_eq!(
             o.resolve("p", &v("0.9.3"), Bump::Minor).unwrap(),
-            v("1.0.0-rc.1")
+            v("1.0.0-rc.0")
         );
     }
 
@@ -358,6 +462,10 @@ mod tests {
         // The whole point of the cycle: rc.1 -> rc.2 stays on 1.0.0 instead of
         // deriving a fresh bump from the same fragments every time.
         let o = overrides(&[], &[], Some("rc"));
+        assert_eq!(
+            o.resolve("p", &v("1.0.0-rc.0"), Bump::Minor).unwrap(),
+            v("1.0.0-rc.1")
+        );
         assert_eq!(
             o.resolve("p", &v("1.0.0-rc.1"), Bump::Minor).unwrap(),
             v("1.0.0-rc.2")
@@ -373,17 +481,24 @@ mod tests {
         let o = overrides(&[], &[], Some("rc"));
         assert_eq!(
             o.resolve("p", &v("1.0.0-beta.3"), Bump::Minor).unwrap(),
-            v("1.0.0-rc.1")
+            v("1.0.0-rc.0")
         );
     }
 
     #[test]
-    fn retargeting_mid_cycle_restarts_the_counter() {
-        let o = overrides(&["p=major"], &[], Some("rc"));
-        assert_eq!(
-            o.resolve("p", &v("1.0.0-rc.4"), Bump::Minor).unwrap(),
-            v("2.0.0-rc.1")
-        );
+    fn retargeting_mid_cycle_is_rejected() {
+        for o in [
+            overrides(&["p=major"], &[], Some("rc")),
+            overrides(&[], &["p=1.1.0"], Some("rc")),
+            overrides(&[], &["p=1.0.1"], Some("rc")),
+        ] {
+            assert!(
+                o.resolve("p", &v("1.0.0-rc.4"), Bump::Minor)
+                    .unwrap_err()
+                    .to_string()
+                    .contains("candidate series")
+            );
+        }
     }
 
     #[test]
@@ -460,12 +575,5 @@ mod tests {
                 .to_string()
                 .contains("must not contain a dot")
         );
-    }
-
-    #[test]
-    fn fragments_survive_a_prerelease_but_not_a_promotion() {
-        assert!(overrides(&[], &[], Some("rc")).retains_fragments());
-        assert!(!overrides(&[], &[], Some("none")).retains_fragments());
-        assert!(!overrides(&[], &[], None).retains_fragments());
     }
 }

@@ -86,9 +86,6 @@ pub fn outputs(workspace: &Workspace) -> Result<()> {
 
     let all_json = serde_json::to_string(&all)?;
     println!("packages={all_json}");
-    // Deprecated alias for `packages`, kept so workflows reading
-    // `steps.x.outputs.projects` keep working. Removed at 1.0.
-    println!("projects={all_json}");
     println!("releasable={}", serde_json::to_string(&releasable)?);
     println!("version_files={}", serde_json::to_string(&version_files)?);
     println!("tags={}", serde_json::to_string(&tags)?);

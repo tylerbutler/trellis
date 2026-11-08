@@ -179,9 +179,8 @@ needs_deps = true            # run `gleam deps download` first if not cached
 package_tags = ["exact"]
 package_tags_overrides = { "packages/lattice_cli" = ["exact", "minor"] }
 # `exact` substitutes into the first, every series level into the second.
-# {version} and {series} are derived, never written by hand. Keep {name} in
-# series_tag_format: omitting it for a repository-wide tag is deprecated, see
-# repository_tag_* below.
+# {version} and {series} are derived, never written by hand. series_tag_format
+# requires {name}; use repository_tag_* for a repository-wide tag.
 exact_tag_format = "{name}-v{version}"    # lattice_core-v1.1.0
 series_tag_format = "{name}-v{series}"    # lattice_core-v1.2, lattice_cli-v0.4
 # Optional repository-wide moving tag, anchored to one package's version.
@@ -402,15 +401,14 @@ What this replaces: every bash loop in the justfile (~180 of its 240 lines).
 
 ```
 trellis changelog new [--package <pkg>] --kind <kind> --body <text>
-trellis changelog check --base <sha> --head <sha> [--json]
+trellis changelog check --base <sha> --head <sha> [--format text|json|github]
 trellis version plan [--json]                     # dry-run: what would be bumped
 trellis version apply                             # batch + merge + lockfile patch
 ```
 
 - The engine is native (§7). Fragments are TOML files in
   `.changes/unreleased/` (`package`, `kind`, `body`, and an optional
-  `category`; `project` is the pre-0.8 spelling of `package`, still accepted
-  as an alias); `changelog new` writes one non-interactively. There is no
+  `category`); `changelog new` writes one non-interactively. There is no
   per-package changelog wiring to generate or keep in sync — the lattice
   failure mode of "forgotten config block means a package cannot be released"
   has no equivalent, because there is no config block.
@@ -502,12 +500,8 @@ trellis lockfile refresh [--package <pkg>]
   tag; exact package tags are not a release signal. Entering a new series
   creates a new tag and preserves the old one. Repository tags are mutable,
   get no GitHub Release, and never participate in `publish --tag` or
-  `ci tag-package` resolution. A `{name}`-less `series_tag_format` — the
-  pre-`repository_tag_*` way to reach the same thing — is deprecated and
-  removed at 1.0: it is a *package* template with the discriminator taken out,
-  so every package's series tag matches every member and `ci tag-package`
-  cannot resolve it. `doctor` warns on the shape whether or not a second
-  series-mode package has yet made it ambiguous.
+  `ci tag-package` resolution. `series_tag_format` requires `{name}`; use the
+  repository tag keys for a repository-wide series tag.
 - `publish` performs, per package:
   1. **Idempotency check** — query Hex once; skip if this exact version is already
      published (makes re-runs of a partially failed release safe).
@@ -530,6 +524,47 @@ trellis lockfile refresh [--package <pkg>]
 - `lockfile refresh` scopes `gleam deps download` to the just-published package,
   encoding the "don't refresh the whole workspace or you'll get rate-limited"
   rule from publish.yml:124-133 as behavior instead of a comment.
+
+### Publish-time source bundling
+
+`publish.bundle` maps a releasable package's exact name to its direct
+non-Hex runtime dependencies. Owners may be `hex` or `git_only`, never
+`workspace`. The runtime workspace graph determines the transitive private
+closure. Hex dependencies remain external requirements. Bundling does not
+change package discovery, development builds, release lifecycles, or module names.
+
+Opted-in Hex publishers validate and publish an owned temporary package rather
+than rewriting the checkout. The combined manifest removes bundled
+dependencies, merges identical external requirements, and preserves effective
+internal-module patterns and required Erlang applications. Differing
+requirements, source/module collisions, or visibility changes are errors;
+trellis neither solves requirement intersections nor rewrites source imports.
+Native Erlang and JavaScript sources retain their relative paths. OTP startup
+modules and private `priv` resources require a separate package identity and
+are rejected. Attributed licence notices use a standard `LICENCE` filename
+because Gleam's exporter excludes arbitrary per-package notice filenames.
+
+For Hex owners, `doctor` applies the same preparation checks without producing an artifact.
+`changelog check` maps bundled-source changes to every containing publisher,
+whose fragments determine its release. This preserves the existing fragment
+and version contracts without adding releases for workspace-only packages.
+The ordinary, unconfigured publish path stays unchanged.
+
+Git-only bundles retain repository paths and package identities. They require
+explicit selection of direct `workspace` runtime dependencies; independently
+released Git-only and Hex dependencies remain available without bundling.
+Doctor validates graph coverage, not a flattened Hex package, so Hex-only
+source-merging and application-identity restrictions do not apply. The
+containing Git-only owner receives changelog attribution for bundled changes,
+but workspace dependencies remain outside independent versioning and tagging.
+Artifact creation stays with the repository's release workflow, which must
+preserve every required dependency path. All publish selectors remain
+Hex-only; bundle membership never grants publication capability.
+
+Preserved names can conflict when a consumer installs independently bundled
+packages with overlapping modules. Real archive tests compile an extracted
+Hex package through a fresh consumer on Erlang and JavaScript; they do not
+claim to predict another consumer's dependency graph or dynamic OTP lookups.
 
 ### Dependency pinning
 
@@ -584,7 +619,7 @@ lattice_core = { git = "https://github.com/x/lattice", ref = "4f2a9c81…", path
 
 ```
 trellis ci matrix [--since <ref>] [--json]   # {"include":[{"name","path","version"},…]}
-trellis ci outputs                            # projects/version_files/etc. as GHA outputs
+trellis ci outputs                            # packages/version_files/etc. as GHA outputs
 ```
 
 Emits the exact structures workflows consume, replacing every
@@ -614,13 +649,9 @@ Checks, each of which is an unenforced invariant in lattice today:
    dependency must be at least as capable as its dependent (§4.1) — a `hex`
    package cannot require a package that will never exist on Hex, and neither
    `hex` nor `git_only` may depend on a `workspace`-only one.
-7. Tag-format collisions (two members whose names would produce ambiguous tags),
-   for series tags as well as exact ones — except a `series_tag_format` without
-   `{name}`, which warns instead — it is deprecated rather than an error, so
-   repositories using it keep releasing, and it costs the ability to resolve a
-   tag back to a single package. That warning keys on the
-   format, not on today's versions: with no `{name}` to substitute, every
-   series tag matches every member whatever they are versioned at.
+7. Tag-format collisions (two members whose names would produce ambiguous
+   tags), for series tags as well as exact ones. `series_tag_format` requires
+   `{name}`, so every package series tag remains invertible.
 
 `doctor` is the CI tripwire for the duplication that can't be eliminated. Today,
 publish.yml's `replace-path-deps` being one package short would only be discovered
@@ -680,6 +711,72 @@ then `trellis tag create --github-release` to record what shipped. Tags become a
 artifact of publishing rather than its trigger, and the auto-tag "wait for the
 Publish workflow" coupling disappears. This is a policy change for lattice, not a
 requirement of the tool; both shapes are supported.
+
+### Candidate publication in Gleam workspaces
+
+`examples/gleam-hex-release.yml` implements the publish-then-tag shape for
+Gleam/Hex, separately from trellis's own Cargo pipeline. `release pr` shares
+the version override parser and uses the same overrides for planning and
+application. Each candidate is regenerated from its selected base. Source
+fragments move into immutable candidate archives; promotion rolls up the
+archives for the current stable target and any new unreleased fragments.
+
+Release preparation can opt into pending-version resumption, committed
+candidate-mode continuation, and unchanged-content skipping. Successful
+preparations remove obsolete `<changelog.dir>/release.toml` metadata.
+The pending PR's manifests supply fixed package targets, not the original bump
+rules. Explicit package overrides replace matching targets; a workspace-wide
+bump recalculates them all. Promotion retains targets for stable joining
+packages. Candidate targets cannot change version series, whether pending
+or committed; same-series continuation and promotion remain supported.
+Only same-repository open PRs can supply pending versions.
+The selected immutable head, its common ancestor with the base, and source
+versions are validated before replacement. Release-input identities are
+computed from Git trees instead of stored in a generated file.
+
+Automatic continuation never promotes and never advances from unchanged
+release inputs. Candidates use verified parsed-manifest and release-section history,
+with a separate baseline per package. Comparisons use post-application trees
+so archive consumption and generated versions are not new release input.
+Relevant fragments, source/runtime files, and release configuration count;
+bundle ownership is resolved on both baseline and current trees. Missing
+history or inconsistent versions is an error, not an inferred mode or no-op.
+
+`release pr --json` and `--github-output` report `prepared`, `unchanged`, or
+`no_changes`, with the package plan and available PR identity. They do not
+authorize publication or replace workflow concurrency/publication gates.
+
+One concurrency group serializes automatic stable preparation, manual
+candidate/promotion requests, and merge publication without cancellation.
+Automatic preparation pauses for prerelease manifests on main, pending
+candidate heads, and manual ownership. A pending `trellis/release_request`
+status on the manual request's base commit is written before invoking the
+CLI: it survives failure before PR creation and protects stable promotion
+heads that cannot be identified by prerelease version alone. The automatic
+guard scans main's history only back through the latest merged release commit,
+so merging a new release supersedes earlier reservations. This uses existing
+commit statuses rather than another state service.
+
+Publication verifies same-repository release head/base identity and pins
+checkout to `merge_commit_sha`, including reruns. `trellis/release` succeeds
+only after dependency-ordered Hex publication and tagging both complete.
+Missing or unsuccessful status on the latest merged release blocks new
+preparation, including before the publishing run starts. Recovery repeats
+publication and tagging at that same commit; a completed old run is skipped
+for those two commands to prevent moving series tags backward, but still
+retries gated preparation on current main. Successful stable promotion
+rechecks current main in the serialized run and restores automatic preparation.
+
+Until a fixed binary release ships, the example builds a checked-in reviewed
+snapshot at `.github/trellis` with the committed lockfile and pinned Rust
+toolchain. Build output and installation stay outside the checkout under
+`RUNNER_TEMP`, preserving the release CLI's clean-tree requirement. Afterward,
+an explicit released-version pin selects the prebuilt installer instead.
+
+Exact candidate tags remain immutable; candidate versions do not move package
+or repository series tags. GitHub prerelease classification comes from the
+manifest's semantic version, not the configurable tag spelling. Existing
+GitHub releases are not rewritten on retry.
 
 ## 7. Interop decisions
 

@@ -29,8 +29,9 @@ fn ci_outputs_emits_key_value_lines() {
         .assert()
         .success()
         .stdout(predicate::str::contains(
-            "projects=[\"lat_core\",\"lat_mid\",\"lat_cli\",\"package_a\"]",
+            "packages=[\"lat_core\",\"lat_mid\",\"lat_cli\",\"package_a\"]",
         ))
+        .stdout(predicate::str::contains("projects=").not())
         .stdout(predicate::str::contains(
             "releasable=[\"lat_core\",\"lat_mid\",\"lat_cli\"]",
         ))
