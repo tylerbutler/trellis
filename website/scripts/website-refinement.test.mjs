@@ -8,6 +8,14 @@ const reference = readFileSync(
   new URL("../src/content/docs/docs/configuration-reference.mdx", import.meta.url),
   "utf8",
 );
+const tokens = readFileSync(new URL("../src/styles/tokens.css", import.meta.url), "utf8");
+const global_css = readFileSync(new URL("../src/styles/global.css", import.meta.url), "utf8");
+const docs_css = readFileSync(new URL("../src/styles/starlight.css", import.meta.url), "utf8");
+const design = readFileSync(new URL("../../DESIGN.md", import.meta.url), "utf8");
+const sidecar = JSON.parse(readFileSync(
+  new URL("../../.impeccable/design.json", import.meta.url),
+  "utf8",
+));
 const script = homepage.match(/<script>([\s\S]+)<\/script>/)[1]
   .replaceAll("<HTMLButtonElement>", "");
 
@@ -102,5 +110,72 @@ test("every configuration key has a unique direct link in a grouped table", () =
   for (const [, key] of keys) assert.match(key, /<a id=/);
   for (const group of ["Workspace and tasks", "Manifest adapter", "Package publishing", "Lifecycle settings", "Changelogs", "Doctor checks", "Release preparation settings"]) {
     assert.ok(reference.includes(`### ${group}\n`), `missing key group: ${group}`);
+  }
+});
+
+test("the statement band uses the section-heading type role", () => {
+  const statement = homepage.match(/\.doctrine p\s*\{([^}]+)\}/)[1];
+  const section = homepage.match(/\.section-head h2\s*\{([^}]+)\}/)[1];
+  const heading = global_css.match(/h1,\s*h2,\s*h3,\s*h4\s*\{([^}]+)\}/)[1];
+  const value = (css, property) => css.match(new RegExp(`${property}:\\s*([^;]+);`))[1];
+  for (const property of ["font-size", "font-stretch"]) {
+    assert.equal(value(statement, property), value(section, property), property);
+  }
+  for (const property of ["font-weight", "line-height", "letter-spacing"]) {
+    assert.equal(value(statement, property), value(heading, property), property);
+  }
+});
+
+test("docs inherit the shared font stacks instead of redefining them", () => {
+  assert.match(docs_css, /--sl-font:\s*var\(--font-sans\);/);
+  assert.match(docs_css, /--sl-font-mono:\s*var\(--font-mono\);/);
+});
+
+test("design typography and sidecar metadata match the shipped tokens", () => {
+  const css_tokens = new Map([...tokens.matchAll(/^\s*--([\w-]+):\s*(.+);/gm)]
+    .map(([, name, value]) => [name, value]));
+  const type = design.match(/\ntypography:\n([\s\S]+?)\nrounded:/)[1];
+  const roles = new Map([...type.matchAll(/  ([\w-]+):\n([\s\S]+?)(?=\n  [\w-]+:|$)/g)]
+    .map(([, name, properties]) => [name, properties]));
+  const sizes = {
+    display: "text-display",
+    headline: "text-h2",
+    title: "text-h3",
+    "docs-h1": "text-docs-h1",
+    "docs-h2": "text-docs-h2",
+    "docs-h3": "text-docs-h3",
+    wordmark: "text-wordmark",
+    body: "text-body",
+    lead: "text-lead",
+    small: "text-small",
+    label: "text-fine",
+    code: "text-code",
+  };
+  for (const [role, size] of Object.entries(sizes)) {
+    const properties = roles.get(role);
+    assert.ok(properties, `missing type role: ${role}`);
+    assert.equal(properties.match(/fontSize: "([^"]+)"/)[1], css_tokens.get(size), role);
+    const family = properties.match(/fontFamily: "([^"]+)"/)[1];
+    const stack = css_tokens.get(["label", "code"].includes(role) ? "font-mono" : "font-sans");
+    assert.equal(family, stack.replaceAll('"', ""), role);
+    assert.ok(sidecar.extensions.typographyMeta[role], `missing sidecar type role: ${role}`);
+  }
+  assert.equal(sidecar.schemaVersion, 2);
+  for (const [name, color] of Object.entries(sidecar.extensions.colorMeta)) {
+    assert.equal(color.canonical, css_tokens.get(name), name);
+  }
+  assert.ok(!design.includes("Martian Mono"));
+  assert.ok(!JSON.stringify(sidecar).includes("Martian Mono"));
+  const overview = design.match(/## Overview[\s\S]+?\*\*Creative North Star:[^\n]+\n\n([\s\S]+?)\n\n\*\*Key Characteristics:/)[1];
+  assert.equal(sidecar.narrative.overview, overview);
+  const bullets = (section) => section.split("\n").filter(line => line.startsWith("- "))
+    .map(line => line.slice(2).replaceAll("**", ""));
+  assert.deepEqual(sidecar.narrative.keyCharacteristics,
+    bullets(design.split("**Key Characteristics:**")[1].split("## Colors")[0]));
+  assert.deepEqual(sidecar.narrative.dos,
+    bullets(design.split("### Do:")[1].split("### Don't:")[0]));
+  assert.deepEqual(sidecar.narrative.donts, bullets(design.split("### Don't:")[1]));
+  for (const [, name, body] of design.matchAll(/\*\*(The [^\n]*? Rule)\.\*\* ([^\n]+)/g)) {
+    assert.equal(sidecar.narrative.rules.find(rule => rule.name === name)?.body, body, name);
   }
 });
