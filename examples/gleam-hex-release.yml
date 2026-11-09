@@ -1,6 +1,6 @@
 # Copy to .github/workflows/gleam-hex-release.yml in a Gleam workspace.
-# Until these fixes ship, check in a reviewed source snapshot at .github/trellis
-# and leave TRELLIS_VERSION empty. Afterward, pin a release with these fixes.
+# Set TRELLIS_VERSION to 1.4.0 or a later compatible release.
+# For unreleased changes, leave it empty and use a reviewed .github/trellis snapshot.
 name: Gleam Hex release
 
 on:

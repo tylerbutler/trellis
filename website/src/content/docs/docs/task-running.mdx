@@ -1,12 +1,12 @@
 ---
 title: Task running
-description: trellis run fans a task out across workspace packages, graph-parallel by default, with streamed output and a failure summary.
+description: Run built-in or custom tasks across workspace packages in dependency order, with concurrent execution and a failure summary.
 ---
 
 import Callout from "../../../components/Callout.astro";
 
-`trellis run` fans a task out across workspace packages; `trellis exec` does
-the same for an arbitrary command. Both work from anywhere inside the
+`trellis run` runs a task across workspace packages; `trellis exec` runs
+an arbitrary command in each selected package. Both work from anywhere inside the
 workspace.
 
 ```txt wrap
@@ -18,13 +18,13 @@ trellis exec [pkgs...] [--since <ref>] [--serial] [--keep-going] -- <command...>
 
 ## Built-in tasks
 
-Built-in tasks map 1:1 onto gleam verbs, and need no declaration:
+Built-in tasks run these Gleam commands without configuration:
 
 | Task | Runs |
 | --- | --- |
 | `build` | `gleam build`. `--strict` adds `--warnings-as-errors`. |
 | `test` | `gleam test` |
-| `check` | `gleam check` — type check without building. |
+| `check` | `gleam check` (type check without building). |
 | `format` | `gleam format`. `--check` verifies instead of writing. |
 | `docs` | `gleam docs build` |
 | `deps` | `gleam deps download` |
@@ -36,8 +36,8 @@ the task once per target.
 ## Custom tasks
 
 Custom tasks live under `[tools.trellis.tasks]` in the root manifest and run
-through `trellis run <name>` exactly like built-ins — same scheduling, same
-package selection:
+through `trellis run <name>`, with the same scheduling and package selection
+as built-in tasks:
 
 ```toml title="gleam.toml" wrap
 # Custom tasks for `trellis run <name>`. Built-in verbs need no declaration;
@@ -48,7 +48,7 @@ needs_deps = true            # run `gleam deps download` first if not cached
 ```
 
 Any built-in or custom task can omit packages through a same-named key under
-`exclude` — see
+`exclude`. See
 [package exclusions](/docs/configuration/#package-exclusions).
 
 ## Scheduling
@@ -101,14 +101,13 @@ trellis exec lat_core lat_mid -- rm -rf build
 
 <Callout>
 
-Trellis is not a general task runner: compound flows stay in `just` as
-one-liners. Recipes become delegations that keep `just --list`
-discoverability while deleting the loops:
+Use `just` to combine several trellis commands into one recipe. This keeps
+recipes available through `just --list` without writing package loops:
 
 </Callout>
 
 ```txt title="justfile"
-# justfile — recipes become one-line delegations
+# Define the lint task in gleam.toml as shown above.
 test *ARGS:
     trellis run test {{ARGS}}
 
