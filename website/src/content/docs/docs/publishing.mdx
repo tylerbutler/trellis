@@ -501,14 +501,16 @@ publication.
 with retries. Omit `--package` to refresh the whole workspace. Refreshing fewer
 packages reduces requests to Hex.
 
-## Two release shapes
+<a id="two-release-shapes"></a>
 
-Choose when your workflow publishes packages and records their tags:
+## Tag before or after publishing
 
-| Shape | Flow |
+Trellis supports both; the difference is policy, not tooling:
+
+| Order | Flow |
 | --- | --- |
-| Tags as trigger | Release PR merges → `tag create --push` → each pushed tag triggers a workflow running `publish --tag "$GITHUB_REF_NAME"`. |
-| Tags as record | Release PR merges → `publish --all-untagged` (one run, topologically ordered) → `tag create --push --github-release` records what shipped. |
+| Tag, then publish | Release PR merges → `tag create --push` → each pushed tag triggers a workflow running `publish --tag "$GITHUB_REF_NAME"`. |
+| Publish, then tag | Release PR merges → `publish --all-untagged` (one run, topologically ordered) → `tag create --push --github-release` records what shipped. |
 
 The [CI recipes](/docs/ci/#the-release-pipeline) provide a copyable
 publish-then-tag workflow with candidate/promotion controls and recovery.
