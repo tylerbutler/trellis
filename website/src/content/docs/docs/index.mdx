@@ -47,9 +47,9 @@ a file.
 
 ## Opinionated, but modular
 
-Trellis has one way of doing each job: change fragments are TOML files in
-`.changes/unreleased/`, every releasable package gets its own git tag, and
-version bumps are derived from fragment kinds.
+Trellis records each change as a TOML fragment in `.changes/unreleased/`,
+derives version bumps from fragment kinds, and tags each release per package.
+You choose when to tag and when to publish.
 
 Start with task running and add release commands when you need them:
 
