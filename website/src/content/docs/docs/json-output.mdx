@@ -5,8 +5,9 @@ description: JSON schemas, stable fields, allowed changes, and GitHub Actions ou
 
 import Callout from "../../../components/Callout.astro";
 
-JSON payloads include a `schema` field naming the payload and its major version,
-except for [`ci matrix`](#two-exceptions):
+Every JSON payload, except the GitHub Actions formats from
+[`ci matrix` and `ci outputs`](#two-exceptions), includes a `schema` field
+naming the payload and its major version:
 
 ```json
 {

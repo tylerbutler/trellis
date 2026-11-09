@@ -15,8 +15,8 @@ records that workflows can consume.
 ## Installing trellis
 
 Pin the installer to a released version so CI upgrades only when you change
-the pin. See [installation](/docs/installation/) for other methods, including
-mise:
+the pin. For other methods, including mise, see
+[installation](/docs/installation/).
 
 <Code
   lang="yaml"
@@ -31,11 +31,11 @@ mise:
 
 `trellis ci matrix` emits a strategy matrix
 (`{"include":[{"name","path","version"},…]}`). With `--since` it covers only
-the packages a PR touched, dependents included:
+the packages a PR touched, dependents included.
 
 Set the repository variable `TRELLIS_VERSION` to a released version that
 supports your workflow. Each job installs its own tools; the test job also
-needs Gleam and Erlang/OTP. Adjust their versions for your packages.
+needs Gleam and Erlang/OTP. Adjust their versions for your packages:
 
 ```yaml title=".github/workflows/ci.yml"
 on: pull_request

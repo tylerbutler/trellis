@@ -14,7 +14,7 @@ Every command uses the same four codes. Branch on **1 versus 3** to tell a works
 
 | Code | Meaning | Examples |
 | --- | --- | --- |
-| `0` | Success; advisory warnings may remain | `doctor` found no errors; every task passed |
+| `0` | Success; warnings may remain | `doctor` found no errors; every task passed |
 | `1` | The command ran correctly and found problems | `doctor` findings, missing changelog fragments, a failed task |
 | `2` | Usage error | Unknown flag, missing argument, bad subcommand |
 | `3` | Trellis itself could not run | Unparseable config, not a git repository, missing `gleam`, no GitHub token, Hex unreachable after retries |
