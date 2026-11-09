@@ -35,27 +35,31 @@ typography:
     fontFamily: "Archivo Variable, Helvetica Neue, Arial, sans-serif"
     fontSize: "1.3rem"
     fontWeight: 620
-    lineHeight: 1.2
+    lineHeight: 1.12
   docs-h1:
     fontFamily: "Archivo Variable, Helvetica Neue, Arial, sans-serif"
     fontSize: "clamp(2rem, 1.4rem + 2vw, 2.8rem)"
     fontWeight: 620
     lineHeight: 1.12
+    letterSpacing: "-0.015em"
     fontVariation: "'wdth' 114"
   docs-h2:
     fontFamily: "Archivo Variable, Helvetica Neue, Arial, sans-serif"
     fontSize: "1.45rem"
     fontWeight: 620
     lineHeight: 1.12
+    letterSpacing: "-0.015em"
   docs-h3:
     fontFamily: "Archivo Variable, Helvetica Neue, Arial, sans-serif"
     fontSize: "1.1rem"
     fontWeight: 620
-    lineHeight: 1.2
+    lineHeight: 1.12
+    letterSpacing: "-0.015em"
   wordmark:
     fontFamily: "Archivo Variable, Helvetica Neue, Arial, sans-serif"
     fontSize: "1.2rem"
     fontWeight: 640
+    letterSpacing: "0.01em"
     fontVariation: "'wdth' 118"
   body:
     fontFamily: "Archivo Variable, Helvetica Neue, Arial, sans-serif"
@@ -63,12 +67,23 @@ typography:
     fontWeight: 400
     lineHeight: 1.65
     letterSpacing: "0.011em"
+  lead:
+    fontFamily: "Archivo Variable, Helvetica Neue, Arial, sans-serif"
+    fontSize: "clamp(1.1rem, 1rem + 0.4vw, 1.25rem)"
+    fontWeight: 400
+    lineHeight: 1.65
+    letterSpacing: "0.011em"
+  small:
+    fontFamily: "Archivo Variable, Helvetica Neue, Arial, sans-serif"
+    fontSize: "0.9375rem"
+    fontWeight: 400
+    lineHeight: 1.65
   label:
-    fontFamily: "Martian Mono Variable, ui-monospace, SF Mono, Menlo, monospace"
+    fontFamily: "Fira Code Variable, ui-monospace, SF Mono, Menlo, monospace"
     fontSize: "0.8125rem"
     fontWeight: 560
   code:
-    fontFamily: "Martian Mono Variable, ui-monospace, SF Mono, Menlo, monospace"
+    fontFamily: "Fira Code Variable, ui-monospace, SF Mono, Menlo, monospace"
     fontSize: "0.875rem"
     fontWeight: 400
     lineHeight: 1.75
@@ -103,11 +118,11 @@ components:
 
 # Design System: Trellis
 
-## 1. Overview
+## Overview
 
 **Creative North Star: "The Calibrated Instrument"**
 
-Trellis is a tool you trust the way you trust a well-made instrument: it derives its answers instead of asking you to declare them, and it verifies everything it cannot derive. The site carries the same character — brass dials on oxidized steel. The page surface is a deep harbor-steel blue, structural panels step up through tonal cobalt layers, and a single warm brass voice marks what matters: the primary action, the active nav item, the `$` prompt, the `ok:` line in real terminal output. Typography pairs Archivo (stretched wide for display, plain for prose) with Martian Mono, which has a register reason: the product IS a CLI, and its real, unretouched output is the site's primary imagery.
+Trellis is a tool you trust the way you trust a well-made instrument: it derives its answers instead of asking you to declare them, and it verifies everything it cannot derive. The site carries the same character — brass dials on oxidized steel. The page surface is a deep harbor-steel blue, structural panels step up through tonal cobalt layers, and a single warm brass voice marks what matters: the primary action, the active nav item, the `$` prompt, the `ok:` line in real terminal output. Typography pairs Archivo (stretched wide for display, plain for prose) with Fira Code for commands, configuration, and real terminal output.
 
 Density is calm but committed. Sections hold one idea each; ledger tables and terminal figures do the persuading; motion is limited to state changes with one exponential ease. The system explicitly rejects the generic SaaS landing page (gradient heroes, floating product screenshots, pricing-page energy), the sterile default docs theme (out-of-the-box Starlight with no identity), and the Linear/Vercel dark-glow lane (near-black surfaces, glowing gradients, luminous blur). Its living references are gleam.run's hand-made friendliness and axo.dev's proof that a small CLI tool can have a real designed identity.
 
@@ -117,7 +132,7 @@ Density is calm but committed. Sections hold one idea each; ledger tables and te
 - Documentation styled with landing-page care; docs ARE the conversion surface
 - Flat, machined, exact: depth from tonal steps and 1px edges, never shadows or glow
 
-## 2. Colors: The Harbor Steel Palette
+## Colors
 
 A committed steel-cobalt system anchored at hue 230, with one warm brass accent at hue 80 — the instrument-on-steel tension.
 
@@ -143,35 +158,48 @@ A committed steel-cobalt system anchored at hue 230, with one warm brass accent 
 
 **The Ink-on-Cobalt Rule.** Fog Gray fails contrast on cobalt fills (3.4:1). On any cobalt surface, text is Chart Ink or Ink Soft — never muted gray.
 
-## 3. Typography
+## Typography
 
 **Display Font:** Archivo Variable (with Helvetica Neue fallback), width axis stretched to 114–118% for display and headlines
 **Body Font:** Archivo Variable at normal width
-**Label/Mono Font:** Martian Mono Variable (with ui-monospace fallback)
+**Label/Mono Font:** Fira Code Variable (with ui-monospace fallback)
 
-**Character:** One grotesque with committed width/weight contrast, plus a wide technical mono. Archivo speaks; Martian Mono proves. The pairing contrasts on the proportion axis — expanded display against fixed-pitch evidence.
+**Character:** Archivo carries headings and prose; Fira Code carries commands and output. Expanded display type contrasts with fixed-pitch evidence. Both the landing page and docs inherit their font stacks from `tokens.css`.
 
 ### Hierarchy
 - **Display** (680, `clamp(2.3rem → 3.5rem)`, 1.12, 'wdth' 118): hero headline only. The brass sentence inside it is the page's one color-emphasis moment.
-- **Headline** (620, `clamp(1.6rem → 2.5rem)`, 1.12, 'wdth' 114): section headings.
-- **Title** (620, 1.3rem): phase and panel headings.
-- **Body** (400, 1.0625rem, 1.65): prose, capped at 68ch measure (`--measure`).
-- **Label** (560, 0.8125rem, Martian Mono): table headers, terminal title bars, fine print.
-- **Code** (400, 0.875rem, 1.75, Martian Mono): code samples and terminal output; ligatures disabled globally.
+- **Headline** (620, `clamp(1.6rem → 2.5rem)`, 1.12, 'wdth' 114): section headings and the centered statement band. Both use `--text-h2` and -0.015em tracking.
+- **Title** (620, 1.3rem, 1.12): adoption and panel headings.
+- **Docs headings** (620, 1.12): page titles use `--text-docs-h1` at 'wdth' 114; sections and subsections use `--text-docs-h2` and `--text-docs-h3`.
+- **Body** (400, 1.0625rem, 1.65): ordinary prose.
+- **Lead** (400, `clamp(1.1rem → 1.25rem)`, 1.65): hero introductions and ledger summaries.
+- **Small** (400, 0.9375rem): table descriptions, notes, and secondary navigation.
+- **Label** (560, 0.8125rem, Fira Code): table headers and terminal title bars.
+- **Code** (400, 0.875rem, Fira Code): code frames use 1.75 line height; terminal output uses 1.7. Ligatures are disabled globally.
 
 ### Named Rules
 **The Proof-in-Mono Rule.** Terminal output shown on the site is real trellis output, set in the mono, unretouched. Never fabricate or prettify command output.
 
-**The Two-Voices Rule.** Archivo carries meaning, Martian Mono carries evidence. Mono never sets prose; Archivo never sets output.
+**The Two-Voices Rule.** Archivo carries meaning, Fira Code carries evidence. Mono never sets prose; Archivo never sets output.
 
-## 4. Elevation
+## Layout
+
+The landing-page shell is at most 72rem wide, with responsive gutters from 1.25rem to 3rem. Sections use the shared spacing scale; major gaps grow from 5rem to 9rem. Hero and paired proof columns stack at 56rem.
+
+Docs use a 38rem content track, widened to 52rem for configuration key tables. Prose is capped at the narrower of 33rem and 68ch. Glue ledgers stack below 44rem of container width, exclusions below 32rem, and configuration keys below 40rem. The announcement bar collapses on scroll below 50rem.
+
+## Elevation & Depth
 
 Flat by default, tonal by exception. The system uses **zero box-shadows** — depth is conveyed by stepping surface lightness (Harbor Steel → Surface → Surface-2 → Cobalt Band) and by 1px hairline borders (`{colors.line}`, `{colors.line-soft}`). Panels read as machined plates laid on the steel field, not as floating cards. If an element looks like it's hovering, it's off-brand.
 
 ### Named Rules
 **The Flat Field Rule.** Surfaces are flat at rest and flat on hover. State changes recolor (brass, background tint) — they never lift, scale, or cast.
 
-## 5. Components
+## Shapes
+
+Controls use 4px corners; panels and dialogs use 8px corners. Hairline borders define their edges. These values come from `--radius-sm` and `--radius-md`.
+
+## Components
 
 Machined and quiet: flat faces, exact 1px edges, small radii (4px controls, 8px panels), instant-feeling 160ms state changes on one exponential ease (`cubic-bezier(0.22, 1, 0.36, 1)`).
 
@@ -182,28 +210,30 @@ Machined and quiet: flat faces, exact 1px edges, small radii (4px controls, 8px 
 - **Focus:** 2px Signal Brass outline, 3px offset — everywhere, keyboard-visible.
 
 ### Copy Command Row (signature)
-A flex row: `$`-prompted mono command on a Surface fill, hairline border, with an attached Copy button (Surface-2 fill, 44px minimum target). On copy, the button reads "Copied" in brass for 1.6s. In the two-column hero the command wraps (`pre-wrap`); in install lists it scrolls. When the hero stacks at 56rem and below, its duplicate command row is hidden so the graph follows the primary actions. The Install link still leads to the full installation section.
+A flex row: `$`-prompted mono command on a Surface fill, hairline border, with an attached Copy button (Surface-2 fill, 44px minimum target). Commands stay on one line and scroll within the row, so URLs do not split. On copy, the button reads "Copied" in brass for 1.6s. If copying fails, the command is selected without its prompt, receives focus, and a status message explains how to copy it manually. When the hero stacks at 56rem and below, its duplicate command row is hidden so the graph follows the primary actions. The Install link still leads to the full installation section.
 
 ### Terminal Figure (signature)
-The brand's hero imagery: a `<figure>` with a mono title bar (`$ trellis graph` — brass prompt, Surface-2 bar), real command output at 0.875rem/1.75, and an optional Fog Gray footnote. Output coloring is semantic and minimal: package names at weight 560, structural glyphs and versions in Fog Gray, success lines in brass.
+The brand's hero imagery: a `<figure>` with a mono title bar (`$ trellis graph` — brass prompt, Surface-2 bar), real command output at 0.875rem/1.7, and an optional Fog Gray footnote. Output coloring is semantic and minimal: package names at weight 560, structural glyphs and versions in Fog Gray, success lines in brass.
 
 ### Ledger Tables
-Full-width tables inside a hairline-bordered, 8px-radius scroll container. Mono Fog Gray column headers on Surface-2; brass first column for file/key names; Fog Gray for failure/description columns. Row dividers are Line Soft hairlines; no zebra striping.
+Full-width tables inside a hairline-bordered, 8px-radius container. Mono Fog Gray column headers on Surface-2; brass first column for file/key names; Fog Gray for failure/description columns. Row dividers are Line Soft hairlines; no zebra striping. The landing-page glue ledger stacks below 44rem of available width: file, maintained information, then consequence. The exclusions ledger stacks below 32rem into a member heading and labeled task states. Neither requires sideways scrolling to read the proof; both retain table and header semantics.
 
-The configuration reference uses a 52rem content track for tables while prose stays capped at the 68ch reading measure. When the configuration keys table has less than 40rem of available width, it stacks each description below its key and requirement. The column headers remain available to assistive technology. Other tables retain their horizontal scroll containers.
+The configuration reference uses a 52rem content track for grouped key tables. Prose, including callouts, uses the narrower of 33rem and the 68ch measure to keep proportional-font lines readable. A group index leads to workspace/tasks, adapter, publishing, lifecycle, changelog, doctor, and release settings. Each key has a stable `key_` anchor with a 44px link target and a sticky-header scroll offset. When a key table has less than 40rem of available width, it stacks each description below its key and requirement. The column headers remain available to assistive technology. Other tables retain their horizontal scroll containers.
 
 ### Code Frames
-Expressive Code with the `vesper` theme, overridden to the system: Surface background, Surface-2 tab bar, brass active-tab indicator, shadow disabled (`shadowColor: transparent`), Martian Mono, word wrap on by default (`defaultProps: { wrap: true }`). TOML section headers land near-brass, strings in the cobalt family — the frames belong to the same instrument. Terminal frames follow the site's `$`-prompt convention: no macOS traffic-light dots (dots are display:none'd and zeroed in styleOverrides), titles left-aligned in mono with a brass `$` prefix; untitled terminal frames show a plain hairline bar.
+Expressive Code with the `vesper` theme, overridden to the system: Surface background, Surface-2 tab bar, brass active-tab indicator, shadow disabled (`shadowColor: transparent`), Fira Code, word wrap on by default (`defaultProps: { wrap: true }`). TOML section headers land near-brass, strings in the cobalt family — the frames belong to the same instrument. Terminal frames follow the site's `$`-prompt convention: no macOS traffic-light dots (dots are display:none'd and zeroed in styleOverrides), titles left-aligned in mono with a brass `$` prefix; untitled terminal frames show a plain hairline bar.
 
 ### Navigation
 Sticky header on an opaque Harbor Steel fill with a hairline bottom border; wordmark is the lattice glyph (brass + cobalt strokes) beside lowercase "trellis" in stretched Archivo. Links are Ink Soft at 520, brass on hover. Docs are Starlight (`@astrojs/starlight`), fully re-themed to this system via `src/styles/starlight.css` (dark-only: ThemeProvider/ThemeSelect overridden): sidebar active item gets Surface-2 fill + brass text; Pagefind search, mono "On this page" rail, heading anchor links, and a themed 404 come from the framework. The landing page keeps its own Base layout; both consume the same `tokens.css`.
+
+The landing page has one numbered adoption sequence, with a guide link at each level. Windows and pinned-version installation links lead to the installation guide. Search uses a flat, hairline-bordered dialog and an opaque-tinted backdrop without blur or shadow.
 
 The release announcement uses a 44px bar and a 44px dismiss target. Below 50rem, it collapses after the reader scrolls past one bar height and returns at the top of the page. It remains visible while a control inside it has focus. Explicit dismissal still persists for the current release.
 
 ### Derived Version Strings
 No page carries a hand-maintained version number. `src/lib/version.ts` derives `TRELLIS_VERSION` from the root `Cargo.toml` at build time (a `?raw` import), and every install command interpolates it — the site obeys the tool's own derive-don't-declare doctrine. Statements about when a feature shipped ("Trellis 0.2.0 added…") are historical facts and stay literal.
 
-## 6. Do's and Don'ts
+## Do's and Don'ts
 
 ### Do:
 - **Do** keep steel cobalt carrying real surface area — bands, panels, terminal figures (The Committed Surface Rule).
@@ -218,4 +248,4 @@ No page carries a hand-maintained version number. `src/lib/version.ts` derives `
 - **Don't** drift into **Linear/Vercel dark-glow**: glowing gradients, luminous blur, floating UI (The No-Glow Rule).
 - **Don't** put Fog Gray text on cobalt fills — it fails contrast at 3.4:1 (The Ink-on-Cobalt Rule).
 - **Don't** claim "simple" or "powerful" in the abstract; show the lattice before/after ledger and real config instead.
-- **Don't** add eyebrow labels, reflex-numbered section markers, identical card grids, side-stripe borders, or box-shadows. The one numbered sequence (the command lifecycle) is numbered because it IS a sequence.
+- **Don't** add eyebrow labels, reflex-numbered section markers, identical card grids, side-stripe borders, or box-shadows. The one numbered sequence is the incremental adoption path.
