@@ -297,6 +297,99 @@ the same kind share the heading rather than producing a second section. A
 ripple entry names no category, so in a workspace using them it files under
 `uncategorized_label`.
 
+## Linking entries to their source
+
+Custom `change_format` templates can link each entry to the commit that added
+its fragment and to references in that commit's **subject**. This is optional
+context, not proof that the same commit contains the code change.
+
+### Default entry format
+
+The default renders each fragment as a Markdown bullet containing its body:
+
+```toml
+[tools.trellis.changelog]
+change_format = "- {{ body }}"
+```
+
+To keep the default and add a commit link, copy `- {{ body }}` and append
+the optional link:
+
+```toml wrap
+[tools.trellis.changelog]
+change_format = '- {{ body }}{% if commit %} ([commit](https://github.com/example/project/commit/{{ commit }})){% endif %}'
+```
+
+Replace `https://github.com/example/project` with your repository URL.
+When `commit` is unavailable, this template produces the default output.
+
+### Commit and reference context
+
+The entry context adds two values:
+
+| Value | Shape | When unavailable |
+| --- | --- | --- |
+| `commit` | Full Git object ID string | `null` |
+| `issues` | Ordered array of reference objects | `[]` |
+
+Each reference has a positive integer `number`, nullable `owner` and `repo`,
+and nullable `kind`. Trellis recognizes `#42`, `owner/repo#42`, and HTTP or
+HTTPS GitHub.com issue and PR URLs. A bare reference has no repository fields
+or type. A qualified reference supplies both repository fields but no type.
+An `/issues/42` URL sets `kind` to `issue`; a `/pull/42` URL sets it to
+`pull_request`. These types come from the URL syntax, not an API check.
+
+For the subject `Fix #42 and other/lib#17 (https://github.com/other/lib/pull/17)`,
+`issues` contains:
+
+```json
+[
+  { "number": 42, "owner": null, "repo": null, "kind": null },
+  { "number": 17, "owner": "other", "repo": "lib", "kind": "pull_request" }
+]
+```
+
+References keep first-occurrence order. Repeated references with the same
+owner, repository, and number merge into one record. A later URL can supply
+the type; if URLs disagree, the first explicit type wins. Bare references
+stay separate because trellis does not resolve the current repository.
+Commit bodies, footers, fragment bodies, and other commits are not scanned.
+Commas and semicolons can separate references without spaces, such as
+`https://github.com/other/lib/pull/17,#42`. References inside URL queries
+and anchors are not extracted as separate records.
+
+**Templates construct the links.** Trellis does not parse remotes, resolve
+URLs, check whether an issue exists, or make API requests. Set the repository
+URL in your template. This example keeps the default bullet and body, then
+adds commit and reference links:
+
+```toml wrap
+[tools.trellis.changelog]
+change_format = '''
+{% set repository_url = "https://github.com/example/project" %}- {{ body }}{% if commit %} ([commit]({{ repository_url }}/commit/{{ commit }})){% endif %}{% for issue in issues %}{% set issue_repository_url = "https://github.com/" ~ issue.owner ~ "/" ~ issue.repo if issue.owner else repository_url %} ([{% if issue.owner %}{{ issue.owner }}/{{ issue.repo }}{% endif %}#{{ issue.number }}]({{ issue_repository_url }}/{% if issue.kind == "pull_request" %}pull{% else %}issues{% endif %}/{{ issue.number }})){% endfor %}'''
+```
+
+This template uses `/issues/` when the type is unknown. GitHub redirects PR
+numbers addressed that way. The default remains `- {{ body }}`.
+
+Trellis walks local Git history from `HEAD` for `version apply`, or `--head`
+for `changelog check`. It follows renames detected by Git at 50% similarity
+and stops at the addition in the current file lifetime. Later edits keep the
+original source; deletion and recreation start a new lifetime. After a squash
+merge, the source is the surviving squash commit.
+
+New uncommitted fragments and generated dependency entries have no source.
+If parent histories identify different additions, or traversal reaches a
+shallow boundary, trellis leaves the metadata absent. Rename detection is
+heuristic, so it cannot recover every earlier path. Preview links can change
+after a squash merge or when more history becomes available.
+
+**Full history is not required to release.** Trellis does not fetch history.
+Unavailable context does not fail a check or release; unexpected optional
+lookup failures produce a warning on stderr, outside JSON output. Fragment
+validation, rendering, version planning, and file-write errors remain errors.
+The fragment format and existing JSON schemas are unchanged.
+
 ## Applying it
 
 `version apply` performs the release bookkeeping in one step. Per pending
@@ -364,6 +457,12 @@ from `.changes/unreleased/` and archives their source entries beside the
 candidate's Markdown section, in `.changes/<package>/v<prerelease>.toml`.
 Commit both files. If you configure a different changelog `dir`, trellis stores
 the archives there.
+
+Archives also preserve extracted commit and reference metadata before trellis
+consumes the fragments. Final promotion reuses those records, not the release
+commit. Old archives without metadata remain valid. Invalid optional metadata
+produces a warning and is omitted; invalid required fragment fields still
+block promotion.
 
 `--pre none` combines those archived entries with any new unreleased fragments
 for the final version. For example, `1.0.0-rc.0` includes changes A and B,

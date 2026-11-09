@@ -301,7 +301,8 @@ pub fn apply(workspace: &Workspace, overrides: &Overrides, json: bool) -> Result
         return Ok(true);
     }
 
-    let fragments = changelog::load_fragments(workspace)?;
+    let mut fragments = changelog::load_fragments(workspace)?;
+    changelog::enrich_fragments(workspace, &mut fragments, "HEAD");
     let date = changelog::today();
     let mut prepared_versions = Vec::new();
     for entry in &plan {

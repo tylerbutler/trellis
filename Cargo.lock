@@ -1316,6 +1316,7 @@ dependencies = [
  "insta",
  "minijinja",
  "predicates",
+ "regex",
  "saphyr-parser",
  "semver",
  "serde",
