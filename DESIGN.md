@@ -182,21 +182,23 @@ Machined and quiet: flat faces, exact 1px edges, small radii (4px controls, 8px 
 - **Focus:** 2px Signal Brass outline, 3px offset — everywhere, keyboard-visible.
 
 ### Copy Command Row (signature)
-A flex row: `$`-prompted mono command on a Surface fill, hairline border, with an attached Copy button (Surface-2 fill, 44px minimum target). On copy, the button reads "Copied" in brass for 1.6s. In the two-column hero the command wraps (`pre-wrap`); in install lists it scrolls. When the hero stacks at 56rem and below, its duplicate command row is hidden so the graph follows the primary actions. The Install link still leads to the full installation section.
+A flex row: `$`-prompted mono command on a Surface fill, hairline border, with an attached Copy button (Surface-2 fill, 44px minimum target). Commands stay on one line and scroll within the row, so URLs do not split. On copy, the button reads "Copied" in brass for 1.6s. If copying fails, the command is selected without its prompt, receives focus, and a status message explains how to copy it manually. When the hero stacks at 56rem and below, its duplicate command row is hidden so the graph follows the primary actions. The Install link still leads to the full installation section.
 
 ### Terminal Figure (signature)
 The brand's hero imagery: a `<figure>` with a mono title bar (`$ trellis graph` — brass prompt, Surface-2 bar), real command output at 0.875rem/1.75, and an optional Fog Gray footnote. Output coloring is semantic and minimal: package names at weight 560, structural glyphs and versions in Fog Gray, success lines in brass.
 
 ### Ledger Tables
-Full-width tables inside a hairline-bordered, 8px-radius scroll container. Mono Fog Gray column headers on Surface-2; brass first column for file/key names; Fog Gray for failure/description columns. Row dividers are Line Soft hairlines; no zebra striping.
+Full-width tables inside a hairline-bordered, 8px-radius container. Mono Fog Gray column headers on Surface-2; brass first column for file/key names; Fog Gray for failure/description columns. Row dividers are Line Soft hairlines; no zebra striping. The landing-page glue ledger stacks below 44rem of available width: file, maintained information, then consequence. The exclusions ledger stacks below 32rem into a member heading and labeled task states. Neither requires sideways scrolling to read the proof; both retain table and header semantics.
 
-The configuration reference uses a 52rem content track for tables while prose stays capped at the 68ch reading measure. When the configuration keys table has less than 40rem of available width, it stacks each description below its key and requirement. The column headers remain available to assistive technology. Other tables retain their horizontal scroll containers.
+The configuration reference uses a 52rem content track for grouped key tables. Prose, including callouts, uses the narrower of 33rem and the 68ch measure to keep proportional-font lines readable. A group index leads to workspace/tasks, adapter, publishing, lifecycle, changelog, doctor, and release settings. Each key has a stable `key_` anchor with a 44px link target and a sticky-header scroll offset. When a key table has less than 40rem of available width, it stacks each description below its key and requirement. The column headers remain available to assistive technology. Other tables retain their horizontal scroll containers.
 
 ### Code Frames
 Expressive Code with the `vesper` theme, overridden to the system: Surface background, Surface-2 tab bar, brass active-tab indicator, shadow disabled (`shadowColor: transparent`), Martian Mono, word wrap on by default (`defaultProps: { wrap: true }`). TOML section headers land near-brass, strings in the cobalt family — the frames belong to the same instrument. Terminal frames follow the site's `$`-prompt convention: no macOS traffic-light dots (dots are display:none'd and zeroed in styleOverrides), titles left-aligned in mono with a brass `$` prefix; untitled terminal frames show a plain hairline bar.
 
 ### Navigation
 Sticky header on an opaque Harbor Steel fill with a hairline bottom border; wordmark is the lattice glyph (brass + cobalt strokes) beside lowercase "trellis" in stretched Archivo. Links are Ink Soft at 520, brass on hover. Docs are Starlight (`@astrojs/starlight`), fully re-themed to this system via `src/styles/starlight.css` (dark-only: ThemeProvider/ThemeSelect overridden): sidebar active item gets Surface-2 fill + brass text; Pagefind search, mono "On this page" rail, heading anchor links, and a themed 404 come from the framework. The landing page keeps its own Base layout; both consume the same `tokens.css`.
+
+The landing page has one numbered adoption sequence, with a guide link at each level. Windows and pinned-version installation links lead to the installation guide. Search uses a flat, hairline-bordered dialog and an opaque-tinted backdrop without blur or shadow.
 
 The release announcement uses a 44px bar and a 44px dismiss target. Below 50rem, it collapses after the reader scrolls past one bar height and returns at the top of the page. It remains visible while a control inside it has focus. Explicit dismissal still persists for the current release.
 
@@ -218,4 +220,4 @@ No page carries a hand-maintained version number. `src/lib/version.ts` derives `
 - **Don't** drift into **Linear/Vercel dark-glow**: glowing gradients, luminous blur, floating UI (The No-Glow Rule).
 - **Don't** put Fog Gray text on cobalt fills — it fails contrast at 3.4:1 (The Ink-on-Cobalt Rule).
 - **Don't** claim "simple" or "powerful" in the abstract; show the lattice before/after ledger and real config instead.
-- **Don't** add eyebrow labels, reflex-numbered section markers, identical card grids, side-stripe borders, or box-shadows. The one numbered sequence (the command lifecycle) is numbered because it IS a sequence.
+- **Don't** add eyebrow labels, reflex-numbered section markers, identical card grids, side-stripe borders, or box-shadows. The one numbered sequence is the incremental adoption path.

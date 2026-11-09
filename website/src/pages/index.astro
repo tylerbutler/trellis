@@ -47,6 +47,7 @@ exact_tag_format = "{name}-v{version}"`;
           <code><span class="prompt">$</span>{installCmd}</code>
           <button class="copy-btn" type="button" aria-live="polite" data-copy={installCmd}>Copy</button>
         </div>
+        <p class="copy_status" role="status"></p>
       </div>
       <figure class="term hero-term">
         <figcaption class="term-bar"><span class="prompt">$</span>trellis graph</figcaption>
@@ -78,39 +79,39 @@ exact_tag_format = "{name}-v{version}"`;
         </p>
       </div>
       <div class="ledger-scroll">
-        <table class="ledger">
-          <thead>
-            <tr>
-              <th scope="col">Where it lives</th>
-              <th scope="col">What's maintained by hand</th>
-              <th scope="col">What can drift</th>
+        <table class="ledger" role="table">
+          <thead role="rowgroup">
+            <tr role="row">
+              <th scope="col" role="columnheader">Where it lives</th>
+              <th scope="col" role="columnheader">What's maintained by hand</th>
+              <th scope="col" role="columnheader">What can drift</th>
             </tr>
           </thead>
-          <tbody>
-            <tr>
-              <td><code>justfile</code></td>
-              <td>The package list, in topological order, as a space-separated string</td>
-              <td>A new package is silently excluded from every recipe</td>
+          <tbody role="rowgroup">
+            <tr role="row">
+              <th scope="row" role="rowheader"><code>justfile</code></th>
+              <td role="cell"><span class="ledger_label" aria-hidden="true">What's maintained by hand</span>The package list, in topological order, as a space-separated string</td>
+              <td role="cell"><span class="ledger_label" aria-hidden="true">What can drift</span>A new package is silently excluded from every recipe</td>
             </tr>
-            <tr>
-              <td><code>justfile</code></td>
-              <td>~15 near-identical <code>for pkg in …</code> bash loops</td>
-              <td>Copy-paste drift between recipes; strictly serial execution</td>
+            <tr role="row">
+              <th scope="row" role="rowheader"><code>justfile</code></th>
+              <td role="cell"><span class="ledger_label" aria-hidden="true">What's maintained by hand</span>~15 near-identical <code>for pkg in …</code> bash loops</td>
+              <td role="cell"><span class="ledger_label" aria-hidden="true">What can drift</span>Copy-paste drift between recipes; strictly serial execution</td>
             </tr>
-            <tr>
-              <td><code>.changie.yaml</code></td>
-              <td>One config block per package: label, key, changelog path, version regex</td>
-              <td>A forgotten block means a package can't be versioned or released</td>
+            <tr role="row">
+              <th scope="row" role="rowheader"><code>.changie.yaml</code></th>
+              <td role="cell"><span class="ledger_label" aria-hidden="true">What's maintained by hand</span>One config block per package: label, key, changelog path, version regex</td>
+              <td role="cell"><span class="ledger_label" aria-hidden="true">What can drift</span>A forgotten block means a package can't be versioned or released</td>
             </tr>
-            <tr>
-              <td><code>publish.yml</code></td>
-              <td>A hand-written mirror of the path_dependency graph</td>
-              <td>Nothing verifies it when a package gains a dependency</td>
+            <tr role="row">
+              <th scope="row" role="rowheader"><code>publish.yml</code></th>
+              <td role="cell"><span class="ledger_label" aria-hidden="true">What's maintained by hand</span>A hand-written mirror of the path_dependency graph</td>
+              <td role="cell"><span class="ledger_label" aria-hidden="true">What can drift</span>Nothing verifies it when a package gains a dependency</td>
             </tr>
-            <tr>
-              <td><code>release.yml</code></td>
-              <td>25 lines of inline <code>sed</code>/<code>grep</code> patching locked versions</td>
-              <td>Untestable regex logic living inside CI YAML</td>
+            <tr role="row">
+              <th scope="row" role="rowheader"><code>release.yml</code></th>
+              <td role="cell"><span class="ledger_label" aria-hidden="true">What's maintained by hand</span>25 lines of inline <code>sed</code>/<code>grep</code> patching locked versions</td>
+              <td role="cell"><span class="ledger_label" aria-hidden="true">What can drift</span>Untestable regex logic living inside CI YAML</td>
             </tr>
           </tbody>
         </table>
@@ -183,6 +184,7 @@ exact_tag_format = "{name}-v{version}"`;
             <code>graph</code> need no configuration at all, because members
             are auto-discovered from git. Your changelog tool and CI stay untouched.
           </p>
+          <a href="/docs/task-running/">Read the task-running guide →</a>
         </li>
         <li>
           <h3>Add changelogs and versioning</h3>
@@ -191,6 +193,7 @@ exact_tag_format = "{name}-v{version}"`;
             manage bumps and changelogs without trellis owning your release
             workflow, or any CI at all.
           </p>
+          <a href="/docs/changelog/">Read the versioning guide →</a>
         </li>
         <li>
           <h3>Add publishing</h3>
@@ -198,6 +201,7 @@ exact_tag_format = "{name}-v{version}"`;
             <code>tag</code> and <code>publish</code> push to Hex in dependency
             order, from your own scripts or workflows.
           </p>
+          <a href="/docs/publishing/">Read the publishing guide →</a>
         </li>
         <li>
           <h3>The full pipeline</h3>
@@ -206,6 +210,7 @@ exact_tag_format = "{name}-v{version}"`;
             <code>release pr</code> turn GitHub Actions workflows into thin
             triggers around trellis commands.
           </p>
+          <a href="/docs/ci/">Read the CI recipes →</a>
         </li>
       </ol>
     </div>
@@ -231,27 +236,27 @@ exact_tag_format = "{name}-v{version}"`;
 
       <div class="exclusion-proof">
         <div class="exclusion-ledger-scroll">
-          <table class="exclusion-ledger">
-            <thead>
-              <tr>
-                <th scope="col">Member</th>
-                <th scope="col">build / test</th>
-                <th scope="col">docs</th>
-                <th scope="col">release</th>
+          <table class="exclusion-ledger" role="table">
+            <thead role="rowgroup">
+              <tr role="row">
+                <th scope="col" role="columnheader">Member</th>
+                <th scope="col" role="columnheader">build / test</th>
+                <th scope="col" role="columnheader">docs</th>
+                <th scope="col" role="columnheader">release</th>
               </tr>
             </thead>
-            <tbody>
-              <tr>
-                <td><code>packages/*</code></td>
-                <td><span class="state state-included">included</span></td>
-                <td><span class="state state-included">included</span></td>
-                <td><span class="state state-included">included</span></td>
+            <tbody role="rowgroup">
+              <tr role="row">
+                <th scope="row" role="rowheader"><code>packages/*</code></th>
+                <td role="cell"><span class="exclusion_label" aria-hidden="true">build / test</span><span class="state state-included">included</span></td>
+                <td role="cell"><span class="exclusion_label" aria-hidden="true">docs</span><span class="state state-included">included</span></td>
+                <td role="cell"><span class="exclusion_label" aria-hidden="true">release</span><span class="state state-included">included</span></td>
               </tr>
-              <tr>
-                <td><code>examples/*</code></td>
-                <td><span class="state state-included">included</span></td>
-                <td><span class="state state-excluded">excluded</span></td>
-                <td><span class="state state-excluded">excluded</span></td>
+              <tr role="row">
+                <th scope="row" role="rowheader"><code>examples/*</code></th>
+                <td role="cell"><span class="exclusion_label" aria-hidden="true">build / test</span><span class="state state-included">included</span></td>
+                <td role="cell"><span class="exclusion_label" aria-hidden="true">docs</span><span class="state state-excluded">excluded</span></td>
+                <td role="cell"><span class="exclusion_label" aria-hidden="true">release</span><span class="state state-excluded">excluded</span></td>
               </tr>
             </tbody>
           </table>
@@ -270,46 +275,6 @@ exact_tag_format = "{name}-v{version}"`;
           </figcaption>
         </figure>
       </div>
-    </div>
-  </section>
-
-  <!-- ============ LIFECYCLE ============ -->
-  <section class="lifecycle">
-    <div class="shell">
-      <div class="section-head">
-        <h2>One binary across the lifecycle.</h2>
-        <p>
-          The same tool runs locally and in CI. Commands work from anywhere in
-          the workspace, since the root is found by walking up, like{" "}
-          <code>git</code> or <code>cargo</code>.
-        </p>
-      </div>
-      <ol class="phases">
-        <li class="phase">
-          <h3><span class="phase-index" aria-hidden="true">1</span>Run tasks across packages</h3>
-          <p>
-            Build, test, and run custom tasks in dependency order. Select the
-            packages affected by a change, locally or in CI.
-          </p>
-          <a href="/docs/task-running/">Read the task-running guide →</a>
-        </li>
-        <li class="phase">
-          <h3><span class="phase-index" aria-hidden="true">2</span>Plan versions and changelogs</h3>
-          <p>
-            Record changes as TOML fragments. Review the version plan before
-            applying package bumps and generated changelogs.
-          </p>
-          <a href="/docs/changelog/">Read the versioning guide →</a>
-        </li>
-        <li class="phase">
-          <h3><span class="phase-index" aria-hidden="true">3</span>Automate release workflows</h3>
-          <p>
-            Generate GitHub Actions matrices, check changelog coverage, and open
-            release pull requests from the same workspace model.
-          </p>
-          <a href="/docs/ci/">Read the CI recipes →</a>
-        </li>
-      </ol>
     </div>
   </section>
 
@@ -361,6 +326,7 @@ exact_tag_format = "{name}-v{version}"`;
               <code><span class="prompt">$</span>{installCmd}</code>
               <button class="copy-btn" type="button" aria-live="polite" data-copy={installCmd}>Copy</button>
             </div>
+            <p class="copy_status" role="status"></p>
           </dd>
         </div>
         <div class="channel">
@@ -370,6 +336,7 @@ exact_tag_format = "{name}-v{version}"`;
               <code><span class="prompt">$</span>brew install tylerbutler/tap/trellis</code>
               <button class="copy-btn" type="button" aria-live="polite" data-copy="brew install tylerbutler/tap/trellis">Copy</button>
             </div>
+            <p class="copy_status" role="status"></p>
           </dd>
         </div>
         <div class="channel">
@@ -379,6 +346,7 @@ exact_tag_format = "{name}-v{version}"`;
               <code><span class="prompt">$</span>{miseCmd}</code>
               <button class="copy-btn" type="button" aria-live="polite" data-copy={miseCmd}>Copy</button>
             </div>
+            <p class="copy_status" role="status"></p>
           </dd>
         </div>
         <div class="channel">
@@ -388,13 +356,16 @@ exact_tag_format = "{name}-v{version}"`;
               <code><span class="prompt">$</span>cargo install --git https://github.com/tylerbutler/trellis</code>
               <button class="copy-btn" type="button" aria-live="polite" data-copy="cargo install --git https://github.com/tylerbutler/trellis">Copy</button>
             </div>
+            <p class="copy_status" role="status"></p>
           </dd>
         </div>
       </dl>
       <p class="install-coda">
-        Windows installer and pinned-version URLs are on the
-        <a href="https://github.com/tylerbutler/trellis/releases">releases page</a>.
-        From there, <code>trellis doctor</code> works immediately, with no setup.
+        On Windows, use the{" "}
+        <a href="/docs/installation/#powershell-installer">PowerShell installer</a>.
+        To keep CI on a specific release,{" "}
+        <a href="/docs/installation/#pinning-a-version-in-ci">pin the installer URL</a>.
+        After installation, <code>trellis doctor</code> works immediately, with no setup.
         Run <code>trellis init</code> only when you want to configure something;
         the <a href="/docs/configuration/">configuration guide</a> covers what it
         writes.
@@ -453,12 +424,6 @@ exact_tag_format = "{name}-v{version}"`;
     max-width: 44rem;
   }
 
-  .hero-install code {
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-    line-height: 1.7;
-  }
-
   .hero-term .term-note {
     padding: var(--sp-xs) var(--sp-md) var(--sp-sm);
     border-top: 1px solid var(--line-soft);
@@ -491,6 +456,7 @@ exact_tag_format = "{name}-v{version}"`;
     overflow-x: auto;
     border: 1px solid var(--line);
     border-radius: var(--radius-md);
+    container-type: inline-size;
   }
 
   .ledger {
@@ -500,7 +466,7 @@ exact_tag_format = "{name}-v{version}"`;
     font-size: var(--text-small);
   }
 
-  .ledger th {
+  .ledger thead th {
     text-align: left;
     font-family: var(--font-mono);
     font-size: var(--text-fine);
@@ -512,19 +478,22 @@ exact_tag_format = "{name}-v{version}"`;
     white-space: nowrap;
   }
 
-  .ledger td {
+  .ledger td,
+  .ledger tbody th {
     padding: var(--sp-md) var(--sp-lg);
     vertical-align: top;
     border-bottom: 1px solid var(--line-soft);
   }
 
-  .ledger tbody tr:last-child td {
+  .ledger tbody tr:last-child :is(td, th) {
     border-bottom: none;
   }
 
-  .ledger td:first-child {
+  .ledger tbody th {
     white-space: nowrap;
     color: var(--brass);
+    text-align: left;
+    font-weight: 560;
   }
 
   .ledger td:last-child {
@@ -641,16 +610,17 @@ exact_tag_format = "{name}-v{version}"`;
     overflow-x: auto;
     border: 1px solid var(--line);
     border-radius: var(--radius-md);
+    container-type: inline-size;
   }
 
   .exclusion-ledger {
     width: 100%;
-    min-width: 42rem;
+    min-width: 32rem;
     border-collapse: collapse;
     font-size: var(--text-small);
   }
 
-  .exclusion-ledger th {
+  .exclusion-ledger thead th {
     text-align: left;
     font-family: var(--font-mono);
     font-size: var(--text-fine);
@@ -661,17 +631,117 @@ exact_tag_format = "{name}-v{version}"`;
     background: var(--surface-2);
   }
 
-  .exclusion-ledger td {
+  .exclusion-ledger td,
+  .exclusion-ledger tbody th {
     padding: var(--sp-md);
     border-bottom: 1px solid var(--line-soft);
   }
 
-  .exclusion-ledger tbody tr:last-child td {
+  .exclusion-ledger tbody tr:last-child :is(td, th) {
     border-bottom: none;
   }
 
-  .exclusion-ledger td:first-child {
+  .exclusion-ledger tbody th {
     color: var(--brass);
+    text-align: left;
+    font-weight: 560;
+  }
+
+  .ledger_label,
+  .exclusion_label {
+    display: none;
+  }
+
+  @container (width < 44rem) {
+    .ledger,
+    .ledger tbody {
+      display: block;
+      min-width: 0;
+    }
+
+    .ledger thead {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+    }
+
+    .ledger tbody tr {
+      display: grid;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .ledger tbody tr:last-child {
+      border-bottom: none;
+    }
+
+    .ledger tbody :is(th, td) {
+      border-bottom: none;
+    }
+
+    .ledger tbody th {
+      padding-block: var(--sp-sm);
+      background: var(--surface-2);
+    }
+
+    .ledger td:last-child {
+      padding-top: 0;
+      padding-bottom: var(--sp-lg);
+    }
+
+    .ledger_label {
+      display: block;
+      margin-bottom: var(--sp-2xs);
+      font-size: var(--text-fine);
+      font-weight: 620;
+      color: var(--muted);
+    }
+  }
+
+  @container (width < 32rem) {
+    .exclusion-ledger,
+    .exclusion-ledger tbody {
+      display: block;
+      min-width: 0;
+    }
+
+    .exclusion-ledger thead {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+    }
+
+    .exclusion-ledger tbody tr {
+      display: grid;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: var(--sp-sm);
+    }
+
+    .exclusion-ledger tbody tr:last-child {
+      border-bottom: none;
+    }
+
+    .exclusion-ledger tbody th {
+      border-bottom: none;
+      background: var(--surface-2);
+      margin-bottom: var(--sp-xs);
+    }
+
+    .exclusion-ledger td {
+      display: flex;
+      justify-content: space-between;
+      gap: var(--sp-md);
+      padding-block: var(--sp-xs);
+      border-bottom: none;
+    }
+
+    .exclusion_label {
+      display: block;
+      color: var(--muted);
+    }
   }
 
   .state {
@@ -708,52 +778,13 @@ exact_tag_format = "{name}-v{version}"`;
     color: var(--ink-soft);
   }
 
-  /* ---- lifecycle ---- */
-  .phases {
-    list-style: none;
-    padding: 0;
-    margin-top: var(--sp-2xl);
-    display: grid;
-    gap: var(--sp-2xl);
-  }
-
-  .phase h3 {
-    display: flex;
-    align-items: baseline;
-    gap: var(--sp-md);
-    font-size: var(--text-h3);
-    padding-bottom: var(--sp-sm);
-    border-bottom: 1px solid var(--line);
-  }
-
-  .phase-index {
-    font-family: var(--font-mono);
-    font-size: var(--text-small);
-    font-weight: 640;
-    color: var(--brass);
-  }
-
-  .phase p {
-    margin-top: var(--sp-sm);
-    max-width: var(--measure);
-    color: var(--ink-soft);
-  }
-
-  .phase a {
-    display: inline-flex;
-    align-items: center;
-    min-height: 2.75rem;
-    margin-top: var(--sp-xs);
-    font-weight: 620;
-  }
-
   /* ---- opinionated, but modular ---- */
   .adopt-paths {
     list-style: none;
     padding: 0;
     margin-top: var(--sp-2xl);
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(18rem, 100%), 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(24rem, 100%), 1fr));
     gap: var(--sp-xl);
     counter-reset: adopt;
   }
@@ -788,6 +819,14 @@ exact_tag_format = "{name}-v{version}"`;
   .adopt-paths code {
     color: var(--ink-soft);
     font-size: 0.9em;
+  }
+
+  .adopt-paths a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.75rem;
+    margin-top: var(--sp-xs);
+    font-weight: 620;
   }
 
   /* ---- drift / doctor ---- */
@@ -829,6 +868,16 @@ exact_tag_format = "{name}-v{version}"`;
     max-width: var(--measure);
   }
 
+  .copy_status {
+    margin-top: var(--sp-xs);
+    color: var(--ink-soft);
+    font-size: var(--text-small);
+  }
+
+  .copy_status:empty {
+    display: none;
+  }
+
   /* ---- responsive ---- */
   @media (max-width: 56rem) {
     .hero-grid,
@@ -853,6 +902,8 @@ exact_tag_format = "{name}-v{version}"`;
     btn.addEventListener("click", async () => {
       const text = btn.dataset.copy;
       if (!text) return;
+      const status = btn.parentElement?.nextElementSibling;
+      if (status?.classList.contains("copy_status")) status.textContent = "";
       try {
         await navigator.clipboard.writeText(text);
         btn.dataset.copied = "true";
@@ -862,7 +913,24 @@ exact_tag_format = "{name}-v{version}"`;
           btn.textContent = "Copy";
         }, 1600);
       } catch {
-        btn.textContent = "Select & copy";
+        const code = btn.parentElement?.querySelector("code");
+        const selection = window.getSelection();
+        if (code && selection) {
+          const range = document.createRange();
+          range.selectNodeContents(code);
+          const prompt = code.querySelector(".prompt");
+          if (prompt) range.setStartAfter(prompt);
+          selection.removeAllRanges();
+          selection.addRange(range);
+          code.tabIndex = -1;
+          code.focus();
+        }
+        btn.textContent = "Copy failed";
+        if (status?.classList.contains("copy_status")) {
+          status.textContent = code && selection
+            ? "Copy failed. The command is selected; copy it manually."
+            : "Copy failed. Select the command and copy it manually.";
+        }
       }
     });
   }

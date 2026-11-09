@@ -208,6 +208,18 @@ site-search button[data-close-modal] {
   min-height: 2.75rem;
 }
 
+site-search dialog {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  box-shadow: none;
+}
+
+site-search dialog::backdrop {
+  background: color-mix(in oklch, var(--bg) 85%, transparent);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
 /* -- content typography --------------------------------------- */
 
 .sl-markdown-content h1,
@@ -237,6 +249,11 @@ h1[data-page-title] {
 .sl-markdown-content p,
 .sl-markdown-content li {
   text-wrap: pretty;
+}
+
+.sl-markdown-content > p,
+.sl-markdown-content .callout :is(p, ul, ol) {
+  max-width: min(33rem, var(--measure));
 }
 
 .sl-markdown-content a {
@@ -365,7 +382,7 @@ h1[data-page-title] {
 }
 
 .main-frame:has(.configuration_keys) .sl-markdown-content > :is(p, ul, ol, blockquote) {
-  max-width: min(38rem, var(--measure));
+  max-width: min(33rem, var(--measure));
 }
 
 .configuration_keys {
@@ -388,6 +405,18 @@ h1[data-page-title] {
 
 .sl-markdown-content .configuration_keys td:first-child code {
   overflow-wrap: anywhere;
+}
+
+.sl-markdown-content .configuration_keys td:first-child a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  max-width: 100%;
+  scroll-margin-block-start: calc(var(--sl-nav-height) + var(--sp-lg));
+}
+
+.sl-markdown-content h3:has(+ .configuration_keys) {
+  margin-top: var(--sp-xl);
 }
 
 @container (width < 40rem) {
