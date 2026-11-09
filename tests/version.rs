@@ -85,7 +85,7 @@ fn optional_git_lookup_failure_does_not_block_preview_or_apply() {
     write(
         &git,
         &format!(
-            "#!/bin/sh\nif [ \"$1\" = show ]; then echo 'metadata lookup failed' >&2; exit 1; fi\nexec '{}' \"$@\"\n",
+            "#!/bin/sh\nif [ \"$1\" = log ]; then echo 'metadata lookup failed' >&2; exit 1; fi\nexec '{}' \"$@\"\n",
             real_git.trim()
         ),
     );

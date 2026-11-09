@@ -68,7 +68,7 @@ pub struct SourceMetadata {
 fn subject_references(subject: &str) -> Vec<IssueReference> {
     static TOKENS: LazyLock<regex::Regex> = LazyLock::new(|| {
         regex::Regex::new(
-            r#"[A-Za-z][A-Za-z0-9+.-]*://[^\s<>()\[\]{}"']+|[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#[0-9]+|#[0-9]+"#,
+            r#"[A-Za-z][A-Za-z0-9+.-]*://[^\s<>()\[\]{}"',;?#]+(?:[?#][^\s<>()\[\]{}"']*)?|[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#[0-9]+|#[0-9]+"#,
         )
         .unwrap()
     });
@@ -1061,6 +1061,36 @@ mod tests {
                 .kind,
             Some(ReferenceKind::Issue)
         );
+    }
+
+    #[test]
+    fn punctuation_separates_references_but_not_url_queries() {
+        for separator in [",", ";"] {
+            let subject = format!("Fix https://github.com/a/b/issues/42{separator}#43");
+            assert_eq!(
+                serde_json::to_value(subject_references(&subject)).unwrap(),
+                serde_json::json!([
+                    {"number":42,"owner":"a","repo":"b","kind":"issue"},
+                    {"number":43,"owner":null,"repo":null,"kind":null}
+                ])
+            );
+            assert_eq!(
+                subject_references(&format!(
+                    "https://github.com/a/b/issues/42{separator}https://github.com/c/d/pull/43"
+                ))
+                .len(),
+                2
+            );
+        }
+        assert_eq!(
+            subject_references("https://github.com/a/b/issues/42?labels=x,#43")[0].number,
+            42
+        );
+        assert_eq!(
+            subject_references("https://github.com/a/b/issues/42?labels=x,#43").len(),
+            1
+        );
+        assert!(subject_references("https://example.com/issues/42?labels=x,#43").is_empty());
     }
 
     #[test]

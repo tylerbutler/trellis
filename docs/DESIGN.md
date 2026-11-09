@@ -816,8 +816,14 @@ Templates construct URLs; trellis does not resolve remotes or call an API.
 
 The history walker starts at the relevant ref (`--head` for check, `HEAD` for
 apply), verifies that the path exists in its tree, and walks every parent.
-For each parent edge, `diff-tree -r -M50% --name-status -z` maps a detected
-rename to its earlier path. An addition has no predecessor on that edge;
+Commit IDs, parent lists, and subjects are read in one `git log` call.
+Parent edges are read in one `diff-tree --stdin --always -r -M50% --name-status -z`
+call; its explicit headers keep empty diffs and separate merge parents
+aligned with the input. For each edge, a detected rename maps to its earlier
+path. Batch input uses a temporary file so large input and output cannot
+deadlock on pipe buffers.
+
+An addition has no predecessor on its parent edge;
 other entries keep the path. A commit with no predecessor is an origin,
 including a root commit or a merge that first adds the file. Traversal stops
 at each origin rather than crossing a deleted/recreated path's lifetime.
@@ -825,7 +831,8 @@ All traversed histories must agree on one origin; different additions or
 any encountered shallow boundary leave the source unresolved. A squash's
 surviving addition is the source. Git rename detection remains heuristic.
 Commit subjects, parent lists, and parent diffs are cached across fragments;
-reference extraction is cached by source commit. Git access stays outside
+the Git command count does not grow with the number of intervening commits.
+Reference extraction is cached by source commit. Git access stays outside
 rendering and disables lazy fetching.
 
 Enrichment failures warn on stderr without changing fragment counts, bump

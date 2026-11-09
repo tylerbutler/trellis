@@ -358,6 +358,9 @@ owner, repository, and number merge into one record. A later URL can supply
 the type; if URLs disagree, the first explicit type wins. Bare references
 stay separate because trellis does not resolve the current repository.
 Commit bodies, footers, fragment bodies, and other commits are not scanned.
+Commas and semicolons can separate references without spaces, such as
+`https://github.com/other/lib/pull/17,#42`. References inside URL queries
+and anchors are not extracted as separate records.
 
 **Templates construct the links.** Trellis does not parse remotes, resolve
 URLs, check whether an issue exists, or make API requests. Set the repository

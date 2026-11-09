@@ -50,7 +50,7 @@ fn source_context_matches_preview_apply_and_prerelease_promotion() {
             "commit",
             "-q",
             "-m",
-            "Add #42 other/lib#17 https://github.com/other/lib/pull/17",
+            "Add #42 other/lib#17 https://github.com/other/lib/pull/17,#43",
             "-m",
             "Body only #888",
         ],
@@ -79,7 +79,7 @@ fn source_context_matches_preview_apply_and_prerelease_promotion() {
     let payload: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     let preview = payload["preview"].as_str().unwrap();
     let expected = format!(
-        "- edited body #999 [commit={source}] [local/local#42:unknown] [other/lib#17:pull_request]"
+        "- edited body #999 [commit={source}] [local/local#42:unknown] [other/lib#17:pull_request] [local/local#43:unknown]"
     );
     assert!(preview.contains(&expected), "{preview}");
     assert!(preview.contains("- uncommitted change\n"), "{preview}");

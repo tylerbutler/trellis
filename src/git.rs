@@ -505,6 +505,9 @@ impl FragmentHistory {
         }) {
             return Ok(None);
         }
+        if self.commits.is_empty() {
+            self.load_history()?;
+        }
         let mut pending = vec![(self.head.clone(), path)];
         let mut visited = HashSet::new();
         let mut additions = HashSet::new();
@@ -515,65 +518,21 @@ impl FragmentHistory {
             if self.shallow.contains(&commit) {
                 return Ok(None);
             }
-            if !self.commits.contains_key(&commit) {
-                let text =
-                    local_git_stdout(&self.root, &["show", "-s", "--format=%P%x00%s", &commit])?;
-                let (parents, subject) = text
-                    .trim_end_matches('\n')
-                    .split_once('\0')
-                    .context("invalid Git fragment commit record")?;
-                self.commits.insert(
-                    commit.clone(),
-                    (
-                        parents.split_whitespace().map(str::to_string).collect(),
-                        subject.to_string(),
-                    ),
-                );
-            }
-            let parents = self.commits[&commit].0.clone();
+            let parents = self
+                .commits
+                .get(&commit)
+                .context("missing Git fragment commit record")?
+                .0
+                .clone();
             let mut inherited = false;
             for parent in parents {
                 let key = (parent.clone(), commit.clone());
-                if !self.changes.contains_key(&key) {
-                    let text = local_git_stdout(
-                        &self.root,
-                        &[
-                            "diff-tree",
-                            "-r",
-                            "--no-ext-diff",
-                            "--no-textconv",
-                            "-M50%",
-                            "--name-status",
-                            "-z",
-                            &parent,
-                            &commit,
-                            "--",
-                        ],
-                    )?;
-                    let mut fields = text.split('\0').filter(|field| !field.is_empty());
-                    let mut changes = HashMap::new();
-                    while let Some(status) = fields.next() {
-                        let old = fields.next().context("missing Git change path")?;
-                        let (name, previous) = if status.starts_with('R') {
-                            (
-                                fields.next().context("missing Git rename destination")?,
-                                Some(old.to_string()),
-                            )
-                        } else {
-                            (
-                                old,
-                                if status == "A" {
-                                    None
-                                } else {
-                                    Some(old.to_string())
-                                },
-                            )
-                        };
-                        changes.insert(name.to_string(), previous);
-                    }
-                    self.changes.insert(key.clone(), changes);
-                }
-                match self.changes[&key].get(&path) {
+                match self
+                    .changes
+                    .get(&key)
+                    .context("missing Git parent diff")?
+                    .get(&path)
+                {
                     Some(None) => {}
                     previous => {
                         let previous = previous
@@ -596,18 +555,138 @@ impl FragmentHistory {
             commit,
         }))
     }
+
+    fn load_history(&mut self) -> Result<()> {
+        let text = local_git_stdout(
+            &self.root,
+            &[
+                "log",
+                "--no-show-signature",
+                "-z",
+                "--format=%H%x00%P%x00%s",
+                &self.head,
+                "--",
+            ],
+        )?;
+        let mut fields = text.split('\0');
+        let mut commits = HashMap::new();
+        let mut edges = Vec::new();
+        let mut input = String::new();
+        while let Some(commit) = fields.next() {
+            if commit.is_empty() {
+                continue;
+            }
+            let parents = fields.next().context("missing Git commit parents")?;
+            let subject = fields.next().context("missing Git commit subject")?;
+            let parents: Vec<String> = parents.split_whitespace().map(str::to_string).collect();
+            if !self.shallow.contains(commit) {
+                for parent in &parents {
+                    input.push_str(&format!("{commit} {parent}\n"));
+                    edges.push((parent.clone(), commit.to_string()));
+                }
+            }
+            commits.insert(commit.to_string(), (parents, subject.to_string()));
+        }
+        // --always emits a header even for empty diffs, so each response maps
+        // to one parent edge, including separate parents of a merge.
+        let text = local_git_stdout_with_stdin(
+            &self.root,
+            &[
+                "diff-tree",
+                "--stdin",
+                "--always",
+                "-r",
+                "--no-ext-diff",
+                "--no-textconv",
+                "-M50%",
+                "--name-status",
+                "-z",
+            ],
+            &input,
+        )?;
+        let mut fields = text
+            .split('\0')
+            .filter(|field| !field.is_empty())
+            .peekable();
+        let mut changes = HashMap::new();
+        for key in edges {
+            if fields.next() != Some(key.1.as_str()) {
+                bail!("invalid Git batch diff header");
+            }
+            let mut changed_paths = HashMap::new();
+            while fields
+                .peek()
+                .is_some_and(|field| field.len() != self.head.len())
+            {
+                let status = fields.next().context("missing Git change status")?;
+                let old = fields.next().context("missing Git change path")?;
+                let (name, previous) = if status.starts_with('R') {
+                    (
+                        fields.next().context("missing Git rename destination")?,
+                        Some(old.to_string()),
+                    )
+                } else {
+                    (
+                        old,
+                        if status == "A" {
+                            None
+                        } else {
+                            Some(old.to_string())
+                        },
+                    )
+                };
+                changed_paths.insert(name.to_string(), previous);
+            }
+            changes.insert(key, changed_paths);
+        }
+        if fields.next().is_some() {
+            bail!("unexpected Git batch diff records");
+        }
+        self.commits = commits;
+        self.changes = changes;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    static SOURCE_GIT_CALLS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 fn local_git_output(cwd: &Path, args: &[&str]) -> Result<std::process::Output> {
-    git_command(cwd, args)
-        .env("GIT_NO_LAZY_FETCH", "1")
-        .env("LC_ALL", "C")
+    local_git_command(cwd, args)
         .output()
         .context("failed to run local git")
 }
 
+fn local_git_command(cwd: &Path, args: &[&str]) -> Command {
+    #[cfg(test)]
+    SOURCE_GIT_CALLS.with(|calls| calls.set(calls.get() + 1));
+    let mut command = git_command(cwd, args);
+    command.env("GIT_NO_LAZY_FETCH", "1").env("LC_ALL", "C");
+    command
+}
+
 fn local_git_stdout(cwd: &Path, args: &[&str]) -> Result<String> {
-    let output = local_git_output(cwd, args)?;
+    local_git_text(local_git_output(cwd, args)?, args)
+}
+
+fn local_git_stdout_with_stdin(cwd: &Path, args: &[&str], input: &str) -> Result<String> {
+    use std::io::{Seek, Write};
+    // A file avoids pipe deadlocks when both the batch input and output are large.
+    let mut stdin = tempfile::tempfile().context("cannot create Git batch input")?;
+    stdin
+        .write_all(input.as_bytes())
+        .context("cannot write Git batch input")?;
+    stdin.rewind().context("cannot rewind Git batch input")?;
+    let output = local_git_command(cwd, args)
+        .stdin(stdin)
+        .output()
+        .context("failed to run local git batch")?;
+    local_git_text(output, args)
+}
+
+fn local_git_text(output: std::process::Output, args: &[&str]) -> Result<String> {
     if !output.status.success() {
         bail!(
             "git {} failed: {}",
@@ -774,6 +853,37 @@ mod source_tests {
                 .source(&root.join("one.toml"))
                 .unwrap()
                 .is_none()
+        );
+    }
+
+    #[test]
+    fn unrelated_history_uses_a_bounded_number_of_git_commands() {
+        let dir = repository();
+        let root = dir.path();
+        std::fs::write(root.join("fragment.toml"), "fragment").unwrap();
+        let added = commit(root, "Add #42");
+        // Exercise batch output larger than a pipe buffer as well as large input.
+        for n in 0..1000 {
+            std::fs::write(root.join(format!("unrelated-{n:030}.txt")), "unrelated").unwrap();
+        }
+        let latest = commit(root, "Unrelated files");
+        let mut input = String::new();
+        for n in 1..=1000 {
+            let parent = if n == 1 {
+                latest.clone()
+            } else {
+                format!(":{}", n - 1)
+            };
+            input.push_str(&format!("commit refs/heads/main\nmark :{n}\ncommitter test <test@localhost> {} +0000\ndata 9\nunrelated\nfrom {parent}\n\n", 1700000000 + n));
+        }
+        git_stdout_with_stdin(root, &["fast-import", "--quiet"], &input).unwrap();
+        SOURCE_GIT_CALLS.with(|calls| calls.set(0));
+        let found = source(root, "fragment.toml").unwrap();
+        assert_eq!(found.commit, added);
+        let commands = SOURCE_GIT_CALLS.with(|calls| calls.get());
+        assert!(
+            commands <= 6,
+            "{commands} Git commands for 1,000 unrelated commits"
         );
     }
 
