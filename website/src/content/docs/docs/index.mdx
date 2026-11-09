@@ -33,9 +33,7 @@ its own `gleam.toml`. A **member** is a package that belongs to the workspace;
 that word appears where membership itself is the point, as in the `members`
 key and the `@members` exclusion.
 
-<a id="derived-then-verified"></a>
-
-## Workspace checks
+## Derived, then verified
 
 Trellis reads package names, versions, and path dependencies from your manifests.
 `trellis doctor` checks these against locked versions, changelogs, tags, and
@@ -47,9 +45,7 @@ package's `gleam.toml`. It applies those fixes and
 reports any remaining problems. `--dry-run` lists the same fixes without touching
 a file.
 
-<a id="opinionated-but-modular"></a>
-
-## Choose the commands you need
+## Opinionated, but modular
 
 Trellis has one way of doing each job: change fragments are TOML files in
 `.changes/unreleased/`, every releasable package gets its own git tag, and
@@ -57,7 +53,7 @@ version bumps are derived from fragment kinds.
 
 Start with task running and add release commands when you need them:
 
-- **Run workspace tasks.** `run`, `exec`, `list`, and `graph` need no
+- **Just the task runner.** `run`, `exec`, `list`, and `graph` need no
   configuration at all, because members are auto-discovered from git. Keep your
   existing changelog tool and CI untouched.
 - **Add changelogs and versioning.** Fragments, `version plan`, and
@@ -66,7 +62,7 @@ Start with task running and add release commands when you need them:
   in dependency order. Use
   [source bundling](/docs/publishing/#bundling-private-dependencies) to include
   private workspace dependencies without publishing them as separate Hex packages.
-- **Automate releases.** `ci`, `changelog check`, and `release pr` generate
+- **The full pipeline.** `ci`, `changelog check`, and `release pr` generate
   GitHub Actions matrices, check changelog coverage, and prepare release PRs.
 
 Use [structured output](/docs/json-output/) to integrate these commands with

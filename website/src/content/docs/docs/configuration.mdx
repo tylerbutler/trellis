@@ -163,9 +163,7 @@ root. A package's name does not need to match its directory name.
 JSON manifests must be valid JSON, with strings at the configured name and
 version paths. Duplicate keys that make either path ambiguous are errors.
 
-<a id="version-bumps-are-surgical"></a>
-
-### Version edits preserve formatting
+### Version bumps are surgical
 
 `version apply` updates only the field named by `adapter.version`, preserving
 comments, key order, indentation, and quote style. A missing field is an error;

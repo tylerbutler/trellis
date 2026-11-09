@@ -32,8 +32,8 @@ exact_tag_format = "{name}-v{version}"`;
     <div class="shell hero-grid">
       <div class="hero-copy">
         <h1>
-          Run Gleam across packages.
-          <em>In dependency order.</em>
+          Workspace tooling for Gleam monorepos.
+          <em>Derived from gleam.toml.</em>
         </h1>
         <p class="lead">
           Gleam builds, tests, and publishes one package at a time. Trellis runs
@@ -70,7 +70,7 @@ exact_tag_format = "{name}-v{version}"`;
   <section class="glue">
     <div class="shell">
       <div class="section-head">
-        <h2>Replace package lists and shell loops.</h2>
+        <h2>The glue this replaces.</h2>
         <p>
           The <a href="https://github.com/tylerbutler/trellis/blob/main/docs/DESIGN.md#inventory-of-manual-wiring-in-lattice">lattice inventory</a>{" "}
           records the bash loops, YAML blocks, and duplicated configuration
@@ -127,8 +127,8 @@ exact_tag_format = "{name}-v{version}"`;
     <div class="shell">
       <blockquote class="doctrine">
         <p>
-          Trellis reads package names and dependencies from your manifests.<br />
-          Configure tasks and release settings in the root gleam.toml.
+          Configure nothing that can be derived.<br />
+          Verify anything that must be duplicated.
         </p>
       </blockquote>
       <div class="derived-grid">
@@ -167,7 +167,7 @@ exact_tag_format = "{name}-v{version}"`;
   <section class="adopt">
     <div class="shell">
       <div class="section-head">
-        <h2>Choose the commands you need.</h2>
+        <h2>Opinionated, but modular.</h2>
         <p>
           Start with task running and keep your existing changelog tool and CI.
           Add trellis's changelog, versioning, or publishing commands when you need them.
@@ -175,7 +175,7 @@ exact_tag_format = "{name}-v{version}"`;
       </div>
       <ol class="adopt-paths">
         <li>
-          <h3>Run workspace tasks</h3>
+          <h3>Just the task runner</h3>
           <p>
             <code>run</code>, <code>exec</code>, <code>list</code>, and{" "}
             <code>graph</code> need no configuration at all, because members
@@ -212,7 +212,7 @@ exact_tag_format = "{name}-v{version}"`;
   <section class="exclusions">
     <div class="shell exclusions-grid">
       <div class="section-head">
-        <h2>Select packages for each task.</h2>
+        <h2>One workspace. Different task sets.</h2>
         <p>
           Examples, benchmarks, and internal tools can remain workspace members
           for builds, tests, and graphing without needing generated docs or a
@@ -274,7 +274,7 @@ exact_tag_format = "{name}-v{version}"`;
   <section class="lifecycle">
     <div class="shell">
       <div class="section-head">
-        <h2>Use the same commands locally and in CI.</h2>
+        <h2>One binary across the lifecycle.</h2>
         <p>
           Run commands from any package directory. Trellis finds the workspace
           root by walking up to its configuration or the git repository root.

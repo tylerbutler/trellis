@@ -495,17 +495,13 @@ Git-only owner. `trellis publish --all-untagged` skips it, including
 prereleases. Bundling never changes a package's lifecycle or enables Hex
 publication.
 
-<a id="lockfiles"></a>
-
-## Refreshing lockfiles
+## Lockfiles
 
 `lockfile refresh --package <pkg>` runs `gleam deps download` for one package
 with retries. Omit `--package` to refresh the whole workspace. Refreshing fewer
 packages reduces requests to Hex.
 
-<a id="two-release-shapes"></a>
-
-## Choosing a release workflow
+## Two release shapes
 
 Choose when your workflow publishes packages and records their tags:
 
