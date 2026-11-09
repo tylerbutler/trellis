@@ -43,7 +43,7 @@ const lineSoft = token("line-soft");
 
 // ---- copy: mirrors the landing-page hero ----
 
-const headlinePlain = "Tools for Gleam monorepos.";
+const headlinePlain = "Workspace tools for Gleam monorepos.";
 const headlineBrass = "Derived from gleam.toml.";
 const wordmark = "trellis";
 const command = "trellis doctor";

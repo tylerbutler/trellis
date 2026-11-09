@@ -1,22 +1,24 @@
 ---
 title: Installation
-description: Trellis ships as a single prebuilt binary that installs in about a second with zero runtime dependencies.
+description: Install a prebuilt trellis binary with the shell installer, PowerShell, Homebrew, or mise, or build from source with Cargo.
 ---
 
 import { Code } from "@astrojs/starlight/components";
 import { TRELLIS_VERSION } from "../../../lib/version";
 
-One prebuilt binary, no runtime dependencies, about a second to install on a
-CI runner. Every release ships five targets, with SLSA build provenance
-attestations attached: Linux (glibc) and macOS on x86_64 and aarch64, and
-Windows on x86_64.
+Prebuilt binaries need no Rust toolchain. Releases include SLSA build provenance
+attestations and binaries for Linux (glibc) and macOS on x86_64 and aarch64,
+and Windows on x86_64.
+
+To run Gleam tasks, install Gleam and the tools your target needs, such as
+Erlang/OTP or a JavaScript runtime.
 
 ## Choose an installation method
 
 - **Install on this computer:** use the [shell installer](#shell-installer)
   on Linux or macOS, or the [PowerShell installer](#powershell-installer)
   on Windows. If you use Homebrew, [install from the tap](#homebrew).
-- **Keep a team or CI on one version:** [pin with mise](#mise--asdf),
+- **Keep a team or CI on one version:** [pin with mise](#mise),
   or [pin the installer URL](#pinning-a-version-in-ci).
 - **Build with Rust:** [install from source](#from-source).
 
@@ -42,17 +44,19 @@ powershell -ExecutionPolicy Bypass -c "irm https://github.com/tylerbutler/trelli
 brew install tylerbutler/tap/trellis
 ```
 
-## mise / asdf
+<a id="mise--asdf"></a>
 
-Via the [github](https://mise.jdx.dev/dev-tools/backends/github.html) backend.
-This is how a consuming workspace pins trellis in `.tool-versions` alongside
-its other tools, so every contributor and CI runner gets the same version:
+## mise
+
+Use mise's [github backend](https://mise.jdx.dev/dev-tools/backends/github.html)
+to install trellis and record its version in `mise.toml`. Commit that file to
+share the pin with your team and CI:
 
 <Code lang="sh" code={`mise use "github:tylerbutler/trellis@${TRELLIS_VERSION}"`} />
 
 ## From source
 
-On crates.io the crate is `trellis-gleam` (`trellis` was taken), but the installed binary is named `trellis` either way:
+The crate is named `trellis-gleam` on crates.io; the installed binary is `trellis`:
 
 ```sh
 cargo install trellis-gleam
@@ -62,7 +66,10 @@ cargo install --git https://github.com/tylerbutler/trellis
 
 ## Verifying it
 
-From anywhere inside a workspace. Trellis finds the root by walking up, like `git` or `cargo`, to the first `gleam.toml` carrying a `[tools.trellis]` table, or to the git repository root when no manifest carries one:
+Run these commands inside your Gleam repository. Trellis walks up to the first
+`gleam.toml` with a `[tools.trellis]` table, or uses the git repository root
+when no manifest has one. This excerpt uses the
+[example workspace](https://github.com/tylerbutler/trellis/tree/main/tests/fixtures/basic):
 
 <Code
   lang="console"
@@ -73,10 +80,11 @@ $ trellis doctor
 checked: member globs resolve and every package has a parseable gleam.toml
 checked: path dependencies stay inside the workspace; graph is acyclic
 ...
-ok: 4 package(s) (1 workspace, 0 git_only, 3 hex), 0 warning(s)`}
+ok: 4 package(s) (1 workspace, 0 git_only, 3 hex), 3 warning(s)`}
 />
 
-If the workspace isn't set up yet, start with the
+The example's warnings concern existing changelog history, which
+`trellis doctor --fix` can import. For workspace settings, use the
 [configuration guide](/docs/configuration/).
 
 ## Pinning a version in CI
@@ -96,10 +104,8 @@ Prebuilt archives for every target are on the
 
 ### Shell completions
 
-Completions are computed by the binary as you type rather than baked into a
-static script, so they never drift from the flags you actually have. They also
-offer real values: package names, task names, and changelog kinds read from
-the workspace you're standing in.
+The binary supplies completion candidates as you type, using its current flags
+and the package names, task names, and changelog kinds in your workspace.
 
 Add one line to your shell's startup file:
 
@@ -107,7 +113,7 @@ Add one line to your shell's startup file:
 # ~/.bashrc
 eval "$(trellis completions bash)"
 
-# ~/.zshrc — after compinit
+# ~/.zshrc (after compinit)
 eval "$(trellis completions zsh)"
 
 # ~/.config/fish/config.fish
@@ -120,14 +126,11 @@ eval (trellis completions elvish | slurp)
 trellis completions powershell | Out-String | Invoke-Expression
 ```
 
-Evaluate the snippet on startup rather than saving it into a completions
-directory: an `eval` always matches the binary you have, while a saved copy
-silently goes stale after an upgrade.
+Evaluate the snippet on startup. Saving its output to a completions directory
+can leave an incompatible script after a trellis upgrade.
 
-Two limitations worth knowing. Completing after `-C` uses the directory you're
-standing in, not the one you passed. And `--bump` offers the three bare levels
-only. The `<pkg>=<level>` form is not completed, since the completer is handed
-just the partial word.
+Completing after `-C` uses the current directory, not the directory you passed.
+`--bump` completes only the three bare levels, not the `<pkg>=<level>` form.
 
 ### Man pages
 
@@ -136,7 +139,8 @@ just the partial word.
 automatically, so point `man` at the extracted archive or install them yourself:
 
 ```sh
-sudo install -Dm644 man/*.1 -t /usr/local/share/man/man1/
+sudo mkdir -p /usr/local/share/man/man1
+sudo cp man/*.1 /usr/local/share/man/man1/
 man trellis
 man trellis-run
 ```

@@ -1,14 +1,13 @@
 ---
 title: Changelog & versioning
-description: Trellis has a native changelog engine — TOML fragments in .changes/unreleased/, version bumps derived from their kinds, changelogs assembled from rendered sections.
+description: Record changes as TOML fragments, check PR coverage, plan version bumps, and generate package changelogs.
 ---
 
 import Callout from "../../../components/Callout.astro";
 
-The changelog engine is native, so there is no second tool to install in CI
-and no config file to keep in sync with the workspace. Changes are recorded as
-small TOML fragments, one per change; version bumps and changelog sections are
-derived from them.
+Record each change as a TOML fragment. Trellis uses the fragment kinds to
+plan version bumps and assemble changelogs. Configure kinds and templates
+in the root `gleam.toml`.
 
 ```txt wrap
 trellis changelog new [--package <pkg>] --kind <kind> --body <text>
@@ -53,9 +52,9 @@ unparseable TOML) are hard errors for `check`, `plan`, and `apply`, and
 </Callout>
 
 A fragment takes one more optional key, `category`, when the workspace
-configures [categories](/docs/configuration-reference/#categories), a second grouping
-axis that carries no version bump and sections the changelog by which part of
-a package changed:
+configures [categories](/docs/configuration-reference/#categories).
+Categories group entries by the part of a package that changed without
+affecting version bumps:
 
 ```console
 $ trellis changelog new --package lat_cli --kind Added --category build \
@@ -129,7 +128,7 @@ land the reporting without failing builds while the open PRs catch up.
 
 ### Strictness
 
-`changelog.strictness` sets what a missing entry costs:
+`changelog.strictness` controls whether a missing entry fails the check:
 
 | Value | Effect |
 | --- | --- |
@@ -179,7 +178,7 @@ sticky comment:
 applied, and matches the exit code. `fragments`, `has_entry`, and
 `has_entries` count only the fragments this branch wrote (see
 [Scope](#scope)). The `schema` field is there so a workflow can assert on the
-shape it expects; the [JSON output](/docs/json-output/) page covers what it
+format it expects; the [JSON output](/docs/json-output/) page covers what it
 promises. `preview` is guaranteed to be present and a string, but its Markdown
 is prose, so render it rather than parsing it.
 
@@ -266,12 +265,9 @@ lat_cli: 0.4.2 -> 0.4.3 (1 fragment(s), dependencies: lat_core, lat_mid)
 `lat_mid` owns no fragment, yet it is in that plan. When a package bumps, so
 does everything that path-depends on it, transitively.
 
-This is a correctness requirement, not a convenience. A path dependency
-carries no version in the repository; it becomes a Hex requirement at publish
-time, derived from whatever version the dependency is on *then*. Holding
-`lat_mid` at 0.5.0 while `lat_core` moved would leave one published `lat_mid`
-0.5.0 meaning two different things: `>= 1.1.0` to whoever fetched it before
-the release, `>= 1.2.0` to whoever fetched it after.
+A path dependency specifies no version requirement in the repository.
+At publish time, trellis converts it to a Hex requirement using the dependency's
+current version. Bumping dependents releases those updated requirements.
 
 The rules:
 
@@ -310,13 +306,11 @@ package, it:
    configurable) and stores it under `.changes/<package>/`.
 2. Reassembles the package's `CHANGELOG.md` from its stored sections, newest
    first.
-3. Bumps the version in `gleam.toml` with a surgical TOML edit rather than a
-   regex, preserving the formatting.
+3. Updates the version in `gleam.toml`, preserving its formatting.
 4. Patches every package's `manifest.toml` so locked workspace-internal
    dependencies match the new versions.
 
-The whole operation makes **zero Hex network calls**, so a release never trips
-Hex rate limits on a shared CI runner the way `gleam update` per package does.
+`version apply` makes no Hex network calls.
 
 <Callout>
 
@@ -414,14 +408,11 @@ prerelease versions.
 
 ## Adopting an existing changelog
 
-Because `CHANGELOG.md` is regenerated from `.changes/<package>/`, a package
-that already had a changelog before adopting trellis would lose it the first
-time it was released, since there is nothing under `.changes/<package>/` to
-reassemble from.
-
-Trellis handles this on a package's first release: everything below the header
-line is captured verbatim as a single section, filed under the newest version
-its headings mention (or the version being released from, if none parse).
+On a package's first release, trellis imports existing `CHANGELOG.md` history
+as one section under `.changes/<package>/`. It removes a leading title and
+surrounding whitespace, then stores the remaining headings and entries under
+the newest version its headings mention, or the current package version if
+none parse.
 
 ```console
 $ trellis version apply
@@ -429,9 +420,9 @@ bumped lat_core: 1.2.0 -> 1.3.0
 adopted existing changelog history as .changes/lat_core/v1.2.0.md
 ```
 
-The captured block is byte-for-byte, with no heading parsing and no
-reformatting, and sorts below every section trellis goes on to write. It
-happens once; after that the changelog is fully generated.
+Trellis preserves the imported headings and entries without reformatting them.
+It imports history once; later releases assemble `CHANGELOG.md` from the
+stored version sections.
 
 `doctor` reports pending adoptions so this is never a surprise mid-release, and
 `doctor --fix` performs the capture up front, so the restructuring lands in its
