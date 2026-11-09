@@ -189,8 +189,8 @@ stdout free of progress text and update notices.
 | `unchanged` | The content check skipped apply, commit, push, and PR mutation. |
 | `no_changes` | No eligible release plan exists. |
 
-Both forms include `base`, `branch`, and `bumped` in the existing version-plan
-shape. PR identity (`pr_number`, `pr_url`) is present when known.
+Both forms include `base`, `branch`, and `bumped`, with the same fields as
+`version plan`. PR identity (`pr_number`, `pr_url`) is present when known.
 `pr_action` is present only for preparation. Optional fields are absent in JSON
 and empty in GitHub output. An unchanged result's plan was evaluated, not
 applied. Errors remain nonzero and do not emit a successful result.

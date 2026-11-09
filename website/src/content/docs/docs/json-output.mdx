@@ -63,25 +63,25 @@ commands pretty-print, some emit one line for shell-variable capture).
 
 Notes:
 
-- `list`'s `packages[]` entries and `info`'s top level share a shape.
+- `list`'s `packages[]` entries and `info`'s top level use the same fields.
   `lifecycle` is the resolved release lifecycle (`workspace`, `git_only`, or
   `hex`); `releasable` is true for `git_only` and `hex` packages.
   `graph` nodes also include both fields.
-- `version plan`/`version apply` share the `bumped[]` shape (`name`,
+- `version plan`/`version apply` use the same `bumped[]` fields (`name`,
   `current`, `next`, `fragments`, `updated_dependencies[]`).
   `fragments` counts the source entries to render, including archived
   candidates on promotion. `fragments_retained` is true when the plan includes
   a [prerelease](/docs/changelog/#prereleases): trellis archives its fragments
   for the final rollup and removes them from `unreleased`. This also applies
   to a prerelease version specified with `--set`.
-- `release pr` uses the same `bumped[]` shape. `outcome` is `prepared`,
+- `release pr` uses the same `bumped[]` fields. `outcome` is `prepared`,
   `unchanged`, or `no_changes`. A prepared result includes `pr_action: created`
   or `updated` and PR identity. An unchanged result has no `pr_action` and
   reports the evaluated, unapplied plan; a no-change result has an empty
   `bumped`. Optional identity fields are absent when unknown. Errors do not
-  emit success-shaped results. See [CI outcomes](/docs/publishing/#ci-outcomes)
+  emit a success payload. See [CI outcomes](/docs/publishing/#ci-outcomes)
   for the equivalent `--github-output` keys.
-- `run`/`exec` share the `results[]` shape: `package`, `path`, `status`
+- `run`/`exec` use the same `results[]` fields: `package`, `path`, `status`
   (`success` | `failed` | `skipped`), `duration_ms`. A failed entry also
   includes `exit_code` and `command`. `duration_ms`'s presence is stable, its
   value isn't.
@@ -192,4 +192,4 @@ See [CI recipes](/docs/ci/) for how these are consumed.
 ## Enforcement
 
 Every payload is snapshotted in trellis's test suite, so a change to a stable
-shape fails CI before it can ship.
+payload fails CI before it can ship.
