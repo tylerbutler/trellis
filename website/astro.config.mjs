@@ -12,7 +12,7 @@ export default defineConfig({
     starlight({
       title: "trellis",
       description:
-        "A workspace CLI for Gleam monorepos, derived from gleam.toml.",
+        "Run builds and tests across Gleam packages in dependency order. Manage changelogs, versions, and publishing.",
       logo: { src: "./src/assets/logo.svg", alt: "" },
       favicon: "/favicon.svg",
       social: [{ icon: "github", label: "GitHub", href: github }],

@@ -1,6 +1,6 @@
 ---
 title: CI recipes
-description: Trellis is CI-native — structured JSON for GitHub Actions matrices and outputs, doctor as a PR tripwire, and workflows that shrink to a few commands.
+description: GitHub Actions recipes for package test matrices, changelog checks, release preparation, publishing, and recovery.
 ---
 
 import { Code } from "@astrojs/starlight/components";
@@ -8,17 +8,15 @@ import Callout from "../../../components/Callout.astro";
 import { TRELLIS_VERSION } from "../../../lib/version";
 import release_workflow from "../../../../../examples/gleam-hex-release.yml?raw";
 
-Trellis runs identically locally and in CI, and emits the exact structures
-GitHub Actions consumes, so workspace workflows shrink to thin triggers around
-a few commands. The recipes below are the shapes a Gleam workspace actually
-needs.
+Use trellis in GitHub Actions to select packages for tests, check changelog
+coverage, and prepare releases. Its CI commands emit matrices and output
+records that workflows can consume.
 
 ## Installing trellis
 
-The shell installer puts a prebuilt binary on the runner in about a second.
-Pin the version so CI doesn't move under you (see
-[installation](/docs/installation/) for other options, including a
-`.tool-versions` pin through mise/asdf):
+Pin the installer to a released version so CI upgrades only when you change
+the pin. For other methods, including mise, see
+[installation](/docs/installation/).
 
 <Code
   lang="yaml"
@@ -33,9 +31,18 @@ Pin the version so CI doesn't move under you (see
 
 `trellis ci matrix` emits a strategy matrix
 (`{"include":[{"name","path","version"},…]}`). With `--since` it covers only
-the packages a PR touched, dependents included:
+the packages a PR touched, dependents included.
+
+Set the repository variable `TRELLIS_VERSION` to a released version that
+supports your workflow. Each job installs its own tools; the test job also
+needs Gleam and Erlang/OTP. Adjust their versions for your packages:
 
 ```yaml title=".github/workflows/ci.yml"
+on: pull_request
+permissions:
+  contents: read
+env:
+  TRELLIS_VERSION: ${{ vars.TRELLIS_VERSION }}
 jobs:
   plan:
     runs-on: ubuntu-latest
@@ -45,24 +52,40 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0        # --since needs history
+      - name: Install trellis
+        run: |
+          curl --proto '=https' --tlsv1.2 -LsSf \
+            "https://github.com/tylerbutler/trellis/releases/download/v${TRELLIS_VERSION}/trellis-gleam-installer.sh" | sh
       - id: plan
-        run: echo "matrix=$(trellis ci matrix --since origin/main)" >> "$GITHUB_OUTPUT"
+        run: |
+          matrix=$(trellis ci matrix --since "origin/${{ github.base_ref }}")
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
 
   test:
     needs: plan
+    if: needs.plan.outputs.matrix != '{"include":[]}'
     runs-on: ubuntu-latest
     strategy:
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v4
+      - name: Install trellis
+        run: |
+          curl --proto '=https' --tlsv1.2 -LsSf \
+            "https://github.com/tylerbutler/trellis/releases/download/v${TRELLIS_VERSION}/trellis-gleam-installer.sh" | sh
+      - uses: erlef/setup-beam@v1.24.1
+        with:
+          otp-version: "28.1"
+          gleam-version: "1.13.0"
       - run: trellis run test ${{ matrix.name }} --target all
 ```
 
 <Callout>
 
-Full fan-out is the default. `--since` is opt-in because coupling the path-dep
-graph can't see would otherwise go silently untested, so a workspace that wants
-affected-only CI writes `--since origin/main` into its workflow explicitly.
+Without `--since`, the matrix includes all packages. Affected-only selection
+uses files and path dependencies; it cannot detect other coupling, such as a
+shared repository-level configuration file. Run the full matrix when those
+changes can affect packages.
 
 </Callout>
 
@@ -73,28 +96,26 @@ affected-only CI writes `--since origin/main` into its workflow explicitly.
 
 ```console
 $ trellis ci outputs
-packages=["lat_core","lat_mid","lat_cli","lat_example"]
+packages=["lat_core","lat_mid","lat_cli","package_a"]
 releasable=["lat_core","lat_mid","lat_cli"]
 version_files=["packages/lat_core/gleam.toml","packages/lat_mid/gleam.toml","packages/lat_cli/gleam.toml"]
-tags=["lat_core-v1.2.0","lat_mid-v0.5.1","lat_cli-v0.4.3"]
-series_tags=["lat_cli-v0.4"]
+tags=["lat_core-v1.2.0","lat_mid-v0.5.0","lat_cli-v0.3.1"]
+series_tags=[]
 ```
 
 `tags` lists the immutable per-version tags and `series_tags` the moving ones,
 each covering only the packages whose
-[`package_tags`](/docs/configuration-reference/#tags) includes that level — so a
+[`package_tags`](/docs/configuration-reference/#tags) includes that level. A
 workspace with no `exact` entry reports an empty `tags`. Repository tags are
 deliberately absent from both outputs because they do not identify packages.
 
-Both `ci matrix` and `ci outputs` are shaped by GitHub rather than by trellis,
-which is why neither carries the `schema` field every other payload does — see
-[JSON output](/docs/json-output/) for what each one promises.
+`ci matrix` and `ci outputs` omit `schema` to match GitHub Actions formats.
+See [JSON output](/docs/json-output/) for their compatibility guarantees.
 
 ## PR gates
 
-Run `doctor` on every PR — it checks every workspace invariant at once and
-exits non-zero on any error. Pair it with `changelog check`, which fails a PR
-that changes a package without logging it:
+Run `doctor` on PRs to check the workspace; errors fail the command.
+Pair it with `changelog check` to require entries for changed releasable packages:
 
 ```yaml
 # on: pull_request
@@ -104,12 +125,11 @@ that changes a package without logging it:
 
 A workspace with [pinned git dependencies](/docs/pinning/) can add `trellis pin --check`, which fails the PR when a pinned SHA is no longer reachable from its tracked ref. `doctor` reports the same drift, but only as a warning.
 
-When the tripwire fires on a mechanical finding, such as a missing
-`CHANGELOG.md` or a stale `manifest.toml` locked version, clear it locally with
-`trellis doctor --fix`, which applies exactly those fixes and re-reports the
-rest. `--fix` never touches the report-only findings (path-dep escapes, tag
-collisions, versions behind their changelog), so it stays safe to run
-anywhere; keep the bare `trellis doctor` in CI as the gate.
+Run `trellis doctor --fix` locally to create missing changelog stubs, import
+existing changelog history, or update stale locked versions. It reports other
+findings without changing them, including path dependencies outside the workspace,
+tag collisions, and versions behind their changelogs. Review the resulting diff
+and keep the read-only `trellis doctor` command in CI.
 
 ### The changelog comment
 
@@ -165,8 +185,8 @@ package's fragment count and planned next version, plus a collapsible release
 preview of the changelog sections this PR's own fragments would produce,
 ripple bumps included. Everything it counts is [scoped to the
 branch](/docs/changelog/#scope): fragments already unreleased on the base
-branch answer for the PRs that added them, not this one. `ok` carries the
-verdict `continue-on-error` swallowed, and is empty if trellis could not run
+branch do not count toward this PR. `ok` records the check's result despite
+`continue-on-error`, and is empty if trellis could not run
 at all, which fails the job either way.
 
 `preview` is already the comment body, rendered from the same data as the
@@ -179,7 +199,7 @@ at all, which fails the job either way.
 
 A workspace that wants the comment without the gate sets
 [`changelog.strictness`](/docs/configuration-reference/#keys) to `warn`, which makes
-`ok` true even when `needs_entry` is — then drop both the
+`ok` true even when `needs_entry` is true. Then drop both the
 `continue-on-error` line and the final step.
 
 ### Annotating the diff
@@ -224,11 +244,10 @@ It is an example for packages on Hex, not trellis's own Cargo release pipeline.
 
 ### Setup
 
-- Install trellis using the [reviewed source snapshot](#installing-the-fixed-trellis)
-  below. No currently published release, including v1.1.0, supports these
-  release PR options. After the fixes ship, you can instead set the repository
-  variable `TRELLIS_VERSION` to that release's exact version; do not use
-  `latest`. The example also pins Gleam and Erlang/OTP; change those pins to
+- Set the repository variable `TRELLIS_VERSION` to `1.4.0` or a later release
+  that supports these release PR options; do not use `latest`.
+  For an unreleased change, use a [reviewed source snapshot](#optional-source-installation).
+  The example also pins Gleam and Erlang/OTP; change those pins to
   versions supported by your packages.
 - Install a GitHub App on the workspace repository with **Contents**,
   **Pull requests**, and **Commit statuses** read/write permissions. Store its
@@ -247,28 +266,26 @@ It is an example for packages on Hex, not trellis's own Cargo release pipeline.
   triggers, and command arguments together. Do not add a separate tag-triggered
   publishing workflow for this flow.
 
-### Installing the fixed trellis
+<a id="installing-the-fixed-trellis"></a>
 
-The example works before a fixed binary release is published. Leave
-`TRELLIS_VERSION` unset and check a **reviewed fixed source snapshot** into
-your Gleam repository at `.github/trellis`. From the consuming repository's
-root, copy from the checkout containing these fixes:
+### Optional source installation
+
+To use an unreleased change, leave `TRELLIS_VERSION` unset and check a reviewed
+source snapshot into your Gleam repository at `.github/trellis`. Copy it from
+the reviewed checkout:
 
 ```sh
-TRELLIS_SOURCE=/path/to/reviewed/fixed/trellis-checkout
+TRELLIS_SOURCE=/path/to/reviewed/trellis-checkout
 mkdir -p .github/trellis
 cp "$TRELLIS_SOURCE/Cargo.toml" "$TRELLIS_SOURCE/Cargo.lock" \
   "$TRELLIS_SOURCE/build.rs" "$TRELLIS_SOURCE/LICENSE" .github/trellis/
 cp -R "$TRELLIS_SOURCE/src" .github/trellis/
 ```
 
-Record the reviewed source revision with your adoption change, and keep the
-snapshot and lockfile together. The install target embeds no external assets:
-the website file embedded in `src/main.rs` is inside `#[cfg(test)]` and is not
-compiled by `cargo install`. There is no need to copy the website, generated
-man pages, tests, or build output. If you update the snapshot, check its
-`include_str!`/`include_bytes!` paths and copy any newly required build assets
-at the same relative paths.
+Record the source revision and keep the snapshot and lockfile together.
+The current install target needs no website, man pages, tests, or build output.
+When updating the snapshot, check its `include_str!`/`include_bytes!` paths
+and copy any required build assets at the same relative paths.
 
 The workflow checks out the approved merge for publication, or current `main`
 for preparation, before installing. It builds the checked-in snapshot with
@@ -278,9 +295,8 @@ artifacts cannot break `release pr`'s clean-tree check. Source installation
 fails if the snapshot is absent or cannot compile; it never silently falls
 back to an older binary.
 
-Once a release containing these fixes is published, set `TRELLIS_VERSION` to
-that exact version to use its prebuilt installer instead. Until then, setting
-it to v1.1.0 or an older published release does not supply the required CLI.
+To return to prebuilt binaries, set `TRELLIS_VERSION` to a release that
+includes the changes you need.
 
 ### Adopting existing releases
 
@@ -370,6 +386,6 @@ After successful publication, the same serialized run checks out **current**
 preparation paused. A published stable promotion restores it immediately,
 without needing an unrelated push.
 
-The [tags-as-trigger alternative](/docs/publishing/#two-release-shapes) remains
+The [tag-then-publish alternative](/docs/publishing/#tag-before-or-after-publishing) remains
 supported for stable-only pipelines. It needs immutable exact package tags;
 `publish --tag` rejects moving series tags.

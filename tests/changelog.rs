@@ -31,6 +31,98 @@ fn set_changelog_config(root: &Path, body: &str) {
     );
 }
 
+#[test]
+fn source_context_matches_preview_apply_and_prerelease_promotion() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+    set_changelog_config(
+        root,
+        r#"change_format = """- {{ body }}{% if commit %} [commit={{ commit }}]{% endif %}{% for issue in issues %} [{{ issue.owner or "local" }}/{{ issue.repo or "local" }}#{{ issue.number }}:{{ issue.kind or "unknown" }}]{% endfor %}""""#,
+    );
+    common::init_repo(root);
+    git(root, &["checkout", "-q", "-b", "feature"]);
+    add_fragment(root, "lat_core", "Added", "fragment body #999");
+    git(root, &["add", "."]);
+    git(
+        root,
+        &[
+            "commit",
+            "-q",
+            "-m",
+            "Add #42 other/lib#17 https://github.com/other/lib/pull/17,#43",
+            "-m",
+            "Body only #888",
+        ],
+    );
+    let source = std::process::Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir(root)
+        .output()
+        .unwrap();
+    let source = String::from_utf8(source.stdout).unwrap().trim().to_string();
+    write(
+        &root.join(".changes/unreleased/lat_core-1.toml"),
+        "package = \"lat_core\"\nkind = \"Added\"\nbody = \"edited body #999\"\n",
+    );
+    add_fragment(root, "lat_core", "Fixed", "uncommitted change");
+
+    let output = trellis(root)
+        .args(["changelog", "check", "--base", "main", "--format", "json"])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let payload: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let preview = payload["preview"].as_str().unwrap();
+    let expected = format!(
+        "- edited body #999 [commit={source}] [local/local#42:unknown] [other/lib#17:pull_request] [local/local#43:unknown]"
+    );
+    assert!(preview.contains(&expected), "{preview}");
+    assert!(preview.contains("- uncommitted change\n"), "{preview}");
+    assert!(!preview.contains("#888"), "{preview}");
+    assert!(!preview.contains("local/local#999"), "{preview}");
+
+    trellis(root)
+        .args(["version", "apply", "--pre", "rc"])
+        .assert()
+        .success();
+    let candidate = root.join(".changes/lat_core/v1.3.0-rc.0.md");
+    assert!(fs::read_to_string(candidate).unwrap().contains(&expected));
+    git(root, &["add", "."]);
+    git(root, &["commit", "-q", "-m", "Release #777"]);
+    trellis(root)
+        .args(["version", "apply", "--pre", "none"])
+        .assert()
+        .success();
+    let final_section = fs::read_to_string(root.join(".changes/lat_core/v1.3.0.md")).unwrap();
+    assert!(final_section.contains(&expected), "{final_section}");
+    assert!(!final_section.contains("#777"), "{final_section}");
+    let dependency = fs::read_to_string(root.join(".changes/lat_mid/v0.5.1.md")).unwrap();
+    assert!(!dependency.contains("[commit="), "{dependency}");
+}
+
+#[test]
+fn optional_source_fields_are_not_accepted_in_user_fragments() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+    add_fragment(root, "lat_core", "Fixed", "a change");
+    let path = root.join(".changes/unreleased/lat_core-1.toml");
+    let original = fs::read_to_string(&path).unwrap();
+    for extra in ["commit = \"abc\"", "issues = []", "source = {}"] {
+        write(&path, &format!("{original}{extra}\n"));
+        trellis(root)
+            .args(["version", "plan"])
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("unknown field"));
+    }
+}
+
 fn parse_github_output(text: &str) -> std::collections::BTreeMap<String, String> {
     let mut out = std::collections::BTreeMap::new();
     let mut lines = text.lines();

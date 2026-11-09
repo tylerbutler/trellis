@@ -3,7 +3,7 @@
 
 use crate::workspace::Workspace;
 use anyhow::{Context, Result, bail};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -353,15 +353,16 @@ pub fn is_ancestor(cwd: &Path, ancestor: &str, descendant: &str) -> Result<bool>
 }
 
 /// Run git in `cwd` and return the raw output, whatever the exit status.
-/// Every git invocation goes through here so `--verbose` tracing and the
-/// "git missing" error are uniform.
+/// Shared command construction keeps tracing and missing-Git errors uniform.
 pub(crate) fn git_output(cwd: &Path, args: &[&str]) -> Result<std::process::Output> {
+    git_command(cwd, args).output().context("failed to run git")
+}
+
+fn git_command(cwd: &Path, args: &[&str]) -> Command {
     crate::term::trace_command("git", args, cwd);
-    Command::new("git")
-        .args(args)
-        .current_dir(cwd)
-        .output()
-        .context("failed to run git")
+    let mut command = Command::new("git");
+    command.args(args).current_dir(cwd);
+    command
 }
 
 /// [`git_output`] that fails on a non-zero exit, returning stdout.
@@ -383,10 +384,7 @@ fn git_stdout_with_stdin(cwd: &Path, args: &[&str], stdin: &str) -> Result<Strin
     use std::io::Write;
     use std::process::Stdio;
 
-    crate::term::trace_command("git", args, cwd);
-    let mut child = Command::new("git")
-        .args(args)
-        .current_dir(cwd)
+    let mut child = git_command(cwd, args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -414,4 +412,490 @@ fn lines(text: &str) -> impl Iterator<Item = String> + '_ {
         .map(str::trim)
         .filter(|line| !line.is_empty())
         .map(str::to_string)
+}
+
+#[derive(Debug, Clone)]
+pub struct FragmentCommit {
+    pub commit: String,
+    pub subject: String,
+}
+
+/// Walk all parents until the current file lifetime's addition. Renames use
+/// Git's 50% similarity threshold; divergent origins and shallow boundaries
+/// are unresolved. Cached commit records and parent diffs are shared by files.
+pub struct FragmentHistory {
+    root: PathBuf,
+    head: String,
+    shallow: HashSet<String>,
+    commits: HashMap<String, (Vec<String>, String)>,
+    changes: HashMap<(String, String), HashMap<String, Option<String>>>,
+}
+
+impl FragmentHistory {
+    pub fn new(cwd: &Path, reference: &str) -> Result<Option<Self>> {
+        let output = local_git_output(cwd, &["rev-parse", "--show-toplevel"])?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            if stderr.contains("not a git repository") {
+                return Ok(None);
+            }
+            bail!("cannot find fragment repository: {}", stderr.trim());
+        }
+        let root = PathBuf::from(String::from_utf8(output.stdout)?.trim()).canonicalize()?;
+        let output = local_git_output(
+            &root,
+            &[
+                "rev-parse",
+                "--verify",
+                "--quiet",
+                &format!("{reference}^{{commit}}"),
+            ],
+        )?;
+        if !output.status.success() {
+            if reference == "HEAD" && output.status.code() == Some(1) {
+                return Ok(None);
+            }
+            bail!(
+                "cannot resolve fragment source ref `{reference}`: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            );
+        }
+        let head = String::from_utf8(output.stdout)?.trim().to_string();
+        let shallow_path = local_git_stdout(&root, &["rev-parse", "--git-path", "shallow"])?;
+        let shallow = match std::fs::read_to_string(root.join(shallow_path.trim())) {
+            Ok(text) => lines(&text).collect(),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => HashSet::new(),
+            Err(err) => return Err(err).context("cannot read shallow history boundary"),
+        };
+        Ok(Some(Self {
+            root,
+            head,
+            shallow,
+            commits: HashMap::new(),
+            changes: HashMap::new(),
+        }))
+    }
+
+    pub fn source(&mut self, path: &Path) -> Result<Option<FragmentCommit>> {
+        let path = path
+            .parent()
+            .context("fragment has no parent directory")?
+            .canonicalize()?
+            .join(path.file_name().context("fragment has no filename")?);
+        let Ok(relative) = path.strip_prefix(&self.root) else {
+            return Ok(None);
+        };
+        let path = slash_path(relative);
+        let tree = local_git_stdout(
+            &self.root,
+            &[
+                "ls-tree",
+                "-r",
+                "-z",
+                "--full-tree",
+                &self.head,
+                "--",
+                &path,
+            ],
+        )?;
+        if !tree.split('\0').any(|record| {
+            record
+                .split_once('\t')
+                .is_some_and(|(_, name)| name == path)
+        }) {
+            return Ok(None);
+        }
+        if self.commits.is_empty() {
+            self.load_history()?;
+        }
+        let mut pending = vec![(self.head.clone(), path)];
+        let mut visited = HashSet::new();
+        let mut additions = HashSet::new();
+        while let Some((commit, path)) = pending.pop() {
+            if !visited.insert((commit.clone(), path.clone())) {
+                continue;
+            }
+            if self.shallow.contains(&commit) {
+                return Ok(None);
+            }
+            let parents = self
+                .commits
+                .get(&commit)
+                .context("missing Git fragment commit record")?
+                .0
+                .clone();
+            let mut inherited = false;
+            for parent in parents {
+                let key = (parent.clone(), commit.clone());
+                match self
+                    .changes
+                    .get(&key)
+                    .context("missing Git parent diff")?
+                    .get(&path)
+                {
+                    Some(None) => {}
+                    previous => {
+                        let previous = previous
+                            .and_then(|p| p.clone())
+                            .unwrap_or_else(|| path.clone());
+                        pending.push((parent, previous));
+                        inherited = true;
+                    }
+                }
+            }
+            if !inherited {
+                additions.insert(commit);
+            }
+            if additions.len() > 1 {
+                return Ok(None);
+            }
+        }
+        Ok(additions.into_iter().next().map(|commit| FragmentCommit {
+            subject: self.commits[&commit].1.clone(),
+            commit,
+        }))
+    }
+
+    fn load_history(&mut self) -> Result<()> {
+        let text = local_git_stdout(
+            &self.root,
+            &[
+                "log",
+                "--no-show-signature",
+                "-z",
+                "--format=%H%x00%P%x00%s",
+                &self.head,
+                "--",
+            ],
+        )?;
+        let mut fields = text.split('\0');
+        let mut commits = HashMap::new();
+        let mut edges = Vec::new();
+        let mut input = String::new();
+        while let Some(commit) = fields.next() {
+            if commit.is_empty() {
+                continue;
+            }
+            let parents = fields.next().context("missing Git commit parents")?;
+            let subject = fields.next().context("missing Git commit subject")?;
+            let parents: Vec<String> = parents.split_whitespace().map(str::to_string).collect();
+            if !self.shallow.contains(commit) {
+                for parent in &parents {
+                    input.push_str(&format!("{commit} {parent}\n"));
+                    edges.push((parent.clone(), commit.to_string()));
+                }
+            }
+            commits.insert(commit.to_string(), (parents, subject.to_string()));
+        }
+        // --always emits a header even for empty diffs, so each response maps
+        // to one parent edge, including separate parents of a merge.
+        let text = local_git_stdout_with_stdin(
+            &self.root,
+            &[
+                "diff-tree",
+                "--stdin",
+                "--always",
+                "-r",
+                "--no-ext-diff",
+                "--no-textconv",
+                "-M50%",
+                "--name-status",
+                "-z",
+            ],
+            &input,
+        )?;
+        let mut fields = text
+            .split('\0')
+            .filter(|field| !field.is_empty())
+            .peekable();
+        let mut changes = HashMap::new();
+        for key in edges {
+            if fields.next() != Some(key.1.as_str()) {
+                bail!("invalid Git batch diff header");
+            }
+            let mut changed_paths = HashMap::new();
+            while fields
+                .peek()
+                .is_some_and(|field| field.len() != self.head.len())
+            {
+                let status = fields.next().context("missing Git change status")?;
+                let old = fields.next().context("missing Git change path")?;
+                let (name, previous) = if status.starts_with('R') {
+                    (
+                        fields.next().context("missing Git rename destination")?,
+                        Some(old.to_string()),
+                    )
+                } else {
+                    (
+                        old,
+                        if status == "A" {
+                            None
+                        } else {
+                            Some(old.to_string())
+                        },
+                    )
+                };
+                changed_paths.insert(name.to_string(), previous);
+            }
+            changes.insert(key, changed_paths);
+        }
+        if fields.next().is_some() {
+            bail!("unexpected Git batch diff records");
+        }
+        self.commits = commits;
+        self.changes = changes;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    static SOURCE_GIT_CALLS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+fn local_git_output(cwd: &Path, args: &[&str]) -> Result<std::process::Output> {
+    local_git_command(cwd, args)
+        .output()
+        .context("failed to run local git")
+}
+
+fn local_git_command(cwd: &Path, args: &[&str]) -> Command {
+    #[cfg(test)]
+    SOURCE_GIT_CALLS.with(|calls| calls.set(calls.get() + 1));
+    let mut command = git_command(cwd, args);
+    command.env("GIT_NO_LAZY_FETCH", "1").env("LC_ALL", "C");
+    command
+}
+
+fn local_git_stdout(cwd: &Path, args: &[&str]) -> Result<String> {
+    local_git_text(local_git_output(cwd, args)?, args)
+}
+
+fn local_git_stdout_with_stdin(cwd: &Path, args: &[&str], input: &str) -> Result<String> {
+    use std::io::{Seek, Write};
+    // A file avoids pipe deadlocks when both the batch input and output are large.
+    let mut stdin = tempfile::tempfile().context("cannot create Git batch input")?;
+    stdin
+        .write_all(input.as_bytes())
+        .context("cannot write Git batch input")?;
+    stdin.rewind().context("cannot rewind Git batch input")?;
+    let output = local_git_command(cwd, args)
+        .stdin(stdin)
+        .output()
+        .context("failed to run local git batch")?;
+    local_git_text(output, args)
+}
+
+fn local_git_text(output: std::process::Output, args: &[&str]) -> Result<String> {
+    if !output.status.success() {
+        bail!(
+            "git {} failed: {}",
+            args.join(" "),
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+    Ok(String::from_utf8(output.stdout)?)
+}
+
+#[cfg(test)]
+mod source_tests {
+    use super::*;
+
+    fn run(root: &Path, args: &[&str]) -> String {
+        git_with_identity(root, args).unwrap()
+    }
+
+    fn repository() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        run(dir.path(), &["init", "-q", "-b", "main"]);
+        dir
+    }
+
+    fn commit(root: &Path, subject: &str) -> String {
+        run(root, &["add", "."]);
+        run(
+            root,
+            &["commit", "-q", "-m", subject, "-m", "Body only #999"],
+        );
+        run(root, &["rev-parse", "HEAD"]).trim().to_string()
+    }
+
+    fn source(root: &Path, path: &str) -> Option<FragmentCommit> {
+        FragmentHistory::new(root, "HEAD")
+            .unwrap()
+            .unwrap()
+            .source(&root.join(path))
+            .unwrap()
+    }
+
+    #[test]
+    fn fragment_source_follows_edits_renames_and_current_lifetime() {
+        let dir = repository();
+        let root = dir.path();
+        std::fs::write(root.join("old.toml"), "first fragment\n").unwrap();
+        let first = commit(root, "Add #42");
+        assert_eq!(source(root, "old.toml").unwrap().commit, first);
+        std::fs::write(root.join("old.toml"), "edited fragment\n").unwrap();
+        commit(root, "Edit #43");
+        std::fs::write(root.join("old.toml"), "local edit\n").unwrap();
+        assert_eq!(source(root, "old.toml").unwrap().commit, first);
+        run(root, &["checkout", "--", "old.toml"]);
+        run(root, &["mv", "old.toml", "renamed.toml"]);
+        commit(root, "Rename #44");
+        let found = source(root, "renamed.toml").unwrap();
+        assert_eq!(found.commit, first);
+        assert_eq!(found.subject, "Add #42");
+        run(root, &["rm", "renamed.toml"]);
+        commit(root, "Delete");
+        std::fs::write(root.join("renamed.toml"), "second lifetime\n").unwrap();
+        let second = commit(root, "Recreate #45");
+        assert_eq!(source(root, "renamed.toml").unwrap().commit, second);
+        std::fs::write(root.join("new.toml"), "untracked\n").unwrap();
+        assert!(source(root, "new.toml").is_none());
+    }
+
+    #[test]
+    fn fragment_source_handles_merges_squashes_and_ambiguous_additions() {
+        for squash in [false, true] {
+            let dir = repository();
+            let root = dir.path();
+            std::fs::write(root.join("base"), "base\n").unwrap();
+            commit(root, "Base");
+            run(root, &["checkout", "-q", "-b", "feature"]);
+            std::fs::write(root.join("fragment.toml"), "fragment\n").unwrap();
+            let added = commit(root, "Feature #42");
+            run(root, &["checkout", "-q", "main"]);
+            let expected = if squash {
+                run(root, &["merge", "--squash", "feature"]);
+                commit(root, "Squash #43")
+            } else {
+                run(root, &["merge", "--no-ff", "-m", "Merge #43", "feature"]);
+                added
+            };
+            assert_eq!(source(root, "fragment.toml").unwrap().commit, expected);
+        }
+        let dir = repository();
+        let root = dir.path();
+        std::fs::write(root.join("base"), "base\n").unwrap();
+        commit(root, "Base");
+        run(root, &["checkout", "-q", "-b", "feature"]);
+        std::fs::write(root.join("fragment.toml"), "same\n").unwrap();
+        commit(root, "One source");
+        run(root, &["checkout", "-q", "main"]);
+        std::fs::write(root.join("fragment.toml"), "same\n").unwrap();
+        commit(root, "Another source");
+        run(root, &["merge", "--no-ff", "-m", "Merge", "feature"]);
+        assert!(source(root, "fragment.toml").is_none());
+    }
+
+    #[test]
+    fn fragment_source_does_not_attribute_a_shallow_boundary() {
+        let origin = repository();
+        std::fs::write(origin.path().join("fragment.toml"), "original\n").unwrap();
+        let original = commit(origin.path(), "Original");
+        std::fs::write(origin.path().join("fragment.toml"), "edited\n").unwrap();
+        commit(origin.path(), "Later edit");
+        let clone = tempfile::tempdir().unwrap();
+        let url = format!("file://{}", origin.path().display());
+        run(clone.path(), &["clone", "-q", "--depth=1", &url, "."]);
+        assert!(source(clone.path(), "fragment.toml").is_none());
+        run(clone.path(), &["fetch", "-q", "--unshallow"]);
+        assert_eq!(
+            source(clone.path(), "fragment.toml").unwrap().commit,
+            original
+        );
+    }
+
+    #[test]
+    fn fragment_source_is_optional_but_invalid_refs_are_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(FragmentHistory::new(dir.path(), "HEAD").unwrap().is_none());
+        run(dir.path(), &["init", "-q"]);
+        assert!(FragmentHistory::new(dir.path(), "HEAD").unwrap().is_none());
+        std::fs::write(dir.path().join("base"), "base").unwrap();
+        commit(dir.path(), "Base");
+        assert!(FragmentHistory::new(dir.path(), "missing-ref").is_err());
+    }
+
+    #[test]
+    fn fragment_source_uses_the_selected_ref_and_caches_shared_commits() {
+        let dir = repository();
+        let root = dir.path();
+        std::fs::write(root.join("base"), "base").unwrap();
+        let base = commit(root, "Base");
+        for path in ["one.toml", "two spaces.toml"] {
+            std::fs::write(root.join(path), "fragment").unwrap();
+        }
+        let added = commit(root, "Add #42");
+        let mut history = FragmentHistory::new(root, &added).unwrap().unwrap();
+        assert_eq!(
+            history
+                .source(&root.join("one.toml"))
+                .unwrap()
+                .unwrap()
+                .commit,
+            added
+        );
+        let cached = (history.commits.len(), history.changes.len());
+        assert_eq!(
+            history
+                .source(&root.join("two spaces.toml"))
+                .unwrap()
+                .unwrap()
+                .commit,
+            added
+        );
+        assert_eq!((history.commits.len(), history.changes.len()), cached);
+        assert!(
+            FragmentHistory::new(root, &base)
+                .unwrap()
+                .unwrap()
+                .source(&root.join("one.toml"))
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn unrelated_history_uses_a_bounded_number_of_git_commands() {
+        let dir = repository();
+        let root = dir.path();
+        std::fs::write(root.join("fragment.toml"), "fragment").unwrap();
+        let added = commit(root, "Add #42");
+        // Exercise batch output larger than a pipe buffer as well as large input.
+        for n in 0..1000 {
+            std::fs::write(root.join(format!("unrelated-{n:030}.txt")), "unrelated").unwrap();
+        }
+        let latest = commit(root, "Unrelated files");
+        let mut input = String::new();
+        for n in 1..=1000 {
+            let parent = if n == 1 {
+                latest.clone()
+            } else {
+                format!(":{}", n - 1)
+            };
+            input.push_str(&format!("commit refs/heads/main\nmark :{n}\ncommitter test <test@localhost> {} +0000\ndata 9\nunrelated\nfrom {parent}\n\n", 1700000000 + n));
+        }
+        git_stdout_with_stdin(root, &["fast-import", "--quiet"], &input).unwrap();
+        SOURCE_GIT_CALLS.with(|calls| calls.set(0));
+        let found = source(root, "fragment.toml").unwrap();
+        assert_eq!(found.commit, added);
+        let commands = SOURCE_GIT_CALLS.with(|calls| calls.get());
+        assert!(
+            commands <= 6,
+            "{commands} Git commands for 1,000 unrelated commits"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn fragment_source_tracks_a_symlink_not_its_target() {
+        let dir = repository();
+        let root = dir.path();
+        std::fs::write(root.join("target.toml"), "fragment").unwrap();
+        commit(root, "Target");
+        std::os::unix::fs::symlink("target.toml", root.join("fragment.toml")).unwrap();
+        let added = commit(root, "Add fragment link #42");
+        assert_eq!(source(root, "fragment.toml").unwrap().commit, added);
+    }
 }

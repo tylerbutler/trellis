@@ -1,0 +1,7 @@
+component: changelog
+kind: Added
+body: |-
+  **`changelog check` previews can show fragment commits and issue references.** Custom `change_format` templates receive `commit` and structured `issues` extracted from the subject of the commit that added each fragment. Templates construct the links; the default output and fragment format are unchanged.
+
+    Missing or ambiguous local history leaves `commit` null and `issues` empty. Trellis does not fetch history or call an API, and optional lookup failures do not fail the check.
+time: 2026-11-08T15:05:00-08:00
