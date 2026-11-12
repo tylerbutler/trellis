@@ -287,16 +287,14 @@ fn build_release_commit_and_pr(
         "--force-with-lease={reference}:{}",
         expected.as_deref().unwrap_or("")
     );
+    let pushed_head = git_stdout(root, &["rev-parse", "HEAD"])?;
     git_stdout(root, &["push", &lease, "origin", &destination])
         .with_context(|| format!("failed to push branch {}", options.branch))?;
 
     let body = pr_body(workspace, plan);
-    match pending {
+    let finalized: Result<_> = (|| match pending {
         Some(pr) => {
-            // Recheck state after the push too; a concurrently closed PR must not be edited.
-            let mut pushed = pr.clone();
-            pushed.head = git_stdout(root, &["rev-parse", "HEAD"])?.trim().to_string();
-            github.check_open_pr(&pushed, &options.branch, &options.base)?;
+            github.wait_for_pushed_pr(pr, pushed_head.trim(), &options.branch, &options.base)?;
             github.update_pr(pr.number, &title, &body)?;
             crate::status!(
                 "{} release PR #{}: {title}",
@@ -310,7 +308,13 @@ fn build_release_commit_and_pr(
             crate::status!("{} release PR: {url}", crate::term::ok("created"));
             Ok((number, url))
         }
-    }
+    })();
+    finalized.with_context(|| {
+        format!(
+            "branch `{}` was pushed successfully, but PR finalization remains incomplete; check the remote branch and PR before retrying",
+            options.branch
+        )
+    })
 }
 
 /// Markdown body: the bump table, plus each package's new CHANGELOG section

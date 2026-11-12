@@ -795,6 +795,216 @@ fn deleting_all_pending_content_is_not_a_successful_noop() {
 }
 
 #[test]
+fn post_push_stale_head_converges_before_pr_update_and_success_outputs() {
+    for output_flag in ["--json", "--github-output"] {
+        let f = ReleaseFixture::new();
+        f.prepare(&["--pre", "rc"]);
+        f.pending();
+        let prs: Value =
+            serde_json::from_str(&fs::read_to_string(f.path().join(".fake/pr-list")).unwrap())
+                .unwrap();
+        let previous = &prs[0];
+        let before = commit_of(f._origin.path(), "refs/heads/release/pending");
+        add_fragment(f.path(), "lat_core", "Fixed", "second feature");
+        f.commit();
+        let original = commit_of(f.path(), "HEAD");
+        write(
+            &f.path().join(".fake/pr-detail-sequence"),
+            &json!([previous, previous, previous, null]).to_string(),
+        );
+        fs::remove_file(f.path().join(".fake/github-log")).unwrap();
+
+        let output = trellis_github(f.path(), &f.api)
+            .args(["release", "pr", "--resume", output_flag])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        if output_flag == "--json" {
+            let document: Value = serde_json::from_str(&stdout).unwrap();
+            assert_eq!(document["outcome"], "prepared");
+            assert_eq!(document["pr_action"], "updated");
+            assert_eq!(document["pr_number"], 7);
+        } else {
+            assert!(stdout.contains("outcome=prepared\n"), "{stdout}");
+            assert!(stdout.contains("pr_action=updated\n"), "{stdout}");
+            assert!(stdout.contains("pr_number=7\n"), "{stdout}");
+        }
+        assert_ne!(
+            commit_of(f._origin.path(), "refs/heads/release/pending"),
+            before
+        );
+        assert_eq!(commit_of(f.path(), "HEAD"), original);
+        assert_eq!(git_stdout(f.path(), &["branch", "--show-current"]), "main");
+        let log = fs::read_to_string(f.path().join(".fake/github-log")).unwrap();
+        assert_eq!(log.matches("GET /repos/example/repo/pulls/7\n").count(), 4);
+        assert_eq!(
+            log.matches("PATCH /repos/example/repo/pulls/7\n").count(),
+            1
+        );
+        assert!(log.contains("second feature"), "{log}");
+    }
+}
+
+#[test]
+fn post_push_persistent_stale_head_reports_incomplete_finalization() {
+    let f = ReleaseFixture::new();
+    f.prepare(&["--pre", "rc"]);
+    f.pending();
+    let prs: Value =
+        serde_json::from_str(&fs::read_to_string(f.path().join(".fake/pr-list")).unwrap()).unwrap();
+    write(&f.path().join(".fake/pr-detail"), &prs[0].to_string());
+    let before = commit_of(f._origin.path(), "refs/heads/release/pending");
+    add_fragment(f.path(), "lat_core", "Fixed", "second feature");
+    f.commit();
+    fs::remove_file(f.path().join(".fake/github-log")).unwrap();
+
+    let output = trellis_github(f.path(), &f.api)
+        .args(["release", "pr", "--resume", "--github-output"])
+        .timeout(std::time::Duration::from_secs(30))
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("branch `release/pending` was pushed successfully"),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains("PR finalization remains incomplete"),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains("still reports the previous head"),
+        "{stderr}"
+    );
+    assert_ne!(
+        commit_of(f._origin.path(), "refs/heads/release/pending"),
+        before
+    );
+    assert_eq!(git_stdout(f.path(), &["branch", "--show-current"]), "main");
+    let log = fs::read_to_string(f.path().join(".fake/github-log")).unwrap();
+    let reads = log.matches("GET /repos/example/repo/pulls/7\n").count();
+    assert!((3..=12).contains(&reads), "{log}");
+    assert!(!log.contains("PATCH "), "{log}");
+}
+
+#[test]
+fn post_push_stale_head_does_not_hide_concurrent_pr_changes() {
+    for (pointer, value, message) in [
+        (
+            "/head/sha",
+            json!("1".repeat(40)),
+            "changed during preparation",
+        ),
+        ("/state", json!("closed"), "closed, merged, or retargeted"),
+        ("/base/ref", json!("other"), "targeting `other`"),
+        ("/head/ref", json!("other"), "closed, merged, or retargeted"),
+        (
+            "/head/repo/full_name",
+            json!("fork/repo"),
+            "closed, merged, or retargeted",
+        ),
+        (
+            "/base/repo/full_name",
+            json!("other/repo"),
+            "closed, merged, or retargeted",
+        ),
+        ("/number", json!(8), "changed during preparation"),
+        (
+            "/html_url",
+            json!("https://github.com/example/repo/pull/8"),
+            "changed during preparation",
+        ),
+        ("/head/sha", json!("invalid"), "invalid head SHA"),
+    ] {
+        let f = ReleaseFixture::new();
+        f.prepare(&["--pre", "rc"]);
+        f.pending();
+        let prs: Value =
+            serde_json::from_str(&fs::read_to_string(f.path().join(".fake/pr-list")).unwrap())
+                .unwrap();
+        let previous = &prs[0];
+        let mut changed = previous.clone();
+        *changed.pointer_mut(pointer).unwrap() = value;
+        write(
+            &f.path().join(".fake/pr-detail-sequence"),
+            &json!([previous, previous, changed]).to_string(),
+        );
+        let before = commit_of(f._origin.path(), "refs/heads/release/pending");
+        add_fragment(f.path(), "lat_core", "Fixed", "second feature");
+        f.commit();
+        fs::remove_file(f.path().join(".fake/github-log")).unwrap();
+
+        let output = trellis_github(f.path(), &f.api)
+            .args(["release", "pr", "--resume", "--json"])
+            .output()
+            .unwrap();
+        assert!(!output.status.success(), "{pointer}");
+        assert!(output.stdout.is_empty(), "{pointer}");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains(message), "{pointer}: {stderr}");
+        assert!(
+            stderr.contains("PR finalization remains incomplete"),
+            "{stderr}"
+        );
+        assert_ne!(
+            commit_of(f._origin.path(), "refs/heads/release/pending"),
+            before
+        );
+        assert_eq!(git_stdout(f.path(), &["branch", "--show-current"]), "main");
+        let log = fs::read_to_string(f.path().join(".fake/github-log")).unwrap();
+        assert_eq!(
+            log.matches("GET /repos/example/repo/pulls/7\n").count(),
+            3,
+            "{pointer}"
+        );
+        assert!(!log.contains("PATCH "), "{pointer}: {log}");
+    }
+}
+
+#[test]
+fn post_push_pr_update_failure_reports_incomplete_finalization() {
+    let f = ReleaseFixture::new();
+    f.prepare(&["--pre", "rc"]);
+    f.pending();
+    let before = commit_of(f._origin.path(), "refs/heads/release/pending");
+    add_fragment(f.path(), "lat_core", "Fixed", "second feature");
+    f.commit();
+    write(&f.path().join(".fake/fail-pr-update"), "");
+
+    let output = trellis_github(f.path(), &f.api)
+        .args(["release", "pr", "--resume", "--json"])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("branch `release/pending` was pushed successfully"),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains("PR finalization remains incomplete"),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains("HTTP 500: PR update unavailable"),
+        "{stderr}"
+    );
+    assert_ne!(
+        commit_of(f._origin.path(), "refs/heads/release/pending"),
+        before
+    );
+    assert_eq!(git_stdout(f.path(), &["branch", "--show-current"]), "main");
+}
+
+#[test]
 fn api_failure_and_closed_pr_do_not_emit_success_or_push() {
     let f = ReleaseFixture::new();
     write(&f.path().join(".fake/fail-pr"), "");
