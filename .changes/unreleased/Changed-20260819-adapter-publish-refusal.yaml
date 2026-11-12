@@ -1,5 +1,0 @@
-component: publish
-kind: Changed
-body: |-
-  **`trellis publish` rejects adapter workspaces instead of invoking `gleam publish`.** Adapter packages default to the `git_only` lifecycle, which supports changelogs, versions, and Git tags without Hex publishing. `[tools.trellis.publish.lifecycle]` rejects `hex` as either the default or a package override in an adapter workspace.
-time: 2026-08-19T09:03:00.000000-07:00

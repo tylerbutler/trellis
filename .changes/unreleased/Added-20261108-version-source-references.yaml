@@ -1,7 +1,0 @@
-component: version
-kind: Added
-body: |-
-  **`version apply` preserves fragment source links through prerelease promotion.** Custom `change_format` templates receive an optional `commit` and structured `issues` from the fragment's source commit subject. Prerelease archives store these records before consuming fragments, so the final release keeps the original references rather than using the release commit.
-
-    Old archives remain valid without metadata. Missing history or invalid optional metadata does not block a release. Default changelog output, version bumps, and existing JSON schemas are unchanged.
-time: 2026-11-08T15:05:00-08:00

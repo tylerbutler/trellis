@@ -1,7 +1,0 @@
-component: doctor
-kind: Added
-body: |-
-  **`trellis doctor` validates adapter manifests and requires semantic versions.** Package names do not need to match their directory names. Changelog, fragment, exclusion, and tag-collision checks still run.
-
-    Adapter workspaces skip Gleam lockfile, pinned-dependency, shared-dependency, and toolchain checks. The `checked:` preamble names the adapter manifest and omits Gleam-only checks.
-time: 2026-08-19T09:02:00.000000-07:00

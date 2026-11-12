@@ -1,5 +1,0 @@
-component: lockfile
-kind: Changed
-body: |-
-  **`trellis lockfile refresh` rejects adapter workspaces instead of invoking `gleam deps download`.** Adapter support does not add dependency resolution or lockfile generation for non-Gleam packages; use your package manager to update their dependencies.
-time: 2026-08-19T09:03:00.000000-07:00

@@ -1,5 +1,0 @@
-component: pin
-kind: Changed
-body: |-
-  **`pin` refuses adapter workspaces without reading or changing unrelated Gleam manifests.** This applies to the default pin operation and `--check`, `--update`, and `--unpin`.
-time: 2026-11-08T11:48:56.383-08:00
