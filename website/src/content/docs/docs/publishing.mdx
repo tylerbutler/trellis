@@ -13,7 +13,7 @@ same approved release commit: `publish` skips versions already on Hex, and
 `tag create` reconciles existing tags and releases.
 
 ```txt wrap
-trellis release pr [--base <branch>] [--branch <branch>] [--pre <label|none>] [--set <pkg=version>] [--bump <pkg=level>] [--resume] [--auto-pre] [--skip-unchanged] [--json | --github-output]
+trellis release pr [--base <branch>] [--branch <branch>] [--pre <label|none>] [--set <pkg=version>] [--bump <pkg=level>] [--resume] [--auto-pre] [--skip-unchanged] [--prepare-command <command>] [--json | --github-output]
 trellis tag plan [--json]
 trellis tag create [--push] [--github-release]
 trellis publish <pkg | --tag <tag> | --all-untagged> [--dry-run]
@@ -195,26 +195,58 @@ stdout free of progress text and update notices.
 | `outcome` | Meaning |
 | --- | --- |
 | `prepared` | The release branch and PR were created or updated successfully. `pr_action` is `created` or `updated`. |
-| `unchanged` | The content check skipped apply, commit, push, and PR mutation. |
+| `unchanged` | No commit, push, or PR mutation was needed. With `--prepare-command`, generated files were also validated. |
 | `no_changes` | No eligible release plan exists. |
 
 Both forms include `base`, `branch`, and `bumped`, with the same fields as
 `version plan`. PR identity (`pr_number`, `pr_url`) is present when known.
 `pr_action` is present only for preparation. Optional fields are absent in JSON
 and empty in GitHub output. An unchanged result's plan was evaluated, not
-applied. Errors remain nonzero and do not emit a successful result.
+applied during this run. Errors remain nonzero and do not emit a successful result.
+
+### Generating and validating release files
+
+Use `--prepare-command` when generated files depend on the proposed versions.
+Trellis runs the command with `sh -c` at the workspace root after applying
+versions and before staging, committing, or pushing. Generated files and
+standalone consumer locks enter the same commit as the version changes.
+The command's stdout and stderr go to stderr, including with `--json` or
+`--github-output`.
+
+Define an idempotent command in your repository that refreshes the required
+files and then checks them. In this example, `just prepare-release` is a
+caller-defined recipe, not a built-in trellis task:
 
 ```yaml
 - name: Prepare the release
   id: release
-  run: trellis release pr --resume --auto-pre --skip-unchanged --github-output >> "$GITHUB_OUTPUT"
-- name: Regenerate version-stamped pages
-  if: steps.release.outputs.outcome == 'prepared'
-  run: |
-    git fetch origin "refs/heads/${{ steps.release.outputs.branch }}"
-    git checkout --detach FETCH_HEAD
-    trellis run docs
+  run: >-
+    trellis release pr --resume --auto-pre --skip-unchanged
+    --prepare-command 'just prepare-release'
+    --github-output >> "$GITHUB_OUTPUT"
 ```
+
+With `--skip-unchanged` or the automatic candidate guard, unchanged native
+release inputs do not skip this command. Trellis validates the selected
+pending PR head without reapplying versions. If generation changes its files,
+trellis commits the repairs on that head and updates the same PR with a
+`prepared` outcome. This repairs older partial preparations too. A clean rerun
+returns `unchanged` without changing the branch or PR. The initial remote SHA
+remains the push lease; concurrent branch or PR changes cause an error.
+
+When an unchanged candidate is already merged and has no pending PR, the
+command validates the current base. Generated changes cause an error: resolve
+the local changes, then use `--force` to prepare a new release deliberately.
+The command does not run for `no_changes`.
+
+Only run trusted generation and validation commands. Do not commit, switch
+branches, push, tag, publish, or change package versions in the command.
+Trellis stages all non-ignored changes after it succeeds; staging inside the
+command is not required. A nonzero exit or start failure stops trellis before
+its commit, push, or PR mutation and reports an error, not a successful outcome.
+Local changes remain for inspection. Trellis restores the caller's branch
+when possible and reports a restoration failure if those changes prevent it.
+Commit or remove those local changes before retrying.
 
 Custom workflows must still serialize preparation and wait for the prior
 merged release's required publication and tagging. These flags do not change

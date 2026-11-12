@@ -346,9 +346,10 @@ Create or update the release PR: version apply on a branch, push, open or refres
 * `--no-resume` — Disable configured pending-version resumption
 * `--auto-pre` — Continue committed candidate labels when no mode was supplied or resumed
 * `--no-auto-pre` — Disable configured automatic candidate continuation
-* `--skip-unchanged` — Skip preparation when release content and proposed versions have not changed
+* `--skip-unchanged` — Skip commit and push when release content and proposed versions have not changed
 * `--no-skip-unchanged` — Disable configured content skipping (automatic mode still guards unchanged candidates)
 * `--force` — Prepare even when content is unchanged; does not bypass validation
+* `--prepare-command <COMMAND>` — Run a shell command at the workspace root before committing; also validates unchanged releases
 * `--json` — Emit the preparation outcome and package plan as JSON
 * `--github-output` — Emit key=value records suitable for $GITHUB_OUTPUT
 

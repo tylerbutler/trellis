@@ -14,8 +14,10 @@ use crate::commands::{tag, version};
 use crate::git::{git_output, git_stdout, git_with_identity, ls_remote_commit};
 use crate::github::{GitHubClient, ReleasePr};
 use crate::json::{ReleaseOutcome, ReleasePrDocument};
+use crate::runner::CommandSpec;
 use crate::workspace::Workspace;
 use anyhow::{Context, Result, bail};
+use std::process::{Command, Stdio};
 
 pub struct PrOptions {
     /// Base branch the PR targets.
@@ -24,6 +26,7 @@ pub struct PrOptions {
     pub branch: String,
     pub overrides: Overrides,
     pub continuation: ContinuationOptions,
+    pub prepare_command: Option<String>,
     pub json: bool,
     pub github_output: bool,
 }
@@ -201,22 +204,21 @@ fn prepare(workspace: &Workspace, options: &PrOptions, base_commit: &str) -> Res
                         .map(|(label, _)| label))
     });
     let guard = (skip || automatic) && !options.continuation.force && !overrides.promoting();
-    if guard {
-        let unchanged = if let Some(previous) = &pending_state {
+    let unchanged = guard
+        && if let Some(previous) = &pending_state {
             previous.inputs == inputs && previous.matches_plan(&plan)
         } else if pending.is_none() && plan.iter().any(|p| !p.current.pre.is_empty()) {
             !retargeted && !release_state::candidate_changed(workspace, base_commit, &plan)?
         } else {
             false
         };
-        if unchanged {
-            return Ok(PrResult {
-                outcome: ReleaseOutcome::Unchanged,
-                plan,
-                identity: pending.map(|p| (p.number, p.url)),
-                action: None,
-            });
-        }
+    if unchanged && options.prepare_command.is_none() {
+        return Ok(PrResult {
+            outcome: ReleaseOutcome::Unchanged,
+            plan,
+            identity: pending.map(|p| (p.number, p.url)),
+            action: None,
+        });
     }
     release_state::validate_location(workspace)?;
     let identity = build_release_commit_and_pr(
@@ -226,7 +228,16 @@ fn prepare(workspace: &Workspace, options: &PrOptions, base_commit: &str) -> Res
         &plan,
         &github,
         pending.as_ref(),
+        unchanged,
     )?;
+    let Some(identity) = identity else {
+        return Ok(PrResult {
+            outcome: ReleaseOutcome::Unchanged,
+            plan,
+            identity: pending.map(|p| (p.number, p.url)),
+            action: None,
+        });
+    };
     Ok(PrResult {
         outcome: ReleaseOutcome::Prepared,
         plan,
@@ -246,7 +257,8 @@ fn build_release_commit_and_pr(
     plan: &[version::PlanEntry],
     github: &GitHubClient,
     pending: Option<&ReleasePr>,
-) -> Result<(u64, String)> {
+    unchanged: bool,
+) -> Result<Option<(u64, String)>> {
     let root = &workspace.root;
     let reference = format!("refs/heads/{}", options.branch);
     let expected = ls_remote_commit(root, "origin", &reference).with_context(|| {
@@ -261,10 +273,39 @@ fn build_release_commit_and_pr(
             "release branch differs from the selected PR head; retry"
         );
     }
-    if !version::apply(workspace, overrides, false)? {
-        bail!("version apply failed");
+    if unchanged {
+        if let Some(pr) = pending {
+            git_stdout(root, &["checkout", "--detach", &pr.head])?;
+        }
+    } else {
+        if !version::apply(workspace, overrides, false)? {
+            bail!("version apply failed");
+        }
+        release_state::remove(workspace)?;
     }
-    release_state::remove(workspace)?;
+    if let Some(command) = &options.prepare_command {
+        run_prepare_command(workspace, command)?;
+    }
+
+    git_stdout(root, &["add", "-A"])?;
+    if unchanged {
+        if let Some(pr) = pending {
+            github.check_open_pr(pr, &options.branch, &options.base)?;
+        }
+        anyhow::ensure!(
+            ls_remote_commit(root, "origin", &reference)? == expected,
+            "release branch changed during preparation; retry"
+        );
+        let tree = git_stdout(root, &["write-tree"])?;
+        let original_tree = git_stdout(root, &["rev-parse", "HEAD^{tree}"])?;
+        if tree.trim() == original_tree.trim() {
+            return Ok(None);
+        }
+        anyhow::ensure!(
+            pending.is_some(),
+            "prepare command changed files on an unchanged merged release; use --force to prepare a new release"
+        );
+    }
 
     let summary = plan
         .iter()
@@ -273,7 +314,6 @@ fn build_release_commit_and_pr(
         .join(", ");
     let title = format!("release: {summary}");
 
-    git_stdout(root, &["add", "-A"])?;
     git_with_identity(root, &["commit", "-m", &title])?;
 
     // Prepare on detached HEAD so failures never move an existing local
@@ -309,12 +349,51 @@ fn build_release_commit_and_pr(
             Ok((number, url))
         }
     })();
-    finalized.with_context(|| {
+    finalized.map(Some).with_context(|| {
         format!(
             "branch `{}` was pushed successfully, but PR finalization remains incomplete; check the remote branch and PR before retrying",
             options.branch
         )
     })
+}
+
+fn run_prepare_command(workspace: &Workspace, command: &str) -> Result<()> {
+    let root = &workspace.root;
+    let selected = Workspace::load(root)?;
+    let head = git_stdout(root, &["rev-parse", "HEAD"])?;
+    let spec = CommandSpec::shell(command, root.clone());
+    crate::term::trace_command(&spec.program, &spec.args, &spec.cwd);
+    let status = Command::new(&spec.program)
+        .args(&spec.args)
+        .current_dir(&spec.cwd)
+        .stdin(Stdio::null())
+        .stdout(Stdio::from(std::io::stderr()))
+        .stderr(Stdio::inherit())
+        .status()
+        .with_context(|| format!("failed to start prepare command `{command}`"))?;
+    anyhow::ensure!(
+        status.success(),
+        "prepare command `{command}` failed: {status}"
+    );
+    let after_branch = git_output(root, &["symbolic-ref", "--quiet", "HEAD"])?;
+    anyhow::ensure!(
+        git_stdout(root, &["rev-parse", "HEAD"])? == head && after_branch.status.code() == Some(1),
+        "prepare command changed HEAD or the checked-out branch; generate and validate files without committing or switching branches"
+    );
+    let prepared = Workspace::load(root).context("cannot load workspace after prepare command")?;
+    anyhow::ensure!(
+        selected.members.len() == prepared.members.len()
+            && selected.members.iter().all(|member| {
+                prepared.member_index(&member.name).is_some_and(|index| {
+                    let after = &prepared.members[index];
+                    member.version() == after.version()
+                        && member.rel_file(selected.manifest_rel())
+                            == after.rel_file(prepared.manifest_rel())
+                })
+            }),
+        "prepare command changed the selected package versions or membership"
+    );
+    Ok(())
 }
 
 /// Markdown body: the bump table, plus each package's new CHANGELOG section

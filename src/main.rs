@@ -412,7 +412,7 @@ enum ReleaseCommand {
         /// Disable configured automatic candidate continuation
         #[arg(long)]
         no_auto_pre: bool,
-        /// Skip preparation when release content and proposed versions have not changed
+        /// Skip commit and push when release content and proposed versions have not changed
         #[arg(long, conflicts_with = "no_skip_unchanged")]
         skip_unchanged: bool,
         /// Disable configured content skipping (automatic mode still guards unchanged candidates)
@@ -421,6 +421,9 @@ enum ReleaseCommand {
         /// Prepare even when content is unchanged; does not bypass validation
         #[arg(long)]
         force: bool,
+        /// Run a shell command at the workspace root before committing; also validates unchanged releases
+        #[arg(long, value_name = "COMMAND")]
+        prepare_command: Option<String>,
         /// Emit the preparation outcome and package plan as JSON
         #[arg(long, conflicts_with = "github_output")]
         json: bool,
@@ -756,6 +759,7 @@ fn dispatch(cli: Cli) -> Result<bool> {
                 skip_unchanged,
                 no_skip_unchanged,
                 force,
+                prepare_command,
                 json,
                 github_output,
             } => commands::release::pr(
@@ -782,6 +786,7 @@ fn dispatch(cli: Cli) -> Result<bool> {
                         },
                         force,
                     },
+                    prepare_command,
                     json,
                     github_output,
                 },

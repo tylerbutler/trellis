@@ -746,6 +746,24 @@ history or inconsistent versions is an error, not an inferred mode or no-op.
 `no_changes`, with the package plan and available PR identity. They do not
 authorize publication or replace workflow concurrency/publication gates.
 
+`release pr --prepare-command` is a CLI-only generation and validation boundary.
+It runs a caller-supplied shell command at the workspace root after version
+application and before staging or committing. Its output goes to stderr;
+failure prevents trellis from committing, pushing, or mutating a PR.
+Selected versions and detached HEAD must remain unchanged by the command.
+Local files remain available for inspection after failure.
+
+Unchanged native inputs do not prove external generated files are valid.
+With a prepare command, the unchanged path validates the selected pending
+head directly instead of reapplying versions or regenerating from the base.
+Repairs become a commit on that head, preserving its other files and PR identity.
+A clean result needs no commit or remote mutation. Both paths retain the
+remote SHA captured before command execution; PR checks and the explicit
+push lease reject concurrent changes. An unchanged merged candidate without
+a pending PR validates the base but requires explicit `--force` preparation
+if files need repair. No eligible release plan means no command execution.
+This boundary does not add a persisted preparation marker or generator cache.
+
 One concurrency group serializes automatic stable preparation, manual
 candidate/promotion requests, and merge publication without cancellation.
 Automatic preparation pauses for prerelease manifests on main, pending
