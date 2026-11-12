@@ -1,5 +1,0 @@
-component: run
-kind: Changed
-body: |-
-  **`trellis run` rejects undeclared Gleam tasks in adapter workspaces.** To use `build`, `test`, `check`, `docs`, `deps`, `format`, or `clean`, define a command under `[tools.trellis.tasks]`. Custom tasks can override built-in names. The error lists declared tasks, and `trellis exec` remains available for arbitrary commands.
-time: 2026-08-19T09:03:00.000000-07:00

@@ -1,5 +1,0 @@
-component: release
-kind: Fixed
-body: |-
-  **`trellis release pr` waits for GitHub to report a successfully pushed head.** Updating an existing release PR now retries briefly when GitHub still reports its previous commit. Closed or retargeted PRs, changed PR identity, and unexpected heads still stop preparation. If finalization fails after the push, the error states that the branch was pushed but PR finalization remains incomplete; no structured success output is emitted.
-time: 2026-11-12T07:57:48-08:00

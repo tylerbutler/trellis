@@ -1,7 +1,0 @@
-component: version
-kind: Added
-body: |-
-  **`trellis version apply` updates the configured adapter version field.** JSON and YAML edits preserve comments, key order, whitespace, and quote style. Missing fields, mappings, sequences, and ambiguous duplicate keys are rejected before release files change. JSON and TOML version fields must be strings. YAML block scalars and aliases cannot be rewritten; use a plain or quoted version string.
-
-    Adapter version bumps leave Gleam `manifest.toml` lockfiles unchanged.
-time: 2026-08-19T09:01:00.000000-07:00

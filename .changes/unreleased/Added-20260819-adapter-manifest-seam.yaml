@@ -1,7 +1,0 @@
-component: trellis
-kind: Added
-body: |-
-  **`[tools.trellis.adapter]` supports packages with non-Gleam manifests.** Set the required `manifest` key to a package-relative `.toml`, `.json`, `.yaml`, or `.yml` file. Optional `name` and `version` keys select dotted field paths, defaulting to `name` and `version`. Both fields must exist; JSON and TOML require strings. Omit `members` to discover packages automatically, including the workspace root.
-
-    Configure adapters in root `trellis.toml` or `gleam.toml`, but never both. Gleam workspaces still use `gleam.toml`. Adapter manifests supply no dependency edges, so version bumps do not propagate between packages.
-time: 2026-08-19T09:00:00.000000-07:00
