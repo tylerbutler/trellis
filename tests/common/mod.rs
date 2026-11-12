@@ -349,6 +349,20 @@ fn route(
             ("200 OK", list.to_string())
         }
         ("GET", (Some("repos"), Some("pulls")), Some(number)) => {
+            let sequence = root.join(".fake/pr-detail-sequence");
+            if let Ok(contents) = std::fs::read_to_string(&sequence) {
+                let mut responses: Vec<serde_json::Value> =
+                    serde_json::from_str(&contents).unwrap();
+                let response = responses.remove(0);
+                if responses.is_empty() {
+                    std::fs::remove_file(&sequence).unwrap();
+                } else {
+                    std::fs::write(&sequence, serde_json::to_string(&responses).unwrap()).unwrap();
+                }
+                if !response.is_null() {
+                    return ("200 OK", response.to_string());
+                }
+            }
             if let Ok(detail) = std::fs::read_to_string(root.join(".fake/pr-detail")) {
                 return ("200 OK", detail);
             }
@@ -374,7 +388,15 @@ fn route(
             "201 Created",
             r#"{"number":7,"html_url":"https://github.com/example/repo/pull/7"}"#.to_string(),
         ),
-        ("PATCH", (Some("repos"), Some("pulls")), Some(_)) => ("200 OK", "{}".to_string()),
+        ("PATCH", (Some("repos"), Some("pulls")), Some(_)) => {
+            if root.join(".fake/fail-pr-update").exists() {
+                return (
+                    "500 Internal Server Error",
+                    r#"{"message":"PR update unavailable"}"#.to_string(),
+                );
+            }
+            ("200 OK", "{}".to_string())
+        }
         ("GET", (Some("repos"), Some("releases")), Some("tags")) => {
             let tag = parts.get(5).copied().unwrap_or("");
             if root.join(format!(".fake/release-{tag}")).exists() {

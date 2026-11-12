@@ -59,6 +59,15 @@ fallback (`gh auth token`). The body includes the bump table
 and each package's new CHANGELOG section. It requires a clean working tree
 and is a no-op when there is no eligible release plan.
 
+After updating an existing PR's branch, trellis checks that GitHub reports the
+pushed commit before it updates the PR description. If GitHub still reports the
+previous head, trellis makes up to six checks, one second apart. A closed or
+retargeted PR, a changed PR identity, or an unexpected head stops preparation
+without further retries. If PR finalization fails after the push, the error
+states that the branch was pushed but finalization remains incomplete. No
+structured success output is emitted; check the remote branch and PR before
+retrying.
+
 ### Candidates and promotion
 
 `release pr` accepts the same repeatable `--set` and `--bump`, plus `--pre`,

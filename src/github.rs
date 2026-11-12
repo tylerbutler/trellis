@@ -128,15 +128,46 @@ impl GitHubClient {
     }
 
     pub fn check_open_pr(&self, expected: &ReleasePr, branch: &str, base: &str) -> Result<()> {
-        let url = self.url(&format!("/pulls/{}", expected.number));
-        let body = expect_status("GET", &url, 200, self.get(&url)?)?;
-        let live = self.match_release_pr(&body, branch, base)?.context(
-            "release PR was closed, merged, or retargeted; retry after checking its state",
-        )?;
+        let live = self.read_open_pr(expected.number, branch, base)?;
         if live != *expected {
             bail!("release PR changed during preparation; retry against its current head");
         }
         Ok(())
+    }
+
+    /// Only the previously checked head can be stale after a successful leased push.
+    pub fn wait_for_pushed_pr(
+        &self,
+        previous: &ReleasePr,
+        pushed_head: &str,
+        branch: &str,
+        base: &str,
+    ) -> Result<()> {
+        let mut pushed = previous.clone();
+        pushed.head = pushed_head.to_string();
+        for attempt in 0..6 {
+            if attempt > 0 {
+                std::thread::sleep(std::time::Duration::from_secs(1));
+            }
+            let live = self.read_open_pr(previous.number, branch, base)?;
+            if live == pushed {
+                return Ok(());
+            }
+            if live != *previous {
+                bail!("release PR changed during preparation; retry against its current head");
+            }
+        }
+        bail!(
+            "GitHub release PR still reports the previous head `{}` after waiting for pushed head `{pushed_head}`",
+            previous.head
+        )
+    }
+
+    fn read_open_pr(&self, number: u64, branch: &str, base: &str) -> Result<ReleasePr> {
+        let url = self.url(&format!("/pulls/{number}"));
+        let body = expect_status("GET", &url, 200, self.get(&url)?)?;
+        self.match_release_pr(&body, branch, base)?
+            .context("release PR was closed, merged, or retargeted; retry after checking its state")
     }
 
     /// Open a PR and return its URL.
