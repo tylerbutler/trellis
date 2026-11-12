@@ -197,6 +197,325 @@ impl ReleaseFixture {
     }
 }
 
+const PREPARE_ARTIFACTS: &str = "\
+    sed -n 's/^version = \"\\(.*\\)\"/# lat_core \\1/p' packages/lat_core/gleam.toml > generated.md && \
+    cp packages/lat_core/gleam.toml consumer.lock && \
+    echo validated >> .fake/prepared && echo 'generator output'";
+
+fn pr_mutations(f: &ReleaseFixture) -> usize {
+    fs::read_to_string(f.path().join(".fake/github-log"))
+        .unwrap_or_default()
+        .lines()
+        .filter(|line| {
+            line.starts_with("POST /repos/example/repo/pulls")
+                || line.starts_with("PATCH /repos/example/repo/pulls/")
+        })
+        .count()
+}
+
+#[test]
+fn prepare_command_includes_artifacts_in_first_push_and_validates_unchanged() {
+    let f = ReleaseFixture::new();
+    let first = f.prepare(&["--pre", "rc", "--prepare-command", PREPARE_ARTIFACTS]);
+    assert_eq!(first["outcome"], "prepared");
+    let before = commit_of(f.path(), "origin/release/pending");
+    assert_eq!(
+        git_stdout(f.path(), &["show", "origin/release/pending:generated.md"]),
+        "# lat_core 1.3.0-rc.0"
+    );
+    assert!(
+        git_stdout(f.path(), &["show", "origin/release/pending:consumer.lock"])
+            .contains("version = \"1.3.0-rc.0\"")
+    );
+    f.pending();
+    let mutations = pr_mutations(&f);
+    for mode in ["--json", "--github-output"] {
+        let output = trellis_github(f.path(), &f.api)
+            .args([
+                "release",
+                "pr",
+                "--resume",
+                "--skip-unchanged",
+                "--prepare-command",
+                PREPARE_ARTIFACTS,
+                mode,
+            ])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(String::from_utf8_lossy(&output.stderr).contains("generator output"));
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        assert!(!stdout.contains("generator output"));
+        if mode == "--json" {
+            let result: Value = serde_json::from_str(&stdout).unwrap();
+            assert_eq!(result["outcome"], "unchanged");
+            assert_eq!(result["pr_number"], 7);
+        } else {
+            assert!(stdout.contains("outcome=unchanged"));
+        }
+        assert_eq!(commit_of(f.path(), "origin/release/pending"), before);
+        assert_eq!(pr_mutations(&f), mutations);
+    }
+    assert_eq!(
+        fs::read_to_string(f.path().join(".fake/prepared"))
+            .unwrap()
+            .lines()
+            .count(),
+        3
+    );
+}
+
+#[test]
+fn prepare_command_repairs_older_pending_preparation_once_without_losing_head_files() {
+    let f = ReleaseFixture::new();
+    f.prepare(&["--pre", "rc"]);
+    git(
+        f.path(),
+        &["checkout", "--detach", "origin/release/pending"],
+    );
+    write(&f.path().join("generated.md"), "# lat_core 1.2.0\n");
+    write(&f.path().join("consumer.lock"), "stale consumer lock\n");
+    write(&f.path().join("keep.txt"), "pending-only content\n");
+    f.commit();
+    git(
+        f.path(),
+        &["push", "origin", "HEAD:refs/heads/release/pending"],
+    );
+    git(f.path(), &["checkout", "main"]);
+    f.pending();
+    let before = commit_of(f.path(), "origin/release/pending");
+    let repaired = f.prepare(&[
+        "--resume",
+        "--skip-unchanged",
+        "--prepare-command",
+        PREPARE_ARTIFACTS,
+    ]);
+    assert_eq!(repaired["outcome"], "prepared");
+    assert_eq!(repaired["pr_number"], 7);
+    assert_eq!(repaired["pr_action"], "updated");
+    assert_eq!(repaired["bumped"][0]["next"], "1.3.0-rc.0");
+    assert_eq!(
+        git_stdout(f.path(), &["rev-parse", "origin/release/pending^"]),
+        before
+    );
+    assert_eq!(
+        git_stdout(f.path(), &["show", "origin/release/pending:keep.txt"]),
+        "pending-only content"
+    );
+    assert_eq!(
+        git_stdout(f.path(), &["show", "origin/release/pending:generated.md"]),
+        "# lat_core 1.3.0-rc.0"
+    );
+    assert!(
+        git_stdout(f.path(), &["show", "origin/release/pending:consumer.lock"])
+            .contains("1.3.0-rc.0")
+    );
+    f.pending();
+    let repaired_head = commit_of(f.path(), "origin/release/pending");
+    assert_eq!(
+        f.prepare(&[
+            "--resume",
+            "--skip-unchanged",
+            "--prepare-command",
+            PREPARE_ARTIFACTS,
+        ])["outcome"],
+        "unchanged"
+    );
+    assert_eq!(commit_of(f.path(), "origin/release/pending"), repaired_head);
+}
+
+#[test]
+fn prepare_command_failure_never_pushes_or_mutates_a_pr() {
+    for pending in [false, true] {
+        let f = ReleaseFixture::new();
+        if pending {
+            f.prepare(&["--pre", "rc"]);
+            f.pending();
+        }
+        let before = git_stdout(f._origin.path(), &["for-each-ref", "refs/heads/"]);
+        let mutations = pr_mutations(&f);
+        let output = trellis_github(f.path(), &f.api)
+            .args([
+                "release",
+                "pr",
+                "--pre",
+                "rc",
+                "--resume",
+                "--skip-unchanged",
+                "--json",
+                "--prepare-command",
+                "echo incomplete > generated.md; echo 'generation failed' >&2; exit 23",
+            ])
+            .output()
+            .unwrap();
+        assert!(!output.status.success());
+        assert!(output.stdout.is_empty());
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains("generation failed"), "{stderr}");
+        assert!(stderr.contains("23"), "{stderr}");
+        assert_eq!(
+            fs::read_to_string(f.path().join("generated.md")).unwrap(),
+            "incomplete\n"
+        );
+        assert_eq!(
+            git_stdout(f._origin.path(), &["for-each-ref", "refs/heads/"]),
+            before
+        );
+        assert_eq!(pr_mutations(&f), mutations);
+    }
+}
+
+#[test]
+fn prepare_command_keeps_initial_lease_in_first_preparation_and_unchanged_validation() {
+    for pending in [false, true] {
+        let f = ReleaseFixture::new();
+        if pending {
+            f.prepare(&["--pre", "rc"]);
+            f.pending();
+        }
+        git(f.path(), &["push", "origin", "main:refs/heads/concurrent"]);
+        let concurrent = commit_of(f.path(), "main");
+        let command = format!(
+            "git --git-dir='{}' update-ref refs/heads/release/pending {concurrent}",
+            f._origin.path().display()
+        );
+        let mutations = pr_mutations(&f);
+        let output = trellis_github(f.path(), &f.api)
+            .args([
+                "release",
+                "pr",
+                "--pre",
+                "rc",
+                "--resume",
+                "--skip-unchanged",
+                "--json",
+                "--prepare-command",
+                &command,
+            ])
+            .output()
+            .unwrap();
+        assert!(!output.status.success());
+        assert!(output.stdout.is_empty());
+        assert_eq!(commit_of(f._origin.path(), "release/pending"), concurrent);
+        assert_eq!(pr_mutations(&f), mutations);
+    }
+}
+
+#[test]
+fn prepare_command_rechecks_selected_pr_even_when_validation_makes_no_changes() {
+    for change in ["closed", "retargeted", "head"] {
+        let f = ReleaseFixture::new();
+        f.prepare(&["--pre", "rc"]);
+        f.pending();
+        let before = commit_of(f.path(), "origin/release/pending");
+        let mut pr: Value = serde_json::from_str::<Value>(
+            &fs::read_to_string(f.path().join(".fake/pr-list")).unwrap(),
+        )
+        .unwrap()[0]
+            .clone();
+        match change {
+            "closed" => pr["state"] = json!("closed"),
+            "retargeted" => pr["base"]["ref"] = json!("other"),
+            _ => pr["head"]["sha"] = json!(commit_of(f.path(), "main")),
+        }
+        let command = format!("printf '%s' '{}' > .fake/pr-detail", pr);
+        let mutations = pr_mutations(&f);
+        let output = trellis_github(f.path(), &f.api)
+            .args([
+                "release",
+                "pr",
+                "--resume",
+                "--skip-unchanged",
+                "--json",
+                "--prepare-command",
+                &command,
+            ])
+            .output()
+            .unwrap();
+        assert!(!output.status.success());
+        assert!(output.stdout.is_empty());
+        assert!(f.path().join(".fake/pr-detail").exists());
+        assert_eq!(commit_of(f.path(), "origin/release/pending"), before);
+        assert_eq!(pr_mutations(&f), mutations);
+    }
+}
+
+#[test]
+fn prepare_command_validates_merged_candidate_but_requires_force_for_repairs() {
+    let f = ReleaseFixture::new();
+    f.prepare(&["--pre", "rc", "--prepare-command", PREPARE_ARTIFACTS]);
+    f.merge();
+    let before = commit_of(f.path(), "origin/release/pending");
+    let mutations = pr_mutations(&f);
+    let unchanged = f.prepare(&["--auto-pre", "--prepare-command", PREPARE_ARTIFACTS]);
+    assert_eq!(unchanged["outcome"], "unchanged");
+    let output = trellis_github(f.path(), &f.api)
+        .args([
+            "release",
+            "pr",
+            "--auto-pre",
+            "--json",
+            "--prepare-command",
+            "echo repair > generated.md",
+        ])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("--force"));
+    assert_eq!(commit_of(f.path(), "origin/release/pending"), before);
+    assert_eq!(pr_mutations(&f), mutations);
+}
+
+#[test]
+fn prepare_command_does_not_run_without_a_release_plan() {
+    let f = ReleaseFixture::new();
+    fs::remove_file(f.path().join(".changes/unreleased/lat_core-1.toml")).unwrap();
+    f.commit();
+    assert_eq!(
+        f.prepare(&["--prepare-command", "echo unexpected > .fake/prepared"])["outcome"],
+        "no_changes"
+    );
+    assert!(!f.path().join(".fake/prepared").exists());
+    assert_eq!(pr_mutations(&f), 0);
+}
+
+#[test]
+fn prepare_command_cannot_replace_the_selected_versions_or_commit() {
+    for command in [
+        "git commit --allow-empty -qm 'hook commit'",
+        "git checkout -q main",
+        "sed 's/1.3.0-rc.0/9.9.9/' packages/lat_core/gleam.toml > changed && mv changed packages/lat_core/gleam.toml",
+    ] {
+        let f = ReleaseFixture::new();
+        f.prepare(&["--pre", "rc"]);
+        f.pending();
+        let before = commit_of(f.path(), "origin/release/pending");
+        let mutations = pr_mutations(&f);
+        let output = trellis_github(f.path(), &f.api)
+            .args([
+                "release",
+                "pr",
+                "--resume",
+                "--skip-unchanged",
+                "--json",
+                "--prepare-command",
+                command,
+            ])
+            .output()
+            .unwrap();
+        assert!(!output.status.success());
+        assert!(output.stdout.is_empty());
+        assert!(String::from_utf8_lossy(&output.stderr).contains("prepare command"));
+        assert_eq!(commit_of(f.path(), "origin/release/pending"), before);
+        assert_eq!(pr_mutations(&f), mutations);
+    }
+}
+
 #[test]
 fn pending_proposed_targets_survive_updates_and_field_overrides() {
     let f = ReleaseFixture::new();

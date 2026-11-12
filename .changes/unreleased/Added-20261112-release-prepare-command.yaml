@@ -1,0 +1,5 @@
+component: release
+kind: Added
+body: |-
+  **`release pr --prepare-command` generates and validates files before the release branch push.** Run a caller-supplied shell command after versions are applied so generated docs and consumer locks enter the same commit. A failed command stops preparation before remote changes. With unchanged release inputs, the command still runs: stale files on a pending PR are repaired without changing its proposed versions, and a clean rerun leaves the branch and PR unchanged.
+time: 2026-11-12T08:13:53-08:00
