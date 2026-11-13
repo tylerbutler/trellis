@@ -682,6 +682,8 @@ impl Workspace {
 
     /// Resolve a set of member names/filters into topologically ordered indices.
     pub fn select(&self, filter: &SelectionFilter) -> Result<Vec<usize>> {
+        let included = self.match_member_paths(&filter.paths, "--path")?;
+        let excluded = self.match_member_paths(&filter.exclude_paths, "--exclude-path")?;
         let mut selected: HashSet<usize> = if filter.names.is_empty() {
             (0..self.members.len()).collect()
         } else {
@@ -703,6 +705,10 @@ impl Workspace {
                 .collect::<Result<_>>()?
         };
 
+        if !filter.paths.is_empty() {
+            selected.retain(|idx| included.contains(idx));
+        }
+
         if let Some(since) = &filter.since {
             let changed = crate::git::changed_members(self, since)?;
             selected.retain(|idx| changed.contains(idx));
@@ -715,6 +721,10 @@ impl Workspace {
             }
         }
 
+        selected.retain(|idx| {
+            (filter.paths.is_empty() || included.contains(idx)) && !excluded.contains(idx)
+        });
+
         if filter.releasable_only {
             selected.retain(|&idx| self.members[idx].releasable());
         }
@@ -723,12 +733,36 @@ impl Workspace {
         ordered.sort_unstable(); // member indices are already topological
         Ok(ordered)
     }
+
+    fn match_member_paths(&self, patterns: &[String], flag: &str) -> Result<HashSet<usize>> {
+        let mut matched = HashSet::new();
+        for pattern in patterns {
+            let matcher = globset::Glob::new(pattern)
+                .with_context(|| format!("invalid {flag} pattern `{pattern}`"))?
+                .compile_matcher();
+            let mut found = false;
+            for (idx, member) in self.members.iter().enumerate() {
+                if matcher.is_match(&member.rel_path) {
+                    matched.insert(idx);
+                    found = true;
+                }
+            }
+            if !found {
+                bail!("{flag} pattern `{pattern}` matched no workspace members");
+            }
+        }
+        Ok(matched)
+    }
 }
 
 #[derive(Debug, Default)]
 pub struct SelectionFilter {
     /// Explicit package names; empty means all members.
     pub names: Vec<String>,
+    /// Member-path include globs; empty means no path restriction.
+    pub paths: Vec<String>,
+    /// Member-path exclude globs, applied after dependent expansion.
+    pub exclude_paths: Vec<String>,
     /// Restrict to members owning files changed since this git ref.
     pub since: Option<String>,
     /// Add the reverse-dependency closure of the selection.

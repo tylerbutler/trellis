@@ -7,6 +7,8 @@ use anyhow::{Result, bail};
 
 pub struct ExecOptions {
     pub packages: Vec<String>,
+    pub paths: Vec<String>,
+    pub exclude_paths: Vec<String>,
     pub command: Vec<String>,
     pub since: Option<String>,
     pub serial: bool,
@@ -22,6 +24,8 @@ pub fn run(workspace: &Workspace, options: &ExecOptions) -> Result<bool> {
 
     let selected = workspace.select(&SelectionFilter {
         names: options.packages.clone(),
+        paths: options.paths.clone(),
+        exclude_paths: options.exclude_paths.clone(),
         since: options.since.clone(),
         with_dependents: false,
         releasable_only: false,

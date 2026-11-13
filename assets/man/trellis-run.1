@@ -4,7 +4,7 @@
 .SH NAME
 trellis\-run \- Run a task across packages, graph\-parallel by default
 .SH SYNOPSIS
-\fBtrellis run\fR [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-\-since\fR] [\fB\-\-color\fR] [\fB\-\-with\-dependents\fR] [\fB\-q\fR|\fB\-\-quiet\fR] [\fB\-\-target\fR] [\fB\-\-strict\fR] [\fB\-v\fR|\fB\-\-verbose\fR] [\fB\-\-check\fR] [\fB\-\-no\-update\-check\fR] [\fB\-\-serial\fR] [\fB\-\-keep\-going\fR] [\fB\-j\fR|\fB\-\-jobs\fR] [\fB\-\-json\fR] [\fB\-h\fR|\fB\-\-help\fR] <\fITASK\fR> [\fIPACKAGES\fR] 
+\fBtrellis run\fR [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-\-path\fR] [\fB\-\-color\fR] [\fB\-\-exclude\-path\fR] [\fB\-q\fR|\fB\-\-quiet\fR] [\fB\-\-since\fR] [\fB\-v\fR|\fB\-\-verbose\fR] [\fB\-\-with\-dependents\fR] [\fB\-\-no\-update\-check\fR] [\fB\-\-target\fR] [\fB\-\-strict\fR] [\fB\-\-check\fR] [\fB\-\-serial\fR] [\fB\-\-keep\-going\fR] [\fB\-j\fR|\fB\-\-jobs\fR] [\fB\-\-json\fR] [\fB\-h\fR|\fB\-\-help\fR] <\fITASK\fR> [\fIPACKAGES\fR] 
 .SH DESCRIPTION
 Run a task across packages, graph\-parallel by default
 .SH OPTIONS
@@ -12,8 +12,8 @@ Run a task across packages, graph\-parallel by default
 \fB\-C\fR, \fB\-\-directory\fR \fI<DIR>\fR
 Run as if started in this directory
 .TP
-\fB\-\-since\fR \fI<REF>\fR
-Only packages owning files changed since this git ref
+\fB\-\-path\fR \fI<GLOB>\fR
+Include workspace\-relative member paths matching this glob (repeatable); intersects with package names and \-\-since, and bounds \-\-with\-dependents
 .TP
 \fB\-\-color\fR \fI<WHEN>\fR [default: auto]
 When to color output. `auto` follows the terminal, `NO_COLOR`, and `CLICOLOR=0`; the other two override that detection
@@ -30,11 +30,25 @@ always
 never
 .RE
 .TP
-\fB\-\-with\-dependents\fR
-Add the reverse\-dependency closure of the selection
+\fB\-\-exclude\-path\fR \fI<GLOB>\fR
+Exclude workspace\-relative member paths matching this glob (repeatable); overrides named packages and added dependents
 .TP
 \fB\-q\fR, \fB\-\-quiet\fR
 Suppress normal\-path output; JSON/report payloads and errors still print
+.TP
+\fB\-\-since\fR \fI<REF>\fR
+Only packages owning files changed since this git ref
+.TP
+\fB\-v\fR, \fB\-\-verbose\fR
+Trace every command trellis shells out to, on stderr
+.TP
+\fB\-\-with\-dependents\fR
+Add the reverse\-dependency closure of the selection
+.TP
+\fB\-\-no\-update\-check\fR
+Don\*(Aqt check whether a newer trellis release is available
+
+The check is also skipped in CI, when not attached to a terminal, and when `TRELLIS_NO_UPDATE_CHECK` or `DO_NOT_TRACK` is set.
 .TP
 \fB\-\-target\fR \fI<TARGET>\fR
 Gleam compile target; `all` runs the task once per target
@@ -54,16 +68,8 @@ all
 \fB\-\-strict\fR
 Treat warnings as errors (build)
 .TP
-\fB\-v\fR, \fB\-\-verbose\fR
-Trace every command trellis shells out to, on stderr
-.TP
 \fB\-\-check\fR
 Check instead of write (format)
-.TP
-\fB\-\-no\-update\-check\fR
-Don\*(Aqt check whether a newer trellis release is available
-
-The check is also skipped in CI, when not attached to a terminal, and when `TRELLIS_NO_UPDATE_CHECK` or `DO_NOT_TRACK` is set.
 .TP
 \fB\-\-serial\fR
 Run one package at a time, in dependency order

@@ -4,7 +4,7 @@
 .SH NAME
 trellis\-exec \- Run an arbitrary command in each package directory
 .SH SYNOPSIS
-\fBtrellis exec\fR [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-\-since\fR] [\fB\-\-color\fR] [\fB\-\-serial\fR] [\fB\-\-keep\-going\fR] [\fB\-q\fR|\fB\-\-quiet\fR] [\fB\-j\fR|\fB\-\-jobs\fR] [\fB\-v\fR|\fB\-\-verbose\fR] [\fB\-\-json\fR] [\fB\-\-no\-update\-check\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fIPACKAGES\fR] <\fICOMMAND\fR> 
+\fBtrellis exec\fR [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-\-path\fR] [\fB\-\-color\fR] [\fB\-\-exclude\-path\fR] [\fB\-q\fR|\fB\-\-quiet\fR] [\fB\-\-since\fR] [\fB\-\-serial\fR] [\fB\-v\fR|\fB\-\-verbose\fR] [\fB\-\-keep\-going\fR] [\fB\-\-no\-update\-check\fR] [\fB\-j\fR|\fB\-\-jobs\fR] [\fB\-\-json\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fIPACKAGES\fR] <\fICOMMAND\fR> 
 .SH DESCRIPTION
 Run an arbitrary command in each package directory
 .SH OPTIONS
@@ -12,8 +12,8 @@ Run an arbitrary command in each package directory
 \fB\-C\fR, \fB\-\-directory\fR \fI<DIR>\fR
 Run as if started in this directory
 .TP
-\fB\-\-since\fR \fI<REF>\fR
-Only packages owning files changed since this git ref
+\fB\-\-path\fR \fI<GLOB>\fR
+Include workspace\-relative member paths matching this glob (repeatable); intersects with package names and \-\-since
 .TP
 \fB\-\-color\fR \fI<WHEN>\fR [default: auto]
 When to color output. `auto` follows the terminal, `NO_COLOR`, and `CLICOLOR=0`; the other two override that detection
@@ -30,28 +30,34 @@ always
 never
 .RE
 .TP
-\fB\-\-serial\fR
-Run one package at a time, in dependency order
-.TP
-\fB\-\-keep\-going\fR
-Keep scheduling packages after a failure
+\fB\-\-exclude\-path\fR \fI<GLOB>\fR
+Exclude workspace\-relative member paths matching this glob (repeatable); overrides named packages
 .TP
 \fB\-q\fR, \fB\-\-quiet\fR
 Suppress normal\-path output; JSON/report payloads and errors still print
 .TP
-\fB\-j\fR, \fB\-\-jobs\fR \fI<N>\fR
-Maximum concurrent packages (default: CPU count)
+\fB\-\-since\fR \fI<REF>\fR
+Only packages owning files changed since this git ref
+.TP
+\fB\-\-serial\fR
+Run one package at a time, in dependency order
 .TP
 \fB\-v\fR, \fB\-\-verbose\fR
 Trace every command trellis shells out to, on stderr
 .TP
-\fB\-\-json\fR
-Emit the `trellis.exec/1` payload instead of the summary table; package output moves to stderr
+\fB\-\-keep\-going\fR
+Keep scheduling packages after a failure
 .TP
 \fB\-\-no\-update\-check\fR
 Don\*(Aqt check whether a newer trellis release is available
 
 The check is also skipped in CI, when not attached to a terminal, and when `TRELLIS_NO_UPDATE_CHECK` or `DO_NOT_TRACK` is set.
+.TP
+\fB\-j\fR, \fB\-\-jobs\fR \fI<N>\fR
+Maximum concurrent packages (default: CPU count)
+.TP
+\fB\-\-json\fR
+Emit the `trellis.exec/1` payload instead of the summary table; package output moves to stderr
 .TP
 \fB\-h\fR, \fB\-\-help\fR
 Print help (see a summary with \*(Aq\-h\*(Aq)
