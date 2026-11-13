@@ -18,6 +18,7 @@ pub fn run(workspace: &Workspace, options: &ListOptions) -> Result<()> {
         since: options.since.clone(),
         with_dependents: options.with_dependents,
         releasable_only: options.releasable,
+        ..Default::default()
     })?;
 
     if options.json {

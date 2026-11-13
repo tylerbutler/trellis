@@ -11,9 +11,11 @@ workspace.
 
 ```txt wrap
 trellis run <task> [pkgs...] [--since <ref>] [--with-dependents]
+                   [--path <glob>] [--exclude-path <glob>]
                    [--target erlang|javascript|all] [--strict] [--check]
                    [--serial] [--keep-going] [--jobs N]
-trellis exec [pkgs...] [--since <ref>] [--serial] [--keep-going] -- <command...>
+trellis exec [pkgs...] [--since <ref>] [--path <glob>] [--exclude-path <glob>]
+                   [--serial] [--keep-going] [--jobs N] -- <command...>
 ```
 
 ## Built-in tasks
@@ -79,8 +81,8 @@ failure instead of stopping at the first one.
 ## Selecting packages
 
 Name packages explicitly (`trellis run test lat_core`) or select them from git
-history. `--since <ref>` filters to packages owning changed files (committed,
-uncommitted, and untracked), and `--with-dependents` adds the
+history or member paths. `--since <ref>` filters to packages owning changed files
+(committed, uncommitted, and untracked), and `run --with-dependents` adds the
 reverse-dependency closure:
 
 ```sh
@@ -89,10 +91,45 @@ reverse-dependency closure:
 trellis run test --since origin/main --with-dependents
 ```
 
+Use `--path` to include packages by member-path glob, and `--exclude-path` to
+omit them. Quote patterns so your shell does not expand them:
+
+```sh
+trellis exec --serial --path 'examples/*' -- gleam deps download
+trellis run build --serial --path 'examples/*'
+```
+
+Patterns match workspace-relative package directories, not package names or
+manifest files. Use `/` as the separator and `.` for a root package. Paths stay
+relative to the workspace root even when you run trellis from a package
+directory. They use the same glob rules as
+[package exclusions](/docs/configuration/#package-exclusions).
+New matching workspace members are included without recipe changes.
+
+Both flags can be repeated. A package can match any `--path` pattern, but must
+also pass any explicit package-name selection and `--since` filter. With no
+`--path`, selection starts with the named packages or all workspace packages.
+For `run --with-dependents`, only packages that pass these initial filters seed
+the expansion. Added dependents must still match a `--path` pattern when one
+is given. Any `--exclude-path` match removes a package, including an explicitly
+named package or an added dependent.
+
+Each include and exclude pattern must be valid and match at least one workspace
+member, or the command fails before execution. Patterns are checked against the
+whole workspace, before other filters. Valid filters that leave no packages
+produce a successful empty selection, not a fallback to all packages.
+Unselected packages do not run or appear in text or JSON result summaries.
+
+Task-specific `[tools.trellis.exclude]` rules still apply to `run` after CLI
+selection. `exec` does not infer a task from its command or apply task exclusions;
+use `--exclude-path` to omit packages. Neither command changes workspace
+membership or release lifecycle. Dependencies outside the selection are not
+added automatically.
+
 ## Arbitrary commands
 
-`trellis exec` runs any command in each package directory, with the same
-selection and scheduling flags:
+`trellis exec` runs any command in each selected package directory. It supports
+the same scheduling flags as `run`, but not `--with-dependents`:
 
 ```sh
 trellis exec -- gleam deps update

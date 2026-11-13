@@ -2,8 +2,280 @@
 
 mod common;
 
-use common::{fixture, trellis};
+use common::{copy_fixture_to, fixture, init_repo, trellis, write};
 use predicates::prelude::*;
+
+fn selected_packages(dir: &std::path::Path, command: &str, selectors: &[&str]) -> Vec<String> {
+    let mut cmd = trellis(dir);
+    cmd.arg(command);
+    if command == "run" {
+        cmd.arg("hello");
+    }
+    cmd.args(selectors).arg("--json");
+    if command == "exec" {
+        cmd.args(["--", "echo", "selected"]);
+    }
+    let output = cmd.assert().success().get_output().clone();
+    let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    document["results"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|result| result["package"].as_str().unwrap().to_owned())
+        .collect()
+}
+
+#[test]
+fn path_selectors_intersect_names_and_union_repeated_patterns() {
+    for command in ["run", "exec"] {
+        assert_eq!(
+            selected_packages(
+                &fixture("basic"),
+                command,
+                &["--path", "packages/lat_core", "--path", "packages/lat_mid",],
+            ),
+            ["lat_core", "lat_mid"],
+        );
+        assert_eq!(
+            selected_packages(
+                &fixture("basic"),
+                command,
+                &["lat_core", "lat_cli", "--path", "packages/lat_core"],
+            ),
+            ["lat_core"],
+        );
+        assert!(
+            selected_packages(
+                &fixture("basic"),
+                command,
+                &["lat_core", "--path", "packages/lat_mid"],
+            )
+            .is_empty()
+        );
+        assert_eq!(
+            selected_packages(
+                &fixture("basic"),
+                command,
+                &[
+                    "--exclude-path",
+                    "packages/lat_mid",
+                    "--exclude-path",
+                    "examples/*",
+                ],
+            ),
+            ["lat_core", "lat_cli"],
+        );
+        assert!(
+            selected_packages(
+                &fixture("basic"),
+                command,
+                &["lat_core", "--exclude-path", "packages/lat_core"],
+            )
+            .is_empty()
+        );
+    }
+}
+
+#[test]
+fn paths_select_members_not_names_and_preserve_task_exclusions() {
+    assert_eq!(
+        selected_packages(&fixture("basic"), "exec", &["--path", "examples/*"]),
+        ["package_a"],
+    );
+    assert!(selected_packages(&fixture("basic"), "run", &["--path", "examples/*"]).is_empty());
+    trellis(&fixture("basic"))
+        .args([
+            "exec",
+            "--path",
+            "examples/*",
+            "--",
+            "sh",
+            "-c",
+            "grep ^name gleam.toml",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("name = \"package_a\""))
+        .stdout(predicate::str::contains("lat_core").not())
+        .stdout(predicate::str::contains("lat_mid").not())
+        .stdout(predicate::str::contains("lat_cli").not());
+}
+
+#[test]
+fn paths_are_root_relative_and_include_new_members_and_root_dot() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path();
+    copy_fixture_to(root);
+    let config = std::fs::read_to_string(root.join("gleam.toml")).unwrap();
+    write(
+        &root.join("gleam.toml"),
+        &format!(
+            "name = \"workspace_root\"\nversion = \"1.0.0\"\n{}",
+            config.replace(
+                "members = [\"packages/*\", \"examples/*\"]",
+                "members = [\".\", \"packages/*\", \"examples/*\"]",
+            ),
+        ),
+    );
+    write(
+        &root.join("examples/another_directory/gleam.toml"),
+        "name = \"new_example\"\nversion = \"1.0.0\"\n",
+    );
+    for command in ["run", "exec"] {
+        let nested = root.join("packages/lat_mid");
+        assert_eq!(
+            selected_packages(&nested, command, &["--path", "."]),
+            ["workspace_root"]
+        );
+        assert_eq!(
+            selected_packages(&nested, command, &["--path", "packages/lat_core"]),
+            ["lat_core"],
+        );
+    }
+    assert_eq!(
+        selected_packages(root, "exec", &["--path", "examples/*"]),
+        ["new_example", "package_a"],
+    );
+}
+
+#[test]
+fn every_path_pattern_must_be_valid_and_match_a_member_before_execution() {
+    for command in ["run", "exec"] {
+        for flag in ["--path", "--exclude-path"] {
+            for pattern in ["[", "missing/*", "lat_core", "packages/*/gleam.toml"] {
+                let mut cmd = trellis(&fixture("basic"));
+                cmd.arg(command);
+                if command == "run" {
+                    cmd.arg("hello");
+                }
+                cmd.args(["--path", "packages/*", flag, pattern]);
+                if command == "exec" {
+                    cmd.args(["--", "echo", "must-not-run"]);
+                }
+                cmd.assert()
+                    .failure()
+                    .stderr(predicate::str::contains(flag))
+                    .stderr(predicate::str::contains(pattern))
+                    .stdout("");
+            }
+        }
+    }
+}
+
+#[test]
+fn paths_intersect_since_and_bound_dependent_expansion() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path();
+    copy_fixture_to(root);
+    init_repo(root);
+    write(
+        &root.join("packages/lat_core/src/change.gleam"),
+        "// changed\n",
+    );
+    for command in ["run", "exec"] {
+        assert_eq!(
+            selected_packages(root, command, &["--since", "HEAD", "--path", "packages/*"]),
+            ["lat_core"],
+        );
+        assert!(
+            selected_packages(
+                root,
+                command,
+                &["--since", "HEAD", "--path", "packages/lat_mid"]
+            )
+            .is_empty()
+        );
+    }
+    assert_eq!(
+        selected_packages(
+            root,
+            "run",
+            &[
+                "--since",
+                "HEAD",
+                "--with-dependents",
+                "--path",
+                "packages/*",
+                "--exclude-path",
+                "packages/lat_mid"
+            ],
+        ),
+        ["lat_core", "lat_cli"],
+    );
+    assert_eq!(
+        selected_packages(
+            root,
+            "run",
+            &["--with-dependents", "--path", "packages/lat_core"],
+        ),
+        ["lat_core"],
+    );
+    assert!(
+        selected_packages(
+            root,
+            "run",
+            &[
+                "--since",
+                "HEAD",
+                "--with-dependents",
+                "--path",
+                "packages/lat_mid"
+            ],
+        )
+        .is_empty()
+    );
+}
+
+#[test]
+fn filtered_execution_preserves_order_limits_and_failure_scheduling() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path();
+    copy_fixture_to(root);
+    let config = std::fs::read_to_string(root.join("gleam.toml")).unwrap();
+    let script = format!(
+        "mkdir '{}/lock' || exit 9; sleep 0.01; rmdir '{}/lock'; exit 3",
+        root.display(),
+        root.display(),
+    );
+    write(
+        &root.join("gleam.toml"),
+        &config.replace("echo hello-from-task", &script),
+    );
+    for command in ["run", "exec"] {
+        for limit in [vec!["--serial"], vec!["--jobs", "1"]] {
+            for keep_going in [false, true] {
+                let mut cmd = trellis(root);
+                cmd.arg(command);
+                if command == "run" {
+                    cmd.arg("hello");
+                }
+                cmd.args(["--path", "packages/*", "--json"]).args(&limit);
+                if keep_going {
+                    cmd.arg("--keep-going");
+                }
+                if command == "exec" {
+                    cmd.args(["--", "sh", "-c", &script]);
+                }
+                let output = cmd.assert().failure().get_output().clone();
+                let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+                let results = document["results"].as_array().unwrap();
+                let packages: Vec<_> = results
+                    .iter()
+                    .map(|r| r["package"].as_str().unwrap())
+                    .collect();
+                assert_eq!(packages, ["lat_core", "lat_mid", "lat_cli"]);
+                for (idx, result) in results.iter().enumerate() {
+                    if keep_going || idx == 0 {
+                        assert_eq!(result["status"], "failed");
+                        assert_eq!(result["exit_code"], 3);
+                    } else {
+                        assert_eq!(result["status"], "skipped");
+                    }
+                }
+            }
+        }
+    }
+}
 
 // ---- run / exec ------------------------------------------------------
 

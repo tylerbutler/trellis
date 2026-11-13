@@ -16,6 +16,8 @@ pub enum Target {
 pub struct TaskOptions {
     pub task: String,
     pub packages: Vec<String>,
+    pub paths: Vec<String>,
+    pub exclude_paths: Vec<String>,
     pub since: Option<String>,
     pub with_dependents: bool,
     pub target: Option<Target>,
@@ -46,6 +48,8 @@ pub(crate) const BUILTIN_TASKS: &[&str] =
 pub fn run(workspace: &Workspace, options: &TaskOptions) -> Result<bool> {
     let mut selected = workspace.select(&SelectionFilter {
         names: options.packages.clone(),
+        paths: options.paths.clone(),
+        exclude_paths: options.exclude_paths.clone(),
         since: options.since.clone(),
         with_dependents: options.with_dependents,
         releasable_only: false,

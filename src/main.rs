@@ -126,6 +126,14 @@ enum Command {
         /// Packages to run in; all workspace packages when omitted
         #[arg(add = completion::packages())]
         packages: Vec<String>,
+        /// Include workspace-relative member paths matching this glob (repeatable);
+        /// intersects with package names and --since, and bounds --with-dependents
+        #[arg(long = "path", value_name = "GLOB")]
+        paths: Vec<String>,
+        /// Exclude workspace-relative member paths matching this glob (repeatable);
+        /// overrides named packages and added dependents
+        #[arg(long = "exclude-path", value_name = "GLOB")]
+        exclude_paths: Vec<String>,
         /// Only packages owning files changed since this git ref
         #[arg(long, value_name = "REF")]
         since: Option<String>,
@@ -160,6 +168,14 @@ enum Command {
         /// Packages to run in; all workspace packages when omitted
         #[arg(add = completion::packages())]
         packages: Vec<String>,
+        /// Include workspace-relative member paths matching this glob (repeatable);
+        /// intersects with package names and --since
+        #[arg(long = "path", value_name = "GLOB")]
+        paths: Vec<String>,
+        /// Exclude workspace-relative member paths matching this glob (repeatable);
+        /// overrides named packages
+        #[arg(long = "exclude-path", value_name = "GLOB")]
+        exclude_paths: Vec<String>,
         /// Only packages owning files changed since this git ref
         #[arg(long, value_name = "REF")]
         since: Option<String>,
@@ -662,6 +678,8 @@ fn dispatch(cli: Cli) -> Result<bool> {
         Command::Run {
             task,
             packages,
+            paths,
+            exclude_paths,
             since,
             with_dependents,
             target,
@@ -676,6 +694,8 @@ fn dispatch(cli: Cli) -> Result<bool> {
             &commands::run::TaskOptions {
                 task,
                 packages,
+                paths,
+                exclude_paths,
                 since,
                 with_dependents,
                 target,
@@ -689,6 +709,8 @@ fn dispatch(cli: Cli) -> Result<bool> {
         ),
         Command::Exec {
             packages,
+            paths,
+            exclude_paths,
             since,
             serial,
             keep_going,
@@ -699,6 +721,8 @@ fn dispatch(cli: Cli) -> Result<bool> {
             &workspace,
             &commands::exec::ExecOptions {
                 packages,
+                paths,
+                exclude_paths,
                 command,
                 since,
                 serial,

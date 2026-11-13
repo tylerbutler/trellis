@@ -1,0 +1,5 @@
+component: run
+kind: Added
+body: |-
+  **`trellis run` selects packages with `--path` and `--exclude-path` globs.** Repeat either flag to match workspace-relative member paths; quote patterns to prevent shell expansion. Includes intersect with named packages and `--since`, and bound `--with-dependents`. Exclusions and existing task rules remove matches. Each pattern must match a workspace member or fail before execution. Unselected packages do not run or appear in summaries.
+time: 2026-11-12T20:15:13.682-08:00

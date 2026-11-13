@@ -43,6 +43,7 @@ pub fn matrix(workspace: &Workspace, since: Option<String>, releasable: bool) ->
         since,
         with_dependents: true, // a change to a dep can break its dependents
         releasable_only: releasable,
+        ..Default::default()
     })?;
     let matrix = CiMatrix::new(workspace, &selected);
     println!("{}", serde_json::to_string(&matrix)?);

@@ -165,6 +165,8 @@ Run a task across packages, graph-parallel by default
 
 ### **Options:**
 
+* `--path <GLOB>` — Include workspace-relative member paths matching this glob (repeatable); intersects with package names and --since, and bounds --with-dependents
+* `--exclude-path <GLOB>` — Exclude workspace-relative member paths matching this glob (repeatable); overrides named packages and added dependents
 * `--since <REF>` — Only packages owning files changed since this git ref
 * `--with-dependents` — Add the reverse-dependency closure of the selection
 * `--target <TARGET>` — Gleam compile target; `all` runs the task once per target
@@ -193,6 +195,8 @@ Run an arbitrary command in each package directory
 
 ### **Options:**
 
+* `--path <GLOB>` — Include workspace-relative member paths matching this glob (repeatable); intersects with package names and --since
+* `--exclude-path <GLOB>` — Exclude workspace-relative member paths matching this glob (repeatable); overrides named packages
 * `--since <REF>` — Only packages owning files changed since this git ref
 * `--serial` — Run one package at a time, in dependency order
 * `--keep-going` — Keep scheduling packages after a failure
