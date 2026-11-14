@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v1.6.1 - 2026-11-14
+
+
+### changelog
+
+#### Fixed
+
+- **`trellis changelog check` previews configured RC continuation instead of assuming stable promotion.** With `auto_pre = true`, an existing `rc` cycle advances to the next candidate. Use `--pre`, `--bump`, or `--set` to match explicit release options.
+
+  If a prerelease mode is missing or ambiguous, the comment explains why the preview is unavailable while preserving the coverage verdict. Previews stay offline and identify their pending-intent assumption and PR-only fragment scope.
+
 ## v1.6.0 - 2026-11-14
 
 
