@@ -4,7 +4,7 @@
 .SH NAME
 trellis\-changelog\-check \- Verify changed packages have changelog fragments; non\-zero exit if not
 .SH SYNOPSIS
-\fBtrellis changelog check\fR [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-\-color\fR] [\fB\-\-head\fR] [\fB\-\-format\fR] [\fB\-q\fR|\fB\-\-quiet\fR] [\fB\-\-strictness\fR] [\fB\-v\fR|\fB\-\-verbose\fR] [\fB\-\-no\-update\-check\fR] [\fB\-h\fR|\fB\-\-help\fR] <\fB\-\-base\fR> 
+\fBtrellis changelog check\fR [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-\-color\fR] [\fB\-\-head\fR] [\fB\-\-format\fR] [\fB\-q\fR|\fB\-\-quiet\fR] [\fB\-\-strictness\fR] [\fB\-v\fR|\fB\-\-verbose\fR] [\fB\-\-bump\fR] [\fB\-\-no\-update\-check\fR] [\fB\-\-set\fR] [\fB\-\-pre\fR] [\fB\-h\fR|\fB\-\-help\fR] <\fB\-\-base\fR> 
 .SH DESCRIPTION
 Verify changed packages have changelog fragments; non\-zero exit if not
 .SH OPTIONS
@@ -69,10 +69,19 @@ off
 \fB\-v\fR, \fB\-\-verbose\fR
 Trace every command trellis shells out to, on stderr
 .TP
+\fB\-\-bump\fR \fI<LEVEL|PKG=LEVEL>\fR
+Override the derived bump level, workspace\-wide (`\-\-bump major`) or for one package (`\-\-bump lat_core=major`). Repeatable
+.TP
 \fB\-\-no\-update\-check\fR
 Don\*(Aqt check whether a newer trellis release is available
 
 The check is also skipped in CI, when not attached to a terminal, and when `TRELLIS_NO_UPDATE_CHECK` or `DO_NOT_TRACK` is set.
+.TP
+\fB\-\-set\fR \fI<PKG=VERSION>\fR
+Pin a package\*(Aqs next version exactly (`\-\-set lat_core=1.0.0`). Repeatable
+.TP
+\fB\-\-pre\fR \fI<LABEL>\fR
+Cut or continue a prerelease cycle (`\-\-pre rc`). New cycles start at `<label>.0`; repeating the label increments the counter. Applying a candidate archives its new fragments. `\-\-pre none` selects promotion to the final version; applying it rolls up the archived candidates
 .TP
 \fB\-h\fR, \fB\-\-help\fR
 Print help (see a summary with \*(Aq\-h\*(Aq)

@@ -25,9 +25,18 @@ pub enum PreChoice {
     Label(String),
     /// `--pre none` — promote the current prerelease to its final version.
     Promote,
-    /// Read-only preview: promote existing prereleases, bump stable versions.
-    PreviewFinal,
 }
+
+#[derive(Debug)]
+pub(super) struct ReleaseModeRequired(pub String);
+
+impl std::fmt::Display for ReleaseModeRequired {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for ReleaseModeRequired {}
 
 /// The reserved `--pre` value meaning "promote". A label is a semver
 /// identifier, and `none` is a legal one, so this shadows a label nobody
@@ -44,6 +53,7 @@ pub struct Overrides {
     pinned: BTreeMap<String, semver::Version>,
     proposed: BTreeMap<String, semver::Version>,
     pre: Option<PreChoice>,
+    preview: bool,
 }
 
 impl Overrides {
@@ -108,11 +118,9 @@ impl Overrides {
         Ok(overrides)
     }
 
-    pub fn changelog_preview() -> Self {
-        Self {
-            pre: Some(PreChoice::PreviewFinal),
-            ..Self::default()
-        }
+    pub fn for_changelog_preview(mut self) -> Self {
+        self.preview = true;
+        self
     }
 
     /// Parse the raw flag values. Everything checkable without a workspace is
@@ -178,7 +186,7 @@ impl Overrides {
     }
 
     pub fn previewing(&self) -> bool {
-        self.pre == Some(PreChoice::PreviewFinal)
+        self.preview
     }
 
     /// Every package named by a `--bump pkg=` or `--set pkg=`, so the caller can
@@ -188,6 +196,26 @@ impl Overrides {
             .keys()
             .chain(self.pinned.keys())
             .map(String::as_str)
+    }
+
+    /// Validate explicit targets even when the preview cannot select a mode.
+    pub(super) fn validate_explicit_target(
+        &self,
+        package: &str,
+        current: &semver::Version,
+    ) -> Result<()> {
+        if self.names(package) {
+            if !current.pre.is_empty() && !self.has_mode() {
+                validate_series(
+                    package,
+                    current,
+                    &self.base(package, &release_of(current), Bump::Patch),
+                )?;
+            } else {
+                self.resolve(package, current, Bump::Patch)?;
+            }
+        }
+        Ok(())
     }
 
     /// The next version for one package.
@@ -205,9 +233,7 @@ impl Overrides {
             next.clone()
         } else {
             match &self.pre {
-                Some(PreChoice::Promote | PreChoice::PreviewFinal) => {
-                    self.promote(package, current, derived)?
-                }
+                Some(PreChoice::Promote) => self.promote(package, current, derived)?,
                 Some(PreChoice::Label(label)) => {
                     self.prerelease(package, current, derived, label)?
                 }
@@ -215,10 +241,11 @@ impl Overrides {
                     // Reachable only once prereleases exist, and silently bumping
                     // from the base would drop the cycle on the floor.
                     if !current.pre.is_empty() {
-                        bail!(
+                        return Err(ReleaseModeRequired(format!(
                             "`{package}` is at prerelease {current}; pass --pre <label> for another \
                          prerelease or --pre none to promote it"
-                        );
+                        ))
+                        .into());
                     }
                     self.base(package, current, derived)
                 }
@@ -381,20 +408,26 @@ mod tests {
     }
 
     #[test]
-    fn changelog_preview_promotes_prereleases_and_bumps_stable_versions() {
-        let o = Overrides::changelog_preview();
-        for current in ["1.0.0-rc.0", "1.0.0-beta.2", "1.0.0-alpha.test+build"] {
-            for bump in [Bump::Patch, Bump::Minor, Bump::Major] {
-                assert_eq!(o.resolve("p", &v(current), bump).unwrap(), v("1.0.0"));
-            }
-        }
+    fn changelog_preview_keeps_the_selected_release_mode() {
+        let o = overrides(&[], &[], Some("rc")).for_changelog_preview();
+        assert_eq!(
+            o.resolve("p", &v("1.0.0-rc.1"), Bump::Patch).unwrap(),
+            v("1.0.0-rc.2")
+        );
+        let o = overrides(&[], &[], Some("none")).for_changelog_preview();
+        assert_eq!(
+            o.resolve("p", &v("1.0.0-rc.1"), Bump::Patch).unwrap(),
+            v("1.0.0")
+        );
+        let o = Overrides::default().for_changelog_preview();
+        assert!(
+            o.resolve("p", &v("1.0.0-rc.1"), Bump::Patch)
+                .unwrap_err()
+                .is::<ReleaseModeRequired>()
+        );
         assert_eq!(
             o.resolve("p", &v("1.2.0"), Bump::Minor).unwrap(),
             v("1.3.0")
-        );
-        assert!(
-            !o.promoting(),
-            "a preview does not require a prerelease in the plan"
         );
     }
 

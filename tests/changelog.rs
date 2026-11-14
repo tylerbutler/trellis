@@ -544,6 +544,251 @@ fn changelog_check_rows_a_package_the_branch_wrote_a_fragment_for() {
 
 // ---- changelog check: prereleases -----------------------------------------
 
+fn workspace_with_candidate_fix(root: &Path, auto_pre: bool) {
+    copy_fixture_to(root);
+    set_version(root, "lat_core", "1.0.0-rc.1");
+    let path = root.join("gleam.toml");
+    let existing = fs::read_to_string(&path).unwrap();
+    write(
+        &path,
+        &format!("{existing}\n[tools.trellis.release]\nauto_pre = {auto_pre}\n"),
+    );
+    common::init_repo(root);
+    add_fragment(root, "lat_core", "Fixed", "candidate fix");
+    git(root, &["add", "."]);
+    git(root, &["commit", "-q", "-m", "fix candidate"]);
+}
+
+#[test]
+fn changelog_preview_continues_configured_candidate_without_writes() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    workspace_with_candidate_fix(root, true);
+    let manifest = root.join("packages/lat_core/gleam.toml");
+    let fragment = root.join(".changes/unreleased/lat_core-1.toml");
+    let before = (fs::read(&manifest).unwrap(), fs::read(&fragment).unwrap());
+    for format in ["json", "github"] {
+        let output = trellis(root)
+            .args([
+                "changelog",
+                "check",
+                "--base",
+                "HEAD^",
+                "--head",
+                "HEAD",
+                "--format",
+                format,
+            ])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let preview = if format == "json" {
+            let payload: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+            payload["preview"].as_str().unwrap().to_string()
+        } else {
+            parse_github_output(&String::from_utf8(output.stdout).unwrap())["preview"].clone()
+        };
+        assert!(preview.contains("1.0.0-rc.1 → 1.0.0-rc.2"), "{preview}");
+        assert!(
+            preview.contains("Updated lat_core to 1.0.0-rc.2"),
+            "{preview}"
+        );
+        assert!(preview.contains("this PR's fragments"), "{preview}");
+        assert!(preview.contains("pending release intent"), "{preview}");
+        assert!(!preview.contains("1.0.0-rc.1 → 1.0.0</"), "{preview}");
+    }
+    assert_eq!(
+        (fs::read(&manifest).unwrap(), fs::read(&fragment).unwrap()),
+        before
+    );
+    assert!(!root.join(".changes/lat_core").exists());
+    let status = std::process::Command::new("git")
+        .args(["status", "--porcelain"])
+        .current_dir(root)
+        .output()
+        .unwrap();
+    assert!(status.status.success());
+    assert!(status.stdout.is_empty());
+}
+
+#[test]
+fn changelog_preview_honors_explicit_candidate_and_promotion_modes() {
+    for (auto_pre, mode, next) in [(false, "rc", "1.0.0-rc.2"), (true, "none", "1.0.0")] {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        workspace_with_candidate_fix(root, auto_pre);
+        trellis(root)
+            .args([
+                "changelog",
+                "check",
+                "--base",
+                "HEAD^",
+                "--format",
+                "json",
+                "--pre",
+                mode,
+            ])
+            .assert()
+            .success()
+            .stdout(predicate::str::contains(format!("1.0.0-rc.1 → {next}")));
+    }
+}
+
+#[test]
+fn unavailable_prerelease_preview_preserves_coverage_verdict() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    workspace_with_one_missing_fragment(root);
+    set_version(root, "lat_core", "1.0.0-rc.1");
+    for (strictness, code) in [("error", 1), ("warn", 0), ("off", 0)] {
+        let output = trellis(root)
+            .args([
+                "changelog",
+                "check",
+                "--base",
+                "main",
+                "--strictness",
+                strictness,
+                "--format",
+                "json",
+            ])
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(code));
+        let payload: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(payload["ok"], code == 0);
+        assert_eq!(payload["has_entries"], true);
+        assert_eq!(payload["invalid_fragments"], serde_json::json!([]));
+        let preview = payload["preview"].as_str().unwrap();
+        assert!(preview.contains("Release preview unavailable"), "{preview}");
+        assert!(preview.contains("--pre"), "{preview}");
+        assert!(!preview.contains("1.0.0-rc.1 → 1.0.0"), "{preview}");
+        assert!(!preview.contains("<details>"), "{preview}");
+    }
+}
+
+#[test]
+fn ambiguous_automatic_preview_requires_explicit_mode() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    workspace_with_candidate_fix(root, true);
+    set_version(root, "lat_cli", "0.3.2-beta.1");
+    trellis(root)
+        .args([
+            "changelog",
+            "check",
+            "--base",
+            "HEAD^",
+            "--format",
+            "github",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("conflicting candidate labels"))
+        .stdout(predicate::str::contains("Release preview unavailable"));
+    trellis(root)
+        .args([
+            "changelog",
+            "check",
+            "--base",
+            "HEAD^",
+            "--format",
+            "json",
+            "--pre",
+            "none",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("1.0.0-rc.1 → 1.0.0"));
+}
+
+#[test]
+fn changelog_preview_uses_shared_stable_version_overrides() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    workspace_with_candidate_fix(root, true);
+    set_version(root, "lat_core", "1.0.0");
+    for (flags, next) in [
+        (vec![], "1.0.1"),
+        (vec!["--bump", "minor"], "1.1.0"),
+        (vec!["--set", "lat_core=2.0.0"], "2.0.0"),
+    ] {
+        trellis(root)
+            .args(["changelog", "check", "--base", "HEAD^", "--format", "json"])
+            .args(flags)
+            .assert()
+            .success()
+            .stdout(predicate::str::contains(format!("1.0.0 → {next}")));
+    }
+    trellis(root)
+        .args([
+            "changelog",
+            "check",
+            "--base",
+            "HEAD^",
+            "--format",
+            "json",
+            "--set",
+            "lat_core=0.9.0",
+        ])
+        .assert()
+        .code(3)
+        .stderr(predicate::str::contains("which is not forward"));
+}
+
+#[test]
+fn unavailable_preview_does_not_hide_invalid_planning_inputs() {
+    for (auto_pre, invalid_version, flags, message) in [
+        (false, true, vec![], "invalid version"),
+        (
+            false,
+            false,
+            vec!["--set", "lat_mid=0.4.0"],
+            "which is not forward",
+        ),
+        (
+            true,
+            false,
+            vec!["--set", "lat_mid=0.4.0"],
+            "which is not forward",
+        ),
+    ] {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        workspace_with_candidate_fix(root, auto_pre);
+        if invalid_version {
+            set_version(root, "lat_mid", "not-semver");
+        } else if auto_pre {
+            set_version(root, "lat_cli", "0.3.2-beta.1");
+        }
+        add_fragment(root, "lat_mid", "Fixed", "another fix");
+        trellis(root)
+            .args(["changelog", "check", "--base", "HEAD^", "--format", "json"])
+            .args(flags)
+            .assert()
+            .code(3)
+            .stderr(predicate::str::contains(message));
+    }
+}
+
+#[test]
+fn a_check_without_branch_fragments_still_validates_versions() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+    common::init_repo(root);
+    set_version(root, "lat_core", "not-semver");
+    trellis(root)
+        .args(["changelog", "check", "--base", "HEAD", "--format", "json"])
+        .assert()
+        .code(3)
+        .stderr(predicate::str::contains("invalid version"));
+}
+
 fn workspace_with_prereleases(root: &Path) {
     copy_fixture_to(root);
     set_version(root, "lat_core", "1.0.0-rc.0");
@@ -579,6 +824,8 @@ fn prerelease_changelog_check_preserves_machine_outputs_and_validation() {
                 strictness,
                 "--format",
                 "json",
+                "--pre",
+                "none",
             ])
             .output()
             .unwrap();
@@ -624,6 +871,8 @@ fn prerelease_changelog_check_preserves_machine_outputs_and_validation() {
                 strictness,
                 "--format",
                 "github",
+                "--pre",
+                "none",
             ])
             .output()
             .unwrap();
@@ -644,7 +893,16 @@ fn prerelease_changelog_check_preserves_machine_outputs_and_validation() {
 
     add_fragment(root, "lat_mid", "Fixed", "more");
     trellis(root)
-        .args(["changelog", "check", "--base", "HEAD^", "--head", "HEAD"])
+        .args([
+            "changelog",
+            "check",
+            "--base",
+            "HEAD^",
+            "--head",
+            "HEAD",
+            "--pre",
+            "none",
+        ])
         .assert()
         .success()
         .stdout(predicate::str::contains("lat_core: 1 fragment(s)"));
@@ -659,6 +917,8 @@ fn prerelease_changelog_check_preserves_machine_outputs_and_validation() {
                 "HEAD",
                 "--format",
                 format,
+                "--pre",
+                "none",
             ])
             .output()
             .unwrap();
@@ -703,6 +963,8 @@ fn prerelease_changelog_check_with_no_branch_fragments_has_no_release_preview() 
             "HEAD",
             "--format",
             "json",
+            "--pre",
+            "rc",
         ])
         .output()
         .unwrap();
@@ -751,6 +1013,8 @@ fn prerelease_changelog_preview_excludes_archived_candidate_changes() {
             "HEAD",
             "--format",
             "json",
+            "--pre",
+            "rc",
         ])
         .output()
         .unwrap();
@@ -759,6 +1023,7 @@ fn prerelease_changelog_preview_excludes_archived_candidate_changes() {
     let preview = payload["preview"].as_str().unwrap();
     assert!(preview.contains("new branch fix"), "{preview}");
     assert!(!preview.contains("archived candidate feature"), "{preview}");
+    assert!(preview.contains("1.3.0-rc.0 → 1.3.0-rc.1"), "{preview}");
     assert_eq!(payload["packages"][0]["fragments"], 1);
     assert_eq!(fs::read_to_string(&archive_path).unwrap(), archive);
 

@@ -34,7 +34,7 @@ never
 Pin a package\*(Aqs next version exactly (`\-\-set lat_core=1.0.0`). Repeatable
 .TP
 \fB\-\-pre\fR \fI<LABEL>\fR
-Cut or continue a prerelease cycle (`\-\-pre rc`). New cycles start at `<label>.0`; repeating the label increments the counter. Each candidate includes only new changes and archives its fragments. `\-\-pre none` promotes to the final version with a rollup of its candidates
+Cut or continue a prerelease cycle (`\-\-pre rc`). New cycles start at `<label>.0`; repeating the label increments the counter. Applying a candidate archives its new fragments. `\-\-pre none` selects promotion to the final version; applying it rolls up the archived candidates
 .TP
 \fB\-q\fR, \fB\-\-quiet\fR
 Suppress normal\-path output; JSON/report payloads and errors still print

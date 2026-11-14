@@ -353,6 +353,8 @@ enum ChangelogCommand {
         /// a missing entry, report it advisorily, or don't check
         #[arg(long, value_enum)]
         strictness: Option<Strictness>,
+        #[command(flatten)]
+        overrides: VersionOverrideArgs,
     },
 }
 
@@ -378,7 +380,7 @@ enum VersionCommand {
 
 /// Overrides for the version a plan would otherwise derive from fragment kinds.
 ///
-/// Shared by `version plan`, `version apply`, and `release pr`.
+/// Shared by `changelog check`, `version plan`, `version apply`, and `release pr`.
 #[derive(clap::Args)]
 struct VersionOverrideArgs {
     /// Override the derived bump level, workspace-wide (`--bump major`) or for
@@ -391,8 +393,9 @@ struct VersionOverrideArgs {
     set: Vec<String>,
     /// Cut or continue a prerelease cycle (`--pre rc`).
     /// New cycles start at `<label>.0`; repeating the label increments the counter.
-    /// Each candidate includes only new changes and archives its fragments.
-    /// `--pre none` promotes to the final version with a rollup of its candidates.
+    /// Applying a candidate archives its new fragments.
+    /// `--pre none` selects promotion to the final version; applying it rolls up
+    /// the archived candidates.
     #[arg(long, value_name = "LABEL")]
     pre: Option<String>,
 }
@@ -752,6 +755,7 @@ fn dispatch(cli: Cli) -> Result<bool> {
                 head,
                 format,
                 strictness,
+                overrides,
             } => commands::changelog::check(
                 &workspace,
                 &commands::changelog::CheckOptions {
@@ -759,6 +763,7 @@ fn dispatch(cli: Cli) -> Result<bool> {
                     head,
                     format,
                     strictness,
+                    overrides: overrides.parse()?,
                 },
             ),
         },
