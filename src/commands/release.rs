@@ -312,7 +312,13 @@ fn build_release_commit_and_pr(
         .map(|entry| format!("{} v{}", entry.name, entry.next))
         .collect::<Vec<_>>()
         .join(", ");
-    let title = format!("release: {summary}");
+    let title = workspace
+        .config
+        .release
+        .title_format
+        .as_deref()
+        .unwrap_or("release: {summary}")
+        .replace("{summary}", &summary);
 
     git_with_identity(root, &["commit", "-m", &title])?;
 

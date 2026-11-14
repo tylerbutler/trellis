@@ -68,6 +68,27 @@ states that the branch was pushed but finalization remains incomplete. No
 structured success output is emitted; check the remote branch and PR before
 retrying.
 
+### Release titles
+
+Set `release.title_format` in the workspace configuration to use a commit type
+that your repository's title checks accept:
+
+```toml
+[tools.trellis.release]
+title_format = "chore: release {summary}"
+```
+
+The default is `release: {summary}`. The same format supplies the release
+commit message and the title of both new and updated PRs. Trellis reads it from
+the selected base branch, not the caller's branch.
+
+`{summary}` is the only placeholder. It expands to the comma-separated
+package names and proposed versions, including prerelease labels; for example,
+`lat_core v1.3.0-rc.0, lat_mid v0.5.1-rc.0`. All other text is literal.
+The format must contain `{summary}` and must be a single line without control
+characters. Changing the format on the base branch refreshes a pending PR even
+with `--skip-unchanged`, while preserving its proposed versions with `--resume`.
+
 ### Candidates and promotion
 
 `release pr` accepts the same repeatable `--set` and `--bump`, plus `--pre`,

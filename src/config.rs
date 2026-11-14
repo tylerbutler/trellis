@@ -61,6 +61,9 @@ pub struct ConfigFile {
 
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct ReleaseConfig {
+    /// Release commit and PR title template; `{summary}` carries package versions.
+    #[serde(default)]
+    pub title_format: Option<String>,
     #[serde(default)]
     pub resume: bool,
     #[serde(default)]
@@ -824,6 +827,16 @@ impl ConfigFile {
         }
         self.validate_adapter()?;
         self.reject_removed_keys()?;
+        if let Some(format) = &self.release.title_format {
+            if !format.contains("{summary}") {
+                bail!(
+                    "`release.title_format` must contain {{summary}} to include package versions"
+                );
+            }
+            if format.chars().any(char::is_control) {
+                bail!("`release.title_format` must be a single line without control characters");
+            }
+        }
         if !self.publish.exact_tag_format.contains("{version}") {
             bail!(
                 "`exact_tag_format` `{}` has no {{version}} placeholder",

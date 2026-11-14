@@ -1,0 +1,5 @@
+component: release
+kind: Added
+body: |-
+  **`release.title_format` configures release commit messages and PR titles.** Set it under `[tools.trellis.release]`, for example `title_format = "chore: release {summary}"`, to use a commit type your repository accepts. The required `{summary}` placeholder includes every released package and its proposed version, including prerelease labels. The format applies to new and updated PRs; the default remains `release: {summary}`.
+time: 2026-11-13T17:06:12-08:00

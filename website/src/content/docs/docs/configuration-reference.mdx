@@ -142,6 +142,7 @@ For workspace setup, package discovery, and task exclusions, start with the
 | Key | Required | What it does |
 | --- | --- | --- |
 | <a id="key_release_resume" href="#key_release_resume"><code>release.resume</code></a> | no | Keep the proposed package versions from the pending same-repository release PR. Default: `false`. CLI: `--resume` / `--no-resume`. |
+| <a id="key_release_title_format" href="#key_release_title_format"><code>release.title_format</code></a> | no | Release commit message and title for new and updated PRs. Default: `release: {summary}`. Must contain `{summary}`, which expands to comma-separated package names and proposed versions, and must be a single line without control characters. All other text is literal. See [release titles](/docs/publishing/#release-titles). |
 | <a id="key_release_auto_pre" href="#key_release_auto_pre"><code>release.auto_pre</code></a> | no | Continue the committed candidate label when no explicit or resumed mode applies. Always guards unchanged candidates; never implicitly promotes. Default: `false`. CLI: `--auto-pre` / `--no-auto-pre`. |
 | <a id="key_release_skip_unchanged" href="#key_release_skip_unchanged"><code>release.skip_unchanged</code></a> | no | Skip release preparation when relevant content and proposed versions are unchanged. Default: `false`. CLI: `--skip-unchanged` / `--no-skip-unchanged`. |
 
