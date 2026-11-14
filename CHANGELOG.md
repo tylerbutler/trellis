@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v1.6.0 - 2026-11-14
+
+
+### run
+
+#### Added
+
+- **`trellis run` selects packages with `--path` and `--exclude-path` globs.** Repeat either flag to match workspace-relative member paths; quote patterns to prevent shell expansion. Includes intersect with named packages and `--since`, and bound `--with-dependents`. Exclusions and existing task rules remove matches. Each pattern must match a workspace member or fail before execution. Unselected packages do not run or appear in summaries.
+
+### exec
+
+#### Added
+
+- **`trellis exec` selects packages with `--path` and `--exclude-path` globs.** Repeat either flag to match workspace-relative member paths; quote patterns to prevent shell expansion. Includes intersect with named packages and `--since`; exclusions override named packages. Each pattern must match a workspace member or fail before execution. Unselected packages do not run or appear in summaries. Task exclusions remain specific to `run`.
+
+### release
+
+#### Added
+
+- **`release.title_format` configures release commit messages and PR titles.** Set it under `[tools.trellis.release]`, for example `title_format = "chore: release {summary}"`, to use a commit type your repository accepts. The required `{summary}` placeholder includes every released package and its proposed version, including prerelease labels. The format applies to new and updated PRs; the default remains `release: {summary}`.
+
 ## v1.5.0 - 2026-11-12
 
 
