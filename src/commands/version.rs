@@ -5,7 +5,7 @@
 //! CHANGELOG.md — all with zero Hex network calls.
 
 use crate::changelog;
-use crate::commands::version_override::Overrides;
+use crate::commands::version_override::{Overrides, ReleaseModeRequired};
 use crate::json::{Bump, UpdatedDependency, VersionApplyDocument, VersionPlanDocument};
 use crate::lockfile;
 use crate::workspace::Workspace;
@@ -88,6 +88,7 @@ pub fn compute_plan_from(
 
     let config = &workspace.config.changelog;
     let mut plan = Vec::new();
+    let mut missing_mode = None;
     let mut bumped: BTreeMap<&str, BumpedDep> = BTreeMap::new();
     for (idx, member) in workspace.members.iter().enumerate() {
         if !member.releasable() {
@@ -154,7 +155,15 @@ pub fn compute_plan_from(
             changelog::derive_bump(&all, &config.kinds)
                 .with_context(|| format!("cannot compute next version for `{}`", member.name))?
         };
-        let next = overrides.resolve(&member.name, &current, derived)?;
+        let next = match overrides.resolve(&member.name, &current, derived) {
+            Ok(next) => next,
+            Err(error) if overrides.previewing() && error.is::<ReleaseModeRequired>() => {
+                // An unavailable mode must not hide errors in later packages.
+                missing_mode.get_or_insert(error);
+                continue;
+            }
+            Err(error) => return Err(error),
+        };
         bumped.insert(
             &member.name,
             BumpedDep {
@@ -179,6 +188,9 @@ pub fn compute_plan_from(
             next,
         });
     }
+    if let Some(error) = missing_mode {
+        return Err(error);
+    }
     if overrides.promoting() && !plan.iter().any(|entry| entry.was_prerelease) {
         bail!("--pre none promotes a prerelease, but no package in the plan is at one");
     }
@@ -187,6 +199,16 @@ pub fn compute_plan_from(
 
 /// A `--bump pkg=` or `--set pkg=` naming something that is not a releasable
 /// member is a typo, not a no-op.
+pub(super) fn validate_preview_inputs(workspace: &Workspace, overrides: &Overrides) -> Result<()> {
+    validate_named_packages(workspace, overrides)?;
+    for member in workspace.members.iter().filter(|m| m.releasable()) {
+        let current = semver::Version::parse(member.version())
+            .with_context(|| format!("`{}` has an invalid version", member.name))?;
+        overrides.validate_explicit_target(&member.name, &current)?;
+    }
+    Ok(())
+}
+
 fn validate_named_packages(workspace: &Workspace, overrides: &Overrides) -> Result<()> {
     for name in overrides.named_packages() {
         match workspace.member_index(name) {

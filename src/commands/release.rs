@@ -155,14 +155,7 @@ fn prepare(workspace: &Workspace, options: &PrOptions, base_commit: &str) -> Res
             );
         }
     }
-    let mut automatic = false;
-    if auto_pre
-        && !overrides.has_mode()
-        && let Some(label) = release_state::candidate_label(workspace)?
-    {
-        overrides = overrides.with_label(&label)?;
-        automatic = true;
-    }
+    let (overrides, automatic) = release_state::resolve_auto_pre(workspace, &overrides, auto_pre)?;
     let plan = version::compute_plan(workspace, &overrides)?;
     if let Some(pr) = &pending {
         State::validate_pending_series(workspace, &pr.head, &plan)?;

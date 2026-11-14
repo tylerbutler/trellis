@@ -2,8 +2,8 @@
 //! writes a fragment; `check` decides which changed packages still need one.
 
 use crate::changelog;
-use crate::commands::version;
-use crate::commands::version_override::Overrides;
+use crate::commands::version_override::{Overrides, ReleaseModeRequired};
+use crate::commands::{release_state, version};
 use crate::config::Strictness;
 use crate::json::{ChangelogCheckDocument, ChangelogPackage};
 use crate::workspace::Workspace;
@@ -110,6 +110,7 @@ pub struct CheckOptions {
     pub format: CheckFormat,
     /// Overrides the workspace's `changelog.strictness` for this run.
     pub strictness: Option<Strictness>,
+    pub overrides: Overrides,
 }
 
 struct PackageStatus {
@@ -210,12 +211,24 @@ pub fn check(workspace: &Workspace, options: &CheckOptions) -> Result<bool> {
     let has_entries = !fragments.fragments.is_empty();
     // No plan can be computed over a fragment that does not parse, so the
     // preview falls back to counts alone — the problems are reported anyway.
-    let releases = if all.problems.is_empty() {
-        plan_releases(workspace, &fragments)?
+    let (releases, unavailable) = if all.problems.is_empty() {
+        match plan_releases(workspace, &fragments, &options.overrides) {
+            Ok(releases) => (releases, None),
+            Err(error) if error.is::<ReleaseModeRequired>() => {
+                (Vec::new(), Some(error.to_string()))
+            }
+            Err(error) => return Err(error),
+        }
     } else {
-        Vec::new()
+        (Vec::new(), None)
     };
-    let preview = preview(&statuses, &needs_entry, &invalid, &releases);
+    let preview = preview(
+        &statuses,
+        &needs_entry,
+        &invalid,
+        &releases,
+        unavailable.as_deref(),
+    );
 
     match options.format {
         CheckFormat::Json => {
@@ -269,6 +282,12 @@ pub fn check(workspace: &Workspace, options: &CheckOptions) -> Result<bool> {
             }
             for problem in &invalid {
                 crate::status!("{} {problem}", crate::term::err("invalid:"));
+            }
+            if let Some(reason) = &unavailable {
+                crate::status!(
+                    "{} {reason}",
+                    crate::term::warn("release preview unavailable:")
+                );
             }
         }
     }
@@ -383,8 +402,16 @@ struct ReleasePreview {
 fn plan_releases(
     workspace: &Workspace,
     fragments: &changelog::Fragments,
+    explicit: &Overrides,
 ) -> Result<Vec<ReleasePreview>> {
-    let plan = version::compute_plan_from(workspace, &Overrides::changelog_preview(), fragments)?;
+    version::validate_preview_inputs(workspace, explicit)?;
+    if fragments.fragments.is_empty() {
+        return Ok(Vec::new());
+    }
+    let (overrides, _) =
+        release_state::resolve_auto_pre(workspace, explicit, workspace.config.release.auto_pre)?;
+    let plan =
+        version::compute_plan_from(workspace, &overrides.for_changelog_preview(), fragments)?;
     let date = changelog::today();
     plan.iter()
         .map(|entry| {
@@ -420,6 +447,7 @@ fn preview(
     needs_entry: &[&str],
     invalid: &[String],
     releases: &[ReleasePreview],
+    unavailable: Option<&str>,
 ) -> String {
     let mut out = String::from("### Changelog check\n\n");
     if statuses.is_empty() {
@@ -449,13 +477,21 @@ fn preview(
         }
     }
     if !releases.is_empty() {
-        out.push_str("\n### Release preview\n");
+        out.push_str(
+            "\n### Release preview\n\n\
+             Uses local release configuration and supplied overrides; assumes no pending release intent or additional workflow overrides. \
+             Notes include only this PR's fragments and generated dependency entries, not the complete release changelog. \
+             This preview does not authorize publication.\n",
+        );
         for release in releases {
             out.push_str(&format!(
                 "\n<details>\n<summary><code>{}</code> {} → {}</summary>\n\n{}\n</details>\n",
                 release.name, release.current, release.next, release.section
             ));
         }
+    }
+    if let Some(reason) = unavailable {
+        out.push_str(&format!("\n### Release preview unavailable\n\n{reason}\n"));
     }
     for problem in invalid {
         out.push_str(&format!("\n⚠️ {problem}\n"));

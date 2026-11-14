@@ -189,6 +189,14 @@ branch do not count toward this PR. `ok` records the check's result despite
 `continue-on-error`, and is empty if trellis could not run
 at all, which fails the job either way.
 
+The preview uses local release configuration: `auto_pre = true` continues an
+existing candidate cycle rather than showing stable promotion. Pass `--pre`,
+`--bump`, or `--set` to match explicit preparation options. It does not query
+pending release intent or workflow overrides; the comment states that
+assumption. If the prerelease mode cannot be selected, it reports an unavailable
+preview without changing the coverage verdict. See
+[Preview policy](/docs/changelog/#preview-policy).
+
 `preview` is already the comment body, rendered from the same data as the
 `--format json` field of that name. `needs_entry_packages` and
 `invalid_fragments` are JSON arrays if you would rather compose your own:

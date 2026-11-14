@@ -1,0 +1,7 @@
+component: changelog
+kind: Fixed
+body: |-
+  **`trellis changelog check` previews configured RC continuation instead of assuming stable promotion.** With `auto_pre = true`, an existing `rc` cycle advances to the next candidate. Use `--pre`, `--bump`, or `--set` to match explicit release options.
+
+    If a prerelease mode is missing or ambiguous, the comment explains why the preview is unavailable while preserving the coverage verdict. Previews stay offline and identify their pending-intent assumption and PR-only fragment scope.
+time: 2026-11-13T19:59:00-08:00

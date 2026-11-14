@@ -260,6 +260,9 @@ Verify changed packages have changelog fragments; non-zero exit if not
 
   Possible values: `warn`, `error`, `off`
 
+* `--bump <LEVEL|PKG=LEVEL>` — Override the derived bump level, workspace-wide (`--bump major`) or for one package (`--bump lat_core=major`). Repeatable
+* `--set <PKG=VERSION>` — Pin a package's next version exactly (`--set lat_core=1.0.0`). Repeatable
+* `--pre <LABEL>` — Cut or continue a prerelease cycle (`--pre rc`). New cycles start at `<label>.0`; repeating the label increments the counter. Applying a candidate archives its new fragments. `--pre none` selects promotion to the final version; applying it rolls up the archived candidates
 
 
 
@@ -286,7 +289,7 @@ Dry-run: show what `version apply` would bump
 
 * `--bump <LEVEL|PKG=LEVEL>` — Override the derived bump level, workspace-wide (`--bump major`) or for one package (`--bump lat_core=major`). Repeatable
 * `--set <PKG=VERSION>` — Pin a package's next version exactly (`--set lat_core=1.0.0`). Repeatable
-* `--pre <LABEL>` — Cut or continue a prerelease cycle (`--pre rc`). New cycles start at `<label>.0`; repeating the label increments the counter. Each candidate includes only new changes and archives its fragments. `--pre none` promotes to the final version with a rollup of its candidates
+* `--pre <LABEL>` — Cut or continue a prerelease cycle (`--pre rc`). New cycles start at `<label>.0`; repeating the label increments the counter. Applying a candidate archives its new fragments. `--pre none` selects promotion to the final version; applying it rolls up the archived candidates
 * `--json` — Emit JSON instead of text
 
 
@@ -301,7 +304,7 @@ Bump versions, render changelogs, patch manifest.toml locked versions
 
 * `--bump <LEVEL|PKG=LEVEL>` — Override the derived bump level, workspace-wide (`--bump major`) or for one package (`--bump lat_core=major`). Repeatable
 * `--set <PKG=VERSION>` — Pin a package's next version exactly (`--set lat_core=1.0.0`). Repeatable
-* `--pre <LABEL>` — Cut or continue a prerelease cycle (`--pre rc`). New cycles start at `<label>.0`; repeating the label increments the counter. Each candidate includes only new changes and archives its fragments. `--pre none` promotes to the final version with a rollup of its candidates
+* `--pre <LABEL>` — Cut or continue a prerelease cycle (`--pre rc`). New cycles start at `<label>.0`; repeating the label increments the counter. Applying a candidate archives its new fragments. `--pre none` selects promotion to the final version; applying it rolls up the archived candidates
 * `--json` — Emit JSON listing every bump and patched lockfile
 
 
@@ -339,7 +342,7 @@ Create or update the release PR: version apply on a branch, push, open or refres
 
 * `--bump <LEVEL|PKG=LEVEL>` — Override the derived bump level, workspace-wide (`--bump major`) or for one package (`--bump lat_core=major`). Repeatable
 * `--set <PKG=VERSION>` — Pin a package's next version exactly (`--set lat_core=1.0.0`). Repeatable
-* `--pre <LABEL>` — Cut or continue a prerelease cycle (`--pre rc`). New cycles start at `<label>.0`; repeating the label increments the counter. Each candidate includes only new changes and archives its fragments. `--pre none` promotes to the final version with a rollup of its candidates
+* `--pre <LABEL>` — Cut or continue a prerelease cycle (`--pre rc`). New cycles start at `<label>.0`; repeating the label increments the counter. Applying a candidate archives its new fragments. `--pre none` selects promotion to the final version; applying it rolls up the archived candidates
 * `--base <BASE>` — Base branch the PR targets
 
   Default value: `main`

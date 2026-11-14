@@ -1,5 +1,5 @@
 use super::version::PlanEntry;
-use super::version_override::Overrides;
+use super::version_override::{Overrides, ReleaseModeRequired};
 use crate::git::{git_output, git_stdout, slash_path};
 use crate::workspace::Workspace;
 use anyhow::{Context, Result, bail, ensure};
@@ -224,23 +224,39 @@ impl State {
     }
 }
 
-pub(super) fn candidate_label(workspace: &Workspace) -> Result<Option<String>> {
+pub(super) fn resolve_auto_pre(
+    workspace: &Workspace,
+    overrides: &Overrides,
+    enabled: bool,
+) -> Result<(Overrides, bool)> {
+    if enabled
+        && !overrides.has_mode()
+        && let Some(label) = candidate_label(workspace)?
+    {
+        return Ok((overrides.with_label(&label)?, true));
+    }
+    Ok((overrides.clone(), false))
+}
+
+fn candidate_label(workspace: &Workspace) -> Result<Option<String>> {
     let mut labels: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for member in workspace.members.iter().filter(|m| m.releasable()) {
         let version = semver::Version::parse(member.version())?;
         if version.pre.is_empty() {
             continue;
         }
-        let (label, counter) = version.pre.as_str().rsplit_once('.').with_context(|| {
-            format!(
+        let (label, counter) = version.pre.as_str().rsplit_once('.').ok_or_else(|| {
+            ReleaseModeRequired(format!(
                 "`{}` has unsupported candidate {version}; pass --pre explicitly",
                 member.name
-            )
+            ))
         })?;
         ensure!(
             !label.contains('.') && counter.parse::<u64>().is_ok(),
-            "`{}` has unsupported candidate {version}; pass --pre explicitly",
-            member.name
+            ReleaseModeRequired(format!(
+                "`{}` has unsupported candidate {version}; pass --pre explicitly",
+                member.name
+            ))
         );
         labels
             .entry(label.to_string())
@@ -249,13 +265,15 @@ pub(super) fn candidate_label(workspace: &Workspace) -> Result<Option<String>> {
     }
     ensure!(
         labels.len() <= 1,
-        "conflicting candidate labels: {}; pass --pre <label> explicitly to choose the cycle",
-        labels
-            .values()
-            .flatten()
-            .cloned()
-            .collect::<Vec<_>>()
-            .join(", ")
+        ReleaseModeRequired(format!(
+            "conflicting candidate labels: {}; pass --pre <label> explicitly to choose the cycle",
+            labels
+                .values()
+                .flatten()
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(", ")
+        ))
     );
     Ok(labels.into_keys().next())
 }

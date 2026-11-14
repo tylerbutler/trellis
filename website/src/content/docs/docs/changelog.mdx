@@ -11,7 +11,7 @@ in the root `gleam.toml`.
 
 ```txt wrap
 trellis changelog new [--package <pkg>] --kind <kind> --body <text>
-trellis changelog check --base <ref> [--head <ref>] [--format text|json|github] [--strictness error|warn|off]
+trellis changelog check --base <ref> [--head <ref>] [--format text|json|github] [--strictness error|warn|off] [--pre <label>|none] [--bump <level>|<pkg>=<level>] [--set <pkg>=<version>]
 trellis version plan [--json]
 trellis version apply [--json]
 ```
@@ -92,21 +92,44 @@ untouched document the PRs that added them.
 This is what makes the gate per-PR. A package with an unreleased fragment from
 an earlier PR does not satisfy the check for a *later* PR that touches the
 same package; otherwise one entry excuses every change until the next release.
-It also keeps the [PR comment](#driving-a-pr-comment) honest: `version` is the
-bump this PR causes rather than what the accumulated backlog adds up to, and a
-package whose only unreleased fragment came from the base branch shows `—`.
+The [PR comment](#driving-a-pr-comment) uses those fragments and the selected
+release mode to preview next versions, rather than using the accumulated
+backlog. A package whose only unreleased fragment came from the base branch
+shows `—`.
 
 Comparing contents rather than reading the diff means an uncommitted fragment
 counts too, so running `check` locally before committing gives the same answer
 CI gives afterwards.
 
-For a package already at a prerelease, the release preview shows its final
-version: `1.0.0-rc.0` becomes `1.0.0`, without another bump. Stable packages
-still use the fragment kinds to determine their next version. This also applies
-to dependent packages included in the preview. The check does not change
-versions or consume fragments; `version plan` and `version apply` still require
-an explicit `--pre <label>` or `--pre none` when a package in the plan is at a
-prerelease.
+### Preview policy
+
+The preview uses local release configuration and explicit `--pre`, `--bump`,
+and `--set` overrides. With `[tools.trellis.release] auto_pre = true`, it
+continues the existing candidate label: `1.0.0-rc.1` becomes `1.0.0-rc.2`.
+Explicit overrides take precedence. Select `--pre none` to preview stable
+promotion, or `--pre rc` to preview another RC without automatic mode selection:
+
+```sh
+trellis changelog check --base origin/main --format github --pre rc
+trellis changelog check --base origin/main --format github --pre none
+```
+
+Stable packages use the fragment kinds to determine their next versions unless
+an override selects another version or a candidate cycle. Dependent packages
+use the same selected mode.
+
+If a prerelease needs a mode or automatic selection finds conflicting labels,
+the comment reports **Release preview unavailable** with an explanation. It
+still reports fragment coverage and preserves the check's verdict. Invalid
+flags, invalid fragments, and other planning errors remain errors.
+
+The check is offline: it does not read a pending release PR or additional
+workflow overrides. The comment states that assumption. Its notes contain only
+this PR's fragments and generated dependency entries, not archived candidate
+changes or the complete release changelog. It does not change versions, consume
+fragments, or authorize publication. `version plan` and `version apply` still
+require an explicit prerelease mode; `auto_pre` selects the mode for
+`release pr` and this preview.
 
 <Callout>
 
@@ -188,11 +211,11 @@ is prose, so render it rather than parsing it.
 `$GITHUB_OUTPUT`, so a workflow can post the comment without a `jq` pipeline:
 
 ```
-ok=false
+ok=true
 strictness=error
 has_entries=true
-needs_entry=true
-needs_entry_packages=["lat_cli"]
+needs_entry=false
+needs_entry_packages=[]
 invalid_fragments=[]
 preview<<TRELLIS_PREVIEW
 ### Changelog check
@@ -200,11 +223,10 @@ preview<<TRELLIS_PREVIEW
 | package | fragments | version |
 | --- | --- | --- |
 | lat_core | ✅ 2 | 1.2.0 → 1.3.0 |
-| lat_cli | ❌ needs an entry | 0.3.1 → 0.3.2 |
-
-Add one with `trellis changelog new --package <name> --kind <kind> --body <text>`.
 
 ### Release preview
+
+Uses local release configuration and supplied overrides; assumes no pending release intent or additional workflow overrides. Notes include only this PR's fragments and generated dependency entries, not the complete release changelog. This preview does not authorize publication.
 
 <details>
 <summary><code>lat_core</code> 1.2.0 → 1.3.0</summary>
@@ -220,17 +242,6 @@ Add one with `trellis changelog new --package <name> --kind <kind> --body <text>
 - stop truncating long names
 
 </details>
-
-<details>
-<summary><code>lat_cli</code> 0.3.1 → 0.3.2</summary>
-
-## v0.3.2 - 2026-07-11
-
-### Dependencies
-
-- Updated lat_core to 1.3.0
-
-</details>
 TRELLIS_PREVIEW
 ```
 
@@ -238,13 +249,13 @@ TRELLIS_PREVIEW
 `fromJSON()`; `preview` uses GitHub's heredoc form because it is multi-line.
 See [CI recipes](/docs/ci/#the-changelog-comment) for the workflow.
 
-The table covers the packages the PR's diff touched; the release preview
-covers every package this PR's fragments would release, computed the same way
-`version plan` computes it, so a dependent that merely ripples (like `lat_cli`
-above) appears with its generated `Dependencies` entry. Each collapsed section
-is the version section `version apply` would write for these fragments. When a
-fragment does not parse, no plan can be computed, so the versions and the
-release preview are omitted and the problem is reported instead.
+The table covers packages the PR touched or documented with a fragment. The
+release preview also includes dependent packages whose versions ripple, with
+generated `Dependencies` entries. Each collapsed section uses the shared version
+planner and changelog renderer, but includes only this PR's contribution. See
+[Preview policy](#preview-policy) for the mode selection and offline assumptions.
+If a fragment does not parse, the versions and release preview are omitted and
+the problem is reported instead.
 
 ## Planning a release
 
