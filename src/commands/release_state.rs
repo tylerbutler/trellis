@@ -520,10 +520,12 @@ pub(super) fn inputs(workspace: &Workspace, revision: &str) -> Result<BTreeMap<S
             .and_then(toml::Value::as_table)
         {
             let mut config = config.clone();
-            config.retain(|key, _| {
+            config.retain(|key, value| {
                 ["members", "exclude", "adapter", "publish", "changelog"].contains(&key)
+                    || (key == "release" && value.get("title_format").is_some())
             });
             for (table, keys) in [
+                ("release", &["title_format"][..]),
                 ("exclude", &["@release", "@members"][..]),
                 (
                     "publish",

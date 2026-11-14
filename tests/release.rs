@@ -12,6 +12,112 @@ use std::fs;
 // ---- trellis release pr ----------------------------------------------------
 
 #[test]
+fn release_pr_uses_the_configured_title_for_commits_and_new_and_updated_prs() {
+    for prefix in ["release:", "chore: release"] {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        copy_fixture_to(root);
+        let api = common::mock_github(root);
+        let manifest = root.join("gleam.toml");
+        let text = fs::read_to_string(&manifest).unwrap();
+        if prefix != "release:" {
+            write(
+                &manifest,
+                &format!(
+                    "{text}\n[tools.trellis.release]\ntitle_format = \"{prefix} {{summary}}\"\n"
+                ),
+            );
+        }
+        add_fragment(root, "lat_core", "Added", "pending change");
+        init_repo(root);
+        let _remote = bare_origin(root);
+
+        let summary = "lat_core v1.3.0-rc.0, lat_mid v0.5.1-rc.0, lat_cli v0.3.2-rc.0";
+        for method in ["POST", "PATCH"] {
+            let mut prefix = prefix;
+            if method == "PATCH" {
+                write(&root.join(".fake/pr-list"), "[{\"number\":7}]");
+                fs::remove_file(root.join(".fake/github-log")).unwrap();
+                prefix = "chore(release):";
+                write(
+                    &manifest,
+                    &format!(
+                        "{text}\n[tools.trellis.release]\ntitle_format = \"{prefix} {{summary}}\"\n"
+                    ),
+                );
+                git(root, &["add", "gleam.toml"]);
+                git(root, &["commit", "-m", "change release title"]);
+            }
+            let title = format!("{prefix} {summary}");
+            trellis_github(root, &api)
+                .args([
+                    "release",
+                    "pr",
+                    "--pre",
+                    "rc",
+                    "--resume",
+                    "--skip-unchanged",
+                ])
+                .assert()
+                .success();
+            assert_eq!(
+                git_stdout(
+                    root,
+                    &["log", "-1", "--format=%s", "origin/release/pending"]
+                ),
+                title
+            );
+            let log = fs::read_to_string(root.join(".fake/github-log")).unwrap();
+            let endpoint = if method == "POST" {
+                "pulls\n"
+            } else {
+                "pulls/7\n"
+            };
+            assert!(
+                log.contains(&format!("{method} /repos/example/repo/{endpoint}")),
+                "{log}"
+            );
+            assert!(log.contains(&format!(r#""title": "{title}""#)), "{log}");
+            assert_eq!(git_stdout(root, &["status", "--porcelain"]), "");
+        }
+    }
+}
+
+#[test]
+fn release_pr_rejects_invalid_title_formats_before_side_effects() {
+    for format in [
+        "",
+        "chore: release",
+        "chore: {summary}\\nextra",
+        "chore: {summary}\\u0000",
+    ] {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        copy_fixture_to(root);
+        let api = common::mock_github(root);
+        let manifest = root.join("gleam.toml");
+        let text = fs::read_to_string(&manifest).unwrap();
+        write(
+            &manifest,
+            &format!("{text}\n[tools.trellis.release]\ntitle_format = \"{format}\"\n"),
+        );
+        add_fragment(root, "lat_core", "Added", "pending change");
+        init_repo(root);
+        let remote = bare_origin(root);
+        let before = commit_of(root, "HEAD");
+        trellis_github(root, &api)
+            .args(["release", "pr"])
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("release.title_format"));
+        assert_eq!(commit_of(root, "HEAD"), before);
+        assert_eq!(git_stdout(root, &["status", "--porcelain"]), "");
+        assert_eq!(git_stdout(remote.path(), &["for-each-ref"]), "");
+        assert!(!root.join(".fake/github-log").exists());
+    }
+}
+
+#[test]
 fn release_pr_candidates_retry_from_base_and_promote_after_merge() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
