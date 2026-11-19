@@ -18,7 +18,7 @@ use crate::workspace::{Member, Workspace};
 use anyhow::{Context, Result, bail};
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Which tag lifecycle a planned tag belongs to. The serialized names are wire
 /// format — see `crate::json`.
@@ -302,20 +302,32 @@ pub fn plan(workspace: &Workspace, json: bool) -> Result<()> {
     Ok(())
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct CreateOptions {
     pub push: bool,
     pub github_release: bool,
     /// Report every planned action without doing anything (a conflicting tag
     /// still fails the command).
     pub dry_run: bool,
+    pub release: Option<PackageReleaseOptions>,
+}
+
+#[derive(Debug, Clone)]
+pub struct PackageReleaseOptions {
+    pub package: String,
+    pub assets: Vec<PathBuf>,
+    pub draft: bool,
+    pub replace_assets: bool,
 }
 
 pub fn create(workspace: &Workspace, options: &CreateOptions) -> Result<()> {
+    if let Some(release) = &options.release {
+        return create_package_release(workspace, options.dry_run, release);
+    }
     // A GitHub Release needs the tag on origin, so it implies a push.
     let options = CreateOptions {
         push: options.push || options.github_release,
-        ..*options
+        ..options.clone()
     };
     let push = options.push;
     if push {
@@ -380,12 +392,151 @@ pub fn create(workspace: &Workspace, options: &CreateOptions) -> Result<()> {
         let remote_oid = remote_oids.get(&planned.tag).map(String::as_str);
         match planned.kind {
             TagKind::Exact => {
-                create_exact_tag(workspace, planned, options, github.as_ref(), remote_oid)?
+                create_exact_tag(workspace, planned, &options, github.as_ref(), remote_oid)?
             }
             TagKind::Series | TagKind::RepositorySeries => {
-                move_series_tag(workspace, planned, options, remote_oid)?
+                move_series_tag(workspace, planned, &options, remote_oid)?
             }
         }
+    }
+    Ok(())
+}
+
+fn create_package_release(
+    workspace: &Workspace,
+    dry_run: bool,
+    options: &PackageReleaseOptions,
+) -> Result<()> {
+    use crate::github::release::{LocalAsset, ReleaseRequest};
+
+    let member_index = workspace
+        .members
+        .iter()
+        .position(|m| m.name == options.package)
+        .with_context(|| format!("unknown package `{}`", options.package))?;
+    let member = &workspace.members[member_index];
+    if !member.releasable() || !member.tags.contains(&TagLevel::Exact) {
+        bail!(
+            "package `{}` must be releasable with exact tags",
+            member.name
+        );
+    }
+    let tag = workspace.config.exact_tag(&member.name, member.version());
+    if workspace.members.iter().any(|other| {
+        other.name != member.name
+            && other.releasable()
+            && other.tags.contains(&TagLevel::Exact)
+            && workspace.config.exact_tag(&other.name, member.version()) == tag
+    }) {
+        bail!(
+            "exact tag `{tag}` has ambiguous package ownership; include {{name}} in exact_tag_format"
+        );
+    }
+    let mut names = HashSet::new();
+    let mut assets = Vec::new();
+    for path in &options.assets {
+        let asset = LocalAsset::read(path)?;
+        if !names.insert(asset.name.clone()) {
+            bail!("multiple assets have the same file name `{}`", asset.name);
+        }
+        assets.push(asset);
+    }
+    let github = GitHubClient::for_repo(&workspace.root)?;
+    let revision = git_stdout(&workspace.root, &["rev-parse", "HEAD^{commit}"])?;
+    if manifest_version_at_revision(workspace, member, "HEAD")? != member.version() {
+        bail!(
+            "package version differs from the qualified revision at HEAD; commit it before release"
+        );
+    }
+    let planned = plan_tags(workspace)?;
+    let planned = planned
+        .iter()
+        .find(|p| p.member == member_index && p.kind == TagKind::Exact)
+        .context("package has no exact tag")?;
+    let reference = format!("refs/tags/{}", planned.tag);
+    let peeled = format!("{reference}^{{}}");
+    let remote = git_stdout(
+        &workspace.root,
+        &["ls-remote", "--tags", "origin", &reference, &peeled],
+    )?;
+    let remote: HashMap<_, _> = remote
+        .lines()
+        .filter_map(|line| line.split_once('\t'))
+        .collect();
+    let remote_commit = remote
+        .get(peeled.as_str())
+        .or_else(|| remote.get(reference.as_str()));
+    if remote_commit.is_some_and(|commit| *commit != revision) {
+        bail!(
+            "tag `{}` does not identify the qualified revision at HEAD; check out its original release revision",
+            planned.tag
+        );
+    }
+    let local = local_tag_oid(&workspace.root, &planned.tag)?;
+    if local.is_some() {
+        let commit = git_stdout(
+            &workspace.root,
+            &["rev-parse", &format!("{reference}^{{commit}}")],
+        )?;
+        if commit != revision {
+            bail!(
+                "tag `{}` does not identify the qualified revision at HEAD",
+                planned.tag
+            );
+        }
+    }
+    let remote_oid = remote.get(reference.as_str()).copied();
+    if let (Some(local), Some(remote)) = (local.as_deref(), remote_oid)
+        && local != remote
+    {
+        bail!(
+            "tag `{}` points to different objects locally and on origin",
+            planned.tag
+        );
+    }
+    let changelog = if member.rel_path == "." {
+        "CHANGELOG.md".to_string()
+    } else {
+        format!("{}/CHANGELOG.md", member.rel_path)
+    };
+    let output = git_output(&workspace.root, &["show", &format!("HEAD:{changelog}")])?;
+    let notes = if output.status.success() {
+        changelog_section(std::str::from_utf8(&output.stdout)?, member.version())
+    } else {
+        None
+    }
+    .unwrap_or_else(|| format!("{} {}", member.name, member.version()));
+    let request = ReleaseRequest {
+        tag: &planned.tag,
+        revision: &revision,
+        notes: &notes,
+        prerelease: !semver::Version::parse(&planned.version)?.pre.is_empty(),
+        assets: &assets,
+        draft: options.draft,
+        replace_assets: options.replace_assets,
+        dry_run,
+    };
+    // Validate recorded revision and asset intent before creating or pushing a tag.
+    github.check_release(&request)?;
+    create_exact_tag(
+        workspace,
+        planned,
+        &CreateOptions {
+            push: true,
+            github_release: false,
+            dry_run,
+            release: None,
+        },
+        None,
+        remote_oid,
+    )?;
+    github.reconcile_release(&request)?;
+    if !dry_run {
+        crate::status!(
+            "{} GitHub release {}",
+            if options.draft { "staged" } else { "finalized" },
+            planned.tag
+        );
     }
     Ok(())
 }
@@ -435,7 +586,7 @@ fn reconcile_remote_repository_series_tag(workspace: &Workspace) -> Result<()> {
 fn create_exact_tag(
     workspace: &Workspace,
     planned: &PlannedTag,
-    options: CreateOptions,
+    options: &CreateOptions,
     github: Option<&GitHubClient>,
     remote_oid: Option<&str>,
 ) -> Result<()> {
@@ -498,7 +649,7 @@ fn create_exact_tag(
 fn move_series_tag(
     workspace: &Workspace,
     planned: &PlannedTag,
-    options: CreateOptions,
+    options: &CreateOptions,
     remote_oid: Option<&str>,
 ) -> Result<()> {
     let member = &workspace.members[planned.member];

@@ -374,6 +374,11 @@ An alias for `tag create`, for adopting trellis on a repository that already has
 
 * `--push` — Push each created tag to origin
 * `--github-release` — Also create a GitHub Release per exact tag, with the matching CHANGELOG section as the body (implies --push; needs a GitHub token from GITHUB_TOKEN, GH_TOKEN, or a logged-in gh CLI)
+* `--package <PACKAGE>` — Reconcile only this package's exact GitHub Release at the checked-out qualified revision; leave moving tags unchanged
+* `--asset <FILE>` — Upload a required local file (repeatable; requires --package)
+* `--draft` — Stage the package release as a draft without publishing it
+* `--finalize` — Publish the package draft only after all recorded required assets match
+* `--replace-assets` — Replace conflicting assets only after their replacements upload successfully
 * `--dry-run` — Report every tag/push/release action without doing anything (a conflicting tag still fails the command)
 
 
@@ -413,6 +418,11 @@ Create missing tags in topological order
 
 * `--push` — Push each created tag to origin
 * `--github-release` — Also create a GitHub Release per exact tag, with the matching CHANGELOG section as the body (implies --push; needs a GitHub token from GITHUB_TOKEN, GH_TOKEN, or a logged-in gh CLI)
+* `--package <PACKAGE>` — Reconcile only this package's exact GitHub Release at the checked-out qualified revision; leave moving tags unchanged
+* `--asset <FILE>` — Upload a required local file (repeatable; requires --package)
+* `--draft` — Stage the package release as a draft without publishing it
+* `--finalize` — Publish the package draft only after all recorded required assets match
+* `--replace-assets` — Replace conflicting assets only after their replacements upload successfully
 * `--dry-run` — Report every tag/push/release action without doing anything (a conflicting tag still fails the command)
 
 

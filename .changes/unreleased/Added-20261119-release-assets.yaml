@@ -1,0 +1,5 @@
+component: tag
+kind: Added
+body: |-
+  **`tag create` uploads required assets and finalizes package drafts after content verification.** Use `--github-release --package NAME --draft` with repeated `--asset FILE`, then `--finalize` to publish. Retries reuse matching uploads and retain every recorded requirement. Conflicts require `--replace-assets`; failed replacement uploads preserve existing assets. Recover at the original qualified revision, even after the default branch advances. Package-scoped operations leave moving tags unchanged. Unscoped GitHub release creation now rejects existing drafts instead of reporting them complete.
+time: 2026-11-19T08:00:24-08:00
