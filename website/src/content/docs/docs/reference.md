@@ -380,6 +380,12 @@ An alias for `tag create`, for adopting trellis on a repository that already has
 * `--finalize` — Publish the package draft only after all recorded required assets match
 * `--replace-assets` — Replace conflicting assets only after their replacements upload successfully
 * `--dry-run` — Report every tag/push/release action without doing anything (a conflicting tag still fails the command)
+* `--force <FORCE>` — Adopt ancestor repository aliases that predate the anchor manifest
+
+  Possible values:
+  - `adopt`:
+    Adopt legacy repository aliases without bypassing other safety checks
+
 
 
 
@@ -405,6 +411,12 @@ List releasable packages whose current version has no tag yet
 ### **Options:**
 
 * `--json` — Emit JSON instead of text
+* `--force <FORCE>` — Adopt ancestor repository aliases that predate the anchor manifest
+
+  Possible values:
+  - `adopt`:
+    Adopt legacy repository aliases without bypassing other safety checks
+
 
 
 
@@ -424,6 +436,12 @@ Create missing tags in topological order
 * `--finalize` — Publish the package draft only after all recorded required assets match
 * `--replace-assets` — Replace conflicting assets only after their replacements upload successfully
 * `--dry-run` — Report every tag/push/release action without doing anything (a conflicting tag still fails the command)
+* `--force <FORCE>` — Adopt ancestor repository aliases that predate the anchor manifest
+
+  Possible values:
+  - `adopt`:
+    Adopt legacy repository aliases without bypassing other safety checks
+
 
 
 

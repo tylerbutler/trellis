@@ -1,0 +1,5 @@
+component: tag
+kind: Added
+body: |-
+  **`tag plan` and `tag create` accept `--force=adopt` for legacy repository aliases.** The alias must be an ancestor of HEAD whose history never contained the anchor manifest at its current path. Shallow history, malformed manifests, backward version moves, and exact-tag conflicts remain errors. Preview with `--dry-run --push` before authorizing a move; previews leave local and remote tags unchanged.
+time: 2026-11-19T09:19:11-08:00

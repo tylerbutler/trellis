@@ -14,8 +14,8 @@ same approved release commit: `publish` skips versions already on Hex, and
 
 ```txt wrap
 trellis release pr [--base <branch>] [--branch <branch>] [--pre <label|none>] [--set <pkg=version>] [--bump <pkg=level>] [--resume] [--auto-pre] [--skip-unchanged] [--prepare-command <command>] [--json | --github-output]
-trellis tag plan [--json]
-trellis tag create [--push] [--github-release]
+trellis tag plan [--json] [--force=adopt]
+trellis tag create [--push] [--github-release] [--force=adopt]
 trellis publish <pkg | --tag <tag> | --all-untagged> [--dry-run]
 trellis lockfile refresh [--package <pkg>]
 ```
@@ -338,6 +338,40 @@ because it names a package but no particular version.
 
 Repository tags identify repository snapshots rather than package
 releases, so neither `publish --tag` nor `ci tag-package` resolves them.
+
+### Adopting legacy repository tags
+
+Use `--force=adopt` when a configured repository series tag, such as `v1`,
+predates the anchor package's manifest. Without this option, a missing
+historical manifest stops planning and tag creation.
+
+The tag must point to an ancestor of HEAD, and its history must never have
+contained the anchor manifest at its current path. A deleted manifest does
+not qualify. Trellis rejects shallow history because it cannot prove these
+conditions; fetch complete history first, for example with
+`git fetch --unshallow origin`.
+
+Preview at the approved release commit before authorizing a move:
+
+```sh
+trellis tag plan --json --force=adopt
+trellis tag create --push --dry-run --force=adopt
+
+# Execute only when the release and alias move are authorized.
+trellis tag create --push --force=adopt
+```
+
+`release bootstrap` accepts the same option and uses the same checks.
+`adopt` is the only supported force mode; bare `--force` is an error.
+The option does not bypass malformed manifests, newer anchor versions,
+exact-tag conflicts, or concurrent remote changes. It cannot be combined
+with `--package`, which leaves moving tags unchanged.
+
+Planning uses local tags. A push dry run also checks origin and may fetch
+objects, but does not change local or remote tags. Installing trellis or
+adding its configuration does not move an existing alias. After adoption,
+retry at the same release commit without the option: exact tags remain
+immutable, and unchanged anchor versions leave aliases in place.
 
 ### Required assets and draft releases
 

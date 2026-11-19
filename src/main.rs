@@ -469,6 +469,9 @@ enum TagCommand {
         /// Emit JSON instead of text
         #[arg(long)]
         json: bool,
+        /// Adopt ancestor repository aliases that predate the anchor manifest
+        #[arg(long, value_enum)]
+        force: Option<commands::tag::ForceMode>,
     },
     /// Create missing tags in topological order
     Create {
@@ -511,6 +514,9 @@ struct TagCreateArgs {
     /// conflicting tag still fails the command)
     #[arg(long)]
     dry_run: bool,
+    /// Adopt ancestor repository aliases that predate the anchor manifest
+    #[arg(long, value_enum, conflicts_with = "package")]
+    force: Option<commands::tag::ForceMode>,
 }
 
 impl TagCreateArgs {
@@ -519,6 +525,7 @@ impl TagCreateArgs {
             push: self.push,
             github_release: self.github_release,
             dry_run: self.dry_run,
+            force: self.force,
             release: self
                 .package
                 .map(|package| commands::tag::PackageReleaseOptions {
@@ -850,8 +857,8 @@ fn dispatch(cli: Cli) -> Result<bool> {
             }
         },
         Command::Tag { command } => match command {
-            TagCommand::Plan { json } => {
-                commands::tag::plan(&workspace, json)?;
+            TagCommand::Plan { json, force } => {
+                commands::tag::plan(&workspace, json, force)?;
                 Ok(true)
             }
             TagCommand::Create { args } => {

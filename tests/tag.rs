@@ -12,6 +12,352 @@ use std::os::unix::fs::PermissionsExt;
 
 // ---- tag ----------------------------------------------------------------
 
+fn legacy_alias_repo(root: &std::path::Path) -> tempfile::TempDir {
+    write(&root.join("README.md"), "Existing actions\n");
+    init_repo(root);
+    git(root, &["tag", "-a", "v1", "-m", "legacy alias"]);
+    let remote = bare_origin(root);
+    git(root, &["push", "-q", "origin", "v1"]);
+    write(
+        &root.join("trellis.toml"),
+        "[tools.trellis.adapter]\nmanifest = \"release.toml\"\n\
+         [tools.trellis.publish]\nexact_tag_format = \"v{version}\"\n\
+         package_tags = [\"exact\"]\nrepository_tag_package = \"actions\"\n\
+         repository_tag_format = \"v{series}\"\nrepository_tags = [\"major\", \"minor\"]\n",
+    );
+    write(
+        &root.join("release.toml"),
+        "name = \"actions\"\nversion = \"1.0.0\"\n",
+    );
+    git(root, &["add", "."]);
+    git(root, &["commit", "-qm", "adopt version manifest"]);
+    remote
+}
+
+#[test]
+fn legacy_alias_adoption_requires_explicit_mode_and_preserves_preview_refs() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let _remote = legacy_alias_repo(root);
+    let local = git_stdout(root, &["show-ref", "--tags"]);
+    let remote = git_stdout(root, &["ls-remote", "--tags", "origin"]);
+    trellis(root).args(["doctor"]).assert().success();
+    for args in [
+        vec!["tag", "plan", "--json"],
+        vec!["tag", "create", "--push", "--dry-run"],
+    ] {
+        trellis(root)
+            .args(args)
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("--force=adopt"));
+    }
+    let output = trellis(root)
+        .args(["tag", "plan", "--json", "--force=adopt"])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let alias = document["tags"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|tag| tag["tag"] == "v1")
+        .unwrap();
+    assert_eq!(alias["kind"], "repository_series");
+    assert_eq!(alias["action"], "move");
+    trellis(root)
+        .args(["tag", "create", "--push", "--dry-run", "--force=adopt"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("would force-push v1"));
+    assert_eq!(git_stdout(root, &["show-ref", "--tags"]), local);
+    assert_eq!(git_stdout(root, &["ls-remote", "--tags", "origin"]), remote);
+}
+
+#[test]
+fn legacy_alias_adoption_pushes_once_and_keeps_exact_tags_immutable() {
+    for command in [["tag", "create"], ["release", "bootstrap"]] {
+        for remote_only in [false, true] {
+            let tmp = tempfile::tempdir().unwrap();
+            let root = tmp.path();
+            let _remote = legacy_alias_repo(root);
+            let legacy = commit_of(root, "v1");
+            git(root, &["tag", "unrelated", &legacy]);
+            if remote_only {
+                git(root, &["tag", "-d", "v1"]);
+                git(
+                    root,
+                    &["config", "remote.origin.fetch", "+refs/tags/*:refs/tags/*"],
+                );
+            }
+            let before = git_stdout(root, &["show-ref", "--tags"]);
+            trellis(root)
+                .args(command)
+                .args(["--push", "--dry-run", "--force=adopt"])
+                .assert()
+                .success();
+            assert_eq!(git_stdout(root, &["show-ref", "--tags"]), before);
+            trellis(root)
+                .args(command)
+                .args(["--push", "--force=adopt"])
+                .assert()
+                .success();
+            let release = commit_of(root, "HEAD");
+            for tag in ["v1", "v1.0", "v1.0.0"] {
+                assert_eq!(commit_of(root, tag), release);
+                assert!(
+                    git_stdout(
+                        root,
+                        &["ls-remote", "origin", &format!("refs/tags/{tag}^{{}}")]
+                    )
+                    .starts_with(&release)
+                );
+            }
+            assert_eq!(commit_of(root, "unrelated"), legacy);
+            let exact = git_stdout(root, &["rev-parse", "refs/tags/v1.0.0"]);
+            let refs = git_stdout(root, &["ls-remote", "--tags", "origin"]);
+            git(root, &["commit", "-q", "--allow-empty", "-m", "unrelated"]);
+            trellis(root).args(command).arg("--push").assert().success();
+            assert_eq!(git_stdout(root, &["ls-remote", "--tags", "origin"]), refs);
+            assert_eq!(git_stdout(root, &["rev-parse", "refs/tags/v1.0.0"]), exact);
+        }
+    }
+}
+
+#[test]
+fn legacy_alias_adoption_rejects_unrelated_or_deleted_manifest_history() {
+    for deleted in [false, true] {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let _remote = legacy_alias_repo(root);
+        if deleted {
+            git(root, &["rm", "release.toml"]);
+            git(root, &["commit", "-qm", "delete manifest"]);
+        } else {
+            git(root, &["checkout", "--orphan", "unrelated"]);
+            git(root, &["rm", "-rf", "."]);
+            write(&root.join("README.md"), "Unrelated history\n");
+            git(root, &["add", "."]);
+            git(root, &["commit", "-qm", "unrelated history"]);
+        }
+        git(root, &["tag", "-f", "v1"]);
+        git(root, &["push", "-q", "--force", "origin", "v1"]);
+        if deleted {
+            write(
+                &root.join("release.toml"),
+                "name = \"actions\"\nversion = \"1.0.0\"\n",
+            );
+            git(root, &["add", "."]);
+            git(root, &["commit", "-qm", "restore manifest"]);
+        }
+        git(root, &["checkout", "-q", "main"]);
+        let refs = git_stdout(root, &["ls-remote", "--tags", "origin"]);
+        for args in [
+            vec!["tag", "plan", "--force=adopt"],
+            vec!["tag", "create", "--push", "--force=adopt"],
+        ] {
+            trellis(root)
+                .args(args)
+                .assert()
+                .code(3)
+                .stderr(predicate::str::contains(if deleted {
+                    "history already contains the anchor manifest"
+                } else {
+                    "not an ancestor of HEAD"
+                }));
+        }
+        assert_eq!(git_stdout(root, &["ls-remote", "--tags", "origin"]), refs);
+        assert!(!git_stdout(root, &["tag", "--list"]).contains("v1.0.0"));
+    }
+}
+
+#[test]
+fn legacy_alias_adoption_rejects_invalid_existing_manifests() {
+    for contents in ["not toml!", "name = \"actions\"\n", "version = \"bad\"\n"] {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let _remote = legacy_alias_repo(root);
+        git(root, &["checkout", "-q", "-b", "invalid", "v1"]);
+        write(&root.join("release.toml"), contents);
+        git(root, &["add", "."]);
+        git(root, &["commit", "-qm", "invalid historical manifest"]);
+        git(root, &["tag", "-f", "v1"]);
+        git(root, &["push", "-q", "--force", "origin", "v1"]);
+        git(root, &["checkout", "-q", "main"]);
+        for args in [
+            vec!["tag", "plan", "--force=adopt"],
+            vec!["tag", "create", "--push", "--force=adopt"],
+        ] {
+            trellis(root).args(args).assert().code(3).stderr(
+                predicate::str::contains("cannot parse repository tag anchor manifest")
+                    .or(predicate::str::contains("invalid anchor package version")),
+            );
+        }
+        assert!(!git_stdout(root, &["tag", "--list"]).contains("v1.0.0"));
+    }
+}
+
+#[test]
+fn legacy_alias_adoption_rejects_shallow_history() {
+    let source = tempfile::tempdir().unwrap();
+    let _remote = legacy_alias_repo(source.path());
+    let clone = tempfile::tempdir().unwrap();
+    git(
+        clone.path(),
+        &[
+            "clone",
+            "-q",
+            "--depth=1",
+            "--no-local",
+            source.path().to_str().unwrap(),
+            ".",
+        ],
+    );
+    git(
+        clone.path(),
+        &["fetch", "-q", "origin", "refs/tags/v1:refs/tags/v1"],
+    );
+    trellis(clone.path())
+        .args(["tag", "plan", "--force=adopt"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("shallow"));
+    git(clone.path(), &["fetch", "-q", "--unshallow", "origin"]);
+    trellis(clone.path())
+        .args(["tag", "plan", "--force=adopt"])
+        .assert()
+        .success();
+}
+
+#[test]
+fn legacy_alias_adoption_does_not_override_exact_tag_conflicts() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let _remote = legacy_alias_repo(root);
+    git(root, &["tag", "v1.0.0", "v1"]);
+    git(root, &["push", "-q", "origin", "v1.0.0"]);
+    git(root, &["tag", "-f", "v1.0.0", "HEAD"]);
+    let refs = git_stdout(root, &["ls-remote", "--tags", "origin"]);
+    trellis(root)
+        .args(["tag", "create", "--push", "--force=adopt"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("different objects"));
+    assert_eq!(git_stdout(root, &["ls-remote", "--tags", "origin"]), refs);
+}
+
+#[test]
+fn legacy_alias_adoption_never_moves_versioned_aliases_backward() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let _remote = legacy_alias_repo(root);
+    let first = commit_of(root, "HEAD");
+    write(
+        &root.join("release.toml"),
+        "name = \"actions\"\nversion = \"1.0.1\"\n",
+    );
+    git(root, &["commit", "-qam", "newer release"]);
+    git(root, &["tag", "-f", "v1"]);
+    git(root, &["push", "-q", "--force", "origin", "v1"]);
+    git(root, &["checkout", "-q", &first]);
+    for args in [
+        vec!["tag", "plan", "--force=adopt"],
+        vec!["tag", "create", "--push", "--force=adopt"],
+    ] {
+        trellis(root)
+            .args(args)
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("refusing to move it backward"));
+    }
+}
+
+#[test]
+fn legacy_alias_adoption_is_available_locally_and_requires_a_valid_mode() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let _remote = legacy_alias_repo(root);
+    for command in [["tag", "plan"], ["tag", "create"], ["release", "bootstrap"]] {
+        for force in ["--force", "--force=anything"] {
+            trellis(root).args(command).arg(force).assert().code(2);
+        }
+    }
+    trellis(root)
+        .args([
+            "tag",
+            "create",
+            "--force=adopt",
+            "--github-release",
+            "--package",
+            "actions",
+        ])
+        .assert()
+        .code(2);
+    let remote = git_stdout(root, &["ls-remote", "--tags", "origin"]);
+    trellis(root)
+        .args(["tag", "create", "--force=adopt"])
+        .assert()
+        .success();
+    assert_eq!(commit_of(root, "v1"), commit_of(root, "HEAD"));
+    assert_eq!(git_stdout(root, &["ls-remote", "--tags", "origin"]), remote);
+}
+
+#[test]
+fn legacy_alias_adoption_does_not_hide_git_read_failures() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let _remote = legacy_alias_repo(root);
+    let tree = git_stdout(root, &["rev-parse", "v1^{tree}"]);
+    fs::remove_file(root.join(".git/objects").join(&tree[..2]).join(&tree[2..])).unwrap();
+    trellis(root)
+        .args(["tag", "plan", "--force=adopt"])
+        .assert()
+        .code(3)
+        .stderr(predicate::str::contains("cannot inspect anchor manifest"));
+    assert!(!git_stdout(root, &["tag", "--list"]).contains("v1.0.0"));
+}
+
+#[test]
+fn legacy_alias_adoption_leases_the_validated_remote_object_and_retries_safely() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let remote = legacy_alias_repo(root);
+    git(root, &["push", "-q", "origin", "HEAD:refs/heads/main"]);
+    let release = commit_of(root, "HEAD");
+    let hook = root.join(".git/hooks/pre-push");
+    write(
+        &hook,
+        "#!/bin/sh\nset -eu\n\
+         while read local_ref local_oid remote_ref remote_oid; do\n\
+           if [ \"$local_ref\" = refs/tags/v1.0.0 ]; then\n\
+             git -c safe.bareRepository=all -C \"$TEST_REMOTE\" update-ref refs/tags/v1 \"$TEST_COMMIT\"\n\
+           fi\n\
+         done\n",
+    );
+    common::make_executable(&hook);
+    trellis(root)
+        .env("TEST_REMOTE", remote.path())
+        .env("TEST_COMMIT", &release)
+        .args(["tag", "create", "--push", "--force=adopt"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("failed to push tag v1"));
+    assert_eq!(
+        git_stdout(remote.path(), &["rev-parse", "refs/tags/v1"]),
+        release
+    );
+    let exact = git_stdout(root, &["rev-parse", "refs/tags/v1.0.0"]);
+    fs::remove_file(hook).unwrap();
+    trellis(root)
+        .args(["tag", "create", "--push"])
+        .assert()
+        .success();
+    assert_eq!(git_stdout(root, &["rev-parse", "refs/tags/v1"]), release);
+    assert_eq!(git_stdout(root, &["rev-parse", "refs/tags/v1.0.0"]), exact);
+    assert_eq!(commit_of(root, "v1.0"), release);
+}
+
 #[test]
 fn release_assets_require_an_unambiguous_package_and_existing_files_before_tagging() {
     let tmp = tempfile::tempdir().unwrap();
