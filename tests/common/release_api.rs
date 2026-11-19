@@ -96,7 +96,8 @@ pub(super) fn route(
             release[key] = value.clone();
         }
         release.clone()
-    } else if let Some(id) = resource.strip_prefix("/assets/") {
+    } else {
+        let id = resource.strip_prefix("/assets/")?;
         let id: u64 = id.parse().unwrap();
         let assets = release["assets"].as_array_mut().unwrap();
         let index = assets.iter().position(|a| a["id"] == id)?;
@@ -124,8 +125,6 @@ pub(super) fn route(
             }
             _ => return None,
         }
-    } else {
-        return None;
     };
     std::fs::write(file, release.to_string()).unwrap();
     Some((
