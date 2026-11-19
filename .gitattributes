@@ -4,7 +4,7 @@
 assets/man/** linguist-generated=true
 assets/man/** -diff
 
-# Imported agent assets; keep project-authored skills and guidance first-party.
+# Agent skills and customization assets.
 .agents/skills/caveman-commit/** linguist-vendored=true
 .agents/skills/humanizer/** linguist-vendored=true
 .agents/skills/impeccable/** linguist-vendored=true
@@ -12,21 +12,8 @@ assets/man/** -diff
 .agents/skills/prose-banlist/** linguist-vendored=true
 .agents/skills/stop-slop/** linguist-vendored=true
 .agents/skills/unslop/** linguist-vendored=true
-.claude/skills/caveman-commit/** linguist-vendored=true
-.claude/skills/humanizer/** linguist-vendored=true
-.claude/skills/impeccable/** linguist-vendored=true
-.claude/skills/ponytail*/** linguist-vendored=true
-.claude/skills/prose-banlist/** linguist-vendored=true
-.claude/skills/stop-slop/** linguist-vendored=true
-.claude/skills/unslop/** linguist-vendored=true
-.claude/agents/impeccable-*.md linguist-vendored=true
-.github/agents/impeccable-*.agent.md linguist-vendored=true
-.claude/hooks/plugin/** linguist-vendored=true
-.claude/apm-hooks.json linguist-vendored=true
-.github/hooks/scripts/plugin/** linguist-vendored=true
-.github/hooks/plugin-hooks.json linguist-vendored=true
-.github/hooks/ponytail-copilot-hooks.json linguist-vendored=true
-.claude/commands/create-pr.md linguist-vendored=true
-.claude/commands/merge-upstream.md linguist-vendored=true
-.github/prompts/create-pr.prompt.md linguist-vendored=true
-.github/prompts/merge-upstream.prompt.md linguist-vendored=true
+.claude/** linguist-vendored=true
+.github/skills/** linguist-vendored=true
+.github/agents/** linguist-vendored=true
+.github/hooks/** linguist-vendored=true
+.github/prompts/** linguist-vendored=true
