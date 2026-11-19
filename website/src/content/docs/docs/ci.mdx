@@ -397,3 +397,45 @@ without needing an unrelated push.
 The [tag-then-publish alternative](/docs/publishing/#tag-before-or-after-publishing) remains
 supported for stable-only pipelines. It needs immutable exact package tags;
 `publish --tag` rejects moving series tags.
+
+### Reusable coordinator phases
+
+Custom native builds do not need a repository-specific GitHub release
+coordinator. Use the shared workflow's
+[selection and completion gates](https://github.com/tylerbutler/actions/blob/main/README.md#reusable-selection-and-completion-gates)
+and [five-target native example](https://github.com/tylerbutler/actions/blob/main/examples/trellis-native-release.yml).
+Pin every call to the same reviewed actions commit containing those interfaces;
+older pins do not accept the new inputs. Keep one coordinator trigger workflow
+per repository.
+
+`phase: select` returns the immutable `release_sha`, `publication_state`,
+`complete`, and `preparation_eligible`. The last output checks only the preceding
+release's completion; `phase: prepare` still enforces candidate and manual
+ownership. Skip qualification when `complete` is `'true'`; otherwise, every
+build, archive check, and consumer proof must check out `release_sha`.
+
+Pass `required_jobs` and `qualification_results: ${{ toJSON(needs) }}` to
+`phase: publish`. The call job must directly need every required matrix,
+assembly, and consumer-proof job. A missing, skipped, failed, or cancelled job
+blocks publication. For native package assembly, also pass `package_artifact`,
+`required_targets`, and `artifact_paths`. The
+[qualified native package contract](https://github.com/tylerbutler/actions/blob/main/README.md#qualified-native-package-contract)
+checks repository, revision, workflow run and attempt, target coverage, file
+inventory, hashes, and permitted destination paths before copying any file.
+Artifact overlays support shared libraries and data, not preserved Unix
+executable modes.
+
+The shared publisher retains publication → tags → completion ordering.
+For [required assets and draft releases](/docs/publishing/#required-assets-and-draft-releases),
+keep package-specific upload and finalization in custom tagging jobs, then
+call `phase: complete` with the actual `publication_result`, `tagging_result`,
+and required job results. Default `phase: publish` uses the unscoped tag
+command; it does not finalize drafts. Use a trellis build containing the asset
+controls, through a released pin or a [reviewed source snapshot](#optional-source-installation).
+
+Qualification jobs receive neither publication nor App secrets. Their workflow
+code and package proofs remain trusted repository configuration. Recover by
+rerunning **all jobs of the original merge-event run**: artifacts are bound to
+the run attempt, so reusing a successful job from an earlier attempt is refused.
+Keep the [historical completion-marker migration](#adopting-existing-releases)
+for releases that predate these gates.

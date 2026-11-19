@@ -324,8 +324,11 @@ Prereleases use immutable exact tags such as `lat_core-v1.3.0-rc.0` when
 `package_tags` includes `exact`. Neither package nor repository moving series
 tags advance during a candidate release. New GitHub releases for prerelease
 manifest versions have `prerelease: true`; stable versions have it set to
-`false`, regardless of custom tag spelling. Retrying skips an existing GitHub
-release rather than rewriting it. If an older candidate release was
+`false`, regardless of custom tag spelling. Without `--package`, retrying skips
+an existing published GitHub release rather than rewriting it. An existing
+draft fails the command; finalize it with the package-specific flow below.
+Published releases with recorded required assets are checked before being skipped.
+If an older candidate release was
 misclassified, its owner must correct its prerelease setting on GitHub.
 
 With no `exact` entry a package has no per-version tags at all, so there is no
@@ -335,6 +338,73 @@ because it names a package but no particular version.
 
 Repository tags identify repository snapshots rather than package
 releases, so neither `publish --tag` nor `ci tag-package` resolves them.
+
+### Required assets and draft releases
+
+Stage a release as a draft when required files must be attached before it becomes
+visible. Generate and qualify the files in your build jobs first; trellis does
+not build binaries, generate SBOMs, or sign files.
+
+Run at the qualified release commit, after required registry publication succeeds:
+
+```sh
+trellis tag create --github-release --package lat_core --draft \
+  --asset dist/gleam.cdx.json --asset dist/rust.cdx.json
+
+# Publish only after every recorded required asset passes content verification.
+trellis tag create --github-release --package lat_core --finalize
+```
+
+`--package` selects one releasable package with an exact tag. It is required for
+`--asset`, `--draft`, and `--finalize`, even in a single-package workspace.
+The package-specific flow pushes only that exact tag; it leaves package and
+repository moving tags unchanged. A tag format that cannot distinguish the
+selected package from another releasable package is an error.
+
+New releases start as drafts. `--draft` leaves them unpublished; without it,
+trellis uploads the supplied assets and finalizes the release in the same
+command. `--finalize` makes that last step explicit and can run without local
+files once uploads are complete. Notes come from the committed matching
+changelog section, and the manifest version determines the prerelease flag.
+
+Repeat `--asset FILE` for each required file. Paths are relative to the calling
+directory; uploaded names are their basenames. Names must be unique, use at most
+170 ASCII letters, digits, dots, underscores or hyphens, and not start with the
+reserved `trellis-upload-` prefix. Missing files, directories, and duplicate
+names fail before tag creation.
+
+Trellis records the release revision and required asset names and SHA-256 hashes
+in a hidden `trellis.release_assets/1` comment in the release notes. Do not remove
+that comment. Omitting
+an asset on a later invocation does not remove its requirement. Matching uploads
+are reused; missing or changed required assets block finalization. Older assets
+without a GitHub digest are downloaded for verification.
+
+Conflicting contents fail unless you pass `--replace-assets` with `--asset`.
+Trellis uploads and verifies a replacement under a temporary name before
+deleting the original, then renames it. A failed upload preserves the original.
+A failed rename can leave the verified replacement under `trellis-upload-…`;
+retry the same command to finish. Replacement is not an atomic asset swap.
+An already published release cannot be made a draft by this command, so
+changes to its assets remain visible while they run.
+
+Upload and finalization failures return a nonzero exit status. Retry with the
+same files and flags; an upload accepted before a lost response is verified
+rather than duplicated. Repeated successful finalization is a no-op. Serialize
+operations for each release; do not upload, edit notes, or finalize concurrently
+from another job or tool.
+
+Both local and remote exact tags must identify the checked-out `HEAD`, and
+the committed package version must match the workspace version. If the default
+branch has advanced, check out the original qualified release SHA and retry
+there, not at the new branch tip. This flow does not roll back registry
+publication or move an immutable tag.
+
+The GitHub token needs permission to write repository contents. GitHub can also
+require workflow-write permission when the original revision's workflow files
+differ from the default branch. The Actions `GITHUB_TOKEN` cannot grant that
+permission; use an appropriately scoped App or personal access token for that
+recovery case.
 
 ## Publishing to Hex
 

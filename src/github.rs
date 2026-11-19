@@ -7,6 +7,8 @@ use anyhow::{Context, Result, anyhow, bail};
 use std::path::Path;
 use std::process::Command;
 
+pub mod release;
+
 pub struct GitHubClient {
     agent: ureq::Agent,
     base: String,
@@ -222,13 +224,48 @@ impl GitHubClient {
 
     /// Whether a GitHub Release exists for `tag`.
     pub fn release_exists(&self, tag: &str) -> Result<bool> {
-        let url = self.url(&format!("/releases/tags/{tag}"));
+        let Some(body) = self.find_release(tag)? else {
+            return Ok(false);
+        };
+        if body["draft"].as_bool() == Some(true) {
+            bail!(
+                "GitHub release `{tag}` is a draft; use --package <name> --finalize to verify required assets and publish it"
+            );
+        }
+        self.check_recorded_assets(&body)?;
+        Ok(true)
+    }
+
+    fn find_release(&self, tag: &str) -> Result<Option<serde_json::Value>> {
+        let url = self.url(&format!("/releases/tags/{}", Self::query_value(tag)));
         let (status, body) = self.get(&url)?;
         match status {
-            200 => Ok(true),
-            404 => Ok(false),
+            200 => return Ok(Some(body)),
+            404 => {}
             _ => bail!("GitHub API GET {url} failed: {}", api_error(status, &body)),
         }
+        // The tag endpoint only promises published releases. Push-authorized
+        // callers can find drafts through the paginated release listing.
+        let mut found = None;
+        for page in 1.. {
+            let url = self.url(&format!("/releases?per_page=100&page={page}"));
+            let body = expect_status("GET", &url, 200, self.get(&url)?)?;
+            let releases = body
+                .as_array()
+                .context("GitHub release listing is not an array")?;
+            for release in releases {
+                let name = release["tag_name"]
+                    .as_str()
+                    .context("GitHub release has no tag_name")?;
+                if name == tag && found.replace(release.clone()).is_some() {
+                    bail!("multiple GitHub releases identify tag `{tag}`");
+                }
+            }
+            if releases.len() < 100 {
+                break;
+            }
+        }
+        Ok(found)
     }
 
     /// Create a GitHub Release on `tag`.

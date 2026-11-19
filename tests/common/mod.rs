@@ -280,7 +280,8 @@ fn handle(stream: &mut TcpStream, root: &Path) {
         .unwrap();
     writeln!(log, "{method} {target}\n{body}\n---").unwrap();
 
-    let (status, response) = route(&method, &path, &target, &body, root);
+    let (status, response) = release_api::route(&method, &path, &target, &buf[header_end..], root)
+        .unwrap_or_else(|| route(&method, &path, &target, &body, root));
     let _ = stream.write_all(
         format!(
             "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{response}",
@@ -289,6 +290,8 @@ fn handle(stream: &mut TcpStream, root: &Path) {
         .as_bytes(),
     );
 }
+
+mod release_api;
 
 fn mock_pr(root: &Path, number: u64) -> serde_json::Value {
     let output = std::process::Command::new("git")
@@ -405,6 +408,7 @@ fn route(
                 ("404 Not Found", r#"{"message":"Not Found"}"#.to_string())
             }
         }
+        ("GET", (Some("repos"), Some("releases")), None) => ("200 OK", "[]".to_string()),
         ("POST", (Some("repos"), Some("releases")), None) => {
             let parsed: serde_json::Value = serde_json::from_str(body).unwrap_or_default();
             let tag = parsed["tag_name"].as_str().unwrap_or("unknown");

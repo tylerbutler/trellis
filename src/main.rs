@@ -491,6 +491,22 @@ struct TagCreateArgs {
     /// GITHUB_TOKEN, GH_TOKEN, or a logged-in gh CLI)
     #[arg(long)]
     github_release: bool,
+    /// Reconcile only this package's exact GitHub Release at the checked-out
+    /// qualified revision; leave moving tags unchanged
+    #[arg(long, requires = "github_release", add = completion::packages())]
+    package: Option<String>,
+    /// Upload a required local file (repeatable; requires --package)
+    #[arg(long, requires = "package", value_name = "FILE")]
+    asset: Vec<std::path::PathBuf>,
+    /// Stage the package release as a draft without publishing it
+    #[arg(long, requires = "package", conflicts_with = "finalize")]
+    draft: bool,
+    /// Publish the package draft only after all recorded required assets match
+    #[arg(long, requires = "package")]
+    finalize: bool,
+    /// Replace conflicting assets only after their replacements upload successfully
+    #[arg(long, requires = "asset")]
+    replace_assets: bool,
     /// Report every tag/push/release action without doing anything (a
     /// conflicting tag still fails the command)
     #[arg(long)]
@@ -503,6 +519,14 @@ impl TagCreateArgs {
             push: self.push,
             github_release: self.github_release,
             dry_run: self.dry_run,
+            release: self
+                .package
+                .map(|package| commands::tag::PackageReleaseOptions {
+                    package,
+                    assets: self.asset,
+                    draft: self.draft,
+                    replace_assets: self.replace_assets,
+                }),
         }
     }
 }

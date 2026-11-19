@@ -13,6 +13,361 @@ use std::os::unix::fs::PermissionsExt;
 // ---- tag ----------------------------------------------------------------
 
 #[test]
+fn release_assets_require_an_unambiguous_package_and_existing_files_before_tagging() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+    init_repo(root);
+    let _remote = bare_origin(root);
+    let api = common::mock_github(root);
+    trellis_github(root, &api)
+        .args([
+            "tag",
+            "create",
+            "--github-release",
+            "--asset",
+            "missing.json",
+        ])
+        .assert()
+        .failure();
+    trellis_github(root, &api)
+        .args([
+            "tag",
+            "create",
+            "--github-release",
+            "--package",
+            "lat_core",
+            "--draft",
+            "--asset",
+            "missing.json",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("missing.json"));
+    assert!(git_stdout(root, &["tag", "--list"]).is_empty());
+}
+
+#[test]
+fn release_assets_stage_then_finalize_idempotently_at_the_qualified_revision() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+    init_repo(root);
+    let _remote = bare_origin(root);
+    let api = common::mock_github(root);
+    write(&root.join("sbom.json"), "{\"bomFormat\":\"CycloneDX\"}");
+    let args = ["tag", "create", "--github-release", "--package", "lat_core"];
+    trellis_github(root, &api)
+        .args(args)
+        .args(["--draft", "--asset", "sbom.json"])
+        .assert()
+        .success();
+    let release_file = root.join(".fake/release-lat_core-v1.2.0");
+    let release = || -> serde_json::Value {
+        serde_json::from_str(&fs::read_to_string(&release_file).unwrap()).unwrap()
+    };
+    assert_eq!(release()["draft"], true);
+    assert_eq!(release()["prerelease"], false);
+    assert!(release()["body"].as_str().unwrap().contains("- initial"));
+    assert_eq!(release()["assets"][0]["name"], "sbom.json");
+    assert_eq!(git_stdout(root, &["tag", "--list"]), "lat_core-v1.2.0");
+    trellis_github(root, &api)
+        .args(["tag", "create", "--github-release"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("draft"));
+    for _ in 0..2 {
+        trellis_github(root, &api)
+            .args(args)
+            .arg("--finalize")
+            .assert()
+            .success();
+    }
+    assert_eq!(release()["draft"], false);
+    let log = fs::read_to_string(root.join(".fake/github-log")).unwrap();
+    assert_eq!(
+        log.matches("POST /repos/example/repo/releases\n").count(),
+        1
+    );
+    assert_eq!(log.matches("/assets?name=sbom.json\n").count(), 1);
+
+    write(&root.join("later.txt"), "main advanced\n");
+    git(root, &["add", "later.txt"]);
+    git(root, &["commit", "-qm", "later"]);
+    trellis_github(root, &api)
+        .args(args)
+        .arg("--finalize")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("qualified revision"));
+    git(root, &["switch", "--detach", "HEAD~1"]);
+    trellis_github(root, &api)
+        .args(args)
+        .arg("--finalize")
+        .assert()
+        .success();
+}
+
+#[test]
+fn failed_asset_upload_cannot_finalize_an_incomplete_release_and_retry_recovers() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+    init_repo(root);
+    let _remote = bare_origin(root);
+    let api = common::mock_github(root);
+    write(&root.join("one.json"), "one");
+    write(&root.join("two.json"), "two");
+    write(&root.join(".fake/fail-asset"), "two.json");
+    let args = ["tag", "create", "--github-release", "--package", "lat_core"];
+    trellis_github(root, &api)
+        .args(args)
+        .args(["--finalize", "--asset", "one.json", "--asset", "two.json"])
+        .assert()
+        .failure();
+    fs::remove_file(root.join(".fake/fail-asset")).unwrap();
+    trellis_github(root, &api)
+        .args(args)
+        .arg("--finalize")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("two.json"));
+    write(&root.join(".fake/fail-finalize"), "");
+    trellis_github(root, &api)
+        .args(args)
+        .args(["--finalize", "--asset", "one.json", "--asset", "two.json"])
+        .assert()
+        .failure();
+    fs::remove_file(root.join(".fake/fail-finalize")).unwrap();
+    trellis_github(root, &api)
+        .args(args)
+        .arg("--finalize")
+        .assert()
+        .success();
+    let log = fs::read_to_string(root.join(".fake/github-log")).unwrap();
+    assert_eq!(log.matches("/assets?name=one.json\n").count(), 1);
+}
+
+#[test]
+fn conflicting_assets_need_explicit_replacement_and_failed_upload_preserves_original() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+    init_repo(root);
+    let _remote = bare_origin(root);
+    let api = common::mock_github(root);
+    write(&root.join("sbom.json"), "original");
+    let args = [
+        "tag",
+        "create",
+        "--github-release",
+        "--package",
+        "lat_core",
+        "--draft",
+        "--asset",
+        "sbom.json",
+    ];
+    trellis_github(root, &api).args(args).assert().success();
+    let release_file = root.join(".fake/release-lat_core-v1.2.0");
+    let original: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&release_file).unwrap()).unwrap();
+    write(&root.join("sbom.json"), "replacement");
+    trellis_github(root, &api).args(args).assert().failure();
+    write(&root.join(".fake/fail-asset"), "sbom.json");
+    trellis_github(root, &api)
+        .args(args)
+        .arg("--replace-assets")
+        .assert()
+        .failure();
+    let failed: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&release_file).unwrap()).unwrap();
+    assert_eq!(failed["assets"], original["assets"]);
+    fs::remove_file(root.join(".fake/fail-asset")).unwrap();
+    trellis_github(root, &api)
+        .args(args)
+        .arg("--replace-assets")
+        .assert()
+        .success();
+    let replaced: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&release_file).unwrap()).unwrap();
+    assert_eq!(replaced["assets"].as_array().unwrap().len(), 1);
+    assert_eq!(replaced["assets"][0]["name"], "sbom.json");
+    assert_ne!(
+        replaced["assets"][0]["digest"],
+        original["assets"][0]["digest"]
+    );
+}
+
+#[test]
+fn replacement_recovers_a_verified_upload_after_rename_failure() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+    init_repo(root);
+    let _remote = bare_origin(root);
+    let api = common::mock_github(root);
+    write(&root.join("sbom.json"), "original");
+    let args = [
+        "tag",
+        "create",
+        "--github-release",
+        "--package",
+        "lat_core",
+        "--draft",
+        "--asset",
+        "sbom.json",
+        "--replace-assets",
+    ];
+    trellis_github(root, &api).args(args).assert().success();
+    write(&root.join("sbom.json"), "replacement");
+    write(&root.join(".fake/fail-rename"), "");
+    trellis_github(root, &api).args(args).assert().failure();
+    fs::remove_file(root.join(".fake/fail-rename")).unwrap();
+    trellis_github(root, &api).args(args).assert().success();
+    let release: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(root.join(".fake/release-lat_core-v1.2.0")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(release["assets"].as_array().unwrap().len(), 1);
+    assert_eq!(release["assets"][0]["name"], "sbom.json");
+    let log = fs::read_to_string(root.join(".fake/github-log")).unwrap();
+    assert_eq!(
+        log.matches("POST /repos/example/repo/releases/100/assets?")
+            .count(),
+        2
+    );
+}
+
+#[test]
+fn release_asset_dry_run_does_not_create_tags_or_releases() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+    init_repo(root);
+    let _remote = bare_origin(root);
+    let api = common::mock_github(root);
+    write(&root.join("sbom.json"), "sbom");
+    trellis_github(root, &api)
+        .args([
+            "tag",
+            "create",
+            "--github-release",
+            "--package",
+            "lat_core",
+            "--draft",
+            "--asset",
+            "sbom.json",
+            "--dry-run",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("would"))
+        .stdout(predicate::str::contains("staged GitHub").not());
+    assert!(git_stdout(root, &["tag", "--list"]).is_empty());
+    assert!(!root.join(".fake/release-lat_core-v1.2.0").exists());
+}
+
+#[test]
+fn accepted_upload_with_failed_response_is_verified_on_retry_even_without_a_digest() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+    set_version(root, "lat_core", "1.3.0-rc.1");
+    init_repo(root);
+    let _remote = bare_origin(root);
+    let api = common::mock_github(root);
+    write(&root.join("sbom.json"), "sbom");
+    write(&root.join(".fake/fail-upload-response"), "");
+    let args = [
+        "tag",
+        "create",
+        "--github-release",
+        "--package",
+        "lat_core",
+        "--finalize",
+        "--asset",
+        "sbom.json",
+    ];
+    trellis_github(root, &api).args(args).assert().failure();
+    fs::remove_file(root.join(".fake/fail-upload-response")).unwrap();
+    let file = root.join(".fake/release-lat_core-v1.3.0-rc.1");
+    let mut release: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&file).unwrap()).unwrap();
+    release["assets"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("digest");
+    write(&file, &release.to_string());
+    trellis_github(root, &api).args(args).assert().success();
+    let release: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&file).unwrap()).unwrap();
+    assert_eq!(release["assets"].as_array().unwrap().len(), 1);
+    assert_eq!(release["draft"], false);
+    assert_eq!(release["prerelease"], true);
+    let log = fs::read_to_string(root.join(".fake/github-log")).unwrap();
+    assert_eq!(
+        log.matches("POST /repos/example/repo/releases/100/assets?")
+            .count(),
+        1
+    );
+    write(&root.join(".fake/asset-1"), "corrupted");
+    trellis_github(root, &api)
+        .args(args)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("conflicts"));
+    trellis_github(root, &api)
+        .args(["tag", "create", "--github-release"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("required asset"));
+}
+
+#[test]
+fn scoped_release_rejects_a_conflicting_recorded_revision_and_ambiguous_exact_tag() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    copy_fixture_to(root);
+    init_repo(root);
+    let _remote = bare_origin(root);
+    let api = common::mock_github(root);
+    let args = [
+        "tag",
+        "create",
+        "--github-release",
+        "--package",
+        "lat_core",
+        "--draft",
+    ];
+    trellis_github(root, &api).args(args).assert().success();
+    let file = root.join(".fake/release-lat_core-v1.2.0");
+    let mut release: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&file).unwrap()).unwrap();
+    release["target_commitish"] = serde_json::json!("1111111111111111111111111111111111111111");
+    write(&file, &release.to_string());
+    trellis_github(root, &api)
+        .args(args)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("qualified revision"));
+
+    let config_file = root.join("gleam.toml");
+    let config = fs::read_to_string(&config_file).unwrap().replace(
+        "exact_tag_format = \"{name}-v{version}\"",
+        "exact_tag_format = \"v{version}\"",
+    );
+    write(&config_file, &config);
+    set_version(root, "lat_mid", "1.2.0");
+    git(root, &["add", "gleam.toml", "packages/lat_mid/gleam.toml"]);
+    git(root, &["commit", "-qm", "ambiguous tag"]);
+    trellis_github(root, &api)
+        .args(args)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("ambiguous"));
+}
+
+#[test]
 fn tag_plan_lists_untagged_versions_and_create_tags_them() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
