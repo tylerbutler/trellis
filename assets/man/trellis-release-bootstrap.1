@@ -4,7 +4,7 @@
 .SH NAME
 trellis\-release\-bootstrap \- Reconcile tags against current manifest versions — no version bump, no unreleased changelog fragments required
 .SH SYNOPSIS
-\fBtrellis release bootstrap\fR [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-\-push\fR] [\fB\-\-color\fR] [\fB\-\-github\-release\fR] [\fB\-\-package\fR] [\fB\-q\fR|\fB\-\-quiet\fR] [\fB\-\-asset\fR] [\fB\-v\fR|\fB\-\-verbose\fR] [\fB\-\-draft\fR] [\fB\-\-no\-update\-check\fR] [\fB\-\-finalize\fR] [\fB\-\-replace\-assets\fR] [\fB\-\-dry\-run\fR] [\fB\-h\fR|\fB\-\-help\fR] 
+\fBtrellis release bootstrap\fR [\fB\-C\fR|\fB\-\-directory\fR] [\fB\-\-push\fR] [\fB\-\-color\fR] [\fB\-\-github\-release\fR] [\fB\-\-package\fR] [\fB\-q\fR|\fB\-\-quiet\fR] [\fB\-\-asset\fR] [\fB\-v\fR|\fB\-\-verbose\fR] [\fB\-\-draft\fR] [\fB\-\-no\-update\-check\fR] [\fB\-\-finalize\fR] [\fB\-\-replace\-assets\fR] [\fB\-\-dry\-run\fR] [\fB\-\-force\fR] [\fB\-h\fR|\fB\-\-help\fR] 
 .SH DESCRIPTION
 Reconcile tags against current manifest versions — no version bump, no unreleased changelog fragments required
 .PP
@@ -63,6 +63,17 @@ Replace conflicting assets only after their replacements upload successfully
 .TP
 \fB\-\-dry\-run\fR
 Report every tag/push/release action without doing anything (a conflicting tag still fails the command)
+.TP
+\fB\-\-force\fR \fI<FORCE>\fR
+Adopt ancestor repository aliases that predate the anchor manifest
+.br
+
+.br
+\fIPossible values:\fR
+.RS 14
+.IP \(bu 2
+adopt: Adopt legacy repository aliases without bypassing other safety checks
+.RE
 .TP
 \fB\-h\fR, \fB\-\-help\fR
 Print help (see a summary with \*(Aq\-h\*(Aq)

@@ -46,6 +46,12 @@ pub enum TagAction {
     UpToDate,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum ForceMode {
+    /// Adopt legacy repository aliases without bypassing other safety checks
+    Adopt,
+}
+
 #[derive(Debug)]
 pub struct PlannedTag {
     /// Index into `workspace.members`.
@@ -66,11 +72,13 @@ pub struct PlannedTag {
 /// [`series_tag_is_current`] — so a commit that touches one package does not
 /// drag every other package's series tags to it.
 ///
-/// Local-only and read-only — no git ref is written and no remote is
-/// queried. `tag plan`, `tag create`, and `release bootstrap` all start from
-/// this same reconciliation, so a preview can never disagree with what
-/// execution actually does.
-pub(crate) fn plan_tags(workspace: &Workspace) -> Result<Vec<PlannedTag>> {
+/// Read-only — no git ref is written and no remote is queried. Pushes supply
+/// a fetched repository-tag snapshot; local previews use local refs.
+fn plan_tags(
+    workspace: &Workspace,
+    force: Option<ForceMode>,
+    remote_repository_tags: &HashMap<String, String>,
+) -> Result<Vec<PlannedTag>> {
     let existing = git_stdout(&workspace.root, &["tag", "--list"])?;
     let existing: HashSet<&str> = existing
         .lines()
@@ -138,12 +146,19 @@ pub(crate) fn plan_tags(workspace: &Workspace) -> Result<Vec<PlannedTag>> {
         for tag in tags {
             reject_repository_tag_package_collision(workspace, &tag)?;
             let anchor = &workspace.members[index];
-            let action = if !existing.contains(tag.as_str()) {
-                TagAction::Create
-            } else if manifest_version_at_revision(workspace, anchor, &tag)? == anchor_version {
-                TagAction::UpToDate
+            let action = if let Some(oid) = remote_repository_tags.get(&tag) {
+                repository_series_action(workspace, anchor, &anchor_version, &tag, oid, force)?
+            } else if existing.contains(tag.as_str()) {
+                repository_series_action(
+                    workspace,
+                    anchor,
+                    &anchor_version,
+                    &tag,
+                    &format!("refs/tags/{tag}"),
+                    force,
+                )?
             } else {
-                TagAction::Move
+                TagAction::Create
             };
             planned.push(PlannedTag {
                 member: index,
@@ -227,20 +242,23 @@ fn reject_repository_tag_package_collision(workspace: &Workspace, tag: &str) -> 
     Ok(())
 }
 
-/// Read the anchor's manifest from the commit named by an existing repository
-/// tag. The version in that file — not package exact tags or `package_tags` — is
-/// the repository tag's release signal.
+fn anchor_manifest_path(workspace: &Workspace, anchor: &Member) -> String {
+    let manifest_rel = workspace.manifest_rel();
+    if anchor.rel_path == "." {
+        manifest_rel.to_string()
+    } else {
+        format!("{}/{manifest_rel}", anchor.rel_path)
+    }
+}
+
+/// The committed manifest version, not exact tags, is the repository alias's
+/// release signal.
 fn manifest_version_at_revision(
     workspace: &Workspace,
     anchor: &crate::workspace::Member,
     revision: &str,
 ) -> Result<String> {
-    let manifest_rel = workspace.manifest_rel();
-    let manifest = if anchor.rel_path == "." {
-        manifest_rel.to_string()
-    } else {
-        format!("{}/{manifest_rel}", anchor.rel_path)
-    };
+    let manifest = anchor_manifest_path(workspace, anchor);
     let object = format!("{revision}:{manifest}");
     let text = git_stdout(&workspace.root, &["show", &object]).with_context(|| {
         format!("cannot read repository tag anchor manifest `{manifest}` at revision `{revision}`")
@@ -259,8 +277,88 @@ fn manifest_version_at_revision(
     })
 }
 
-pub fn plan(workspace: &Workspace, json: bool) -> Result<()> {
-    let pending: Vec<PlannedTag> = plan_tags(workspace)?
+fn repository_series_action(
+    workspace: &Workspace,
+    anchor: &Member,
+    anchor_version: &str,
+    tag: &str,
+    revision: &str,
+    force: Option<ForceMode>,
+) -> Result<TagAction> {
+    let manifest = anchor_manifest_path(workspace, anchor);
+    let commit = git_stdout(
+        &workspace.root,
+        &["rev-parse", "--verify", &format!("{revision}^{{commit}}")],
+    )?;
+    let commit = commit.trim();
+    let path = format!(":(literal){manifest}");
+    let entry = git_stdout(
+        &workspace.root,
+        &["ls-tree", "--full-tree", "--name-only", commit, "--", &path],
+    )
+    .with_context(|| format!("cannot inspect anchor manifest `{manifest}` at tag `{tag}`"))?;
+    if entry.is_empty() {
+        let context =
+            format!("cannot read repository tag anchor manifest `{manifest}` at revision `{tag}`");
+        if force != Some(ForceMode::Adopt) {
+            bail!(
+                "{context}; use --force=adopt only to adopt an ancestor alias that predates this manifest"
+            );
+        }
+        if git_stdout(&workspace.root, &["rev-parse", "--is-shallow-repository"])?.trim() == "true"
+        {
+            bail!(
+                "{context}; cannot prove legacy alias history in a shallow repository; fetch complete history first"
+            );
+        }
+        if !crate::git::is_ancestor(&workspace.root, commit, "HEAD")? {
+            bail!("{context}; refusing to adopt `{tag}` because it is not an ancestor of HEAD");
+        }
+        let history = git_stdout(
+            &workspace.root,
+            &[
+                "log",
+                "--full-history",
+                "--format=%H",
+                "-1",
+                commit,
+                "--",
+                &path,
+            ],
+        )?;
+        if !history.is_empty() {
+            bail!(
+                "{context}; refusing to adopt `{tag}` because its history already contains the anchor manifest"
+            );
+        }
+        return Ok(TagAction::Move);
+    }
+    let version = manifest_version_at_revision(workspace, anchor, commit)?;
+    let parsed = semver::Version::parse(&version)
+        .with_context(|| format!("invalid anchor package version `{version}` at tag `{tag}`"))?;
+    let head_version = semver::Version::parse(anchor_version)
+        .with_context(|| format!("invalid anchor package version `{anchor_version}` at HEAD"))?;
+    if parsed > head_version {
+        let location = if revision.starts_with("refs/tags/") {
+            ""
+        } else {
+            " on origin"
+        };
+        bail!(
+            "repository tag `{tag}`{location} is anchored at newer {} version \
+             `{version}`; refusing to move it backward to `{anchor_version}`",
+            anchor.name
+        );
+    }
+    Ok(if version == anchor_version {
+        TagAction::UpToDate
+    } else {
+        TagAction::Move
+    })
+}
+
+pub fn plan(workspace: &Workspace, json: bool, force: Option<ForceMode>) -> Result<()> {
+    let pending: Vec<PlannedTag> = plan_tags(workspace, force, &HashMap::new())?
         .into_iter()
         .filter(|planned| planned.action != TagAction::UpToDate)
         .collect();
@@ -309,6 +407,7 @@ pub struct CreateOptions {
     /// Report every planned action without doing anything (a conflicting tag
     /// still fails the command).
     pub dry_run: bool,
+    pub force: Option<ForceMode>,
     pub release: Option<PackageReleaseOptions>,
 }
 
@@ -330,10 +429,12 @@ pub fn create(workspace: &Workspace, options: &CreateOptions) -> Result<()> {
         ..options.clone()
     };
     let push = options.push;
-    if push {
-        reconcile_remote_repository_series_tag(workspace)?;
-    }
-    let planned = plan_tags(workspace)?;
+    let repository_oids = if push {
+        reconcile_remote_repository_series_tag(workspace)?
+    } else {
+        HashMap::new()
+    };
+    let planned = plan_tags(workspace, options.force, &repository_oids)?;
     // Without a remote to reconcile, a tag that already points where it
     // should is nothing to do; with one, it may still be missing from origin.
     let targets: Vec<&PlannedTag> = planned
@@ -363,13 +464,20 @@ pub fn create(workspace: &Workspace, options: &CreateOptions) -> Result<()> {
         HashMap::new()
     };
 
-    // An immutable tag whose local and remote objects disagree is the one
-    // conflict trellis refuses to resolve. Check every planned tag before
-    // mutating any of them, so one package's conflict fails the whole run
-    // rather than leaving an earlier package half-tagged.
+    // Check immutable conflicts and the validated repository-alias snapshot
+    // before writing any tags, rather than leaving an earlier package half-tagged.
     if push {
         let mut conflicts = Vec::new();
         for planned in &targets {
+            if planned.kind == TagKind::RepositorySeries {
+                if remote_oids.get(&planned.tag) != repository_oids.get(&planned.tag) {
+                    bail!(
+                        "repository tag `{}` changed on origin during preflight; retry the command",
+                        planned.tag
+                    );
+                }
+                continue;
+            }
             if planned.kind != TagKind::Exact {
                 continue;
             }
@@ -448,7 +556,7 @@ fn create_package_release(
             "package version differs from the qualified revision at HEAD; commit it before release"
         );
     }
-    let planned = plan_tags(workspace)?;
+    let planned = plan_tags(workspace, None, &HashMap::new())?;
     let planned = planned
         .iter()
         .find(|p| p.member == member_index && p.kind == TagKind::Exact)
@@ -525,6 +633,7 @@ fn create_package_release(
             push: true,
             github_release: false,
             dry_run,
+            force: None,
             release: None,
         },
         None,
@@ -541,43 +650,34 @@ fn create_package_release(
     Ok(())
 }
 
-/// Reconcile the repository tag from origin before planning a push.
-/// The remote anchor version is authoritative: a stale clone may advance it,
-/// but may never move it backward.
-fn reconcile_remote_repository_series_tag(workspace: &Workspace) -> Result<()> {
-    let Some((index, anchor_version, tags)) = repository_series_target(workspace)? else {
-        return Ok(());
+/// Fetch repository tag objects without changing local refs. Planning uses
+/// this snapshot, and execution leases the same validated objects.
+fn reconcile_remote_repository_series_tag(
+    workspace: &Workspace,
+) -> Result<HashMap<String, String>> {
+    let Some((_, _, tags)) = repository_series_target(workspace)? else {
+        return Ok(HashMap::new());
     };
-    let anchor = &workspace.members[index];
-    let head_version = semver::Version::parse(&anchor_version)
-        .with_context(|| format!("invalid anchor package version `{anchor_version}` at HEAD"))?;
+    let names: Vec<_> = tags.iter().map(String::as_str).collect();
+    let oids = remote_tag_oids(&workspace.root, &names)?;
 
     for tag in tags {
-        let Some(remote_oid) = remote_tag_oid(&workspace.root, &tag)? else {
+        let Some(remote_oid) = oids.get(&tag) else {
             continue;
         };
 
-        // A source-only refspec fetches the tag object into FETCH_HEAD without
-        // touching a diverged local tag.
+        // Ignore configured ref mappings as well as automatic tag following:
+        // validation may fetch objects, but must not write tag refs.
         let reference = format!("refs/tags/{tag}");
-        git_stdout(&workspace.root, &["fetch", "origin", &reference])?;
-        let remote_version = manifest_version_at_revision(workspace, anchor, "FETCH_HEAD")?;
-        let remote_version_parsed = semver::Version::parse(&remote_version).with_context(|| {
-            format!("invalid anchor package version `{remote_version}` at remote tag `{tag}`")
-        })?;
-        if remote_version_parsed > head_version {
-            bail!(
-                "repository tag `{tag}` on origin is anchored at newer {} version \
-                 `{remote_version}`; refusing to move it backward to `{anchor_version}`",
-                anchor.name
-            );
-        }
-        if local_tag_oid(&workspace.root, &tag)?.as_deref() != Some(remote_oid.as_str()) {
-            git_stdout(&workspace.root, &["update-ref", &reference, &remote_oid])?;
-            crate::status!("{} {tag}", crate::term::ok("fetched"));
+        git_stdout(
+            &workspace.root,
+            &["fetch", "--no-tags", "--refmap=", "origin", &reference],
+        )?;
+        if git_stdout(&workspace.root, &["rev-parse", "FETCH_HEAD"])?.trim() != remote_oid {
+            bail!("repository tag `{tag}` changed on origin during fetch; retry the command");
         }
     }
-    Ok(())
+    Ok(oids)
 }
 
 /// An immutable tag: created once, fetched when origin already has it, and
@@ -655,6 +755,21 @@ fn move_series_tag(
     let member = &workspace.members[planned.member];
     let tag = &planned.tag;
     let moved = planned.action != TagAction::UpToDate;
+    if planned.kind == TagKind::RepositorySeries
+        && !moved
+        && let Some(remote_oid) = remote_oid
+        && local_tag_oid(&workspace.root, tag)?.as_deref() != Some(remote_oid)
+    {
+        if options.dry_run {
+            crate::status!("{}", crate::term::dim(&format!("would fetch {tag}")));
+            return Ok(());
+        }
+        git_stdout(
+            &workspace.root,
+            &["update-ref", &format!("refs/tags/{tag}"), remote_oid],
+        )?;
+        crate::status!("{} {tag}", crate::term::ok("fetched"));
+    }
     if moved {
         let (verb, done) = if planned.action == TagAction::Create {
             ("tag", "tagged")
@@ -737,13 +852,6 @@ fn remote_tag_oids(root: &Path, tags: &[&str]) -> Result<HashMap<String, String>
         }
     }
     Ok(oids)
-}
-
-/// The object a single tag names on origin, or `None` when origin doesn't have
-/// it. Used by the repository-series reconciliation, which fetches and
-/// compares one specific tag rather than a planned batch.
-fn remote_tag_oid(root: &Path, tag: &str) -> Result<Option<String>> {
-    Ok(remote_tag_oids(root, &[tag])?.remove(tag))
 }
 
 /// The member's CHANGELOG section for `version`, if the file has one.
