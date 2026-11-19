@@ -3,3 +3,11 @@
 # of ROFF out of PR diffs and out of language statistics.
 assets/man/** linguist-generated=true
 assets/man/** -diff
+
+# Agent skills and customization assets.
+.agents/** linguist-vendored=true
+.claude/** linguist-vendored=true
+.github/skills/** linguist-vendored=true
+.github/agents/** linguist-vendored=true
+.github/hooks/** linguist-vendored=true
+.github/prompts/** linguist-vendored=true
