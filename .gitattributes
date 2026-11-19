@@ -5,13 +5,7 @@ assets/man/** linguist-generated=true
 assets/man/** -diff
 
 # Agent skills and customization assets.
-.agents/skills/caveman-commit/** linguist-vendored=true
-.agents/skills/humanizer/** linguist-vendored=true
-.agents/skills/impeccable/** linguist-vendored=true
-.agents/skills/ponytail*/** linguist-vendored=true
-.agents/skills/prose-banlist/** linguist-vendored=true
-.agents/skills/stop-slop/** linguist-vendored=true
-.agents/skills/unslop/** linguist-vendored=true
+.agents/** linguist-vendored=true
 .claude/** linguist-vendored=true
 .github/skills/** linguist-vendored=true
 .github/agents/** linguist-vendored=true
