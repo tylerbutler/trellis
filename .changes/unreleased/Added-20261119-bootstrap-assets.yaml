@@ -1,5 +1,0 @@
-component: release
-kind: Added
-body: |-
-  **`release bootstrap` accepts required assets and draft finalization flags.** Select an exact package release with `--github-release --package NAME`, stage files with `--draft --asset FILE`, and publish with `--finalize` after all recorded uploads match. Recover incomplete operations at the original qualified revision; moving tags remain unchanged.
-time: 2026-11-19T08:00:24-08:00
