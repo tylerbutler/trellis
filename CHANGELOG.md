@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v1.8.0 - 2026-11-22
+
+
+### release
+
+#### Added
+
+- **`release bootstrap --github-release` honors `publish.primary_package` when it sets Latest.** The highest published stable primary release remains Latest regardless of package publication order. Retries can restore an existing primary release without changing its notes or assets. Drafts and prereleases are not eligible. Without this setting, bootstrap keeps its existing GitHub Release behavior.
+
+### tag
+
+#### Added
+
+- **`tag create --github-release` can keep a primary package's stable release as Latest.** Set `publish.primary_package` to its manifest package name. The highest published stable version wins, even after secondary packages or older maintenance versions publish. Package-specific finalization and retries repair Latest; draft staging leaves it unchanged. Serialize repository release publishers to avoid concurrent Latest updates.
+
+### doctor
+
+#### Added
+
+- **`trellis doctor` checks the configured `publish.primary_package`.** The value must name a discovered, releasable package with unambiguous exact tags. Empty or unknown names, excluded packages, workspace-only packages, and packages with only moving tags produce errors. The check runs without GitHub access and is absent when no primary package is configured.
+
 ## v1.7.0 - 2026-11-19
 
 
