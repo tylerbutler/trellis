@@ -328,6 +328,8 @@ manifest versions have `prerelease: true`; stable versions have it set to
 an existing published GitHub release rather than rewriting it. An existing
 draft fails the command; finalize it with the package-specific flow below.
 Published releases with recorded required assets are checked before being skipped.
+When `publish.primary_package` is configured, retries also reconcile Latest
+without rewriting release notes or assets.
 If an older candidate release was
 misclassified, its owner must correct its prerelease setting on GitHub.
 
@@ -338,6 +340,49 @@ because it names a package but no particular version.
 
 Repository tags identify repository snapshots rather than package
 releases, so neither `publish --tag` nor `ci tag-package` resolves them.
+
+### Primary package releases
+
+Set one package's releases as the repository's Latest, even when other packages
+publish afterward:
+
+```toml
+[tools.trellis.publish]
+primary_package = "lat_core"
+```
+
+`trellis doctor` checks that this manifest package name belongs to a discovered,
+releasable package with exact tags. A package excluded by `@members`, a
+workspace-only package, or one with only moving tags is not valid. Exact tag
+namespaces must not overlap with another releasable package's exact tags;
+`exact_tag_format` must contain exactly one `{version}`.
+
+`tag create --github-release` and `release bootstrap --github-release` mark the
+highest published stable primary version as Latest. Secondary releases do not
+take Latest, regardless of their versions or publication order. An older
+maintenance release of the primary does not replace a newer stable version.
+Drafts and prereleases cannot be Latest. Build metadata does not affect version
+precedence; equally ranked releases retain the current primary Latest, or use
+the first tag in lexical order if neither is Latest.
+
+Package-specific finalization and existing-release retries apply the same
+policy. A secondary-only run restores the highest eligible primary release
+even when the primary is unchanged or omitted from that run. If no published
+stable primary release exists, trellis reports that fact and does not promote
+a secondary. It does not create a missing primary release or clear an
+unrelated existing Latest. Draft-only staging leaves Latest unchanged.
+
+GitHub API failures return a nonzero exit status. If publication succeeded but
+the Latest update failed, retry the same command; the retry repairs Latest
+without creating another release. `--dry-run` reports the policy without
+writing releases or Latest.
+
+Serialize GitHub Release publication across the repository. GitHub has no
+atomic conditional Latest update, so concurrent publishers can race. Releases
+made by other tools do not follow this setting. Historical primary releases
+must match the current `exact_tag_format`; old tag formats are not inferred.
+Without `primary_package`, GitHub's existing Latest behavior is unchanged.
+Hex publishing and moving repository tags are not affected.
 
 ### Adopting legacy repository tags
 
@@ -424,7 +469,8 @@ changes to its assets remain visible while they run.
 
 Upload and finalization failures return a nonzero exit status. Retry with the
 same files and flags; an upload accepted before a lost response is verified
-rather than duplicated. Repeated successful finalization is a no-op. Serialize
+rather than duplicated. Repeated successful finalization is a no-op except for
+Latest repair when `publish.primary_package` is configured. Serialize
 operations for each release; do not upload, edit notes, or finalize concurrently
 from another job or tool.
 

@@ -1,0 +1,5 @@
+component: release
+kind: Added
+body: |-
+  **`release bootstrap --github-release` honors `publish.primary_package` when it sets Latest.** The highest published stable primary release remains Latest regardless of package publication order. Retries can restore an existing primary release without changing its notes or assets. Drafts and prereleases are not eligible. Without this setting, bootstrap keeps its existing GitHub Release behavior.
+time: 2026-11-21T15:57:31-08:00

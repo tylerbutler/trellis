@@ -192,6 +192,9 @@ pub struct TaskConfig {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct PublishConfig {
+    /// Package whose highest published stable GitHub Release is Latest.
+    #[serde(default)]
+    pub primary_package: Option<String>,
     /// Releasable package name -> direct non-Hex runtime dependencies to bundle.
     #[serde(default)]
     pub bundle: BTreeMap<String, Vec<String>>,
@@ -241,6 +244,7 @@ pub struct PublishConfig {
 impl Default for PublishConfig {
     fn default() -> Self {
         Self {
+            primary_package: None,
             bundle: BTreeMap::new(),
             exact_tag_format: default_exact_tag_format(),
             series_tag_format: default_series_tag_format(),
@@ -1626,6 +1630,16 @@ mod tests {
         )
         .unwrap_err();
         assert!(format!("{err:#}").contains("{series}"), "{err:#}");
+    }
+
+    #[test]
+    fn primary_package_is_optional_and_must_be_a_string() {
+        let config =
+            ConfigFile::from_toml("[tools.trellis.publish]\nprimary_package = \"core\"\n").unwrap();
+        assert_eq!(config.publish.primary_package.as_deref(), Some("core"));
+        assert!(config.unknown_keys.is_empty());
+        assert!(ConfigFile::configless().publish.primary_package.is_none());
+        assert!(ConfigFile::from_toml("[tools.trellis.publish]\nprimary_package = 1\n").is_err());
     }
 
     #[test]

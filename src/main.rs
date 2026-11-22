@@ -12,6 +12,7 @@ mod lockfile;
 mod manifest;
 mod rewrite;
 mod runner;
+mod tag_namespace;
 mod term;
 mod tools;
 mod update_check;

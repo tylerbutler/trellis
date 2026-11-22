@@ -1,0 +1,5 @@
+component: tag
+kind: Added
+body: |-
+  **`tag create --github-release` can keep a primary package's stable release as Latest.** Set `publish.primary_package` to its manifest package name. The highest published stable version wins, even after secondary packages or older maintenance versions publish. Package-specific finalization and retries repair Latest; draft staging leaves it unchanged. Serialize repository release publishers to avoid concurrent Latest updates.
+time: 2026-11-21T15:57:31-08:00

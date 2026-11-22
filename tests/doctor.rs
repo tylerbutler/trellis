@@ -10,6 +10,159 @@ use std::path::Path;
 // ---- doctor ----------------------------------------------------------
 
 #[test]
+fn doctor_checks_primary_package_without_github_access() {
+    for (settings, valid, message) in [
+        ("", true, ""),
+        ("primary_package = \"a\"", true, ""),
+        (
+            "primary_package = \"missing\"",
+            false,
+            "not a workspace member",
+        ),
+        ("primary_package = \"\"", false, "not a workspace member"),
+        (
+            "primary_package = \"a\"\npackage_tags = [\"major\"]",
+            false,
+            "exact tags",
+        ),
+        (
+            "primary_package = \"a\"\nexact_tag_format = \"v{version}\"",
+            false,
+            "ambiguous",
+        ),
+        (
+            "primary_package = \"a\"\n[tools.trellis.publish.lifecycle]\ndefault = \"workspace\"",
+            false,
+            "excluded from release",
+        ),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        write(
+            &root.join("gleam.toml"),
+            &format!(
+                "[tools.trellis]\nmembers = [\"packages/*\"]\n[tools.trellis.publish]\n{settings}\n"
+            ),
+        );
+        for (name, version) in [("a", "1.0.0"), ("b", "2.0.0")] {
+            write(
+                &root.join(format!("packages/{name}/gleam.toml")),
+                &format!("name = \"{name}\"\nversion = \"{version}\"\n"),
+            );
+        }
+        for format in ["text", "json"] {
+            let output = trellis(root)
+                .args(["doctor", "--format", format])
+                .env_remove("GITHUB_TOKEN")
+                .env_remove("GH_TOKEN")
+                .output()
+                .unwrap();
+            assert_eq!(output.status.success(), valid, "{settings}: {output:?}");
+            let stdout = String::from_utf8(output.stdout).unwrap();
+            if valid {
+                assert!(!stdout.contains("primary_package"), "{stdout}");
+            } else {
+                assert!(stdout.contains("publish.primary_package"), "{stdout}");
+                assert!(stdout.contains(message), "{stdout}");
+            }
+        }
+    }
+}
+
+#[test]
+fn doctor_rejects_primary_package_excluded_from_membership_or_release() {
+    for key in ["@members", "@release"] {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        write(
+            &root.join("gleam.toml"),
+            &format!(
+                "[tools.trellis]\nmembers = [\"packages/*\"]\nexclude = {{ \"{key}\" = [\"packages/a\"] }}\n\
+                 [tools.trellis.publish]\nprimary_package = \"a\"\n"
+            ),
+        );
+        for name in ["a", "b"] {
+            write(
+                &root.join(format!("packages/{name}/gleam.toml")),
+                &format!("name = \"{name}\"\nversion = \"1.0.0\"\n"),
+            );
+        }
+        trellis(root)
+            .args(["doctor", "--format", "json"])
+            .assert()
+            .code(1)
+            .stdout(predicate::str::contains("publish.primary_package"));
+    }
+}
+
+#[test]
+fn doctor_accepts_distinct_primary_tag_namespaces_with_shared_name_prefixes() {
+    for (template, other) in [
+        ("{name}{version}", "app_extra"),
+        ("{version}{name}", "app_extra"),
+        ("{name}{version}", "app0"),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        write(
+            &root.join("gleam.toml"),
+            &format!(
+                "[tools.trellis]\nmembers = [\"packages/*\"]\n\
+                 [tools.trellis.publish]\nprimary_package = \"app\"\nexact_tag_format = \"{template}\"\n"
+            ),
+        );
+        for name in ["app", other] {
+            write(
+                &root.join(format!("packages/{name}/gleam.toml")),
+                &format!("name = \"{name}\"\nversion = \"1.0.0\"\n"),
+            );
+        }
+        trellis(root).args(["doctor"]).assert().success();
+    }
+}
+
+#[test]
+fn doctor_rejects_primary_tag_ownership_ambiguous_at_other_versions() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    write(
+        &root.join("gleam.toml"),
+        "[tools.trellis]\nmembers = [\"packages/*\"]\n\
+         [tools.trellis.publish]\nprimary_package = \"app\"\nexact_tag_format = \"{name}{version}\"\n",
+    );
+    for (name, version) in [("app", "1.0.0"), ("app1", "2.0.0")] {
+        write(
+            &root.join(format!("packages/{name}/gleam.toml")),
+            &format!("name = \"{name}\"\nversion = \"{version}\"\n"),
+        );
+    }
+    trellis(root)
+        .args(["doctor"])
+        .assert()
+        .code(1)
+        .stdout(predicate::str::contains("ambiguous").and(predicate::str::contains("app1")));
+}
+
+#[test]
+fn doctor_checks_both_boundaries_for_adapter_package_names() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    write(
+        &root.join("trellis.toml"),
+        "[tools.trellis]\nmembers = [\"packages/*\"]\n\
+         [tools.trellis.adapter]\nmanifest = \"release.toml\"\n\
+         [tools.trellis.publish]\nprimary_package = \"app\"\nexact_tag_format = \"{name}{version}{name}\"\n",
+    );
+    for (path, name) in [("primary", "app"), ("secondary", "app1.0.0+aapp")] {
+        write(
+            &root.join(format!("packages/{path}/release.toml")),
+            &format!("name = \"{name}\"\nversion = \"1.0.0\"\n"),
+        );
+    }
+    trellis(root).args(["doctor"]).assert().success();
+}
+
+#[test]
 fn doctor_passes_on_healthy_workspace() {
     trellis(&fixture("basic"))
         .arg("doctor")

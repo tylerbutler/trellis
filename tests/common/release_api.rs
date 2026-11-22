@@ -12,11 +12,45 @@ pub(super) fn route(
     let prefix = "/repos/example/repo/releases";
     let resource = path.strip_prefix(prefix)?;
     let data: Value = serde_json::from_slice(body).unwrap_or(Value::Null);
-    if method == "POST" && resource.is_empty() && data["draft"].is_boolean() {
+    let mut releases: Vec<_> = std::fs::read_dir(root.join(".fake"))
+        .ok()?
+        .flatten()
+        .filter(|f| f.file_name().to_string_lossy().starts_with("release-"))
+        .filter_map(|f| {
+            let value: Value =
+                serde_json::from_str(&std::fs::read_to_string(f.path()).ok()?).ok()?;
+            value["id"].as_u64().map(|_| (f.path(), value))
+        })
+        .collect();
+    releases.sort_by_key(|(_, r)| r["id"].as_u64().unwrap());
+    if method == "POST"
+        && resource.is_empty()
+        && (data["draft"].is_boolean() || root.join(".fake/latest-policy").exists())
+    {
+        let tag = data["tag_name"].as_str().unwrap();
+        if root.join(format!(".fake/fail-release-{tag}")).exists() {
+            return Some(("500 Internal Server Error", "{}".to_string()));
+        }
         let mut release = data;
-        release["id"] = json!(100);
+        release["id"] = json!(
+            releases
+                .iter()
+                .map(|(_, r)| r["id"].as_u64().unwrap())
+                .max()
+                .unwrap_or(99)
+                + 1
+        );
+        release["draft"] = json!(release["draft"].as_bool().unwrap_or(false));
+        release["prerelease"] = json!(release["prerelease"].as_bool().unwrap_or(false));
+        release["target_commitish"] = json!(release["target_commitish"].as_str().unwrap_or("main"));
         release["assets"] = json!([]);
         let tag = release["tag_name"].as_str().unwrap();
+        if release["draft"] == false
+            && release["prerelease"] == false
+            && release["make_latest"] != "false"
+        {
+            std::fs::write(root.join(".fake/latest"), tag).unwrap();
+        }
         std::fs::write(
             root.join(format!(".fake/release-{tag}")),
             release.to_string(),
@@ -24,19 +58,45 @@ pub(super) fn route(
         .unwrap();
         return Some(("201 Created", release.to_string()));
     }
-    let (file, mut release) = std::fs::read_dir(root.join(".fake"))
-        .ok()?
-        .flatten()
-        .filter(|f| f.file_name().to_string_lossy().starts_with("release-"))
-        .find_map(|f| {
-            let value: Value =
-                serde_json::from_str(&std::fs::read_to_string(f.path()).ok()?).ok()?;
-            if value["id"] == 100 {
-                Some((f.path(), value))
-            } else {
-                None
-            }
-        })?;
+    if method == "GET" && resource.is_empty() && !releases.is_empty() {
+        if root.join(".fake/fail-list").exists() {
+            return Some(("500 Internal Server Error", "{}".to_string()));
+        }
+        let page: usize = target.split("page=").last().unwrap_or("1").parse().unwrap();
+        let batch: Vec<_> = releases
+            .into_iter()
+            .skip((page - 1) * 100)
+            .take(100)
+            .map(|(_, r)| r)
+            .collect();
+        return Some(("200 OK", json!(batch).to_string()));
+    }
+    if method == "GET" && resource == "/latest" {
+        let tag = std::fs::read_to_string(root.join(".fake/latest")).unwrap_or_default();
+        return Some(
+            releases
+                .into_iter()
+                .find(|(_, r)| r["tag_name"] == tag)
+                .map_or(("404 Not Found", "{}".to_string()), |(_, r)| {
+                    ("200 OK", r.to_string())
+                }),
+        );
+    }
+    let (file, mut release) = releases.into_iter().find(|(_, r)| {
+        if let Some(tag) = resource.strip_prefix("/tags/") {
+            r["tag_name"] == tag
+        } else {
+            resource
+                .strip_prefix('/')
+                .and_then(|s| s.split('/').next())
+                .and_then(|s| s.parse::<u64>().ok())
+                == r["id"].as_u64()
+                || resource.starts_with("/assets/")
+        }
+    })?;
+    let id = release["id"].as_u64().unwrap();
+    let release_path = format!("/{id}");
+    let assets_path = format!("/{id}/assets");
     let mut status = "200 OK";
     let response = if method == "GET" && resource.is_empty() {
         json!([release])
@@ -51,14 +111,14 @@ pub(super) fn route(
             ));
         }
         release.clone()
-    } else if method == "GET" && resource == "/100/assets" {
+    } else if method == "GET" && resource == assets_path {
         let page = target.split("page=").last().unwrap_or("1");
         if page == "1" {
             release["assets"].clone()
         } else {
             json!([])
         }
-    } else if method == "POST" && resource == "/100/assets" {
+    } else if method == "POST" && resource == assets_path {
         let name = target.split("?name=").nth(1).unwrap();
         if let Ok(fail) = std::fs::read_to_string(root.join(".fake/fail-asset"))
             && name.ends_with(fail.trim())
@@ -85,7 +145,10 @@ pub(super) fn route(
             "201 Created"
         };
         asset
-    } else if method == "PATCH" && resource == "/100" {
+    } else if method == "PATCH" && resource == release_path {
+        if data["make_latest"] == "true" && root.join(".fake/fail-latest").exists() {
+            return Some(("500 Internal Server Error", "{}".to_string()));
+        }
         if data["draft"] == false && root.join(".fake/fail-finalize").exists() {
             return Some((
                 "500 Internal Server Error",
@@ -94,6 +157,15 @@ pub(super) fn route(
         }
         for (key, value) in data.as_object().unwrap() {
             release[key] = value.clone();
+        }
+        if data["make_latest"] == "true" {
+            assert_eq!(release["draft"], false);
+            assert_eq!(release["prerelease"], false);
+            std::fs::write(
+                root.join(".fake/latest"),
+                release["tag_name"].as_str().unwrap(),
+            )
+            .unwrap();
         }
         release.clone()
     } else {

@@ -72,6 +72,26 @@ pub struct ReleaseRequest<'a> {
     pub draft: bool,
     pub replace_assets: bool,
     pub dry_run: bool,
+    pub make_latest: Option<bool>,
+}
+
+#[derive(Deserialize)]
+pub struct ReleaseSummary {
+    pub id: u64,
+    pub tag_name: String,
+    pub draft: bool,
+    pub prerelease: bool,
+}
+
+impl ReleaseSummary {
+    fn parse(value: serde_json::Value) -> Result<Self> {
+        let release: Self =
+            serde_json::from_value(value).context("invalid GitHub release response")?;
+        if release.id == 0 || release.tag_name.is_empty() {
+            bail!("GitHub release has no valid id or tag_name");
+        }
+        Ok(release)
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -125,6 +145,70 @@ fn recorded_intent(body: &str) -> Result<Option<AssetIntent>> {
 }
 
 impl GitHubClient {
+    pub fn release_summaries(&self) -> Result<Vec<ReleaseSummary>> {
+        let mut ids = HashSet::new();
+        let mut tags = HashSet::new();
+        self.list_releases()?
+            .into_iter()
+            .map(|value| {
+                let release = ReleaseSummary::parse(value)?;
+                if !ids.insert(release.id) || !tags.insert(release.tag_name.clone()) {
+                    bail!("GitHub returned duplicate releases");
+                }
+                Ok(release)
+            })
+            .collect()
+    }
+
+    pub fn latest_release(&self) -> Result<Option<ReleaseSummary>> {
+        let url = self.url("/releases/latest");
+        let (status, body) = self.get(&url)?;
+        match status {
+            200 => Ok(Some(ReleaseSummary::parse(body)?)),
+            404 => Ok(None),
+            _ => bail!(
+                "GitHub API GET {url} failed: {}",
+                super::api_error(status, &body)
+            ),
+        }
+    }
+
+    pub fn make_release_latest(&self, release: &ReleaseSummary) -> Result<()> {
+        if release.draft || release.prerelease {
+            bail!("drafts and prereleases cannot be Latest");
+        }
+        let body = self
+            .find_release(&release.tag_name)?
+            .context("GitHub release disappeared before Latest reconciliation")?;
+        if body["id"].as_u64() != Some(release.id)
+            || body["draft"].as_bool() != Some(false)
+            || body["prerelease"].as_bool() != Some(false)
+        {
+            bail!("GitHub release changed before Latest reconciliation; retry");
+        }
+        self.check_recorded_assets(&body)?;
+        let url = self.url(&format!("/releases/{}", release.id));
+        expect_status(
+            "PATCH",
+            &url,
+            200,
+            self.send(
+                Write::Patch,
+                &url,
+                &serde_json::json!({ "make_latest": "true" }),
+            )?,
+        )?;
+        if self
+            .latest_release()?
+            .is_none_or(|latest| latest.id != release.id || latest.tag_name != release.tag_name)
+        {
+            bail!(
+                "GitHub Latest changed during reconciliation; serialize release publishers and retry"
+            );
+        }
+        Ok(())
+    }
+
     pub(super) fn check_recorded_assets(&self, release: &serde_json::Value) -> Result<()> {
         let body = release["body"].as_str().unwrap_or("");
         if let Some(intent) = recorded_intent(body)? {
@@ -258,10 +342,13 @@ impl GitHubClient {
             release
         } else {
             let url = self.url("/releases");
-            let payload = serde_json::json!({
+            let mut payload = serde_json::json!({
                 "tag_name": request.tag, "target_commitish": request.revision,
                 "name": request.tag, "body": body, "prerelease": request.prerelease, "draft": true,
             });
+            if let Some(latest) = request.make_latest {
+                payload["make_latest"] = serde_json::json!(latest.to_string());
+            }
             let response =
                 expect_status("POST", &url, 201, self.send(Write::Post, &url, &payload)?)?;
             let release: Release = serde_json::from_value(response)
@@ -286,18 +373,14 @@ impl GitHubClient {
                     );
                 }
                 let url = self.url(&format!("/releases/{}", release.id));
-                let response = expect_status(
-                    "PATCH",
-                    &url,
-                    200,
-                    self.send(
-                        Write::Patch,
-                        &url,
-                        &serde_json::json!({
-                            "draft": false, "prerelease": request.prerelease,
-                        }),
-                    )?,
-                )?;
+                let mut payload = serde_json::json!({
+                    "draft": false, "prerelease": request.prerelease,
+                });
+                if let Some(latest) = request.make_latest {
+                    payload["make_latest"] = serde_json::json!(latest.to_string());
+                }
+                let response =
+                    expect_status("PATCH", &url, 200, self.send(Write::Patch, &url, &payload)?)?;
                 if response["draft"].as_bool() != Some(false) {
                     bail!("GitHub did not finalize the draft release");
                 }
