@@ -1,0 +1,5 @@
+component: doctor
+kind: Added
+body: |-
+  **`trellis doctor` checks the configured `publish.primary_package`.** The value must name a discovered, releasable package with unambiguous exact tags. Empty or unknown names, excluded packages, workspace-only packages, and packages with only moving tags produce errors. The check runs without GitHub access and is absent when no primary package is configured.
+time: 2026-11-21T15:57:31-08:00

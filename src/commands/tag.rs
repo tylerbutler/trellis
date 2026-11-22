@@ -453,6 +453,9 @@ pub fn create(workspace: &Workspace, options: &CreateOptions) -> Result<()> {
     } else {
         None
     };
+    if let Some(github) = &github {
+        primary_latest_target(workspace, github)?;
+    }
 
     // One `ls-remote` answers "what does origin have?" for every planned tag
     // at once — a single network round trip that the conflict preflight and
@@ -507,6 +510,102 @@ pub fn create(workspace: &Workspace, options: &CreateOptions) -> Result<()> {
             }
         }
     }
+    if let Some(github) = &github {
+        reconcile_primary_latest(workspace, github, options.dry_run)?;
+    }
+    Ok(())
+}
+
+fn primary_latest_target(
+    workspace: &Workspace,
+    github: &GitHubClient,
+) -> Result<Option<(crate::github::release::ReleaseSummary, bool)>> {
+    let Some(primary) = &workspace.config.publish.primary_package else {
+        return Ok(None);
+    };
+    let current = github.latest_release()?;
+    let mut winner: Option<(crate::github::release::ReleaseSummary, semver::Version)> = None;
+    let packages = candidates(workspace, |tags| tags.contains(&TagLevel::Exact));
+    for release in github.release_summaries()? {
+        let matches = match_tag_template(
+            &packages,
+            &release.tag_name,
+            &workspace.config.publish.exact_tag_format,
+            "{version}",
+            |version| semver::Version::parse(version).is_ok(),
+        )?;
+        if matches.len() > 1
+            && matches
+                .iter()
+                .any(|(index, _)| &workspace.members[*index].name == primary)
+        {
+            bail!(
+                "GitHub release `{}` has ambiguous primary package ownership",
+                release.tag_name
+            );
+        }
+        let Some((index, version)) = matches.into_iter().next() else {
+            continue;
+        };
+        let version = semver::Version::parse(&version)?;
+        if &workspace.members[index].name != primary
+            || release.draft
+            || release.prerelease
+            || !version.pre.is_empty()
+        {
+            continue;
+        }
+        let is_current = current.as_ref().is_some_and(|r| r.id == release.id);
+        let replace = winner.as_ref().is_none_or(|(previous, previous_version)| {
+            match version.cmp_precedence(previous_version) {
+                std::cmp::Ordering::Greater => true,
+                std::cmp::Ordering::Less => false,
+                std::cmp::Ordering::Equal => {
+                    is_current
+                        || (current.as_ref().is_none_or(|r| r.id != previous.id)
+                            && release.tag_name < previous.tag_name)
+                }
+            }
+        });
+        if replace {
+            winner = Some((release, version));
+        }
+    }
+    Ok(winner.map(|(release, _)| {
+        let is_current = current
+            .as_ref()
+            .is_some_and(|r| r.id == release.id && r.tag_name == release.tag_name);
+        (release, is_current)
+    }))
+}
+
+fn reconcile_primary_latest(
+    workspace: &Workspace,
+    github: &GitHubClient,
+    dry_run: bool,
+) -> Result<()> {
+    let Some(primary) = &workspace.config.publish.primary_package else {
+        return Ok(());
+    };
+    let target = primary_latest_target(workspace, github)?;
+    if dry_run {
+        crate::status!(
+            "would reconcile Latest to the highest published stable release of `{primary}` after publication{}",
+            target.as_ref().map_or(String::new(), |(r, _)| format!(
+                " (currently {})",
+                r.tag_name
+            ))
+        );
+    } else if let Some((release, is_current)) = target {
+        if !is_current {
+            github.make_release_latest(&release)?;
+            crate::status!("Latest GitHub release: {}", release.tag_name);
+        }
+    } else {
+        crate::status!(
+            "primary package `{primary}` has no published stable release; not promoting a secondary release to Latest"
+        );
+    }
     Ok(())
 }
 
@@ -550,6 +649,9 @@ fn create_package_release(
         assets.push(asset);
     }
     let github = GitHubClient::for_repo(&workspace.root)?;
+    if !options.draft {
+        primary_latest_target(workspace, &github)?;
+    }
     let revision = git_stdout(&workspace.root, &["rev-parse", "HEAD^{commit}"])?;
     if manifest_version_at_revision(workspace, member, "HEAD")? != member.version() {
         bail!(
@@ -623,6 +725,12 @@ fn create_package_release(
         draft: options.draft,
         replace_assets: options.replace_assets,
         dry_run,
+        make_latest: workspace
+            .config
+            .publish
+            .primary_package
+            .as_ref()
+            .map(|_| false),
     };
     // Validate recorded revision and asset intent before creating or pushing a tag.
     github.check_release(&request)?;
@@ -640,6 +748,15 @@ fn create_package_release(
         remote_oid,
     )?;
     github.reconcile_release(&request)?;
+    if !options.draft {
+        reconcile_primary_latest(workspace, &github, dry_run).with_context(|| {
+            if dry_run {
+                format!("cannot preview Latest for GitHub release `{tag}`; retry the same command")
+            } else {
+                format!("GitHub release `{tag}` publication completed but Latest reconciliation failed; retry the same command")
+            }
+        })?;
+    }
     if !dry_run {
         crate::status!(
             "{} GitHub release {}",
@@ -735,9 +852,27 @@ fn create_exact_tag(
             let notes = release_notes(member, member.version())
                 .unwrap_or_else(|| format!("{} {}", member.name, member.version()));
             let version = semver::Version::parse(&planned.version)?;
-            github.create_release(tag, tag, &notes, !version.pre.is_empty())?;
+            github.create_release(
+                tag,
+                tag,
+                &notes,
+                !version.pre.is_empty(),
+                workspace
+                    .config
+                    .publish
+                    .primary_package
+                    .as_ref()
+                    .map(|_| false),
+            )?;
             crate::status!("{} GitHub release {tag}", crate::term::ok("created"));
         }
+        reconcile_primary_latest(workspace, github, options.dry_run).with_context(|| {
+            if options.dry_run {
+                format!("cannot preview Latest for GitHub release `{tag}`; retry the same command")
+            } else {
+                format!("GitHub release `{tag}` exists but Latest reconciliation failed; retry the same command")
+            }
+        })?;
     }
     Ok(())
 }

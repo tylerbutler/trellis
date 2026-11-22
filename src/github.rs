@@ -247,25 +247,31 @@ impl GitHubClient {
         // The tag endpoint only promises published releases. Push-authorized
         // callers can find drafts through the paginated release listing.
         let mut found = None;
+        for release in self.list_releases()? {
+            let name = release["tag_name"]
+                .as_str()
+                .context("GitHub release has no tag_name")?;
+            if name == tag && found.replace(release).is_some() {
+                bail!("multiple GitHub releases identify tag `{tag}`");
+            }
+        }
+        Ok(found)
+    }
+
+    fn list_releases(&self) -> Result<Vec<serde_json::Value>> {
+        let mut all = Vec::new();
         for page in 1.. {
             let url = self.url(&format!("/releases?per_page=100&page={page}"));
             let body = expect_status("GET", &url, 200, self.get(&url)?)?;
             let releases = body
                 .as_array()
                 .context("GitHub release listing is not an array")?;
-            for release in releases {
-                let name = release["tag_name"]
-                    .as_str()
-                    .context("GitHub release has no tag_name")?;
-                if name == tag && found.replace(release.clone()).is_some() {
-                    bail!("multiple GitHub releases identify tag `{tag}`");
-                }
-            }
+            all.extend(releases.iter().cloned());
             if releases.len() < 100 {
                 break;
             }
         }
-        Ok(found)
+        Ok(all)
     }
 
     /// Create a GitHub Release on `tag`.
@@ -275,14 +281,18 @@ impl GitHubClient {
         title: &str,
         notes: &str,
         prerelease: bool,
+        make_latest: Option<bool>,
     ) -> Result<()> {
         let url = self.url("/releases");
-        let payload = serde_json::json!({
+        let mut payload = serde_json::json!({
             "tag_name": tag,
             "name": title,
             "body": notes,
             "prerelease": prerelease,
         });
+        if let Some(latest) = make_latest {
+            payload["make_latest"] = serde_json::json!(latest.to_string());
+        }
         expect_status("POST", &url, 201, self.send(Write::Post, &url, &payload)?)?;
         Ok(())
     }

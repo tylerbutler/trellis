@@ -12,6 +12,363 @@ use std::os::unix::fs::PermissionsExt;
 
 // ---- tag ----------------------------------------------------------------
 
+fn policy_repo(root: &std::path::Path, primary: &str) -> tempfile::TempDir {
+    let remote = series_repo(
+        root,
+        &format!("primary_package = \"{primary}\"\npackage_tags = [\"exact\"]"),
+    );
+    write(&root.join(".fake/latest-policy"), "");
+    remote
+}
+
+fn seed_release(root: &std::path::Path, id: u64, tag: &str, draft: bool, prerelease: bool) {
+    write(
+        &root.join(format!(".fake/release-{tag}")),
+        &serde_json::json!({
+            "id": id, "tag_name": tag, "draft": draft, "prerelease": prerelease,
+            "target_commitish": "main", "body": "existing notes", "assets": [],
+        })
+        .to_string(),
+    );
+}
+
+fn release_requests(root: &std::path::Path) -> Vec<(String, serde_json::Value)> {
+    fs::read_to_string(root.join(".fake/github-log"))
+        .unwrap()
+        .split("---")
+        .filter_map(|record| {
+            let (request, body) = record.trim().split_once('\n')?;
+            Some((
+                request.to_string(),
+                if body.trim().is_empty() {
+                    serde_json::Value::Null
+                } else {
+                    serde_json::from_str(body).unwrap()
+                },
+            ))
+        })
+        .collect()
+}
+
+#[test]
+fn primary_package_latest_is_independent_of_batch_order_and_bootstrap_retries() {
+    for primary in ["lat_core", "lat_cli", "lat_mid"] {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let _remote = policy_repo(root, primary);
+        let api = common::mock_github(root);
+        for command in ["tag", "release"] {
+            trellis_github(root, &api)
+                .args([
+                    command,
+                    if command == "tag" {
+                        "create"
+                    } else {
+                        "bootstrap"
+                    },
+                    "--github-release",
+                ])
+                .assert()
+                .success();
+            let version = common::version_of(root, primary);
+            assert_eq!(
+                fs::read_to_string(root.join(".fake/latest")).unwrap(),
+                format!("{primary}-v{version}")
+            );
+            write(&root.join(".fake/latest"), "lat_cli-v0.3.1");
+        }
+        let log = fs::read_to_string(root.join(".fake/github-log")).unwrap();
+        assert_eq!(
+            log.matches("POST /repos/example/repo/releases\n").count(),
+            3
+        );
+        let requests = release_requests(root);
+        let creates: Vec<_> = requests
+            .iter()
+            .filter(|(request, _)| request == "POST /repos/example/repo/releases")
+            .collect();
+        assert_eq!(creates.len(), 3);
+        assert!(
+            creates
+                .iter()
+                .all(|(_, body)| body["make_latest"] == "false")
+        );
+    }
+}
+
+#[test]
+fn secondary_only_release_restores_highest_stable_primary_from_all_pages() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let _remote = policy_repo(root, "lat_core");
+    let api = common::mock_github(root);
+    for id in 1..=100 {
+        seed_release(root, id, &format!("unrelated-{id}"), false, false);
+    }
+    seed_release(root, 101, "lat_core-v3.0.0", false, false);
+    seed_release(root, 102, "lat_core-v4.0.0", true, false);
+    seed_release(root, 103, "lat_core-v5.0.0", false, true);
+    seed_release(root, 104, "lat_core-v6.0.0-rc.1", false, false);
+    write(&root.join(".fake/latest"), "unrelated-1");
+    trellis_github(root, &api)
+        .args([
+            "tag",
+            "create",
+            "--github-release",
+            "--package",
+            "lat_cli",
+            "--finalize",
+        ])
+        .assert()
+        .success();
+    assert_eq!(
+        fs::read_to_string(root.join(".fake/latest")).unwrap(),
+        "lat_core-v3.0.0"
+    );
+    trellis_github(root, &api)
+        .args(["tag", "create", "--github-release"])
+        .assert()
+        .success();
+    assert_eq!(
+        fs::read_to_string(root.join(".fake/latest")).unwrap(),
+        "lat_core-v3.0.0"
+    );
+}
+
+#[test]
+fn primary_latest_failure_is_visible_and_published_retry_repairs_it() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let _remote = policy_repo(root, "lat_core");
+    let api = common::mock_github(root);
+    write(&root.join(".fake/fail-latest"), "");
+    let args = [
+        "tag",
+        "create",
+        "--github-release",
+        "--package",
+        "lat_core",
+        "--finalize",
+    ];
+    trellis_github(root, &api)
+        .args(args)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("retry"));
+    let release: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(root.join(".fake/release-lat_core-v1.2.0")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(release["draft"], false);
+    fs::remove_file(root.join(".fake/fail-latest")).unwrap();
+    trellis_github(root, &api).args(args).assert().success();
+    assert_eq!(
+        fs::read_to_string(root.join(".fake/latest")).unwrap(),
+        "lat_core-v1.2.0"
+    );
+    let log = fs::read_to_string(root.join(".fake/github-log")).unwrap();
+    assert_eq!(
+        log.matches("POST /repos/example/repo/releases\n").count(),
+        1
+    );
+}
+
+#[test]
+fn primary_policy_drafts_dry_runs_and_no_primary_do_not_promote_secondary() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let _remote = policy_repo(root, "lat_core");
+    let api = common::mock_github(root);
+    let args = ["tag", "create", "--github-release", "--package", "lat_cli"];
+    trellis_github(root, &api)
+        .args(args)
+        .args(["--finalize", "--dry-run"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Latest"));
+    assert!(!root.join(".fake/latest").exists());
+    assert!(
+        !fs::read_to_string(root.join(".fake/github-log"))
+            .unwrap()
+            .contains("POST ")
+    );
+    trellis_github(root, &api)
+        .args(args)
+        .arg("--draft")
+        .assert()
+        .success();
+    assert!(!root.join(".fake/latest").exists());
+    trellis_github(root, &api)
+        .args(args)
+        .arg("--finalize")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("no published stable release"));
+    assert!(!root.join(".fake/latest").exists());
+}
+
+#[test]
+fn primary_policy_uses_custom_tags_and_semver_precedence_not_build_metadata() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let _remote = series_repo(
+        root,
+        "primary_package = \"lat_core\"\nexact_tag_format = \"release-{version}-{name}\"",
+    );
+    let api = common::mock_github(root);
+    seed_release(root, 1, "release-3.0.0+alpha-lat_core", false, false);
+    seed_release(root, 2, "release-3.0.0+zulu-lat_core", false, false);
+    seed_release(root, 3, "release-99.0.0-lat_cli", false, false);
+    write(&root.join(".fake/latest"), "release-3.0.0+zulu-lat_core");
+    let args = [
+        "tag",
+        "create",
+        "--github-release",
+        "--package",
+        "lat_cli",
+        "--finalize",
+    ];
+    trellis_github(root, &api).args(args).assert().success();
+    assert_eq!(
+        fs::read_to_string(root.join(".fake/latest")).unwrap(),
+        "release-3.0.0+zulu-lat_core"
+    );
+    write(&root.join(".fake/latest"), "release-99.0.0-lat_cli");
+    trellis_github(root, &api).args(args).assert().success();
+    assert_eq!(
+        fs::read_to_string(root.join(".fake/latest")).unwrap(),
+        "release-3.0.0+alpha-lat_core"
+    );
+}
+
+#[test]
+fn primary_prerelease_does_not_displace_stable_and_draft_staging_does_not_repair_latest() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let _remote = policy_repo(root, "lat_core");
+    let api = common::mock_github(root);
+    seed_release(root, 1, "lat_core-v1.1.0", false, false);
+    seed_release(root, 2, "unrelated", false, false);
+    write(&root.join(".fake/latest"), "unrelated");
+    set_version(root, "lat_core", "2.0.0-rc.1");
+    git(root, &["commit", "-qam", "prepare candidate"]);
+    let args = ["tag", "create", "--github-release", "--package", "lat_core"];
+    trellis_github(root, &api)
+        .args(args)
+        .arg("--draft")
+        .assert()
+        .success();
+    assert_eq!(
+        fs::read_to_string(root.join(".fake/latest")).unwrap(),
+        "unrelated"
+    );
+    trellis_github(root, &api)
+        .args(args)
+        .arg("--finalize")
+        .assert()
+        .success();
+    assert_eq!(
+        fs::read_to_string(root.join(".fake/latest")).unwrap(),
+        "lat_core-v1.1.0"
+    );
+    let release: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(root.join(".fake/release-lat_core-v2.0.0-rc.1")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(release["prerelease"], true);
+    assert_eq!(release["make_latest"], "false");
+}
+
+#[test]
+fn primary_policy_api_failures_stop_before_tag_writes() {
+    for malformed in [false, true] {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let _remote = policy_repo(root, "lat_core");
+        let api = common::mock_github(root);
+        if malformed {
+            write(
+                &root.join(".fake/release-broken"),
+                r#"{"id":1,"tag_name":"broken","draft":false}"#,
+            );
+        } else {
+            seed_release(root, 1, "lat_core-v1.1.0", false, false);
+            write(&root.join(".fake/fail-list"), "");
+        }
+        trellis_github(root, &api)
+            .args(["tag", "create", "--github-release"])
+            .assert()
+            .failure();
+        assert!(git_stdout(root, &["tag", "--list"]).is_empty());
+        assert!(git_stdout(root, &["ls-remote", "--tags", "origin"]).is_empty());
+        assert!(
+            !fs::read_to_string(root.join(".fake/github-log"))
+                .unwrap()
+                .contains("POST ")
+        );
+    }
+}
+
+#[test]
+fn primary_policy_verifies_required_assets_before_promoting_existing_release() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let _remote = policy_repo(root, "lat_core");
+    let api = common::mock_github(root);
+    let intent = serde_json::json!({
+        "revision": "old", "assets": { "sbom.json": format!("sha256:{}", "0".repeat(64)) },
+    });
+    write(
+        &root.join(".fake/release-lat_core-v3.0.0"),
+        &serde_json::json!({
+            "id": 1, "tag_name": "lat_core-v3.0.0", "draft": false, "prerelease": false,
+            "target_commitish": "main", "assets": [],
+            "body": format!("notes\n<!-- trellis.release_assets/1\n{intent}\n-->"),
+        })
+        .to_string(),
+    );
+    trellis_github(root, &api)
+        .args([
+            "tag",
+            "create",
+            "--github-release",
+            "--package",
+            "lat_cli",
+            "--finalize",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("sbom.json").and(predicate::str::contains("missing")));
+    assert!(!root.join(".fake/latest").exists());
+}
+
+#[test]
+fn unconfigured_releases_keep_native_defaults_and_plain_tags_do_not_query_latest() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let _remote = series_repo(root, "package_tags = [\"exact\"]");
+    let api = common::mock_github(root);
+    let args = [
+        "tag",
+        "create",
+        "--github-release",
+        "--package",
+        "lat_core",
+        "--finalize",
+    ];
+    trellis_github(root, &api).args(args).assert().success();
+    for (request, payload) in release_requests(root) {
+        assert!(!request.contains("/latest"));
+        assert!(payload.get("make_latest").is_none());
+    }
+    fs::remove_file(root.join(".fake/github-log")).unwrap();
+    trellis_github(root, &api)
+        .args(["tag", "create"])
+        .assert()
+        .success();
+    assert!(!root.join(".fake/github-log").exists());
+}
+
 fn legacy_alias_repo(root: &std::path::Path) -> tempfile::TempDir {
     write(&root.join("README.md"), "Existing actions\n");
     init_repo(root);

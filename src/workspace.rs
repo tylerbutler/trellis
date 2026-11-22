@@ -496,6 +496,30 @@ impl Workspace {
                 Some(_) => {}
             }
         }
+        if let Some(primary) = &config.publish.primary_package {
+            let member = members.iter().find(|member| &member.name == primary);
+            let problem = match member {
+                None => Some("is not a workspace member".to_string()),
+                Some(member) if !member.releasable() => {
+                    Some("is excluded from release".to_string())
+                }
+                Some(member) if !member.tags.contains(&TagLevel::Exact) => {
+                    Some("must have exact tags".to_string())
+                }
+                Some(member) => primary_tag_problem(&config, &members, member),
+            };
+            if let Some(problem) = problem {
+                let mut finding = Finding::error(
+                    Check::ReleaseBoundary,
+                    format!("`publish.primary_package` `{primary}` {problem}"),
+                )
+                .at(config_rel);
+                if let Some(member) = member {
+                    finding = finding.in_package(&member.name);
+                }
+                diagnostics.push(finding);
+            }
+        }
 
         // Resolve path dependencies between members into graph edges. Runtime
         // edges (non-dev) are also tracked separately: dev-only path deps
@@ -850,6 +874,32 @@ fn report_unknown_config_keys(
             ),
         );
     }
+}
+
+fn primary_tag_problem(
+    config: &ConfigFile,
+    members: &[Member],
+    primary: &Member,
+) -> Option<String> {
+    let template = &config.publish.exact_tag_format;
+    if template.matches("{version}").count() != 1 {
+        return Some("requires exactly one {version} in exact_tag_format".to_string());
+    }
+    for other in members.iter().filter(|other| {
+        other.name != primary.name && other.releasable() && other.tags.contains(&TagLevel::Exact)
+    }) {
+        match crate::tag_namespace::overlap(template, &primary.name, &other.name) {
+            Ok(true) => {
+                return Some(format!(
+                    "has ambiguous exact tags with `{}`; use distinct package tag namespaces in exact_tag_format",
+                    other.name
+                ));
+            }
+            Ok(false) => {}
+            Err(err) => return Some(format!("cannot validate exact tag ownership: {err:#}")),
+        }
+    }
+    None
 }
 
 /// Compile a `{ glob = value }` override table, one matcher per key. Each key
